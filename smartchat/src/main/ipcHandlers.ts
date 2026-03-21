@@ -9,27 +9,54 @@ async function resolveContactName(
   jid: string,
   chatName: string | null
 ): Promise<string> {
-  // 1. Direct/LID lookup using OR query
-  const contact = await prisma.contact.findFirst({
+  const contacts = await prisma.contact.findMany({
     where: {
       OR: [
         { id: jid },
-        { lid: jid }
+        { lid: jid },
+        { phoneNumber: jid }
       ]
-    },
-    select: { name: true, phoneNumber: true }
+    }
   })
 
-  if (contact?.name) return contact.name
+  let phonebookName: string | null = null;
+  let pushName: string | null = null;
+  let verifiedName: string | null = null;
+  let linkedPhone: string | null = null;
 
-  // 2. Group subject / chat name from Chat table if contact name not found
-  if (chatName) return chatName
+for (const c of contacts) {
+    // 1. Undisputed Highest Priority: Standard rows (Phone Numbers, Groups @g.us, Channels)
+    // If it has a name and IS NOT a LID row, it is the absolute source of truth.
+    if (!c.id.includes('@lid') && c.name) {
+      phonebookName = c.name;
+    }
 
-  // 3. Fallback: phone number from contact record
-  if (contact?.phoneNumber) return contact.phoneNumber.replace(/@.*$/, '')
+    // 2. Verified Business Names
+    if (c.verifiedName) {
+      verifiedName = c.verifiedName;
+    }
 
-  // 4. Ultimate Fallback: strip the domain suffix from JID
-  return jid.replace(/@.*$/, '')
+    // 3. Fallbacks: PushName (notify) or a copied name on a LID row
+    if (c.notify) {
+      pushName = c.notify;
+    } else if (c.id.includes('@lid') && c.name) {
+      pushName = c.name; 
+    }
+
+    if (c.phoneNumber) linkedPhone = c.phoneNumber;
+  }
+
+  // Return strictly in hierarchy order
+  if (phonebookName) return phonebookName;
+  if (verifiedName) return verifiedName;
+  if (pushName) return pushName;
+  if (chatName) return chatName;
+
+  // Fallback to Phone Number (if found via LID mapping)
+  if (linkedPhone) return linkedPhone.replace(/@.*$/, '');
+
+  // Absolute fallback: raw ID
+  return jid.replace(/@.*$/, '');
 }
 
 /**

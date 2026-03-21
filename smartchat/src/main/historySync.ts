@@ -109,7 +109,7 @@ export async function handleHistorySync(
 
   // ── 2. Contacts ────────────────────────────────────────────────────
 
-// ── 2. Contacts ────────────────────────────────────────────────────────
+  // ── 2. Contacts ────────────────────────────────────────────────────────
   if (contacts && contacts.length > 0) {
     const jidToData = new Map<string, { name?: string, notify?: string, verifiedName?: string, lid?: string }>()
 
@@ -118,7 +118,7 @@ export async function handleHistorySync(
       if (!c.id) continue
       const id = String(c.id)
       const existing = jidToData.get(id) || {}
-      
+
       jidToData.set(id, {
         name: (c.name as string) || existing.name,
         notify: (c.notify as string) || (c.pushName as string) || existing.notify,
@@ -133,7 +133,7 @@ export async function handleHistorySync(
     for (const [id, data] of jidToData.entries()) {
       const isLid = id.endsWith('@lid');
       const isPn = id.endsWith('@s.whatsapp.net');
-      
+
       let mappedLid: string | null = null;
       let mappedPn: string | null = null;
 
@@ -162,7 +162,7 @@ export async function handleHistorySync(
           mappedLid = null; // Strip it if another record in this chunk already claimed it
         } else {
           claimedLids.add(mappedLid);
-          
+
           // Brutally clear this LID from any existing records in the database first
           contactOps.push(
             prisma.contact.updateMany({
@@ -175,23 +175,25 @@ export async function handleHistorySync(
 
       const bestName = data.name || data.notify || data.verifiedName;
 
+      // Build the update payload dynamically so we don't squash 'name' with 'notify'
+      const updatePayload: any = {};
+      if (data.name) updatePayload.name = data.name;
+      if (data.notify !== undefined) updatePayload.notify = data.notify;
+      if (data.verifiedName !== undefined) updatePayload.verifiedName = data.verifiedName;
+      if (mappedLid !== null) updatePayload.lid = mappedLid;
+      if (mappedPn !== null) updatePayload.phoneNumber = mappedPn;
+
       contactOps.push(
         prisma.contact.upsert({
           where: { id },
-          update: { 
-            name: bestName, 
-            notify: data.notify,
-            verifiedName: data.verifiedName,
-            lid: mappedLid, 
-            phoneNumber: mappedPn 
-          },
-          create: { 
-            id, 
-            name: bestName || null, 
+          update: updatePayload,
+          create: {
+            id,
+            name: bestName || null,
             notify: data.notify || null,
             verifiedName: data.verifiedName || null,
-            lid: mappedLid || null, 
-            phoneNumber: mappedPn || null 
+            lid: mappedLid || null,
+            phoneNumber: mappedPn || null
           }
         })
       );
@@ -290,8 +292,8 @@ export async function handleHistorySync(
 
           const timestamp = BigInt(
             typeof ts === 'object' &&
-            ts !== null &&
-            'low' in (ts as Record<string, unknown>)
+              ts !== null &&
+              'low' in (ts as Record<string, unknown>)
               ? (ts as Record<string, unknown>).low as number
               : (ts as number)
           )

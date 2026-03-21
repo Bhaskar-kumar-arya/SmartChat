@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import baileys, { DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys'
@@ -15,11 +16,32 @@ import NodeCache from 'node-cache'
 let currentSock: ReturnType<typeof makeWASocket> | null = null
 const getSock = () => currentSock
 
+let globalReconnectTimeout: ReturnType<typeof setTimeout> | null = null
+let globalSyncTimeoutHandle: ReturnType<typeof setTimeout> | null = null
+
 let mainWindow: BrowserWindow | null = null
 let currentFinishSync: (() => void) | null = null
 let isFreshLogin = false
 
 async function connectToWhatsApp(window: BrowserWindow) {
+  // Clear any existing reconnect timeout
+  if (globalReconnectTimeout) {
+    clearTimeout(globalReconnectTimeout)
+    globalReconnectTimeout = null
+  }
+
+  // Gracefully shut down existing socket
+  if (currentSock) {
+    console.log('[Connection] Cleaning up previous socket instance before reconnecting...')
+    try {
+      currentSock.ev.removeAllListeners()
+      currentSock.end(new Error('Replaced by new socket instance'))
+    } catch (err) {
+      console.warn('[Connection] Error cleaning up old socket:', err)
+    }
+    currentSock = null
+  }
+
   // Clean up orphan data if not logged in
   const existingCreds = await prisma.authState.findUnique({ where: { id: 'creds' } })
   if (!existingCreds) {
@@ -43,6 +65,7 @@ async function connectToWhatsApp(window: BrowserWindow) {
     generateHighQualityLinkPreview: true,
     browser: Browsers.macOS('Desktop'),
     syncFullHistory: true,
+    shouldSyncHistoryMessage: () => true,
     cachedGroupMetadata: async (jid) => groupCache.get(jid),
     getMessage: async (key) => {
       if (!key.id) return undefined;
@@ -81,13 +104,16 @@ async function connectToWhatsApp(window: BrowserWindow) {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
       const errorData = (lastDisconnect?.error as any)?.data
       const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut && !isConflict
-      
-      console.log(`[Connection] Closed | statusCode=${statusCode} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect} | error=`, lastDisconnect?.error)
-      
+      const isRestartRequired = statusCode === DisconnectReason.restartRequired
+      const shouldReconnect = (statusCode !== DisconnectReason.loggedOut && !isConflict) || isRestartRequired
+
+      console.log(`[Connection] Closed | statusCode=${statusCode} | isRestart=${isRestartRequired} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect} | error=`, lastDisconnect?.error)
+
       if (shouldReconnect) {
-        // Add a small delay for stability
-        setTimeout(() => connectToWhatsApp(window), 3000)
+        // restartRequired needs immediate attention, others get a 3s breather
+        const delay = isRestartRequired ? 500 : 3000
+        console.log(`[Connection] Scheduling reconnect in ${delay}ms...`)
+        globalReconnectTimeout = setTimeout(() => connectToWhatsApp(window), delay)
       } else if (isConflict) {
         console.warn('[Connection] Replaced by another session (440 conflict). Standing down.')
       } else {
@@ -135,7 +161,8 @@ async function connectToWhatsApp(window: BrowserWindow) {
   let syncChunkCount = 0
   let maxProgress = 0
   let syncComplete = false
-  let syncTimeoutHandle: ReturnType<typeof setTimeout> | null = null
+  let contactsUpsertCount = 0
+  let contactsUpdateCount = 0
 
   const finishSync = () => {
     if (syncComplete) return
@@ -154,25 +181,23 @@ async function connectToWhatsApp(window: BrowserWindow) {
       const rawData = data as Record<string, unknown>
       const reportedProgress = typeof rawData.progress === 'number' ? rawData.progress : undefined
       const isLatest = rawData.isLatest === true
-      
+
       console.log(`[HistorySync] Chunk #${syncChunkCount} received | reportedProgress=${reportedProgress} | isLatest=${isLatest} | keys=${Object.keys(rawData).join(',')}`)
 
       // Reset the inactivity timeout — if no new chunk arrives within 60s, mark sync done
-      if (syncTimeoutHandle) clearTimeout(syncTimeoutHandle)
-      syncTimeoutHandle = setTimeout(finishSync, 180_000)
+      if (globalSyncTimeoutHandle) clearTimeout(globalSyncTimeoutHandle)
+      globalSyncTimeoutHandle = setTimeout(finishSync, 180_000)
 
       // Save raw data to disk for debugging
       try {
-        const fs = require('fs')
-        const path = require('path')
-        const debugDir = path.join(process.cwd(), 'debug')
+        const debugDir = join(process.cwd(), 'debug')
         if (!fs.existsSync(debugDir)) {
           fs.mkdirSync(debugDir, { recursive: true })
         }
-        const filePath = path.join(debugDir, `history_sync_chunk_${syncChunkCount}.json`)
-        fs.writeFileSync(filePath, JSON.stringify(data, (_, value) => 
+        const filePath = join(debugDir, `history_sync_chunk_${syncChunkCount}.json`)
+        fs.writeFileSync(filePath, JSON.stringify(data, (_, value) =>
           typeof value === 'bigint' ? value.toString() : value
-        , 2))
+          , 2))
         console.log(`[HistorySync] Saved raw chunk #${syncChunkCount} to ${filePath}`)
       } catch (saveErr) {
         console.error('[HistorySync] Failed to save raw chunk to disk:', saveErr)
@@ -272,9 +297,9 @@ async function connectToWhatsApp(window: BrowserWindow) {
             // Fire and forget - don't await to avoid slowing down the message ingest
             prisma.contact.upsert({
               where: { id: senderId },
-              update: { name: msg.pushName }, // Updates name if it was null
-              create: { id: senderId, name: msg.pushName }
-            }).catch(() => {}); // Ignore unique constraint errors in background
+              update: { notify: msg.pushName }, // Always update notify (pushName), do not overwrite name
+              create: { id: senderId, name: msg.pushName, notify: msg.pushName }
+            }).catch(() => { }); // Ignore unique constraint errors in background
           }
         }
 
@@ -354,29 +379,65 @@ async function connectToWhatsApp(window: BrowserWindow) {
   // ── Contacts Upsert (Phase 4) ──────────────────────────────────────
   sock.ev.on('contacts.upsert', async (contacts) => {
     try {
-      console.log(`[Contacts] Received contacts.upsert for ${contacts.length} contacts`)
+      contactsUpsertCount++
+      const debugDir = join(process.cwd(), 'debug')
+      if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true })
+      const filePath = join(debugDir, `contacts_upsert_${contactsUpsertCount}.json`)
+      fs.writeFileSync(filePath, JSON.stringify(contacts, (_, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+        , 2))
+
+      console.log(`[Contacts] Received contacts.upsert for ${contacts.length} contacts (saved to ${filePath})`)
 
       for (const contact of contacts) {
         const id = contact.id as string | undefined
         if (!id) continue
 
-        const dataToUpdate: any = {}
-        const lid = (contact as any).lid
-        const phoneNumber = (contact as any).phoneNumber
-        const name = ((contact as any).notify ?? (contact as any).verifiedName ?? (contact as any).name) as string | undefined
+        const lid = (contact as any).lid as string | undefined
+        const phoneNumber = (contact as any).phoneNumber as string | undefined
+        const newName = (contact as any).name as string | undefined
+        const newNotify = ((contact as any).notify ?? (contact as any).pushName) as string | undefined
+        const newVerifiedName = (contact as any).verifiedName as string | undefined
 
-        // Only populate 'lid' column for PN-based records to avoid unique constraint violation.
-        if (id.endsWith('@s.whatsapp.net')) {
-          if (lid) dataToUpdate.lid = lid
-        } else {
-          dataToUpdate.lid = null
-        }
+        try {
+          const existing = await prisma.contact.findUnique({ where: { id } })
 
-        if (phoneNumber) dataToUpdate.phoneNumber = phoneNumber
-        if (name) dataToUpdate.name = name
+          const dataToUpdate: any = {}
+          const dataToCreate: any = { id }
 
-        if (Object.keys(dataToUpdate).length > 0) {
-          try {
+          // Only populate 'lid' column for PN-based records to avoid unique constraint violation.
+          if (id.endsWith('@s.whatsapp.net')) {
+            if (lid) {
+              dataToUpdate.lid = lid
+              dataToCreate.lid = lid
+            }
+          } else {
+            dataToUpdate.lid = null
+            dataToCreate.lid = null
+          }
+
+          if (phoneNumber) {
+            dataToUpdate.phoneNumber = phoneNumber
+            dataToCreate.phoneNumber = phoneNumber
+          }
+          if (newNotify !== undefined) {
+             dataToUpdate.notify = newNotify
+             dataToCreate.notify = newNotify
+          }
+          if (newVerifiedName !== undefined) {
+             dataToUpdate.verifiedName = newVerifiedName
+             dataToCreate.verifiedName = newVerifiedName
+          }
+          if (newName !== undefined) {
+            // Never overwrite a good existing 'name' with a transient upsert name
+            if (!existing || !existing.name) {
+              dataToUpdate.name = newName
+            }
+            dataToCreate.name = newName
+          }
+
+          // Always try to upsert to ensure the entry is created if it doesn't exist
+          if (true) {
             // Clear conflicting LID from other records first
             if (dataToUpdate.lid) {
               await prisma.contact.updateMany({
@@ -388,7 +449,7 @@ async function connectToWhatsApp(window: BrowserWindow) {
             await prisma.contact.upsert({
               where: { id },
               update: dataToUpdate,
-              create: { id, ...dataToUpdate }
+              create: dataToCreate
             })
 
             // Proactive LID mapping check if not already provided
@@ -438,9 +499,9 @@ async function connectToWhatsApp(window: BrowserWindow) {
                 })
               }
             }
-          } catch (err) {
-            console.error(`[Contacts] Error upserting contact ${id}:`, err)
           }
+        } catch (err) {
+          console.error(`[Contacts] Error upserting contact ${id}:`, err)
         }
       }
     } catch (err) {
@@ -460,8 +521,8 @@ async function connectToWhatsApp(window: BrowserWindow) {
 
         // Clear this LID from any other record to satisfy unique constraint
         await prisma.contact.updateMany({
-           where: { lid, id: { not: pn } },
-           data: { lid: null }
+          where: { lid, id: { not: pn } },
+          data: { lid: null }
         })
 
         // Update the PN record with the LID
@@ -484,7 +545,7 @@ async function connectToWhatsApp(window: BrowserWindow) {
   })
 
 
-// ── Chats Update (Phase 4) ────────────────────────────────────────
+  // ── Chats Update (Phase 4) ────────────────────────────────────────
   sock.ev.on('chats.update', async (updates) => {
     for (const update of updates) {
       try {
@@ -506,7 +567,7 @@ async function connectToWhatsApp(window: BrowserWindow) {
         if ((update as any).archived !== undefined) {
           data.isArchived = (update as any).archived === true
         }
-        
+
         // Removed the name/subject checks here so TypeScript and Prisma stay happy
 
         const ts = (update as any).conversationTimestamp ?? (update as any).timestamp
@@ -583,38 +644,73 @@ async function connectToWhatsApp(window: BrowserWindow) {
 
   // ── Contacts Update (Phase 4) ─────────────────────────────────────
   sock.ev.on('contacts.update', async (updates) => {
-    for (const contact of updates) {
-      try {
-        const id = contact.id as string | undefined
-        if (!id) continue
+    try {
+      contactsUpdateCount++
+      const debugDir = join(process.cwd(), 'debug')
+      if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true })
+      const filePath = join(debugDir, `contacts_update_${contactsUpdateCount}.json`)
+      fs.writeFileSync(filePath, JSON.stringify(updates, (_, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+        , 2))
 
-        const name = ((contact as any).notify ?? (contact as any).verifiedName ?? (contact as any).name) as string | undefined
-        const lid = (contact as any).lid
-        const phoneNumber = (contact as any).phoneNumber
+      for (const contact of updates) {
+        try {
+          const id = contact.id as string | undefined
+          if (!id) continue
 
-        const data: any = {}
-        if (name) data.name = name
-        
-        // Similar to upsert: only set lid mapping for PN records.
-        if (id.endsWith('@s.whatsapp.net')) {
-          if (lid) data.lid = lid
-        } else {
-          data.lid = null
+          const lid = (contact as any).lid as string | undefined
+          const phoneNumber = (contact as any).phoneNumber as string | undefined
+          const newName = (contact as any).name as string | undefined
+          const newNotify = ((contact as any).notify ?? (contact as any).pushName) as string | undefined
+          const newVerifiedName = (contact as any).verifiedName as string | undefined
+
+          const dataToUpdate: any = {}
+          const dataToCreate: any = { id }
+
+          // Similar to upsert: only set lid mapping for PN records.
+          if (id.endsWith('@s.whatsapp.net')) {
+            if (lid) {
+              dataToUpdate.lid = lid
+              dataToCreate.lid = lid
+            }
+          } else {
+            dataToUpdate.lid = null
+            dataToCreate.lid = null
+          }
+
+          if (phoneNumber) {
+            dataToUpdate.phoneNumber = phoneNumber
+            dataToCreate.phoneNumber = phoneNumber
+          }
+          if (newNotify !== undefined) {
+             dataToUpdate.notify = newNotify
+             dataToCreate.notify = newNotify
+          }
+          if (newVerifiedName !== undefined) {
+             dataToUpdate.verifiedName = newVerifiedName
+             dataToCreate.verifiedName = newVerifiedName
+          }
+          if (newName !== undefined) {
+            // contacts.update usually means explicit change, so always update
+            dataToUpdate.name = newName
+            dataToCreate.name = newName
+          }
+
+          // Always try to upsert to ensure the entry is created if it doesn't exist
+          if (true) {
+            await prisma.contact.upsert({
+              where: { id },
+              update: dataToUpdate,
+              create: dataToCreate
+            })
+            console.log(`[contacts.update] Updated contact ${id}: ${JSON.stringify(dataToUpdate)}`)
+          }
+        } catch (err) {
+          console.error('[contacts.update] Inner Error:', err)
         }
-
-        if (phoneNumber) data.phoneNumber = phoneNumber
-
-        if (Object.keys(data).length > 0) {
-          await prisma.contact.upsert({
-            where: { id },
-            update: data,
-            create: { id, ...data }
-          })
-          console.log(`[contacts.update] Updated contact ${id}: ${JSON.stringify(data)}`)
-        }
-      } catch (err) {
-        console.error('[contacts.update] Error:', err)
       }
+    } catch (err) {
+      console.error('[contacts.update] Outer Error:', err)
     }
   })
 
