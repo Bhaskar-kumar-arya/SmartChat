@@ -8,7 +8,7 @@ const makeWASocket = (baileys as any).default || baileys;
 import { Boom } from '@hapi/boom'
 import { usePrismaAuthState, prisma } from './auth'
 import { handleHistorySync } from './historySync'
-import { registerIpcHandlers } from './ipcHandlers'
+import { registerIpcHandlers, resolveContactName } from './ipcHandlers'
 import { Browsers } from '@whiskeysockets/baileys'
 import NodeCache from 'node-cache'
 
@@ -351,11 +351,13 @@ async function connectToWhatsApp(window: BrowserWindow) {
 
           // Fire IPC event so React can update in real-time
           if (mainWindow && !mainWindow.isDestroyed()) {
+            const participantName = participant ? await resolveContactName(prisma, participant, null) : null;
             mainWindow.webContents.send('new-message', {
               id: key.id,
               remoteJid,
               fromMe: key.fromMe === true,
               participant,
+              participantName,
               timestamp: timestamp.toString(),
               messageType,
               textContent

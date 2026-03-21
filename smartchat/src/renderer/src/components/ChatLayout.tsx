@@ -8,6 +8,7 @@ interface MessageItem {
   remoteJid: string
   fromMe: boolean
   participant: string | null
+  participantName?: string | null
   timestamp: string
   messageType: string
   textContent: string | null

@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client'
 /**
  * Resolves a display name for a chat JID, using LID cross-resolution when needed.
  */
-async function resolveContactName(
+export async function resolveContactName(
   prisma: PrismaClient,
   jid: string,
   chatName: string | null
@@ -143,12 +143,14 @@ export function registerIpcHandlers(
       })
 
       // Return in chronological order (oldest first) for rendering
-      return messages
-        .map((m) => ({
+      const messagesWithNames = await Promise.all(
+        messages.map(async (m) => ({
           ...m,
+          participantName: m.participant ? await resolveContactName(prisma, m.participant, null) : null,
           timestamp: m.timestamp.toString()
         }))
-        .reverse()
+      )
+      return messagesWithNames.reverse()
     }
   )
 

@@ -5,6 +5,7 @@ interface MessageItem {
   remoteJid: string
   fromMe: boolean
   participant: string | null
+  participantName?: string | null
   timestamp: string
   messageType: string
   textContent: string | null
@@ -25,6 +26,8 @@ export default function MessageView({ messages, loading, onLoadMore }: MessageVi
   const isLoadingRef = useRef(false)
   const prevMessageId = useRef<string | null>(null)
 
+  const isInitialRenderForChat = useRef(true)
+
   // Reset hasMore when switching chats (first message ID changes)
   useEffect(() => {
     const firstId = messages.length > 0 ? messages[0].id : null
@@ -32,6 +35,7 @@ export default function MessageView({ messages, loading, onLoadMore }: MessageVi
       // Only reset if this looks like a full chat switch (not prepend)
       if (messages.length <= 50) {
         setHasMore(true)
+        isInitialRenderForChat.current = true
       }
     }
     prevMessageId.current = firstId
@@ -40,9 +44,17 @@ export default function MessageView({ messages, loading, onLoadMore }: MessageVi
   // Auto-scroll to bottom when new messages arrive (not when loading older)
   useEffect(() => {
     if (bottomRef.current && !loadingMore) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth' })
+      const behavior = isInitialRenderForChat.current ? 'auto' : 'smooth'
+      bottomRef.current.scrollIntoView({ behavior })
+      
+      // Delay unsetting the flag until after rendering
+      if (isInitialRenderForChat.current && messages.length > 0) {
+        setTimeout(() => {
+          isInitialRenderForChat.current = false
+        }, 100)
+      }
     }
-  }, [messages.length])
+  }, [messages.length, messages])
 
   // Restore scroll position after loading older messages
   useEffect(() => {
@@ -55,7 +67,7 @@ export default function MessageView({ messages, loading, onLoadMore }: MessageVi
   }, [messages])
 
   const handleScroll = async () => {
-    if (!containerRef.current || isLoadingRef.current || !hasMore) return
+    if (!containerRef.current || isLoadingRef.current || !hasMore || isInitialRenderForChat.current) return
 
     if (containerRef.current.scrollTop < 100) {
       isLoadingRef.current = true
@@ -143,6 +155,17 @@ export default function MessageView({ messages, loading, onLoadMore }: MessageVi
             )}
             <div className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
               <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'}`}>
+                {!msg.fromMe && msg.participantName && (
+                  <span className="message-sender-name" style={{
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    color: 'var(--primary, #00a884)',
+                    marginBottom: '4px',
+                    display: 'block'
+                  }}>
+                    {msg.participantName}
+                  </span>
+                )}
                 {msg.textContent ? (
                   <p className="message-text">{msg.textContent}</p>
                 ) : (
