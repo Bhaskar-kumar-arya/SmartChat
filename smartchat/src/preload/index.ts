@@ -30,8 +30,17 @@ const api = {
   getMessages: (jid: string, page: number = 1, pageSize: number = 50) => {
     return ipcRenderer.invoke('get-messages', jid, page, pageSize)
   },
-  sendMessage: (jid: string, text: string) => {
-    return ipcRenderer.invoke('send-message', jid, text)
+  sendMessage: (jid: string, text: string, quotedMsgId?: string) => {
+    return ipcRenderer.invoke('send-message', jid, text, quotedMsgId)
+  },
+  sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string) => {
+    return ipcRenderer.invoke('send-media-message', jid, filePath, caption, quotedMsgId)
+  },
+  downloadMedia: (msgId: string) => {
+    return ipcRenderer.invoke('download-media', msgId)
+  },
+  selectFile: () => {
+    return ipcRenderer.invoke('select-file')
   },
   onNewMessage: (callback: (msg: Record<string, unknown>) => void) => {
     ipcRenderer.on('new-message', (_event, msg) => callback(msg))

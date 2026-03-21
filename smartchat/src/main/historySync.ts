@@ -84,8 +84,7 @@ export interface HistorySyncResult {
 
 export async function handleHistorySync(
   data: HistorySyncData,
-  prisma: PrismaClient,
-  sock?: any
+  prisma: PrismaClient
 ): Promise<HistorySyncResult> {
 
   const { chats, contacts, messages, lidPnMappings, progress, isLatest } = data

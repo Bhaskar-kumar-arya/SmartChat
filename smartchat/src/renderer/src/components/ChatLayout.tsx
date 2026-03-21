@@ -20,12 +20,14 @@ export default function ChatLayout() {
   const [messages, setMessages] = useState<MessageItem[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [replyingTo, setReplyingTo] = useState<MessageItem | null>(null)
 
   const handleSelectChat = async (jid: string, name: string) => {
     setActiveJid(jid)
     setActiveName(name)
     setLoadingMessages(true)
     setCurrentPage(1)
+    setReplyingTo(null)
     
     // Clear unread badge locally
     window.api.markRead(jid).catch(err => console.error('Failed to mark read:', err))
@@ -44,10 +46,32 @@ export default function ChatLayout() {
   const handleSendMessage = async (text: string) => {
     if (!activeJid || !text.trim()) return
     try {
-      const sentMsg = await window.api.sendMessage(activeJid, text.trim())
+      const sentMsg = await window.api.sendMessage(activeJid, text.trim(), replyingTo?.id)
       setMessages((prev) => [...prev, sentMsg])
+      setReplyingTo(null)
     } catch (err) {
       console.error('Failed to send message:', err)
+    }
+  }
+
+  const handleSendMediaMessage = async (filePath: string, text: string) => {
+    if (!activeJid) return
+    try {
+      const sentMsg = await window.api.sendMediaMessage(activeJid, filePath, text.trim(), replyingTo?.id)
+      setMessages((prev) => [...prev, sentMsg])
+      setReplyingTo(null)
+    } catch (err) {
+      console.error('Failed to send media message:', err)
+    }
+  }
+
+  const handleDownloadMedia = async (msgId: string) => {
+    try {
+      const updatedMsg = await window.api.downloadMedia(msgId)
+      setMessages((prev) => prev.map((m) => (m.id === msgId ? updatedMsg : m)))
+    } catch (err) {
+      console.error('Failed to download media:', err)
+      throw err // Rethrow to let MessageView catch it for the loading state
     }
   }
 
@@ -100,8 +124,15 @@ export default function ChatLayout() {
               messages={messages}
               loading={loadingMessages}
               onLoadMore={handleLoadMore}
+              onReply={(msg) => setReplyingTo(msg)}
+              onDownloadMedia={handleDownloadMedia}
             />
-            <MessageInput onSend={handleSendMessage} />
+            <MessageInput
+              onSend={handleSendMessage}
+              onSendMedia={handleSendMediaMessage}
+              replyingTo={replyingTo}
+              onCancelReply={() => setReplyingTo(null)}
+            />
           </>
         ) : (
           <div className="chat-empty">

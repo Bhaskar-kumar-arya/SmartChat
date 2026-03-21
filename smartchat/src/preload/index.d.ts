@@ -35,7 +35,10 @@ declare global {
       // Phase 3 & 4
       getChats: (page?: number, pageSize?: number) => Promise<ChatItem[]>
       getMessages: (jid: string, page?: number, pageSize?: number) => Promise<MessageItem[]>
-      sendMessage: (jid: string, text: string) => Promise<MessageItem>
+      sendMessage: (jid: string, text: string, quotedMsgId?: string) => Promise<MessageItem>
+      sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string) => Promise<MessageItem>
+      downloadMedia: (msgId: string) => Promise<MessageItem>
+      selectFile: () => Promise<string | null>
       onNewMessage: (callback: (msg: MessageItem) => void) => void
       markRead: (jid: string) => Promise<boolean>
       onChatUpdated: (callback: (chat: Partial<ChatItem> & { jid: string }) => void) => void

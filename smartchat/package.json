@@ -26,6 +26,7 @@
     "@tiptap/react": "^3.20.3",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "electron-updater": "^6.3.9",
+    "link-preview-js": "^3.2.0",
     "lucide-react": "^0.577.0",
     "node-cache": "^5.1.2",
     "qrcode.react": "^4.2.0",

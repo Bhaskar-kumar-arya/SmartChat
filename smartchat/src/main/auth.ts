@@ -1,7 +1,6 @@
 import {
   initAuthCreds,
   BufferJSON,
-  SignalDataTypeMap,
   AuthenticationState,
   AuthenticationCreds,
   makeCacheableSignalKeyStore
@@ -70,14 +69,14 @@ export const usePrismaAuthState = async (): Promise<{
     (await readData("creds")) || initAuthCreds();
   const baseKeyStore = {
     get: async (type, ids) => {
-      const data: { [_: string]: SignalDataTypeMap[typeof type] } = {};
+      const data: { [key: string]: any } = {};
       await Promise.all(
         ids.map(async (id) => {
           const value = await readData(`${type}-${id}`);
-          data[id] = value as SignalDataTypeMap[typeof type];
+          data[id] = value;
         })
       );
-      return data;
+      return data as any;
     },
     set: async (data) => {
       // It's better to run these concurrently rather than strictly sequentially

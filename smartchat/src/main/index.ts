@@ -1,5 +1,6 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, net } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -205,8 +206,7 @@ async function connectToWhatsApp(window: BrowserWindow) {
 
       await handleHistorySync(
         data as unknown as Parameters<typeof handleHistorySync>[0],
-        prisma,
-        sock
+        prisma
       )
 
       if (!window.isDestroyed() && !syncComplete) {
@@ -229,7 +229,27 @@ async function connectToWhatsApp(window: BrowserWindow) {
         const key = msg.key
         if (!key?.id) continue
 
-        const rawMessage = msg.message as Record<string, unknown> | null | undefined
+        // Strip Protobuf class methods safely
+        let rawMessage: any = null
+        if (msg.message) {
+          try {
+            rawMessage = JSON.parse(JSON.stringify(msg.message))
+          } catch (err) {
+            // Fallback: If protobuf toJSON crashes (e.g., broken Long types in quoted messages)
+            const safeStringify = (obj: any) => JSON.stringify(obj, (_key, value) => {
+              if (value && typeof value === 'object' && typeof value.toJSON === 'function') {
+                try { return value.toJSON() } 
+                catch (e) { 
+                  const copy: any = {}
+                  for (const k in value) { if (typeof value[k] !== 'function') copy[k] = value[k] }
+                  return copy
+                }
+              }
+              return value
+            })
+            rawMessage = JSON.parse(safeStringify(msg.message))
+          }
+        }
         const remoteJid = key.remoteJid || ''
         const participant = key.participant || null
 
@@ -303,7 +323,13 @@ async function connectToWhatsApp(window: BrowserWindow) {
           }
         }
 
-        // 4. Insert message into SQLite
+        // 4. Determine media message
+        if (messageType === 'imageMessage' && rawMessage && rawMessage.imageMessage) {
+            // We just leave the media in its encrypted form in the payload.
+            // When the user clicks download, the renderer calls the IPC handler.
+        }
+
+        // 5. Insert message into SQLite
         await prisma.message.upsert({
           where: { id: key.id },
           update: {
@@ -352,6 +378,14 @@ async function connectToWhatsApp(window: BrowserWindow) {
           // Fire IPC event so React can update in real-time
           if (mainWindow && !mainWindow.isDestroyed()) {
             const participantName = participant ? await resolveContactName(prisma, participant, null) : null;
+            let finalContent: any = rawMessage || {};
+            
+            // Resolve quoted participant name on the fly for real-time messages too
+            const ctx = finalContent?.extendedTextMessage?.contextInfo || finalContent?.imageMessage?.contextInfo;
+            if (ctx?.participant) {
+               ctx.participantName = await resolveContactName(prisma, ctx.participant, null);
+            }
+
             mainWindow.webContents.send('new-message', {
               id: key.id,
               remoteJid,
@@ -360,7 +394,8 @@ async function connectToWhatsApp(window: BrowserWindow) {
               participantName,
               timestamp: timestamp.toString(),
               messageType,
-              textContent
+              textContent,
+              content: JSON.stringify(finalContent)
             })
           }
         } else {
@@ -754,6 +789,15 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
+
+  protocol.handle('app', (request) => {
+    const url = request.url.slice('app://'.length)
+    if (url.startsWith('media/')) {
+      const filePath = join(app.getPath('userData'), url)
+      return net.fetch(pathToFileURL(filePath).href)
+    }
+    return new Response('Not Found', { status: 404 })
+  })
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

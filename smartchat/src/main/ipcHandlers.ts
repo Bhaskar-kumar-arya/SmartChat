@@ -1,5 +1,9 @@
 import { ipcMain } from 'electron'
 import { PrismaClient } from '@prisma/client'
+import fs from 'fs'
+import { join } from 'path'
+import { app } from 'electron'
+import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
 
 /**
  * Resolves a display name for a chat JID, using LID cross-resolution when needed.
@@ -138,31 +142,74 @@ export function registerIpcHandlers(
           participant: true,
           timestamp: true,
           messageType: true,
-          textContent: true
+          textContent: true,
+          content: true
         }
       })
 
       // Return in chronological order (oldest first) for rendering
       const messagesWithNames = await Promise.all(
-        messages.map(async (m) => ({
-          ...m,
-          participantName: m.participant ? await resolveContactName(prisma, m.participant, null) : null,
-          timestamp: m.timestamp.toString()
-        }))
+        messages.map(async (m) => {
+          let contentStr = m.content
+          if (contentStr) {
+            try {
+              const rawMsg = JSON.parse(contentStr)
+              const ctx = rawMsg?.extendedTextMessage?.contextInfo || rawMsg?.imageMessage?.contextInfo || rawMsg?.contextInfo
+              if (ctx?.participant) {
+                const resolved = await resolveContactName(prisma, ctx.participant, null)
+                ctx.participantName = resolved
+                contentStr = (function safeStr(obj: any) {
+                  try { return JSON.stringify(obj) } catch(e) {
+                    return JSON.stringify(obj, (_k, v) => {
+                      if (v && typeof v === 'object' && typeof v.toJSON === 'function') {
+                        try { return v.toJSON() } catch(e) {
+                          const copy: any = {}; for(const key in v) if(typeof v[key] !== 'function') copy[key] = v[key]; return copy;
+                        }
+                      } return v;
+                    })
+                  }
+                })(rawMsg)
+              }
+            } catch (e) {}
+          }
+
+          return {
+            ...m,
+            content: contentStr,
+            participantName: m.participant ? await resolveContactName(prisma, m.participant, null) : null,
+            timestamp: m.timestamp.toString()
+          }
+        })
       )
       return messagesWithNames.reverse()
     }
   )
 
   // ── Send Message ─────────────────────────────────────────────────────
-  ipcMain.handle('send-message', async (_event, jid: string, text: string) => {
+  ipcMain.handle('send-message', async (_event, jid: string, text: string, quotedMsgId?: string) => {
     const sock = getSock()
     if (!sock) {
       throw new Error('WhatsApp socket is not connected')
     }
 
+    let quotedMessage: any = undefined
+    let quotedFromMe = false
+    if (quotedMsgId) {
+      const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
+      if (qm && qm.content) {
+        quotedFromMe = qm.fromMe
+        try { 
+          const plainQuoted = JSON.parse(qm.content) 
+          quotedMessage = proto.Message.fromObject(plainQuoted)
+        } catch (e) {
+          console.error('[send-message] failed to hydrate quoted message', e)
+        }
+      }
+    }
+
     // Send via Baileys and await server confirmation
-    const sentMsg = await sock.sendMessage(jid, { text })
+    const options = quotedMessage ? { quoted: { key: { id: quotedMsgId, remoteJid: jid, fromMe: quotedFromMe }, message: quotedMessage } } : {}
+    const sentMsg = await sock.sendMessage(jid, { text }, options as any)
 
     if (!sentMsg) {
       throw new Error('Failed to send message — no response from server')
@@ -180,6 +227,15 @@ export function registerIpcHandlers(
         )
       : BigInt(Math.floor(Date.now() / 1000))
 
+    // Determine actual type for SQLite
+    let messageType = 'conversation'
+    if (sentMsg.message) {
+      const typeKeys = ['conversation', 'extendedTextMessage', 'imageMessage', 'videoMessage', 'audioMessage', 'documentMessage']
+      for (const k of typeKeys) {
+        if ((sentMsg.message as any)[k]) { messageType = k; break; }
+      }
+    }
+
     // Persist to SQLite
     await prisma.message.upsert({
       where: { id: msgId },
@@ -190,8 +246,18 @@ export function registerIpcHandlers(
         fromMe: true,
         participant: null,
         timestamp,
-        messageType: 'conversation',
-        content: JSON.stringify(sentMsg.message || {}),
+        messageType,
+        content: (function safeStr(obj: any) {
+          try { return JSON.stringify(obj) } catch(e) {
+            return JSON.stringify(obj, (_k, v) => {
+              if (v && typeof v === 'object' && typeof v.toJSON === 'function') {
+                try { return v.toJSON() } catch(e) {
+                  const copy: any = {}; for(const key in v) if(typeof v[key] !== 'function') copy[key] = v[key]; return copy;
+                }
+              } return v;
+            })
+          }
+        })(sentMsg.message || {}),
         textContent: text
       }
     })
@@ -215,6 +281,98 @@ export function registerIpcHandlers(
     }
   })
 
+  // ── Send Media Message ───────────────────────────────────────────────
+  ipcMain.handle('send-media-message', async (_event, jid: string, filePath: string, caption?: string, quotedMsgId?: string) => {
+    const sock = getSock()
+    if (!sock) {
+      throw new Error('WhatsApp socket is not connected')
+    }
+
+    let quotedMessage: any = undefined
+    let quotedFromMe = false
+    if (quotedMsgId) {
+      const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
+      if (qm && qm.content) {
+        quotedFromMe = qm.fromMe
+        try { 
+          const plainQuoted = JSON.parse(qm.content) 
+          quotedMessage = proto.Message.fromObject(plainQuoted)
+        } catch (e) {
+          console.error('[send-media-message] failed to hydrate quoted message', e)
+        }
+      }
+    }
+
+    const buffer = fs.readFileSync(filePath)
+    const options = quotedMessage ? { quoted: { key: { id: quotedMsgId, remoteJid: jid, fromMe: quotedFromMe }, message: quotedMessage } } : {}
+    const sentMsg = await sock.sendMessage(jid, { image: buffer, caption }, options as any)
+
+    if (!sentMsg) {
+      throw new Error('Failed to send media message — no response from server')
+    }
+
+    const key = sentMsg.key
+    const msgId = key?.id || `sent-${Date.now()}`
+    const rawTs = sentMsg.messageTimestamp
+    const timestamp = rawTs
+      ? BigInt(
+          typeof rawTs === 'object' && rawTs !== null && 'low' in (rawTs as unknown as Record<string, unknown>)
+            ? ((rawTs as unknown as Record<string, unknown>).low as number)
+            : (rawTs as number)
+        )
+      : BigInt(Math.floor(Date.now() / 1000))
+
+    // Determine actual type for SQLite
+    let messageType = 'imageMessage'
+    if (sentMsg.message) {
+      const typeKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage']
+      for (const k of typeKeys) {
+        if ((sentMsg.message as any)[k]) { messageType = k; break; }
+      }
+    }
+
+    await prisma.message.upsert({
+      where: { id: msgId },
+      update: {},
+      create: {
+        id: msgId,
+        remoteJid: jid,
+        fromMe: true,
+        participant: null,
+        timestamp,
+        messageType,
+        content: (function safeStr(obj: any) {
+          try { return JSON.stringify(obj) } catch(e) {
+            return JSON.stringify(obj, (_k, v) => {
+              if (v && typeof v === 'object' && typeof v.toJSON === 'function') {
+                try { return v.toJSON() } catch(e) {
+                  const copy: any = {}; for(const key in v) if(typeof v[key] !== 'function') copy[key] = v[key]; return copy;
+                }
+              } return v;
+            })
+          }
+        })(sentMsg.message || {}),
+        textContent: caption || null
+      }
+    })
+
+    await prisma.chat.upsert({
+      where: { jid },
+      update: { timestamp },
+      create: { jid, timestamp, unreadCount: 0 }
+    })
+
+    return {
+      id: msgId,
+      remoteJid: jid,
+      fromMe: true,
+      participant: null,
+      timestamp: timestamp.toString(),
+      messageType: 'imageMessage',
+      textContent: caption || null
+    }
+  })
+
   // ── Mark Chat as Read (local only — no read receipts sent) ───────────
   ipcMain.handle('mark-read', async (_event, jid: string) => {
     await prisma.chat.update({
@@ -223,6 +381,87 @@ export function registerIpcHandlers(
     })
     console.log(`[mark-read] Cleared unread count for ${jid}`)
     return true
+  })
+
+  // ── Select File Dialog ───────────────────────────────────────────────
+  ipcMain.handle('select-file', async () => {
+    const { dialog, BrowserWindow } = require('electron')
+    // Get focused window safely
+    const win = BrowserWindow.getFocusedWindow()
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      filters: [{ name: 'Media', extensions: ['jpg', 'png', 'jpeg', 'mp4', 'pdf', 'webp'] }]
+    })
+    if (canceled || filePaths.length === 0) return null
+    return filePaths[0]
+  })
+
+  // ── Download Media ───────────────────────────────────────────────────
+  ipcMain.handle('download-media', async (_event, msgId: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('WhatsApp socket is not connected')
+
+    const dbMsg = await prisma.message.findUnique({ where: { id: msgId } })
+    if (!dbMsg || !dbMsg.content) throw new Error('Message not found or no content')
+
+    let rawMessage: any = {}
+    try { rawMessage = JSON.parse(dbMsg.content) } catch (e) { throw new Error('Corrupted content') }
+
+    if (!rawMessage.imageMessage) throw new Error('Not an image message')
+
+    const mediaDir = join(app.getPath('userData'), 'media')
+    if (!fs.existsSync(mediaDir)) {
+        fs.mkdirSync(mediaDir, { recursive: true })
+    }
+
+    const ext = 'jpg'
+    const fileName = `${msgId}.${ext}`
+    const filePath = join(mediaDir, fileName)
+
+    if (!fs.existsSync(filePath)) {
+        try {
+            const stream = await downloadContentFromMessage(rawMessage.imageMessage, 'image')
+            let buffer = Buffer.from([])
+            for await (const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk])
+            }
+            fs.writeFileSync(filePath, buffer)
+        } catch (err: any) {
+            console.error(`[Media] Error downloading media for ${msgId}:`, err)
+            if (err?.data === 410 || err?.message?.includes('410') || err?.output?.statusCode === 410) {
+                // To do late updateMediaMessage we need a full WAMessage object.
+                // Reconstruct simple WAMessage wrapper:
+                const msgWrapper = { key: { id: dbMsg.id, remoteJid: dbMsg.remoteJid, fromMe: dbMsg.fromMe, participant: dbMsg.participant }, message: rawMessage } as any
+                const updatedMsg = await sock.updateMediaMessage(msgWrapper)
+                if (updatedMsg && updatedMsg.message?.imageMessage) {
+                    const stream = await downloadContentFromMessage(updatedMsg.message.imageMessage, 'image')
+                    let buffer = Buffer.from([])
+                    for await (const chunk of stream) { buffer = Buffer.concat([buffer, chunk]) }
+                    fs.writeFileSync(filePath, buffer)
+                    rawMessage.imageMessage = updatedMsg.message.imageMessage
+                } else {
+                    throw err
+                }
+            } else {
+                throw err
+            }
+        }
+    }
+
+    rawMessage.imageMessage.localURI = `app://media/${fileName}`
+    const newContent = JSON.stringify(rawMessage)
+
+    const updated = await prisma.message.update({
+      where: { id: msgId },
+      data: { content: newContent }
+    })
+
+    return {
+      ...updated,
+      content: newContent,
+      participantName: updated.participant ? await resolveContactName(prisma, updated.participant, null) : null,
+      timestamp: updated.timestamp.toString()
+    }
   })
 
   // ── Logout & Wipe All Data ───────────────────────────────────────────
