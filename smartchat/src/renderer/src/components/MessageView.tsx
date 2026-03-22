@@ -10,6 +10,12 @@ interface MessageItem {
   messageType: string
   textContent: string | null
   content?: string
+  reactions?: Array<{
+    senderId: string
+    senderName?: string
+    text: string
+    timestamp: string
+  }>
 }
 
 function unwrapMessage(msg: any): any {
@@ -31,12 +37,70 @@ interface MessageViewProps {
   onDownloadMedia?: (msgId: string) => Promise<void>
 }
 
+function ReactionsDisplay({ reactions, onClick }: { reactions?: MessageItem['reactions'], onClick: () => void }) {
+  if (!reactions || reactions.length === 0) return null
+
+  // Group by emoji
+  const emojiCounts: Record<string, number> = {}
+  for (const r of reactions) {
+    emojiCounts[r.text] = (emojiCounts[r.text] || 0) + 1
+  }
+
+  const uniqueEmojis = Object.keys(emojiCounts)
+  const totalCount = reactions.length
+
+  return (
+    <div className="message-reactions" onClick={onClick} style={{ cursor: 'pointer' }}>
+      <div className="reaction-bubbles-group">
+        {uniqueEmojis.slice(0, 3).map((emoji) => (
+          <span key={emoji} className="reaction-bubble-mini">
+            {emoji}
+          </span>
+        ))}
+      </div>
+      {totalCount > 0 && (
+        <span className="reaction-total-count">{totalCount}</span>
+      )}
+    </div>
+  )
+}
+
+function ReactionDetailsModal({ message, onClose }: { message: MessageItem, onClose: () => void }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="reaction-modal" onClick={e => e.stopPropagation()}>
+        <div className="reaction-modal-header">
+          <h3>Reactions</h3>
+          <button className="close-btn" onClick={onClose}>&times;</button>
+        </div>
+        <div className="reaction-modal-list">
+          {message.reactions?.sort((a,b) => parseInt(b.timestamp) - parseInt(a.timestamp)).map((r, i) => (
+            <div key={i} className="reaction-modal-item">
+              <div className="reaction-modal-user">
+                <div className="user-avatar-mini">
+                  {r.senderName?.charAt(0).toUpperCase() || '?'}
+                </div>
+                <div className="user-info-mini">
+                  <span className="user-name-mini">{r.senderName || r.senderId.split('@')[0]}</span>
+                  <span className="user-jid-mini">{r.senderId.split('@')[0]}</span>
+                </div>
+              </div>
+              <span className="reaction-modal-emoji">{r.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MessageView({ messages, loading, onLoadMore, onReply, onDownloadMedia }: MessageViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [downloading, setDownloading] = useState<Record<string, boolean>>({})
   const [hasMore, setHasMore] = useState(true)
+  const [viewingReactions, setViewingReactions] = useState<MessageItem | null>(null)
   const prevScrollHeight = useRef(0)
   const isLoadingRef = useRef(false)
   const prevMessageId = useRef<string | null>(null)
@@ -169,7 +233,7 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
               </div>
             )}
             <div className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
-              <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''}`}>
+              <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
                 {!msg.fromMe && msg.participantName && (
                   <span className="message-sender-name" style={{
                     fontSize: '0.8rem',
@@ -319,6 +383,7 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
                   )
                 })()}
                 
+                <ReactionsDisplay reactions={msg.reactions} onClick={() => setViewingReactions(msg)} />
                 <span className="message-time">{formatTime(msg.timestamp)}</span>
               </div>
               <div className="message-actions" style={{ display: 'flex', alignItems: 'center', opacity: 0.6, transition: 'opacity 0.2s', padding: '0 8px' }}>
@@ -332,6 +397,13 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
       )}
 
       <div ref={bottomRef} />
+      
+      {viewingReactions && (
+        <ReactionDetailsModal 
+          message={viewingReactions} 
+          onClose={() => setViewingReactions(null)} 
+        />
+      )}
     </div>
   )
 }

@@ -12,6 +12,11 @@ interface MessageItem {
   timestamp: string
   messageType: string
   textContent: string | null
+  reactions?: Array<{
+    senderId: string
+    text: string
+    timestamp: string
+  }>
 }
 
 export default function ChatLayout() {
@@ -75,8 +80,42 @@ export default function ChatLayout() {
     }
   }
 
-  const handleNewMessage = (msg: MessageItem) => {
+  const handleNewMessage = (msg: any) => {
     if (msg.remoteJid === activeJid) {
+      if (msg.messageType === 'reactionMessage') {
+        try {
+          const raw = JSON.parse(msg.content)
+          const reaction = raw.reactionMessage
+          if (reaction && reaction.key && reaction.key.id) {
+            const targetId = reaction.key.id
+            const emoji = reaction.text
+            const senderId = msg.participant || msg.remoteJid
+
+            setMessages((prev) => 
+              prev.map((m) => {
+                if (m.id === targetId) {
+                  const reactions = m.reactions || []
+                  // Remove existing reaction from this sender
+                  const filtered = reactions.filter((r) => r.senderId !== senderId)
+                  if (emoji) {
+                    // Add new reaction if not empty
+                    return {
+                      ...m,
+                      reactions: [...filtered, { senderId, senderName: msg.participantName, text: emoji, timestamp: msg.timestamp }]
+                    }
+                  }
+                  return { ...m, reactions: filtered }
+                }
+                return m
+              })
+            )
+          }
+        } catch (e) {
+          console.error('Failed to parse reaction message:', e)
+        }
+        return
+      }
+
       setMessages((prev) => {
         // Avoid duplicates
         if (prev.some((m) => m.id === msg.id)) return prev

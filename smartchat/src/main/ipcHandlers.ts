@@ -159,9 +159,22 @@ export function registerIpcHandlers(
       })
 
       // Return in chronological order (oldest first) for rendering
+      const messageIds = messages.map((m) => m.id)
+      const allReactions = await (prisma as any).reaction.findMany({
+        where: { messageId: { in: messageIds } }
+      })
+
+      const senderIds = Array.from(new Set(allReactions.map((r: any) => r.senderId)))
+      const nameMap = new Map<string, string>()
+      await Promise.all(senderIds.map(async (id: any) => {
+        const name = await resolveContactName(prisma, id, null)
+        nameMap.set(id, name)
+      }))
+
       const messagesWithNames = await Promise.all(
         messages.map(async (m) => {
           let contentStr = m.content
+          const msgReactions = allReactions.filter((r) => r.messageId === m.id)
           if (contentStr) {
             try {
               const rawMsg = JSON.parse(contentStr)
@@ -188,7 +201,12 @@ export function registerIpcHandlers(
             ...m,
             content: contentStr,
             participantName: m.participant ? await resolveContactName(prisma, m.participant, null) : null,
-            timestamp: m.timestamp.toString()
+            timestamp: m.timestamp.toString(),
+            reactions: msgReactions.map((r: any) => ({ 
+              ...r, 
+              timestamp: r.timestamp.toString(),
+              senderName: nameMap.get(r.senderId as string) || (r.senderId as string).replace(/@.*$/, '')
+            }))
           }
         })
       )

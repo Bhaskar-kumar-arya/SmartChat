@@ -312,28 +312,58 @@ export async function handleHistorySync(
 
       if (messageData.length > 0) {
 
-        const msgOps = messageData.map((msg) => {
+        const msgOps: any[] = []
+        const reactionOps: any[] = []
 
-          const update: Record<string, unknown> = {}
+        for (const msg of messageData) {
+          if (msg.messageType === 'reactionMessage') {
+            try {
+              const rawMsg = JSON.parse(msg.content)
+              const reaction = rawMsg.reactionMessage
+              if (reaction && reaction.key && reaction.key.id) {
+                const targetId = reaction.key.id
+                const emoji = reaction.text
+                const senderId = msg.participant || msg.remoteJid
+                
+                if (emoji) {
+                  reactionOps.push(
+                    (prisma as any).reaction.upsert({
+                      where: { messageId_senderId: { messageId: targetId, senderId } },
+                      update: { text: emoji, timestamp: msg.timestamp },
+                      create: {
+                        messageId: targetId,
+                        remoteJid: msg.remoteJid,
+                        senderId,
+                        text: emoji,
+                        timestamp: msg.timestamp
+                      }
+                    })
+                  )
+                }
+              }
+            } catch (e) {}
+          } else {
+            const update: Record<string, unknown> = {}
+            if (msg.remoteJid) update.remoteJid = msg.remoteJid
+            if (msg.participant !== null) update.participant = msg.participant
+            if (msg.timestamp) update.timestamp = msg.timestamp
+            if (msg.messageType !== 'unknown') update.messageType = msg.messageType
+            if (msg.content !== '{}') update.content = msg.content
+            if (msg.textContent !== null) update.textContent = msg.textContent
+            update.fromMe = msg.fromMe
 
-          if (msg.remoteJid) update.remoteJid = msg.remoteJid
-          if (msg.participant !== null) update.participant = msg.participant
-          if (msg.timestamp) update.timestamp = msg.timestamp
-          if (msg.messageType !== 'unknown') update.messageType = msg.messageType
-          if (msg.content !== '{}') update.content = msg.content
-          if (msg.textContent !== null) update.textContent = msg.textContent
+            msgOps.push(
+              prisma.message.upsert({
+                where: { id: msg.id },
+                update,
+                create: msg
+              })
+            )
+          }
+        }
 
-          update.fromMe = msg.fromMe
-
-          return prisma.message.upsert({
-            where: { id: msg.id },
-            update,
-            create: msg
-          })
-
-        })
-
-        await prisma.$transaction(msgOps)
+        if (msgOps.length > 0) await prisma.$transaction(msgOps)
+        if (reactionOps.length > 0) await prisma.$transaction(reactionOps)
 
         messageCount += messageData.length
       }

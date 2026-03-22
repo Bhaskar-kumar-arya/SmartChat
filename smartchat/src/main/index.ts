@@ -330,54 +330,91 @@ async function connectToWhatsApp(window: BrowserWindow) {
         }
 
         // 5. Insert message into SQLite
-        await prisma.message.upsert({
-          where: { id: key.id },
-          update: {
-            textContent,
-            messageType,
-            content: JSON.stringify(rawMessage || {}),
-            timestamp
-          },
-          create: {
-            id: key.id,
-            remoteJid,
-            fromMe: key.fromMe === true,
-            participant,
-            timestamp,
-            messageType,
-            content: JSON.stringify(rawMessage || {}),
-            textContent
-          }
-        })
+        if (messageType === 'reactionMessage') {
+           const reaction = rawMessage.reactionMessage
+           if (reaction && reaction.key && reaction.key.id) {
+              const targetId = reaction.key.id
+              const emoji = reaction.text
+              const senderId = participant || remoteJid
+              
+              if (!emoji) {
+                // Delete reaction if emoji is empty
+                await (prisma as any).reaction.deleteMany({
+                  where: { messageId: targetId, senderId }
+                }).catch(() => {})
+              } else {
+                // Upsert reaction
+                await (prisma as any).reaction.upsert({
+                  where: { messageId_senderId: { messageId: targetId, senderId } },
+                  update: { text: emoji, timestamp },
+                  create: {
+                    messageId: targetId,
+                    remoteJid,
+                    senderId,
+                    text: emoji,
+                    timestamp
+                  }
+                }).catch(err => console.error('[Reaction] Error upserting reaction:', err))
+              }
+           }
+        } else {
+          // Regular message insert
+          await prisma.message.upsert({
+            where: { id: key.id },
+            update: {
+              textContent,
+              messageType,
+              content: JSON.stringify(rawMessage || {}),
+              timestamp
+            },
+            create: {
+              id: key.id,
+              remoteJid,
+              fromMe: key.fromMe === true,
+              participant,
+              timestamp,
+              messageType,
+              content: JSON.stringify(rawMessage || {}),
+              textContent
+            }
+          })
+        }
 
         // 5. Handle UI and Chat Metadata Updates
         if (type === 'notify') {
           // New real-time message — update unread count & dispatch to UI
           if (!key.fromMe) {
-            await prisma.chat.upsert({
-              where: { jid: remoteJid },
-              update: {
-                unreadCount: { increment: 1 },
-                timestamp
-              },
-              create: {
-                jid: remoteJid,
-                unreadCount: 1,
-                timestamp
-              }
-            })
+            if (messageType !== 'reactionMessage') {
+              await prisma.chat.upsert({
+                where: { jid: remoteJid },
+                update: {
+                  unreadCount: { increment: 1 },
+                  timestamp
+                },
+                create: {
+                  jid: remoteJid,
+                  unreadCount: 1,
+                  timestamp
+                }
+              })
+            } else {
+               // Reaction from others - just fire IPC event, don't update chat metadata
+            }
           } else {
             // Own message — just update the chat timestamp
-            await prisma.chat.upsert({
-              where: { jid: remoteJid },
-              update: { timestamp },
-              create: { jid: remoteJid, unreadCount: 0, timestamp }
-            })
+            if (messageType !== 'reactionMessage') {
+              await prisma.chat.upsert({
+                where: { jid: remoteJid },
+                update: { timestamp },
+                create: { jid: remoteJid, unreadCount: 0, timestamp }
+              })
+            }
           }
 
           // Fire IPC event so React can update in real-time
           if (mainWindow && !mainWindow.isDestroyed()) {
-            const participantName = participant ? await resolveContactName(prisma, participant, null) : null;
+            const senderId = participant || remoteJid;
+            const participantName = await resolveContactName(prisma, senderId, null);
             let finalContent: any = rawMessage || {};
             
             // Resolve quoted participant name on the fly for real-time messages too
