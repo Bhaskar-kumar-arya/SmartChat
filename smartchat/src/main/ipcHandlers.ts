@@ -5,6 +5,17 @@ import { join } from 'path'
 import { app } from 'electron'
 import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
 
+function unwrapMessage(msg: any): any {
+  if (!msg) return {}
+  let unwrapped = msg
+  if (unwrapped.ephemeralMessage) unwrapped = unwrapped.ephemeralMessage.message || unwrapped.ephemeralMessage
+  if (unwrapped.viewOnceMessage) unwrapped = unwrapped.viewOnceMessage.message || unwrapped.viewOnceMessage
+  if (unwrapped.viewOnceMessageV2) unwrapped = unwrapped.viewOnceMessageV2.message || unwrapped.viewOnceMessageV2
+  if (unwrapped.viewOnceMessageV2Extension) unwrapped = unwrapped.viewOnceMessageV2Extension.message || unwrapped.viewOnceMessageV2Extension
+  if (unwrapped.documentWithCaptionMessage) unwrapped = unwrapped.documentWithCaptionMessage.message || unwrapped.documentWithCaptionMessage
+  return unwrapped
+}
+
 /**
  * Resolves a display name for a chat JID, using LID cross-resolution when needed.
  */
@@ -96,7 +107,7 @@ export function registerIpcHandlers(
           name,
           unreadCount: chat.unreadCount,
           timestamp: effectiveTimestamp.toString(),
-          lastMessage: lastMsg?.textContent || (lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : ''),
+          lastMessage: lastMsg?.messageType === 'stickerMessage' ? 'Sticker' : (lastMsg?.textContent || (lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
           lastMessageTimestamp: (lastMsg?.timestamp ?? chat.timestamp).toString(),
           pinned: chat.pinned,
           muteExpiration: chat.muteExpiration.toString()
@@ -305,7 +316,12 @@ export function registerIpcHandlers(
 
     const buffer = fs.readFileSync(filePath)
     const options = quotedMessage ? { quoted: { key: { id: quotedMsgId, remoteJid: jid, fromMe: quotedFromMe }, message: quotedMessage } } : {}
-    const sentMsg = await sock.sendMessage(jid, { image: buffer, caption }, options as any)
+    
+    // Determine if it's a sticker (best guess: webp extension)
+    const isSticker = filePath.toLowerCase().endsWith('.webp')
+    const sendOptions: any = isSticker ? { sticker: buffer } : { image: buffer, caption }
+
+    const sentMsg = await sock.sendMessage(jid, sendOptions, options as any)
 
     if (!sentMsg) {
       throw new Error('Failed to send media message — no response from server')
@@ -407,20 +423,24 @@ export function registerIpcHandlers(
     let rawMessage: any = {}
     try { rawMessage = JSON.parse(dbMsg.content) } catch (e) { throw new Error('Corrupted content') }
 
-    if (!rawMessage.imageMessage) throw new Error('Not an image message')
+    const unwrapped = unwrapMessage(rawMessage)
+    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage
+    const mediaType = unwrapped.imageMessage ? 'image' : (unwrapped.stickerMessage ? 'sticker' : null)
+
+    if (!mediaMsg || !mediaType) throw new Error('Not an image or sticker message')
 
     const mediaDir = join(app.getPath('userData'), 'media')
     if (!fs.existsSync(mediaDir)) {
         fs.mkdirSync(mediaDir, { recursive: true })
     }
 
-    const ext = 'jpg'
+    const ext = mediaType === 'sticker' ? 'webp' : 'jpg'
     const fileName = `${msgId}.${ext}`
     const filePath = join(mediaDir, fileName)
 
     if (!fs.existsSync(filePath)) {
         try {
-            const stream = await downloadContentFromMessage(rawMessage.imageMessage, 'image')
+            const stream = await downloadContentFromMessage(mediaMsg, mediaType as any)
             let buffer = Buffer.from([])
             for await (const chunk of stream) {
                 buffer = Buffer.concat([buffer, chunk])
@@ -433,12 +453,15 @@ export function registerIpcHandlers(
                 // Reconstruct simple WAMessage wrapper:
                 const msgWrapper = { key: { id: dbMsg.id, remoteJid: dbMsg.remoteJid, fromMe: dbMsg.fromMe, participant: dbMsg.participant }, message: rawMessage } as any
                 const updatedMsg = await sock.updateMediaMessage(msgWrapper)
-                if (updatedMsg && updatedMsg.message?.imageMessage) {
-                    const stream = await downloadContentFromMessage(updatedMsg.message.imageMessage, 'image')
+                const updatedMediaMsg = updatedMsg.message?.imageMessage || updatedMsg.message?.stickerMessage
+                
+                if (updatedMediaMsg) {
+                    const stream = await downloadContentFromMessage(updatedMediaMsg, mediaType as any)
                     let buffer = Buffer.from([])
                     for await (const chunk of stream) { buffer = Buffer.concat([buffer, chunk]) }
                     fs.writeFileSync(filePath, buffer)
-                    rawMessage.imageMessage = updatedMsg.message.imageMessage
+                    if (updatedMsg.message?.imageMessage) rawMessage.imageMessage = updatedMsg.message.imageMessage
+                    if (updatedMsg.message?.stickerMessage) rawMessage.stickerMessage = updatedMsg.message.stickerMessage
                 } else {
                     throw err
                 }
@@ -448,7 +471,8 @@ export function registerIpcHandlers(
         }
     }
 
-    rawMessage.imageMessage.localURI = `app://media/${fileName}`
+    if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
+    if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
     const newContent = JSON.stringify(rawMessage)
 
     const updated = await prisma.message.update({

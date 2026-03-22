@@ -602,6 +602,24 @@
   color: #e2e8f0;
 }
 
+.bubble-sticker {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.message-sticker {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.message-sticker img {
+  max-width: 160px;
+  max-height: 160px;
+  display: block;
+}
+
 .message-text {
   font-size: 0.875rem;
   line-height: 1.5;

@@ -68,7 +68,7 @@ export default function ChatList({ activeJid, onSelectChat, onNewMessage }: Chat
             name: existing ? existing.name : msg.remoteJid.replace(/@.*$/, ''),
             unreadCount: existing ? existing.unreadCount + (msg.fromMe ? 0 : 1) : 1,
             timestamp: msg.timestamp,
-            lastMessage: msg.textContent || `[${msg.messageType}]`,
+            lastMessage: msg.messageType === 'stickerMessage' ? 'Sticker' : (msg.textContent || `[${msg.messageType}]`),
             lastMessageTimestamp: msg.timestamp,
             pinned: existing?.pinned,
             muteExpiration: existing?.muteExpiration

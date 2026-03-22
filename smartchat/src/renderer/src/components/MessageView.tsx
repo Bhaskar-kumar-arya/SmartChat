@@ -169,7 +169,7 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
               </div>
             )}
             <div className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
-              <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'}`}>
+              <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''}`}>
                 {!msg.fromMe && msg.participantName && (
                   <span className="message-sender-name" style={{
                     fontSize: '0.8rem',
@@ -204,7 +204,8 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
                   let quotedSender = ctx?.participantName || (ctx?.participant ? ctx.participant.split('@')[0] : 'Someone')
 
                   const isImage = msg.messageType === 'imageMessage' || !!rawMsg?.imageMessage
-                  const localURI = rawMsg?.imageMessage?.localURI || (msg as any).localURI
+                  const isSticker = msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage
+                  const localURI = rawMsg?.imageMessage?.localURI || rawMsg?.stickerMessage?.localURI || (msg as any).localURI
 
                   return (
                     <>
@@ -248,7 +249,18 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
                         </div>
                       )}
 
-                      {isImage && !localURI && (
+                      {isSticker && localURI && (
+                        <div className="message-sticker">
+                          <img 
+                            src={localURI} 
+                            alt="Sticker" 
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => window.open(localURI)}
+                          />
+                        </div>
+                      )}
+
+                      {(isImage || isSticker) && !localURI && (
                         <div className="message-image-download" style={{
                            marginBottom: msg.textContent ? '8px' : '0',
                            padding: '24px',
@@ -288,7 +300,7 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
                               }}
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                              Download Image
+                              Download {isSticker ? 'Sticker' : 'Image'}
                             </button>
                           )}
                         </div>
@@ -297,7 +309,7 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
                       {msg.textContent ? (
                         <p className="message-text">{msg.textContent}</p>
                       ) : (
-                        !isImage && (
+                        !isImage && !isSticker && (
                           <p className="message-text message-unsupported">
                             [{msg.messageType}]
                           </p>
