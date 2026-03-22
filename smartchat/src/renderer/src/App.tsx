@@ -10,35 +10,43 @@ export function App() {
   const [syncProgress, setSyncProgress] = useState<number>(0)
 
   useEffect(() => {
-    window.api.onWaQr((newQr: string) => {
+    const unSubQr = window.api.onWaQr((newQr: string) => {
       setQr(newQr)
       setAppState('qr')
     })
 
-    window.api.onWaConnected(() => {
+    const unSubConn = window.api.onWaConnected(() => {
       setQr(null)
       setAppState('syncing')
       setSyncProgress(0)
     })
 
-    window.api.onWaLoggedOut(() => {
+    const unSubLogout = window.api.onWaLoggedOut(() => {
       setQr(null)
       setAppState('initializing')
       setSyncProgress(0)
     })
 
-    window.api.onWaSyncProgress((progress: number) => {
+    const unSubSyncPrg = window.api.onWaSyncProgress((progress: number) => {
       setSyncProgress(progress)
       if (appState !== 'syncing') {
         setAppState('syncing')
       }
     })
 
-    window.api.onWaSyncComplete(() => {
+    const unSubSyncComp = window.api.onWaSyncComplete(() => {
       setSyncProgress(100)
       setAppState('ready')
     })
-  }, [])
+
+    return () => {
+      unSubQr()
+      unSubConn()
+      unSubLogout()
+      unSubSyncPrg()
+      unSubSyncComp()
+    }
+  }, [appState])
 
   // ── Full-screen chat layout when ready ────────────────────────────
   if (appState === 'ready') {

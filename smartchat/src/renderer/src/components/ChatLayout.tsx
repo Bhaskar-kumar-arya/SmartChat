@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import ChatList from './ChatList'
 import MessageView from './MessageView'
 import MessageInput from './MessageInput'
@@ -80,49 +80,53 @@ export default function ChatLayout() {
     }
   }
 
-  const handleNewMessage = (msg: any) => {
-    if (msg.remoteJid === activeJid) {
-      if (msg.messageType === 'reactionMessage') {
-        try {
-          const raw = JSON.parse(msg.content)
-          const reaction = raw.reactionMessage
-          if (reaction && reaction.key && reaction.key.id) {
-            const targetId = reaction.key.id
-            const emoji = reaction.text
-            const senderId = msg.participant || msg.remoteJid
+  useEffect(() => {
+    const unSub = window.api.onNewMessage((msg: any) => {
+      if (msg.remoteJid === activeJid) {
+        if (msg.messageType === 'reactionMessage') {
+          try {
+            const raw = JSON.parse(msg.content)
+            const reaction = raw.reactionMessage
+            if (reaction && reaction.key && reaction.key.id) {
+              const targetId = reaction.key.id
+              const emoji = reaction.text
+              const senderId = msg.participant || msg.remoteJid
 
-            setMessages((prev) => 
-              prev.map((m) => {
-                if (m.id === targetId) {
-                  const reactions = m.reactions || []
-                  // Remove existing reaction from this sender
-                  const filtered = reactions.filter((r) => r.senderId !== senderId)
-                  if (emoji) {
-                    // Add new reaction if not empty
-                    return {
-                      ...m,
-                      reactions: [...filtered, { senderId, senderName: msg.participantName, text: emoji, timestamp: msg.timestamp }]
+              setMessages((prev) => 
+                prev.map((m) => {
+                  if (m.id === targetId) {
+                    const reactions = m.reactions || []
+                    // Remove existing reaction from this sender
+                    const filtered = reactions.filter((r) => r.senderId !== senderId)
+                    if (emoji) {
+                      // Add new reaction if not empty
+                      return {
+                        ...m,
+                        reactions: [...filtered, { senderId, senderName: msg.participantName, text: emoji, timestamp: msg.timestamp }]
+                      }
                     }
+                    return { ...m, reactions: filtered }
                   }
-                  return { ...m, reactions: filtered }
-                }
-                return m
-              })
-            )
+                  return m
+                })
+              )
+            }
+          } catch (e) {
+            console.error('Failed to parse reaction message:', e)
           }
-        } catch (e) {
-          console.error('Failed to parse reaction message:', e)
+          return
         }
-        return
-      }
 
-      setMessages((prev) => {
-        // Avoid duplicates
-        if (prev.some((m) => m.id === msg.id)) return prev
-        return [...prev, msg]
-      })
-    }
-  }
+        setMessages((prev) => {
+          // Avoid duplicates
+          if (prev.some((m) => m.id === msg.id)) return prev
+          return [...prev, msg]
+        })
+      }
+    })
+
+    return () => unSub()
+  }, [activeJid])
 
   const handleLoadMore = async () => {
     if (!activeJid) return 0
@@ -145,7 +149,6 @@ export default function ChatLayout() {
       <ChatList
         activeJid={activeJid}
         onSelectChat={handleSelectChat}
-        onNewMessage={handleNewMessage}
       />
       <div className="chat-main">
         {activeJid ? (

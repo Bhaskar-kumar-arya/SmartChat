@@ -26,11 +26,11 @@ declare global {
     electron: ElectronAPI
     api: {
       // Phase 1 & 2
-      onWaQr: (callback: (qr: string) => void) => void
-      onWaConnected: (callback: () => void) => void
-      onWaLoggedOut: (callback: () => void) => void
-      onWaSyncProgress: (callback: (progress: number) => void) => void
-      onWaSyncComplete: (callback: () => void) => void
+      onWaQr: (callback: (qr: string) => void) => () => void
+      onWaConnected: (callback: () => void) => () => void
+      onWaLoggedOut: (callback: () => void) => () => void
+      onWaSyncProgress: (callback: (progress: number) => void) => () => void
+      onWaSyncComplete: (callback: () => void) => () => void
       skipSync: () => void
       // Phase 3 & 4
       getChats: (page?: number, pageSize?: number) => Promise<ChatItem[]>
@@ -39,9 +39,9 @@ declare global {
       sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string) => Promise<MessageItem>
       downloadMedia: (msgId: string) => Promise<MessageItem>
       selectFile: () => Promise<string | null>
-      onNewMessage: (callback: (msg: MessageItem) => void) => void
+      onNewMessage: (callback: (msg: MessageItem) => void) => () => void
       markRead: (jid: string) => Promise<boolean>
-      onChatUpdated: (callback: (chat: Partial<ChatItem> & { jid: string }) => void) => void
+      onChatUpdated: (callback: (chat: Partial<ChatItem> & { jid: string }) => void) => () => void
       logout: () => Promise<boolean>
     }
   }

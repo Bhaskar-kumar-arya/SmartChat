@@ -5,19 +5,29 @@ import { electronAPI } from '@electron-toolkit/preload'
 const api = {
   // ── Phase 1 & 2: Auth & Sync ──────────────────────────────────────
   onWaQr: (callback: (qr: string) => void) => {
-    ipcRenderer.on('wa-qr', (_event, qr) => callback(qr))
+    const listener = (_event: any, qr: string) => callback(qr)
+    ipcRenderer.on('wa-qr', listener)
+    return () => { ipcRenderer.removeListener('wa-qr', listener) }
   },
   onWaConnected: (callback: () => void) => {
-    ipcRenderer.on('wa-connected', () => callback())
+    const listener = () => callback()
+    ipcRenderer.on('wa-connected', listener)
+    return () => { ipcRenderer.removeListener('wa-connected', listener) }
   },
   onWaLoggedOut: (callback: () => void) => {
-    ipcRenderer.on('wa-logged-out', () => callback())
+    const listener = () => callback()
+    ipcRenderer.on('wa-logged-out', listener)
+    return () => { ipcRenderer.removeListener('wa-logged-out', listener) }
   },
   onWaSyncProgress: (callback: (progress: number) => void) => {
-    ipcRenderer.on('wa-sync-progress', (_event, progress) => callback(progress))
+    const listener = (_event: any, progress: number) => callback(progress)
+    ipcRenderer.on('wa-sync-progress', listener)
+    return () => { ipcRenderer.removeListener('wa-sync-progress', listener) }
   },
   onWaSyncComplete: (callback: () => void) => {
-    ipcRenderer.on('wa-sync-complete', () => callback())
+    const listener = () => callback()
+    ipcRenderer.on('wa-sync-complete', listener)
+    return () => { ipcRenderer.removeListener('wa-sync-complete', listener) }
   },
   skipSync: () => {
     ipcRenderer.send('wa-skip-sync')
@@ -43,13 +53,17 @@ const api = {
     return ipcRenderer.invoke('select-file')
   },
   onNewMessage: (callback: (msg: Record<string, unknown>) => void) => {
-    ipcRenderer.on('new-message', (_event, msg) => callback(msg))
+    const listener = (_event: any, msg: any) => callback(msg)
+    ipcRenderer.on('new-message', listener)
+    return () => { ipcRenderer.removeListener('new-message', listener) }
   },
   markRead: (jid: string) => {
     return ipcRenderer.invoke('mark-read', jid)
   },
   onChatUpdated: (callback: (chat: Record<string, unknown>) => void) => {
-    ipcRenderer.on('chat-updated', (_event, chat) => callback(chat))
+    const listener = (_event: any, chat: any) => callback(chat)
+    ipcRenderer.on('chat-updated', listener)
+    return () => { ipcRenderer.removeListener('chat-updated', listener) }
   },
   logout: () => {
     return ipcRenderer.invoke('logout')

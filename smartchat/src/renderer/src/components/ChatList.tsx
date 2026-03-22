@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 
 interface ChatItem {
   jid: string
@@ -25,14 +25,13 @@ interface MessageItem {
 interface ChatListProps {
   activeJid: string | null
   onSelectChat: (jid: string, name: string) => void
-  onNewMessage: (msg: MessageItem) => void
 }
 
-export default function ChatList({ activeJid, onSelectChat, onNewMessage }: ChatListProps) {
+export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
   const [chats, setChats] = useState<ChatItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const listenerRegistered = useRef(false)
+
 
   // Helper to sort chats: pinned first, then by timestamp
   const sortChats = (chatList: ChatItem[]) => {
@@ -54,48 +53,44 @@ export default function ChatList({ activeJid, onSelectChat, onNewMessage }: Chat
   useEffect(() => {
     loadChats()
 
-    if (!listenerRegistered.current) {
-      listenerRegistered.current = true
-      
-      // New message listener
-      window.api.onNewMessage((msg: MessageItem) => {
-        onNewMessage(msg)
-        setChats((prev) => {
-          const idx = prev.findIndex((c) => c.jid === msg.remoteJid)
-          const existing = idx >= 0 ? prev[idx] : null
-          const updatedChat: ChatItem = {
-            jid: msg.remoteJid,
-            name: existing ? existing.name : msg.remoteJid.replace(/@.*$/, ''),
-            unreadCount: existing ? existing.unreadCount + (msg.fromMe ? 0 : 1) : 1,
-            timestamp: msg.timestamp,
-            lastMessage: msg.messageType === 'stickerMessage' ? 'Sticker' : (msg.textContent || `[${msg.messageType}]`),
-            lastMessageTimestamp: msg.timestamp,
-            pinned: existing?.pinned,
-            muteExpiration: existing?.muteExpiration
-          }
-          const filtered = prev.filter((c) => c.jid !== msg.remoteJid)
-          return sortChats([updatedChat, ...filtered])
-        })
+    const unSubNewMsg = window.api.onNewMessage((msg: MessageItem) => {
+      setChats((prev) => {
+        const idx = prev.findIndex((c) => c.jid === msg.remoteJid)
+        const existing = idx >= 0 ? prev[idx] : null
+        const updatedChat: ChatItem = {
+          jid: msg.remoteJid,
+          name: existing ? existing.name : msg.remoteJid.replace(/@.*$/, ''),
+          unreadCount: existing ? (activeJid === msg.remoteJid ? 0 : existing.unreadCount + (msg.fromMe ? 0 : 1)) : (activeJid === msg.remoteJid ? 0 : 1),
+          timestamp: msg.timestamp,
+          lastMessage: msg.messageType === 'stickerMessage' ? 'Sticker' : (msg.textContent || `[${msg.messageType}]`),
+          lastMessageTimestamp: msg.timestamp,
+          pinned: existing?.pinned,
+          muteExpiration: existing?.muteExpiration
+        }
+        const filtered = prev.filter((c) => c.jid !== msg.remoteJid)
+        return sortChats([updatedChat, ...filtered])
       })
+    })
 
-      // Chat metadata update listener (unread cleared, pinned, muted, renamed)
-      window.api.onChatUpdated((update) => {
-        setChats((prev) => {
-          const idx = prev.findIndex((c) => c.jid === update.jid)
-          if (idx === -1) {
-            // New chat that we don't have yet, let's just reload fully to be safe
-            // Or we could construct a partial chat, but a full reload is safer for new ones
-            loadChats()
-            return prev
-          }
-          
-          const updatedChat = { ...prev[idx], ...update }
-          const filtered = prev.filter((c) => c.jid !== update.jid)
-          return sortChats([updatedChat, ...filtered])
-        })
+    const unSubChatUpd = window.api.onChatUpdated((update) => {
+      setChats((prev) => {
+        const idx = prev.findIndex((c) => c.jid === update.jid)
+        if (idx === -1) {
+          loadChats()
+          return prev
+        }
+        
+        const updatedChat = { ...prev[idx], ...update }
+        const filtered = prev.filter((c) => c.jid !== update.jid)
+        return sortChats([updatedChat, ...filtered])
       })
+    })
+
+    return () => {
+      unSubNewMsg()
+      unSubChatUpd()
     }
-  }, [])
+  }, [activeJid])
 
   const loadChats = async () => {
     try {
