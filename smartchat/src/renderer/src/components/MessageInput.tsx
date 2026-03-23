@@ -119,7 +119,7 @@ export default function MessageInput({ onSend, onSendMedia, replyingTo, onCancel
       <button
         className="send-button"
         onClick={handleSend}
-        disabled={!text.trim() || sending}
+        disabled={(!text.trim() && !selectedFile) || sending}
         title="Send message"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

@@ -1,4 +1,4 @@
-// Unused TextMessage removed
+import { api } from '../../services/api.service'
 
 interface MediaMessageProps {
   localURI?: string
@@ -83,7 +83,7 @@ export const ImageMessage = ({ localURI, textContent, onDownload, isDownloading 
       alignItems: 'center',
       background: 'rgba(0,0,0,0.05)',
       boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.1)'
-    }} onClick={() => window.open(localURI)}>
+    }} onClick={() => api.openFile(localURI)}>
       <img src={localURI} alt="Media" style={{ maxWidth: '300px', maxHeight: '400px', objectFit: 'contain', display: 'block' }} />
     </div>
   )
@@ -101,7 +101,7 @@ export const StickerMessage = ({ localURI, onDownload, isDownloading }: any) => 
 
     return (
         <div className="message-sticker">
-            <img src={localURI} alt="Sticker" style={{ cursor: 'pointer' }} onClick={() => window.open(localURI)} />
+            <img src={localURI} alt="Sticker" style={{ cursor: 'pointer' }} onClick={() => api.openFile(localURI)} />
         </div>
     )
 }
@@ -152,6 +152,84 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
                 poster={getThumbnailData(rawMsg?.videoMessage)}
                 style={{ width: '100%', maxWidth: '100%', maxHeight: '500px', display: 'block' }} 
             />
+        </div>
+    )
+}
+
+export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: any) => {
+    const doc = rawMsg?.documentMessage || {}
+    const fileName = doc.fileName || 'Document'
+    const fileSize = doc.fileLength ? (Number(doc.fileLength) / 1024 / 1024).toFixed(2) + ' MB' : ''
+
+    const handleOpen = () => {
+        if (localURI) api.openFile(localURI)
+    }
+
+    return (
+        <div className="message-document" style={{
+            padding: '12px',
+            borderRadius: '10px',
+            background: 'rgba(0,0,0,0.04)',
+            border: '1px solid rgba(0,0,0,0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            minWidth: '220px',
+            maxWidth: '320px',
+            marginBottom: textContent ? '8px' : '0'
+        }}>
+            <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '8px',
+                background: 'var(--primary, #00a884)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontSize: '12px'
+            }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14.5 2 14.5 7.5 20 7.5"/></svg>
+            </div>
+            
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+                <div style={{ 
+                    fontSize: '0.9rem', 
+                    fontWeight: 600, 
+                    whiteSpace: 'nowrap', 
+                    overflow: 'hidden', 
+                    textOverflow: 'ellipsis',
+                    color: '#333'
+                }} title={fileName}>
+                    {fileName}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#777', marginTop: '2px' }}>
+                    {fileSize} • {doc.mimetype?.split('/')[1]?.toUpperCase() || 'FILE'}
+                </div>
+            </div>
+
+            <button 
+                onClick={localURI ? handleOpen : onDownload}
+                disabled={isDownloading}
+                style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: '8px',
+                    cursor: 'pointer',
+                    color: 'var(--primary, #00a884)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                }}
+            >
+                {isDownloading ? (
+                    <div className="spinner-small" style={{ width: '16px', height: '16px' }} />
+                ) : localURI ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+                ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                )}
+            </button>
         </div>
     )
 }

@@ -1,4 +1,4 @@
-import { ipcMain, app, dialog, BrowserWindow } from 'electron'
+import { ipcMain, app, dialog, BrowserWindow, shell } from 'electron'
 import { PrismaClient } from '@prisma/client'
 import fs from 'fs'
 import { join } from 'path'
@@ -49,6 +49,7 @@ export function registerIpcHandlers(
           lastMessage: lastMsg?.messageType === 'stickerMessage' ? 'Sticker' : 
                        lastMsg?.messageType === 'imageMessage' ? 'Photo' : 
                        lastMsg?.messageType === 'videoMessage' ? 'Video' :
+                       lastMsg?.messageType === 'documentMessage' ? 'Document' :
                        (lastMsg?.textContent || (lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
           lastMessageTimestamp: effectiveTimestamp.toString(),
           pinned: chat.pinned,
@@ -184,12 +185,7 @@ export function registerIpcHandlers(
     }
 
     const buffer = fs.readFileSync(filePath)
-    const lowerPath = filePath.toLowerCase()
-    
-    let sendOptions: any
-    if (lowerPath.endsWith('.webp')) sendOptions = { sticker: buffer }
-    else if (['.mp4', '.mkv', '.avi', '.mov'].some(ext => lowerPath.endsWith(ext))) sendOptions = { video: buffer, caption }
-    else sendOptions = { image: buffer, caption }
+    const sendOptions = messageService.getMediaSendOptions(filePath, buffer, caption)
 
     const sentMsg = await sock.sendMessage(jid, sendOptions, { quoted } as any)
     if (!sentMsg) throw new Error('Failed to send media message')
@@ -212,7 +208,7 @@ export function registerIpcHandlers(
     const win = BrowserWindow.getFocusedWindow()
     const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
       properties: ['openFile'],
-      filters: [{ name: 'Media', extensions: ['jpg', 'png', 'jpeg', 'mp4', 'mkv', 'avi', 'mov', 'pdf', 'webp'] }]
+      filters: [{ name: 'All Files', extensions: ['*'] }]
     })
     return (canceled || filePaths.length === 0) ? null : filePaths[0]
   })
@@ -227,16 +223,21 @@ export function registerIpcHandlers(
 
     const rawMessage = JSON.parse(dbMsg.content)
     const unwrapped = messageService.unwrapMessage(rawMessage)
-    const mediaType = unwrapped.imageMessage ? 'image' : (unwrapped.stickerMessage ? 'sticker' : (unwrapped.videoMessage ? 'video' : null))
-    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage
+    
+    let mediaType: 'image' | 'sticker' | 'video' | 'document' | null = null
+    if (unwrapped.imageMessage) mediaType = 'image'
+    else if (unwrapped.stickerMessage) mediaType = 'sticker'
+    else if (unwrapped.videoMessage) mediaType = 'video'
+    else if (unwrapped.documentMessage) mediaType = 'document'
+
+    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage || unwrapped.documentMessage
 
     if (!mediaMsg || !mediaType) throw new Error('Not a media message')
 
     const mediaDir = join(app.getPath('userData'), 'media')
     if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
 
-    const ext = mediaType === 'sticker' ? 'webp' : (mediaType === 'video' ? 'mp4' : 'jpg')
-    const fileName = `${msgId}.${ext}`
+    const fileName = messageService.getSafeMediaFileName(msgId, mediaType, mediaMsg)
     const filePath = join(mediaDir, fileName)
 
     if (!fs.existsSync(filePath)) {
@@ -266,6 +267,7 @@ export function registerIpcHandlers(
     if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
     if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
     if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
+    if (unwrapped.documentMessage) unwrapped.documentMessage.localURI = `app://media/${fileName}`
 
     const updated = await prisma.message.update({
       where: { id: msgId },
@@ -274,6 +276,24 @@ export function registerIpcHandlers(
 
     const nameMap = await contactService.batchResolveNames([updated.participant || updated.remoteJid], sock)
     return messageService.enrichMessage(updated, sock, nameMap)
+  })
+
+  // ── Open File with System Default ──────────────────────────────────
+  ipcMain.handle('open-file', async (_event, localURI: string) => {
+    try {
+        const fileName = decodeURIComponent(localURI.split('/').pop() || '')
+        if (!fileName) return false
+        
+        const filePath = join(app.getPath('userData'), 'media', fileName)
+        if (fs.existsSync(filePath)) {
+            await shell.openPath(filePath)
+            return true
+        }
+        return false
+    } catch (err) {
+        console.error('[IPC] Failed to open file:', err)
+        return false
+    }
   })
 
   // ── Logout ──────────────────────────────────────────────────────────

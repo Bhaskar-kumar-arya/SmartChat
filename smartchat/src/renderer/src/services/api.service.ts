@@ -29,6 +29,9 @@ export const api = {
   logout: (): Promise<boolean> =>
     window.api.logout(),
 
+  openFile: (localURI: string): Promise<boolean> =>
+    window.api.openFile(localURI),
+
   // Event Listeners
   onNewMessage: (callback: (msg: MessageItem) => void) =>
     window.api.onNewMessage(callback),

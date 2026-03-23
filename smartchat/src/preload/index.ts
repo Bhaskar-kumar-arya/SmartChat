@@ -72,6 +72,9 @@ const api = {
     const listener = (_event: any, update: any) => callback(update)
     ipcRenderer.on('presence-update', listener)
     return () => { ipcRenderer.removeListener('presence-update', listener) }
+  },
+  openFile: (localURI: string) => {
+    return ipcRenderer.invoke('open-file', localURI)
   }
 }
 

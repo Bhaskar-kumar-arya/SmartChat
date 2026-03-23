@@ -44,6 +44,7 @@ declare global {
       onChatUpdated: (callback: (chat: Partial<ChatItem> & { jid: string }) => void) => () => void
       logout: () => Promise<boolean>
       onPresenceUpdate: (callback: (update: { remoteJid: string; presences: Record<string, any> }) => void) => () => void
+      openFile: (localURI: string) => Promise<boolean>
     }
   }
 }

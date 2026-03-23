@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { MessageItem as IMessageItem, ReactionItem } from '../types'
 import { formatTime } from '../utils/formatters'
 import { TextMessage } from './messages/TextMessage'
-import { ImageMessage, StickerMessage, VideoMessage } from './messages/MediaMessages'
+import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage } from './messages/MediaMessages'
 
 /**
  * Utility to unwrap metadata from Baileys messages.
@@ -60,12 +60,14 @@ export default function MessageItem({ msg, onReply, onDownloadMedia, onViewReact
   const isImage = msg.messageType === 'imageMessage' || !!rawMsg?.imageMessage
   const isSticker = msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage
   const isVideo = msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage
-  const localURI = rawMsg?.imageMessage?.localURI || rawMsg?.stickerMessage?.localURI || rawMsg?.videoMessage?.localURI || msg.localURI
+  const isDocument = msg.messageType === 'documentMessage' || !!rawMsg?.documentMessage
+  const localURI = rawMsg?.imageMessage?.localURI || rawMsg?.stickerMessage?.localURI || rawMsg?.videoMessage?.localURI || rawMsg?.documentMessage?.localURI || msg.localURI
 
   const renderContent = () => {
     if (isImage) return <ImageMessage localURI={localURI} textContent={msg.textContent} onDownload={handleDownload} isDownloading={downloading} />
     if (isSticker) return <StickerMessage localURI={localURI} onDownload={handleDownload} isDownloading={downloading} />
     if (isVideo) return <VideoMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />
+    if (isDocument) return <DocumentMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />
     if (msg.textContent) return <TextMessage text={msg.textContent} mentions={ctx?.mentions} />
     return <p className="message-text message-unsupported">[{msg.messageType}]</p>
   }
@@ -92,6 +94,7 @@ export default function MessageItem({ msg, onReply, onDownloadMedia, onViewReact
 
         {msg.textContent && isImage && <TextMessage text={msg.textContent} mentions={ctx?.mentions} />}
         {msg.textContent && isVideo && <TextMessage text={msg.textContent} mentions={ctx?.mentions} />}
+        {msg.textContent && isDocument && <TextMessage text={msg.textContent} mentions={ctx?.mentions} />}
 
         <ReactionsDisplay reactions={msg.reactions} onClick={() => onViewReactions(msg)} />
         <span className="message-time">{formatTime(msg.timestamp)}</span>
