@@ -1,26 +1,8 @@
-import { useEffect, useState } from 'react'
-
-interface ChatItem {
-  jid: string
-  name: string
-  unreadCount: number
-  timestamp: string
-  lastMessage: string
-  lastMessageTimestamp: string
-  pinned?: number
-  muteExpiration?: string
-}
-
-interface MessageItem {
-  id: string
-  remoteJid: string
-  fromMe: boolean
-  participant: string | null
-  participantName?: string | null
-  timestamp: string
-  messageType: string
-  textContent: string | null
-}
+import { useChats } from '../hooks/useChats'
+import { usePresence } from '../hooks/usePresence'
+import { api } from '../services/api.service'
+import { formatChatTime, isMuted } from '../utils/formatters'
+import { ChatItem } from '../types'
 
 interface ChatListProps {
   activeJid: string | null
@@ -28,179 +10,49 @@ interface ChatListProps {
 }
 
 export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
-  const [chats, setChats] = useState<ChatItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [presences, setPresences] = useState<Record<string, any>>({})
+  const { chats, loading, searchQuery, setSearchQuery, clearUnreadCount } = useChats(activeJid)
+  const { presences } = usePresence()
 
-
-  // Helper to sort chats: pinned first, then by timestamp
-  const sortChats = (chatList: ChatItem[]) => {
-    return [...chatList].sort((a, b) => {
-      const pinA = a.pinned || 0
-      const pinB = b.pinned || 0
-      if (pinA > 0 && pinB <= 0) return -1
-      if (pinB > 0 && pinA <= 0) return 1
-      if (pinA > 0 && pinB > 0) return pinB - pinA
-
-      const tsA = BigInt(a.lastMessageTimestamp || a.timestamp || 0)
-      const tsB = BigInt(b.lastMessageTimestamp || b.timestamp || 0)
-      if (tsB > tsA) return 1
-      if (tsB < tsA) return -1
-      return 0
-    })
-  }
-
-  useEffect(() => {
-    loadChats()
-
-    const unSubNewMsg = window.api.onNewMessage((msg: MessageItem) => {
-      setChats((prev) => {
-        const idx = prev.findIndex((c) => c.jid === msg.remoteJid)
-        const existing = idx >= 0 ? prev[idx] : null
-        const updatedChat: ChatItem = {
-          jid: msg.remoteJid,
-          name: existing ? existing.name : msg.remoteJid.replace(/@.*$/, ''),
-          unreadCount: existing ? (activeJid === msg.remoteJid ? 0 : existing.unreadCount + (msg.fromMe ? 0 : 1)) : (activeJid === msg.remoteJid ? 0 : 1),
-          timestamp: msg.timestamp,
-          lastMessage: msg.messageType === 'stickerMessage' ? 'Sticker' : (msg.textContent || `[${msg.messageType}]`),
-          lastMessageTimestamp: msg.timestamp,
-          pinned: existing?.pinned,
-          muteExpiration: existing?.muteExpiration
-        }
-        const filtered = prev.filter((c) => c.jid !== msg.remoteJid)
-        return sortChats([updatedChat, ...filtered])
-      })
-    })
-
-    const unSubChatUpd = window.api.onChatUpdated((update) => {
-      setChats((prev) => {
-        const idx = prev.findIndex((c) => c.jid === update.jid)
-        if (idx === -1) {
-          loadChats()
-          return prev
-        }
-        
-        const updatedChat = { ...prev[idx], ...update }
-        const filtered = prev.filter((c) => c.jid !== update.jid)
-        return sortChats([updatedChat, ...filtered])
-      })
-    })
-
-    return () => {
-      unSubNewMsg()
-      unSubChatUpd()
-    }
-  }, [activeJid])
-
-  useEffect(() => {
-    const unSubPresence = window.api.onPresenceUpdate((update) => {
-      setPresences((prev) => {
-        const currentRemotePresence = prev[update.remoteJid] || {}
-        return {
-          ...prev,
-          [update.remoteJid]: {
-            ...currentRemotePresence,
-            ...update.presences
-          }
-        }
-      })
-    })
-
-    // Periodic cleanup of expired composing/recording states
-    const interval = setInterval(() => {
-      setPresences((prev) => {
-        const now = Date.now()
-        let changed = false
-        const next = { ...prev }
-        
-        for (const jid of Object.keys(next)) {
-          const pMap = { ...next[jid] }
-          let subChanged = false
-          for (const subJid of Object.keys(pMap)) {
-            const s = pMap[subJid]
-            const isTyping = s.lastKnownPresence === 'composing' || s.lastKnownPresence === 'recording'
-            // Expire typing after 10 seconds
-            if (isTyping && s.timestamp && now - s.timestamp > 10000) {
-              pMap[subJid] = { ...s, lastKnownPresence: 'available' }
-              subChanged = true
-              changed = true
-            }
-          }
-          if (subChanged) next[jid] = pMap
-        }
-        return changed ? next : prev
-      })
-    }, 2000)
-
-    return () => {
-      unSubPresence()
-      clearInterval(interval)
-    }
-  }, [])
-
-  const loadChats = async () => {
-    try {
-      const data = await window.api.getChats(1, 50)
-      setChats(data)
-    } catch (err) {
-      console.error('Failed to load chats:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const formatTime = (ts: string) => {
-    try {
-      const date = new Date(Number(ts) * 1000)
-      const now = new Date()
-      const isToday = date.toDateString() === now.toDateString()
-      if (isToday) {
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const handleLogout = async () => {
+    if (confirm('Logout and delete all data? This cannot be undone.')) {
+      try {
+        await api.logout()
+        window.location.reload()
+      } catch (err) {
+        console.error('Logout failed:', err)
       }
-      const yesterday = new Date(now)
-      yesterday.setDate(yesterday.getDate() - 1)
-      if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday'
-      }
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-    } catch {
-      return ''
     }
   }
 
-  const isMuted = (expiration?: string) => {
-    if (!expiration) return false
-    const expTime = Number(expiration) * 1000
-    return expTime === -1000 || expTime > Date.now() // -1 is Baileys' way of saying forever
+  const getPresenceText = (chat: ChatItem) => {
+    const presence = presences[chat.jid]
+    if (!presence) return null
+    const entries = Object.entries(presence) as [string, any][]
+    const composing = entries.filter(([_, s]) => s.lastKnownPresence === 'composing')
+    const recording = entries.filter(([_, s]) => s.lastKnownPresence === 'recording')
+    
+    if (composing.length > 0) {
+      if (chat.jid.endsWith('@g.us')) {
+        if (composing.length === 1) return `${composing[0][1].name || composing[0][0].split('@')[0]} typing...`
+        return `${composing.length} typing...`
+      }
+      return 'typing...'
+    }
+    if (recording.length > 0) {
+      if (chat.jid.endsWith('@g.us')) {
+        if (recording.length === 1) return `${recording[0][1].name || recording[0][0].split('@')[0]} recording...`
+        return `${recording.length} recording...`
+      }
+      return 'recording...'
+    }
+    return null
   }
-
-  const filteredChats = searchQuery
-    ? chats.filter(
-        (c) =>
-          c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          c.jid.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : chats
 
   return (
     <div className="chat-sidebar">
       <div className="sidebar-header">
         <h1 className="sidebar-title">Chats</h1>
-        <button
-          className="logout-button"
-          title="Logout & delete all data"
-          onClick={async () => {
-            if (confirm('Logout and delete all data? This cannot be undone.')) {
-              try {
-                await window.api.logout()
-                window.location.reload()
-              } catch (err) {
-                console.error('Logout failed:', err)
-              }
-            }
-          }}
-        >
+        <button className="logout-button" title="Logout" onClick={handleLogout}>
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
             <polyline points="16 17 21 12 16 7" />
@@ -231,27 +83,23 @@ export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
             <div className="spinner" />
             <p>Loading chats...</p>
           </div>
-        ) : filteredChats.length === 0 ? (
+        ) : chats.length === 0 ? (
           <div className="chat-list-empty">
             <p>{searchQuery ? 'No matching chats' : 'No chats yet'}</p>
           </div>
         ) : (
-          filteredChats.map((chat) => {
+          chats.map((chat) => {
             const muted = isMuted(chat.muteExpiration)
-            const pinned = chat.pinned && chat.pinned > 0
+            const pinned = !!(chat.pinned && chat.pinned > 0)
+            const presenceText = getPresenceText(chat)
 
             return (
               <div
                 key={chat.jid}
                 className={`chat-list-item ${activeJid === chat.jid ? 'active' : ''} ${muted ? 'muted' : ''}`}
-                onClick={async () => {
+                onClick={() => {
                   onSelectChat(chat.jid, chat.name)
-                  // Optimistically clear unread badge in UI immediately
-                  if (chat.unreadCount > 0) {
-                    setChats(prev => prev.map(c => 
-                      c.jid === chat.jid ? { ...c, unreadCount: 0 } : c
-                    ))
-                  }
+                  if (chat.unreadCount > 0) clearUnreadCount(chat.jid)
                 }}
               >
                 <div className="chat-item-avatar">
@@ -261,42 +109,12 @@ export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
                   <div className="chat-item-top">
                     <span className="chat-item-name">{chat.name}</span>
                     <span className="chat-item-time">
-                      {formatTime(chat.lastMessageTimestamp || chat.timestamp)}
+                      {formatChatTime(chat.lastMessageTimestamp || chat.timestamp)}
                     </span>
                   </div>
                   <div className="chat-item-bottom">
-                    <span className={`chat-item-preview ${(() => {
-                        const presence = presences[chat.jid]
-                        if(!presence) return ''
-                        const statuses = Object.values(presence)
-                        if (statuses.some((s: any) => s.lastKnownPresence === 'composing')) return 'presence-typing'
-                        if (statuses.some((s: any) => s.lastKnownPresence === 'recording')) return 'presence-typing'
-                        return ''
-                    })()}`}>
-                      {(() => {
-                        const presence = presences[chat.jid]
-                        if (presence) {
-                          const entries = Object.entries(presence) as [string, any][]
-                          const composing = entries.filter(([_, s]) => s.lastKnownPresence === 'composing')
-                          const recording = entries.filter(([_, s]) => s.lastKnownPresence === 'recording')
-                          
-                          if (composing.length > 0) {
-                            if (chat.jid.endsWith('@g.us')) {
-                              if (composing.length === 1) return `${composing[0][1].name || composing[0][0].split('@')[0]} typing...`
-                              return `${composing.length} typing...`
-                            }
-                            return 'typing...'
-                          }
-                          if (recording.length > 0) {
-                            if (chat.jid.endsWith('@g.us')) {
-                              if (recording.length === 1) return `${recording[0][1].name || recording[0][0].split('@')[0]} recording...`
-                              return `${recording.length} recording...`
-                            }
-                            return 'recording...'
-                          }
-                        }
-                        return chat.lastMessage || 'No messages'
-                      })()}
+                    <span className={`chat-item-preview ${presenceText ? 'presence-typing' : ''}`}>
+                      {presenceText || chat.lastMessage || 'No messages'}
                     </span>
                     <div className="chat-item-indicators">
                       {muted && (
@@ -326,4 +144,3 @@ export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
     </div>
   )
 }
-

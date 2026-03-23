@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import { api } from './services/api.service'
 import ChatLayout from './components/ChatLayout'
 
 type AppState = 'initializing' | 'qr' | 'connected' | 'syncing' | 'ready'
@@ -10,31 +11,31 @@ export function App() {
   const [syncProgress, setSyncProgress] = useState<number>(0)
 
   useEffect(() => {
-    const unSubQr = window.api.onWaQr((newQr: string) => {
+    const unSubQr = api.onWaQr((newQr: string) => {
       setQr(newQr)
       setAppState('qr')
     })
 
-    const unSubConn = window.api.onWaConnected(() => {
+    const unSubConn = api.onWaConnected(() => {
       setQr(null)
       setAppState('syncing')
       setSyncProgress(0)
     })
 
-    const unSubLogout = window.api.onWaLoggedOut(() => {
+    const unSubLogout = api.onWaLoggedOut(() => {
       setQr(null)
       setAppState('initializing')
       setSyncProgress(0)
     })
 
-    const unSubSyncPrg = window.api.onWaSyncProgress((progress: number) => {
+    const unSubSyncPrg = api.onWaSyncProgress((progress: number) => {
       setSyncProgress(progress)
       if (appState !== 'syncing') {
         setAppState('syncing')
       }
     })
 
-    const unSubSyncComp = window.api.onWaSyncComplete(() => {
+    const unSubSyncComp = api.onWaSyncComplete(() => {
       setSyncProgress(100)
       setAppState('ready')
     })
