@@ -13,6 +13,11 @@ import { registerIpcHandlers, resolveContactName } from './ipcHandlers'
 import { Browsers } from '@whiskeysockets/baileys'
 import NodeCache from 'node-cache'
 
+// Register 'app' protocol as privileged BEFORE app is ready
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
+])
+
 // Module-level socket reference so IPC handlers can access it
 let currentSock: ReturnType<typeof makeWASocket> | null = null
 const getSock = () => currentSock
@@ -258,11 +263,14 @@ async function connectToWhatsApp(window: BrowserWindow) {
         if (rawMessage) {
           if (typeof rawMessage.conversation === 'string') {
             textContent = rawMessage.conversation
+          } else if (rawMessage.extendedTextMessage?.text) {
+             textContent = rawMessage.extendedTextMessage.text
           } else {
-            const extText = rawMessage.extendedTextMessage as Record<string, unknown> | undefined
-            if (extText && typeof extText.text === 'string') {
-              textContent = extText.text
-            }
+             // Extract captions from media messages
+             const mediaMsg = rawMessage.imageMessage || rawMessage.videoMessage || rawMessage.documentMessage
+             if (mediaMsg && typeof mediaMsg.caption === 'string') {
+               textContent = mediaMsg.caption
+             }
           }
         }
 
@@ -827,11 +835,19 @@ function createWindow(): void {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
 
-  protocol.handle('app', (request) => {
-    const url = request.url.slice('app://'.length)
-    if (url.startsWith('media/')) {
-      const filePath = join(app.getPath('userData'), url)
-      return net.fetch(pathToFileURL(filePath).href)
+  protocol.handle('app', async (request) => {
+    try {
+      const { host, pathname } = new URL(request.url)
+      if (host === 'media') {
+        const fileName = pathname.startsWith('/') ? pathname.slice(1) : pathname
+        const filePath = join(app.getPath('userData'), 'media', fileName)
+        
+        if (fs.existsSync(filePath)) {
+          return net.fetch(pathToFileURL(filePath).href)
+        }
+      }
+    } catch (err) {
+      console.error('[Protocol] Error handling app:// request:', err)
     }
     return new Response('Not Found', { status: 404 })
   })

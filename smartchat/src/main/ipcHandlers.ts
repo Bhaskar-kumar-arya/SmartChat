@@ -107,7 +107,10 @@ export function registerIpcHandlers(
           name,
           unreadCount: chat.unreadCount,
           timestamp: effectiveTimestamp.toString(),
-          lastMessage: lastMsg?.messageType === 'stickerMessage' ? 'Sticker' : (lastMsg?.textContent || (lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
+          lastMessage: lastMsg?.messageType === 'stickerMessage' ? 'Sticker' : 
+                       lastMsg?.messageType === 'imageMessage' ? 'Photo' : 
+                       lastMsg?.messageType === 'videoMessage' ? 'Video' :
+                       (lastMsg?.textContent || (lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
           lastMessageTimestamp: (lastMsg?.timestamp ?? chat.timestamp).toString(),
           pinned: chat.pinned,
           muteExpiration: chat.muteExpiration.toString()
@@ -335,9 +338,19 @@ export function registerIpcHandlers(
     const buffer = fs.readFileSync(filePath)
     const options = quotedMessage ? { quoted: { key: { id: quotedMsgId, remoteJid: jid, fromMe: quotedFromMe }, message: quotedMessage } } : {}
     
-    // Determine if it's a sticker (best guess: webp extension)
-    const isSticker = filePath.toLowerCase().endsWith('.webp')
-    const sendOptions: any = isSticker ? { sticker: buffer } : { image: buffer, caption }
+    // Determine media type based on extension
+    const lowerPath = filePath.toLowerCase()
+    const isSticker = lowerPath.endsWith('.webp')
+    const isVideo = lowerPath.endsWith('.mp4') || lowerPath.endsWith('.mkv') || lowerPath.endsWith('.avi') || lowerPath.endsWith('.mov')
+    
+    let sendOptions: any
+    if (isSticker) {
+      sendOptions = { sticker: buffer }
+    } else if (isVideo) {
+      sendOptions = { video: buffer, caption }
+    } else {
+      sendOptions = { image: buffer, caption }
+    }
 
     const sentMsg = await sock.sendMessage(jid, sendOptions, options as any)
 
@@ -424,7 +437,7 @@ export function registerIpcHandlers(
     const win = BrowserWindow.getFocusedWindow()
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
       properties: ['openFile'],
-      filters: [{ name: 'Media', extensions: ['jpg', 'png', 'jpeg', 'mp4', 'pdf', 'webp'] }]
+      filters: [{ name: 'Media', extensions: ['jpg', 'png', 'jpeg', 'mp4', 'mkv', 'avi', 'mov', 'pdf', 'webp'] }]
     })
     if (canceled || filePaths.length === 0) return null
     return filePaths[0]
@@ -442,17 +455,17 @@ export function registerIpcHandlers(
     try { rawMessage = JSON.parse(dbMsg.content) } catch (e) { throw new Error('Corrupted content') }
 
     const unwrapped = unwrapMessage(rawMessage)
-    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage
-    const mediaType = unwrapped.imageMessage ? 'image' : (unwrapped.stickerMessage ? 'sticker' : null)
+    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage
+    const mediaType = unwrapped.imageMessage ? 'image' : (unwrapped.stickerMessage ? 'sticker' : (unwrapped.videoMessage ? 'video' : null))
 
-    if (!mediaMsg || !mediaType) throw new Error('Not an image or sticker message')
+    if (!mediaMsg || !mediaType) throw new Error('Not an image, sticker, or video message')
 
     const mediaDir = join(app.getPath('userData'), 'media')
     if (!fs.existsSync(mediaDir)) {
         fs.mkdirSync(mediaDir, { recursive: true })
     }
 
-    const ext = mediaType === 'sticker' ? 'webp' : 'jpg'
+    const ext = mediaType === 'sticker' ? 'webp' : (mediaType === 'video' ? 'mp4' : 'jpg')
     const fileName = `${msgId}.${ext}`
     const filePath = join(mediaDir, fileName)
 
@@ -471,7 +484,7 @@ export function registerIpcHandlers(
                 // Reconstruct simple WAMessage wrapper:
                 const msgWrapper = { key: { id: dbMsg.id, remoteJid: dbMsg.remoteJid, fromMe: dbMsg.fromMe, participant: dbMsg.participant }, message: rawMessage } as any
                 const updatedMsg = await sock.updateMediaMessage(msgWrapper)
-                const updatedMediaMsg = updatedMsg.message?.imageMessage || updatedMsg.message?.stickerMessage
+                const updatedMediaMsg = updatedMsg.message?.imageMessage || updatedMsg.message?.stickerMessage || updatedMsg.message?.videoMessage
                 
                 if (updatedMediaMsg) {
                     const stream = await downloadContentFromMessage(updatedMediaMsg, mediaType as any)
@@ -480,6 +493,7 @@ export function registerIpcHandlers(
                     fs.writeFileSync(filePath, buffer)
                     if (updatedMsg.message?.imageMessage) rawMessage.imageMessage = updatedMsg.message.imageMessage
                     if (updatedMsg.message?.stickerMessage) rawMessage.stickerMessage = updatedMsg.message.stickerMessage
+                    if (updatedMsg.message?.videoMessage) rawMessage.videoMessage = updatedMsg.message.videoMessage
                 } else {
                     throw err
                 }
@@ -491,6 +505,7 @@ export function registerIpcHandlers(
 
     if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
     if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
+    if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
     const newContent = JSON.stringify(rawMessage)
 
     const updated = await prisma.message.update({
