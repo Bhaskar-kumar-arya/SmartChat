@@ -54,7 +54,7 @@ export function registerIpcHandlers(
           lastMessageTimestamp: effectiveTimestamp.toString(),
           pinned: chat.pinned,
           muteExpiration: chat.muteExpiration.toString(),
-          profilePictureUrl: chat.profilePictureUrl
+          profilePictureUrl: (chat as any).profilePictureUrl
         }
       })
     )

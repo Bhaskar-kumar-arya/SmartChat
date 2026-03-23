@@ -196,8 +196,8 @@ export class ContactService {
     // Default: 'preview'
     const contact = await prisma.contact.findUnique({
       where: { id: jid },
-      select: { profilePictureUrl: true }
-    })
+      select: { profilePictureUrl: true } as any
+    }) as any
 
     if (contact?.profilePictureUrl) return contact.profilePictureUrl
 
@@ -209,12 +209,12 @@ export class ContactService {
         // Save to both Contact and Chat for redundancy and easy access
         await prisma.contact.update({
           where: { id: jid },
-          data: { profilePictureUrl: url }
+          data: { profilePictureUrl: url } as any
         }).catch(() => {})
 
         await prisma.chat.update({
           where: { jid },
-          data: { profilePictureUrl: url }
+          data: { profilePictureUrl: url } as any
         }).catch(() => {})
       }
       return url
