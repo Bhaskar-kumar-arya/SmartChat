@@ -9,7 +9,7 @@ const makeWASocket = (baileys as any).default || baileys;
 import { Boom } from '@hapi/boom'
 import { usePrismaAuthState, prisma } from './auth'
 import { handleHistorySync } from './historySync'
-import { registerIpcHandlers, resolveContactName } from './ipcHandlers'
+import { registerIpcHandlers, resolveContactName, unwrapMessage } from './ipcHandlers'
 import { Browsers } from '@whiskeysockets/baileys'
 import NodeCache from 'node-cache'
 
@@ -422,13 +422,33 @@ async function connectToWhatsApp(window: BrowserWindow) {
           // Fire IPC event so React can update in real-time
           if (mainWindow && !mainWindow.isDestroyed()) {
             const senderId = participant || remoteJid;
-            const participantName = await resolveContactName(prisma, senderId, null);
+            const participantName = await resolveContactName(prisma, senderId, null, sock);
             let finalContent: any = rawMessage || {};
             
             // Resolve quoted participant name on the fly for real-time messages too
-            const ctx = finalContent?.extendedTextMessage?.contextInfo || finalContent?.imageMessage?.contextInfo;
-            if (ctx?.participant) {
-               ctx.participantName = await resolveContactName(prisma, ctx.participant, null);
+            const ctx = finalContent?.extendedTextMessage?.contextInfo || finalContent?.imageMessage?.contextInfo || finalContent?.videoMessage?.contextInfo || finalContent?.documentMessage?.contextInfo || finalContent?.contextInfo;
+            if (ctx) {
+               if (ctx.participant) {
+                  ctx.participantName = await resolveContactName(prisma, ctx.participant, null, sock);
+               }
+               // Resolve mentions in the main message
+               if (ctx.mentionedJid && Array.isArray(ctx.mentionedJid)) {
+                  ctx.mentions = {}
+                  for (const jid of ctx.mentionedJid) {
+                    ctx.mentions[jid] = await resolveContactName(prisma, jid, null, sock)
+                  }
+               }
+               // Resolve mentions in the quoted message
+               if (ctx.quotedMessage) {
+                  const q = unwrapMessage(ctx.quotedMessage);
+                  const qCtx = q?.extendedTextMessage?.contextInfo || q?.imageMessage?.contextInfo || q?.videoMessage?.contextInfo || q?.documentMessage?.contextInfo || q?.contextInfo;
+                  if (qCtx && qCtx.mentionedJid && Array.isArray(qCtx.mentionedJid)) {
+                    qCtx.mentions = {}
+                    for (const jid of qCtx.mentionedJid) {
+                      qCtx.mentions[jid] = await resolveContactName(prisma, jid, null, sock)
+                    }
+                  }
+               }
             }
 
             mainWindow.webContents.send('new-message', {

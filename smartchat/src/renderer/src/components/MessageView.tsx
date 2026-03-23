@@ -228,7 +228,59 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
     )
   }
 
-  return (
+    const renderHighlightedText = (text: string, mentionsMap: Record<string, string> = {}) => {
+      if (!text) return null
+      // Match @[id], @id, or just @followed by word characters/digits
+      const parts = text.split(/(@\[[\w.@-]+\]|@[\w.@-]+)/g)
+      return (
+        <>
+          {parts.map((part, i) => {
+            if (part.startsWith('@')) {
+              let rawContent = part.substring(1)
+              if (rawContent.startsWith('[') && rawContent.endsWith(']')) {
+                rawContent = rawContent.substring(1, rawContent.length - 1)
+              }
+              
+              let jid = rawContent
+              // Check exact match first
+              let name = mentionsMap[jid] || mentionsMap[rawContent]
+              
+              // If no exact match, try identifying by prefix (e.g. 12345 -> 12345@s.whatsapp.net)
+              if (!name) {
+                // Prioritize @s.whatsapp.net domain for numbers-only IDs
+                if (/^\d+$/.test(rawContent)) {
+                  name = mentionsMap[`${rawContent}@s.whatsapp.net`] || mentionsMap[`${rawContent}@lid`]
+                }
+              }
+
+              // Final fallback: search all keys that start with rawContent
+              if (!name) {
+                const foundKey = Object.keys(mentionsMap).find(k => k.startsWith(rawContent))
+                if (foundKey) {
+                  name = mentionsMap[foundKey]
+                }
+              }
+
+              if (name) {
+                return (
+                  <span key={i} className="message-mention" style={{ color: 'var(--primary, #00a884)', fontWeight: 600 }}>
+                    @{name}
+                  </span>
+                )
+              }
+              return (
+                <span key={i} className="message-mention" style={{ color: 'var(--primary, #00a884)', fontWeight: 600 }}>
+                  {part}
+                </span>
+              )
+            }
+            return part
+          })}
+        </>
+      )
+    }
+
+    return (
     <div className="message-view" ref={containerRef} onScroll={handleScroll}>
       {loadingMore && (
         <div className="message-loading-more">
@@ -283,6 +335,10 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
 
                   let quotedSender = ctx?.participantName || (ctx?.participant ? ctx.participant.split('@')[0] : 'Someone')
 
+                  const quotedMentions = ctx?.quotedMessage ? 
+                    (unwrapMessage(ctx.quotedMessage)?.extendedTextMessage?.contextInfo?.mentions || 
+                     unwrapMessage(ctx.quotedMessage)?.contextInfo?.mentions || {}) : {}
+
                   const isImage = msg.messageType === 'imageMessage' || !!rawMsg?.imageMessage
                   const isSticker = msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage
                   const isVideo = msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage
@@ -300,7 +356,9 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
                           fontSize: '0.85rem'
                         }}>
                           <span style={{ fontWeight: 'bold', color: 'var(--primary, #00a884)', display: 'block' }}>{quotedSender}</span>
-                          <span style={{ color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{quotedText}</span>
+                          <span style={{ color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                            {renderHighlightedText(quotedText, quotedMentions)}
+                          </span>
                         </div>
                       )}
                       
@@ -427,14 +485,15 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
                         </div>
                       )}
                       
-                      {msg.textContent ? (
-                        <p className="message-text">{msg.textContent}</p>
-                      ) : (
-                        !isImage && !isSticker && !isVideo && (
-                          <p className="message-text message-unsupported">
-                            [{msg.messageType}]
-                          </p>
-                        )
+                      {msg.textContent && (
+                        <p className="message-text">
+                          {renderHighlightedText(msg.textContent, ctx?.mentions)}
+                        </p>
+                      )}
+                      {!msg.textContent && !isImage && !isSticker && !isVideo && (
+                        <p className="message-text message-unsupported">
+                          [{msg.messageType}]
+                        </p>
                       )}
                     </>
                   )

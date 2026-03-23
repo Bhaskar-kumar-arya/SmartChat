@@ -5,7 +5,7 @@ import { join } from 'path'
 import { app } from 'electron'
 import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
 
-function unwrapMessage(msg: any): any {
+export function unwrapMessage(msg: any): any {
   if (!msg) return {}
   let unwrapped = msg
   if (unwrapped.ephemeralMessage) unwrapped = unwrapped.ephemeralMessage.message || unwrapped.ephemeralMessage
@@ -22,14 +22,27 @@ function unwrapMessage(msg: any): any {
 export async function resolveContactName(
   prisma: PrismaClient,
   jid: string,
-  chatName: string | null
+  chatName: string | null,
+  sock?: ReturnType<typeof import('@whiskeysockets/baileys').default> | null
 ): Promise<string> {
+  // Check if it's "Me" (the logged-in user)
+  if (sock?.user) {
+    const myJid = sock.user.id.split(':')[0]
+    const myLid = (sock.user as any).lid?.split(':')[0]
+    if (jid.split(':')[0] === myJid || (myLid && jid.split(':')[0] === myLid)) {
+      return sock.user.name || 'Me'
+    }
+  }
+
   const contacts = await prisma.contact.findMany({
     where: {
       OR: [
         { id: jid },
+        { id: jid.split(':')[0] }, // Handle cases where :suffix might be in JID
         { lid: jid },
-        { phoneNumber: jid }
+        { lid: jid.split(':')[0] },
+        { phoneNumber: jid },
+        { phoneNumber: jid.split(':')[0] }
       ]
     }
   })
@@ -39,39 +52,28 @@ export async function resolveContactName(
   let verifiedName: string | null = null;
   let linkedPhone: string | null = null;
 
-for (const c of contacts) {
-    // 1. Undisputed Highest Priority: Standard rows (Phone Numbers, Groups @g.us, Channels)
-    // If it has a name and IS NOT a LID row, it is the absolute source of truth.
+  for (const c of contacts) {
     if (!c.id.includes('@lid') && c.name) {
       phonebookName = c.name;
     }
-
-    // 2. Verified Business Names
     if (c.verifiedName) {
       verifiedName = c.verifiedName;
     }
-
-    // 3. Fallbacks: PushName (notify) or a copied name on a LID row
     if (c.notify) {
       pushName = c.notify;
     } else if (c.id.includes('@lid') && c.name) {
       pushName = c.name; 
     }
-
     if (c.phoneNumber) linkedPhone = c.phoneNumber;
   }
 
-  // Return strictly in hierarchy order
   if (phonebookName) return phonebookName;
   if (verifiedName) return verifiedName;
   if (pushName) return pushName;
   if (chatName) return chatName;
-
-  // Fallback to Phone Number (if found via LID mapping)
   if (linkedPhone) return linkedPhone.replace(/@.*$/, '');
 
-  // Absolute fallback: raw ID
-  return jid.replace(/@.*$/, '');
+  return jid.split('@')[0];
 }
 
 /**
@@ -90,7 +92,7 @@ export function registerIpcHandlers(
     const enriched = await Promise.all(
       chats.map(async (chat) => {
         // Resolve name with LID cross-resolution
-        const name = await resolveContactName(prisma, chat.jid, chat.name)
+        const name = await resolveContactName(prisma, chat.jid, chat.name, getSock())
 
         // Fetch the most recent message for preview
         const lastMsg = await prisma.message.findFirst({
@@ -170,7 +172,7 @@ export function registerIpcHandlers(
       const senderIds = Array.from(new Set(allReactions.map((r: any) => r.senderId)))
       const nameMap = new Map<string, string>()
       await Promise.all(senderIds.map(async (id: any) => {
-        const name = await resolveContactName(prisma, id, null)
+        const name = await resolveContactName(prisma, id, null, getSock())
         nameMap.set(id, name)
       }))
 
@@ -181,18 +183,47 @@ export function registerIpcHandlers(
           if (contentStr) {
             try {
               const rawMsg = JSON.parse(contentStr)
-              const ctx = rawMsg?.extendedTextMessage?.contextInfo || rawMsg?.imageMessage?.contextInfo || rawMsg?.contextInfo
-              if (ctx?.participant) {
-                const resolved = await resolveContactName(prisma, ctx.participant, null)
-                ctx.participantName = resolved
+              const ctx = rawMsg?.extendedTextMessage?.contextInfo || rawMsg?.imageMessage?.contextInfo || rawMsg?.videoMessage?.contextInfo || rawMsg?.documentMessage?.contextInfo || rawMsg?.contextInfo
+              if (ctx) {
+                if (ctx.participant) {
+                  const resolved = await resolveContactName(prisma, ctx.participant, null, getSock())
+                  ctx.participantName = resolved
+                }
+                // Resolve mentions in the main message
+                if (ctx.mentionedJid && Array.isArray(ctx.mentionedJid)) {
+                  ctx.mentions = {}
+                  for (const jid of ctx.mentionedJid) {
+                    ctx.mentions[jid] = await resolveContactName(prisma, jid, null, getSock())
+                  }
+                }
+                
+                // Resolve mentions in the quoted message too
+                if (ctx.quotedMessage) {
+                  const q = unwrapMessage(ctx.quotedMessage)
+                  const qCtx = q?.extendedTextMessage?.contextInfo || q?.imageMessage?.contextInfo || q?.videoMessage?.contextInfo || q?.documentMessage?.contextInfo || q?.contextInfo
+                  if (qCtx && qCtx.mentionedJid && Array.isArray(qCtx.mentionedJid)) {
+                    qCtx.mentions = {}
+                    for (const jid of qCtx.mentionedJid) {
+                      qCtx.mentions[jid] = await resolveContactName(prisma, jid, null, getSock())
+                    }
+                  }
+                }
+
                 contentStr = (function safeStr(obj: any) {
-                  try { return JSON.stringify(obj) } catch(e) {
+                  try {
+                    return JSON.stringify(obj)
+                  } catch (e) {
                     return JSON.stringify(obj, (_k, v) => {
                       if (v && typeof v === 'object' && typeof v.toJSON === 'function') {
-                        try { return v.toJSON() } catch(e) {
-                          const copy: any = {}; for(const key in v) if(typeof v[key] !== 'function') copy[key] = v[key]; return copy;
+                        try {
+                          return v.toJSON()
+                        } catch (e) {
+                          const copy: any = {}
+                          for (const key in v) if (typeof v[key] !== 'function') copy[key] = v[key]
+                          return copy
                         }
-                      } return v;
+                      }
+                      return v
                     })
                   }
                 })(rawMsg)
@@ -203,7 +234,7 @@ export function registerIpcHandlers(
           return {
             ...m,
             content: contentStr,
-            participantName: m.participant ? await resolveContactName(prisma, m.participant, null) : null,
+            participantName: m.participant ? await resolveContactName(prisma, m.participant, null, getSock()) : null,
             timestamp: m.timestamp.toString(),
             reactions: msgReactions.map((r: any) => ({ 
               ...r, 
@@ -302,6 +333,15 @@ export function registerIpcHandlers(
     })
 
     // Return the message data for immediate UI rendering
+    const finalContent = sentMsg.message || {}
+    const ctx = (finalContent as any)?.extendedTextMessage?.contextInfo || (finalContent as any)?.contextInfo
+    if (ctx?.mentionedJid && Array.isArray(ctx.mentionedJid)) {
+      ctx.mentions = {}
+      for (const jid of ctx.mentionedJid) {
+        ctx.mentions[jid] = await resolveContactName(prisma, jid, null, getSock())
+      }
+    }
+
     return {
       id: msgId,
       remoteJid: jid,
@@ -309,7 +349,8 @@ export function registerIpcHandlers(
       participant: null,
       timestamp: timestamp.toString(),
       messageType: 'conversation',
-      textContent: text
+      textContent: text,
+      content: JSON.stringify(finalContent)
     }
   })
 
@@ -409,6 +450,15 @@ export function registerIpcHandlers(
       create: { jid, timestamp, unreadCount: 0 }
     })
 
+    const finalContent = sentMsg.message || {}
+    const ctx = (finalContent as any)?.imageMessage?.contextInfo || (finalContent as any)?.videoMessage?.contextInfo || (finalContent as any)?.contextInfo
+    if (ctx?.mentionedJid && Array.isArray(ctx.mentionedJid)) {
+      ctx.mentions = {}
+      for (const jid of ctx.mentionedJid) {
+        ctx.mentions[jid] = await resolveContactName(prisma, jid, null, getSock())
+      }
+    }
+
     return {
       id: msgId,
       remoteJid: jid,
@@ -416,7 +466,8 @@ export function registerIpcHandlers(
       participant: null,
       timestamp: timestamp.toString(),
       messageType: 'imageMessage',
-      textContent: caption || null
+      textContent: caption || null,
+      content: JSON.stringify(finalContent)
     }
   })
 
@@ -516,7 +567,7 @@ export function registerIpcHandlers(
     return {
       ...updated,
       content: newContent,
-      participantName: updated.participant ? await resolveContactName(prisma, updated.participant, null) : null,
+      participantName: updated.participant ? await resolveContactName(prisma, updated.participant, null, getSock()) : null,
       timestamp: updated.timestamp.toString()
     }
   })
