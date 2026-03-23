@@ -67,6 +67,11 @@ const api = {
   },
   logout: () => {
     return ipcRenderer.invoke('logout')
+  },
+  onPresenceUpdate: (callback: (update: Record<string, any>) => void) => {
+    const listener = (_event: any, update: any) => callback(update)
+    ipcRenderer.on('presence-update', listener)
+    return () => { ipcRenderer.removeListener('presence-update', listener) }
   }
 }
 

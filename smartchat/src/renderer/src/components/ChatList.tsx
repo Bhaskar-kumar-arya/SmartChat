@@ -31,6 +31,7 @@ export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
   const [chats, setChats] = useState<ChatItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [presences, setPresences] = useState<Record<string, any>>({})
 
 
   // Helper to sort chats: pinned first, then by timestamp
@@ -91,6 +92,19 @@ export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
       unSubChatUpd()
     }
   }, [activeJid])
+
+  useEffect(() => {
+    const unSubPresence = window.api.onPresenceUpdate((update) => {
+      setPresences((prev) => ({
+        ...prev,
+        [update.remoteJid]: {
+          ...(prev[update.remoteJid] || {}),
+          ...update.presences
+        }
+      }))
+    })
+    return () => unSubPresence()
+  }, [])
 
   const loadChats = async () => {
     try {
@@ -218,8 +232,38 @@ export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
                     </span>
                   </div>
                   <div className="chat-item-bottom">
-                    <span className="chat-item-preview">
-                      {chat.lastMessage || 'No messages'}
+                    <span className={`chat-item-preview ${(() => {
+                        const presence = presences[chat.jid]
+                        if(!presence) return ''
+                        const statuses = Object.values(presence)
+                        if (statuses.some((s: any) => s.lastKnownPresence === 'composing')) return 'presence-typing'
+                        if (statuses.some((s: any) => s.lastKnownPresence === 'recording')) return 'presence-typing'
+                        return ''
+                    })()}`}>
+                      {(() => {
+                        const presence = presences[chat.jid]
+                        if (presence) {
+                          const entries = Object.entries(presence) as [string, any][]
+                          const composing = entries.filter(([_, s]) => s.lastKnownPresence === 'composing')
+                          const recording = entries.filter(([_, s]) => s.lastKnownPresence === 'recording')
+                          
+                          if (composing.length > 0) {
+                            if (chat.jid.endsWith('@g.us')) {
+                              if (composing.length === 1) return `${composing[0][1].name || composing[0][0].split('@')[0]} typing...`
+                              return `${composing.length} typing...`
+                            }
+                            return 'typing...'
+                          }
+                          if (recording.length > 0) {
+                            if (chat.jid.endsWith('@g.us')) {
+                              if (recording.length === 1) return `${recording[0][1].name || recording[0][0].split('@')[0]} recording...`
+                              return `${recording.length} recording...`
+                            }
+                            return 'recording...'
+                          }
+                        }
+                        return chat.lastMessage || 'No messages'
+                      })()}
                     </span>
                     <div className="chat-item-indicators">
                       {muted && (

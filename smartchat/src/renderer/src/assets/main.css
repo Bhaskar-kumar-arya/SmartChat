@@ -489,6 +489,18 @@
   text-overflow: ellipsis;
 }
 
+.chat-header-status {
+  font-size: 0.75rem;
+  color: #10b981;
+  font-weight: 500;
+  margin-top: 1px;
+}
+
+.presence-typing {
+  color: #10b981 !important;
+  font-weight: 600 !important;
+}
+
 /* Empty State */
 .chat-empty {
   flex: 1;

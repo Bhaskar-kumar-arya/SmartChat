@@ -26,6 +26,7 @@ export default function ChatLayout() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [replyingTo, setReplyingTo] = useState<MessageItem | null>(null)
+  const [presences, setPresences] = useState<Record<string, any>>({})
 
   const handleSelectChat = async (jid: string, name: string) => {
     setActiveJid(jid)
@@ -128,6 +129,52 @@ export default function ChatLayout() {
     return () => unSub()
   }, [activeJid])
 
+  useEffect(() => {
+    const unSubPresence = window.api.onPresenceUpdate((update) => {
+      setPresences((prev) => ({
+        ...prev,
+        [update.remoteJid]: {
+          ...(prev[update.remoteJid] || {}),
+          ...update.presences
+        }
+      }))
+    })
+    return () => unSubPresence()
+  }, [])
+
+  const getActivePresence = () => {
+    if (!activeJid || !presences[activeJid]) return null
+    const presenceMap = presences[activeJid]
+    const entries = Object.entries(presenceMap) as [string, any][]
+    
+    const composing = entries.filter(([_, s]) => s.lastKnownPresence === 'composing')
+    const recording = entries.filter(([_, s]) => s.lastKnownPresence === 'recording')
+    
+    if (composing.length > 0) {
+      if (activeJid.endsWith('@g.us')) {
+        if (composing.length === 1) return `${composing[0][1].name || composing[0][0].split('@')[0]} is typing...`
+        return `${composing.length} people are typing...`
+      }
+      return 'typing...'
+    }
+    
+    if (recording.length > 0) {
+      if (activeJid.endsWith('@g.us')) {
+        if (recording.length === 1) return `${recording[0][1].name || recording[0][0].split('@')[0]} is recording audio...`
+        return `${recording.length} people are recording audio...`
+      }
+      return 'recording audio...'
+    }
+
+    if (entries.some(([_, s]) => s.lastKnownPresence === 'available' || s.lastKnownPresence === 'composing' || s.lastKnownPresence === 'recording')) {
+      return 'online'
+    }
+    
+    return null
+  }
+
+  const activePresence = getActivePresence()
+
   const handleLoadMore = async () => {
     if (!activeJid) return 0
     const nextPage = currentPage + 1
@@ -159,7 +206,12 @@ export default function ChatLayout() {
               </div>
               <div className="chat-header-info">
                 <h2 className="chat-header-name">{activeName}</h2>
-                <p className="chat-header-jid">{activeJid}</p>
+                {activePresence && (
+                  <p className={`chat-header-status ${activePresence === 'online' ? '' : 'presence-typing'}`}>
+                    {activePresence}
+                  </p>
+                )}
+                {!activePresence && <p className="chat-header-jid">{activeJid}</p>}
               </div>
             </div>
             <MessageView

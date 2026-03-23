@@ -796,6 +796,35 @@ async function connectToWhatsApp(window: BrowserWindow) {
     }
   })
 
+  // ── Presence Update ──────────────────────────────────────────────
+  sock.ev.on('presence.update', async (update) => {
+    const { id, presences } = update
+    console.log(`[Presence] Update for ${id}:`, JSON.stringify(presences))
+    
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      // Resolve names for all participants in this presence update
+      const enrichedPresences = await Promise.all(
+        Object.entries(presences).map(async ([participantJid, status]) => {
+          const s = status as any
+          const name = await resolveContactName(prisma, participantJid, null)
+          return [
+            participantJid,
+            {
+              ...s,
+              name,
+              lastSeen: s.lastSeen ? s.lastSeen.toString() : undefined
+            }
+          ]
+        })
+      )
+
+      mainWindow.webContents.send('presence-update', {
+        remoteJid: id,
+        presences: Object.fromEntries(enrichedPresences)
+      })
+    }
+  })
+
 }
 
 
