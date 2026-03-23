@@ -7,6 +7,7 @@ export interface ChatItem {
   lastMessageTimestamp: string
   pinned?: number
   muteExpiration?: string
+  profilePictureUrl?: string | null
 }
 
 export interface ReactionItem {

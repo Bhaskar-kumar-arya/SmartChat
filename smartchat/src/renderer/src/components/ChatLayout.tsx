@@ -5,11 +5,16 @@ import MessageInput from './MessageInput'
 import { useMessages } from '../hooks/useMessages'
 import { usePresence } from '../hooks/usePresence'
 import { MessageItem } from '../types'
+import { ProfilePicture } from './ProfilePicture'
+import { ProfilePicOverlay } from './ProfilePicOverlay'
 
 export default function ChatLayout() {
   const [activeJid, setActiveJid] = useState<string | null>(null)
   const [activeName, setActiveName] = useState<string>('')
+  const [activeProfilePic, setActiveProfilePic] = useState<string | null>(null)
   const [replyingTo, setReplyingTo] = useState<MessageItem | null>(null)
+  const [overlayJid, setOverlayJid] = useState<string | null>(null)
+  const [overlayName, setOverlayName] = useState<string>('')
 
   const { 
     messages, 
@@ -22,9 +27,10 @@ export default function ChatLayout() {
 
   const { getActivePresence } = usePresence()
 
-  const handleSelectChat = (jid: string, name: string) => {
+  const handleSelectChat = (jid: string, name: string, profilePictureUrl?: string | null) => {
     setActiveJid(jid)
     setActiveName(name)
+    setActiveProfilePic(profilePictureUrl || null)
     setReplyingTo(null)
   }
 
@@ -40,19 +46,28 @@ export default function ChatLayout() {
 
   const activePresenceText = getActivePresence(activeJid)
 
+  const openOverlay = (jid: string, name: string) => {
+    setOverlayJid(jid)
+    setOverlayName(name)
+  }
+
   return (
     <div className="chat-layout">
       <ChatList
         activeJid={activeJid}
         onSelectChat={handleSelectChat}
+        onShowProfilePic={openOverlay}
       />
       <div className="chat-main">
         {activeJid ? (
           <>
             <div className="chat-header">
-              <div className="chat-header-avatar">
-                {activeName.charAt(0).toUpperCase()}
-              </div>
+              <ProfilePicture 
+                jid={activeJid} 
+                initialUrl={activeProfilePic} 
+                size={40} 
+                onClick={() => openOverlay(activeJid, activeName)}
+              />
               <div className="chat-header-info">
                 <h2 className="chat-header-name">{activeName}</h2>
                 {activePresenceText && (
@@ -89,6 +104,14 @@ export default function ChatLayout() {
           </div>
         )}
       </div>
+
+      {overlayJid && (
+        <ProfilePicOverlay 
+          jid={overlayJid} 
+          name={overlayName} 
+          onClose={() => setOverlayJid(null)} 
+        />
+      )}
     </div>
   )
 }

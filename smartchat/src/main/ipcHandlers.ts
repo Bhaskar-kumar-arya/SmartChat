@@ -53,7 +53,8 @@ export function registerIpcHandlers(
                        (lastMsg?.textContent || (lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
           lastMessageTimestamp: effectiveTimestamp.toString(),
           pinned: chat.pinned,
-          muteExpiration: chat.muteExpiration.toString()
+          muteExpiration: chat.muteExpiration.toString(),
+          profilePictureUrl: chat.profilePictureUrl
         }
       })
     )
@@ -306,9 +307,15 @@ export function registerIpcHandlers(
     await prisma.authState.deleteMany()
     return true
   })
+
+  // ── Get Profile Picture ─────────────────────────────────────────────
+  ipcMain.handle('get-profile-picture', async (_event, jid: string, type: 'preview' | 'image' = 'preview') => {
+    const sock = getSock()
+    return contactService.getProfilePicture(jid, type, sock)
+  })
 }
 
 // Exporting helpers for index.ts (legacy compatibility)
-export const resolveContactName = (prisma: any, jid: string, chatName: string | null, sock: any) => 
+export const resolveContactName = (jid: string, chatName: string | null, sock: any) => 
     contactService.resolveName(jid, chatName, sock)
 export const unwrapMessage = (msg: any) => messageService.unwrapMessage(msg)

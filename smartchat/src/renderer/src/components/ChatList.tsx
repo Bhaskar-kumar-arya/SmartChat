@@ -3,13 +3,15 @@ import { usePresence } from '../hooks/usePresence'
 import { api } from '../services/api.service'
 import { formatChatTime, isMuted } from '../utils/formatters'
 import { ChatItem } from '../types'
+import { ProfilePicture } from './ProfilePicture'
 
 interface ChatListProps {
   activeJid: string | null
-  onSelectChat: (jid: string, name: string) => void
+  onSelectChat: (jid: string, name: string, profilePictureUrl?: string | null) => void
+  onShowProfilePic: (jid: string, name: string) => void
 }
 
-export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
+export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: ChatListProps) {
   const { chats, loading, searchQuery, setSearchQuery, clearUnreadCount } = useChats(activeJid)
   const { presences } = usePresence()
 
@@ -98,13 +100,20 @@ export default function ChatList({ activeJid, onSelectChat }: ChatListProps) {
                 key={chat.jid}
                 className={`chat-list-item ${activeJid === chat.jid ? 'active' : ''} ${muted ? 'muted' : ''}`}
                 onClick={() => {
-                  onSelectChat(chat.jid, chat.name)
+                  onSelectChat(chat.jid, chat.name, chat.profilePictureUrl)
                   if (chat.unreadCount > 0) clearUnreadCount(chat.jid)
                 }}
               >
-                <div className="chat-item-avatar">
-                  {chat.name.charAt(0).toUpperCase()}
-                </div>
+                <ProfilePicture 
+                   jid={chat.jid} 
+                   initialUrl={chat.profilePictureUrl} 
+                   size={48} 
+                   className="mr-3"
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     onShowProfilePic(chat.jid, chat.name);
+                   }}
+                />
                 <div className="chat-item-content">
                   <div className="chat-item-top">
                     <span className="chat-item-name">{chat.name}</span>

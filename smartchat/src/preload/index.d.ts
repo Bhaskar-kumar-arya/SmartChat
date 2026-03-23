@@ -9,6 +9,7 @@ interface ChatItem {
   lastMessageTimestamp: string
   pinned?: number
   muteExpiration?: string
+  profilePictureUrl?: string | null
 }
 
 interface MessageItem {
@@ -45,6 +46,7 @@ declare global {
       logout: () => Promise<boolean>
       onPresenceUpdate: (callback: (update: { remoteJid: string; presences: Record<string, any> }) => void) => () => void
       openFile: (localURI: string) => Promise<boolean>
+      getProfilePicture: (jid: string, type: 'preview' | 'image') => Promise<string | null>
     }
   }
 }

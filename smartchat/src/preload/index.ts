@@ -75,6 +75,9 @@ const api = {
   },
   openFile: (localURI: string) => {
     return ipcRenderer.invoke('open-file', localURI)
+  },
+  getProfilePicture: (jid: string, type: 'preview' | 'image') => {
+    return ipcRenderer.invoke('get-profile-picture', jid, type)
   }
 }
 

@@ -167,6 +167,62 @@ export class ContactService {
       create: { id: lid, phoneNumber: pn, lid: null }
     })
   }
+  private imageCache = new Map<string, string>()
+
+  /**
+   * Fetches the profile picture URL.
+   * - For 'preview': check DB first, then fetch from sock and save to DB.
+   * - For 'image': check memory cache first, then fetch from sock and save to memory cache.
+   */
+  async getProfilePicture(
+    jid: string,
+    type: 'preview' | 'image' = 'preview',
+    sock?: any
+  ): Promise<string | null> {
+    if (type === 'image') {
+      if (this.imageCache.has(jid)) return this.imageCache.get(jid)!
+      if (!sock) return null
+
+      try {
+        const url = await sock.profilePictureUrl(jid, 'image')
+        if (url) this.imageCache.set(jid, url)
+        return url
+      } catch (e) {
+        console.error(`[ContactService] Failed to fetch full profile picture for ${jid}`, e)
+        return null
+      }
+    }
+
+    // Default: 'preview'
+    const contact = await prisma.contact.findUnique({
+      where: { id: jid },
+      select: { profilePictureUrl: true }
+    })
+
+    if (contact?.profilePictureUrl) return contact.profilePictureUrl
+
+    if (!sock) return null
+
+    try {
+      const url = await sock.profilePictureUrl(jid, 'preview')
+      if (url) {
+        // Save to both Contact and Chat for redundancy and easy access
+        await prisma.contact.update({
+          where: { id: jid },
+          data: { profilePictureUrl: url }
+        }).catch(() => {})
+
+        await prisma.chat.update({
+          where: { jid },
+          data: { profilePictureUrl: url }
+        }).catch(() => {})
+      }
+      return url
+    } catch (e) {
+      // Baileys might throw 404/401 if no picture is set
+      return null
+    }
+  }
 }
 
 export const contactService = new ContactService()
