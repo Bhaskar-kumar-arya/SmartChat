@@ -9,9 +9,12 @@ const makeWASocket = (baileys as any).default || baileys;
 import { Boom } from '@hapi/boom'
 import { usePrismaAuthState, prisma } from './auth'
 import { handleHistorySync } from './historySync'
-import { registerIpcHandlers, resolveContactName, unwrapMessage } from './ipcHandlers'
+import { registerIpcHandlers } from './ipcHandlers'
 import { Browsers } from '@whiskeysockets/baileys'
 import NodeCache from 'node-cache'
+import { contactService } from './services/ContactService'
+import { messageService } from './services/MessageService'
+import { chatService } from './services/ChatService'
 
 // Register 'app' protocol as privileged BEFORE app is ready
 protocol.registerSchemesAsPrivileged([
@@ -167,8 +170,6 @@ async function connectToWhatsApp(window: BrowserWindow) {
   let syncChunkCount = 0
   let maxProgress = 0
   let syncComplete = false
-  let contactsUpsertCount = 0
-  let contactsUpdateCount = 0
 
   const finishSync = () => {
     if (syncComplete) return
@@ -190,24 +191,9 @@ async function connectToWhatsApp(window: BrowserWindow) {
 
       console.log(`[HistorySync] Chunk #${syncChunkCount} received | reportedProgress=${reportedProgress} | isLatest=${isLatest} | keys=${Object.keys(rawData).join(',')}`)
 
-      // Reset the inactivity timeout — if no new chunk arrives within 60s, mark sync done
+      // Reset the inactivity timeout
       if (globalSyncTimeoutHandle) clearTimeout(globalSyncTimeoutHandle)
       globalSyncTimeoutHandle = setTimeout(finishSync, 180_000)
-
-      // Save raw data to disk for debugging
-      try {
-        const debugDir = join(process.cwd(), 'debug')
-        if (!fs.existsSync(debugDir)) {
-          fs.mkdirSync(debugDir, { recursive: true })
-        }
-        const filePath = join(debugDir, `history_sync_chunk_${syncChunkCount}.json`)
-        fs.writeFileSync(filePath, JSON.stringify(data, (_, value) =>
-          typeof value === 'bigint' ? value.toString() : value
-          , 2))
-        console.log(`[HistorySync] Saved raw chunk #${syncChunkCount} to ${filePath}`)
-      } catch (saveErr) {
-        console.error('[HistorySync] Failed to save raw chunk to disk:', saveErr)
-      }
 
       await handleHistorySync(
         data as unknown as Parameters<typeof handleHistorySync>[0],
@@ -215,7 +201,6 @@ async function connectToWhatsApp(window: BrowserWindow) {
       )
 
       if (!window.isDestroyed() && !syncComplete) {
-        // Calculate progress: only move forward, never backward
         const estimated = reportedProgress ?? Math.min(syncChunkCount * 15, 95)
         maxProgress = Math.max(maxProgress, estimated)
         window.webContents.send('wa-sync-progress', maxProgress)
@@ -231,246 +216,28 @@ async function connectToWhatsApp(window: BrowserWindow) {
 
     for (const msg of messages) {
       try {
-        const key = msg.key
-        if (!key?.id) continue
+        const processed = await messageService.processMessage(msg, sock)
+        if (!processed) continue
 
-        // Strip Protobuf class methods safely
-        let rawMessage: any = null
-        if (msg.message) {
-          try {
-            rawMessage = JSON.parse(JSON.stringify(msg.message))
-          } catch (err) {
-            // Fallback: If protobuf toJSON crashes (e.g., broken Long types in quoted messages)
-            const safeStringify = (obj: any) => JSON.stringify(obj, (_key, value) => {
-              if (value && typeof value === 'object' && typeof value.toJSON === 'function') {
-                try { return value.toJSON() } 
-                catch (e) { 
-                  const copy: any = {}
-                  for (const k in value) { if (typeof value[k] !== 'function') copy[k] = value[k] }
-                  return copy
-                }
-              }
-              return value
-            })
-            rawMessage = JSON.parse(safeStringify(msg.message))
-          }
-        }
-        const remoteJid = key.remoteJid || ''
-        const participant = key.participant || null
+        const { remoteJid, timestamp, messageType, participant } = processed
 
-        // 1. Extract text content for fast SQL searching
-        let textContent: string | null = null
-        if (rawMessage) {
-          if (typeof rawMessage.conversation === 'string') {
-            textContent = rawMessage.conversation
-          } else if (rawMessage.extendedTextMessage?.text) {
-             textContent = rawMessage.extendedTextMessage.text
-          } else {
-             // Extract captions from media messages
-             const mediaMsg = rawMessage.imageMessage || rawMessage.videoMessage || rawMessage.documentMessage
-             if (mediaMsg && typeof mediaMsg.caption === 'string') {
-               textContent = mediaMsg.caption
-             }
-          }
-        }
-
-        // 2. Determine high-level message type
-        let messageType = 'unknown'
-        if (rawMessage) {
-          const typeKeys = [
-            'conversation', 'extendedTextMessage', 'imageMessage',
-            'videoMessage', 'audioMessage', 'documentMessage',
-            'stickerMessage', 'contactMessage', 'locationMessage',
-            'reactionMessage', 'protocolMessage'
-          ]
-          for (const k of typeKeys) {
-            if (rawMessage[k] !== undefined && rawMessage[k] !== null) {
-              messageType = k
-              break
-            }
-          }
-        }
-
-        // 3. Parse Timestamp
-        const ts = msg.messageTimestamp ?? 0
-        const timestamp = BigInt(
-          typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
-            ? ((ts as Record<string, unknown>).low as number)
-            : (ts as number)
-        )
-
-        // ── THE FIX: Golden Ticket LID -> PN Mapping ──
-        // If WhatsApp decides to expose the phone number for a LID, it will be here.
-        const altJid = (key as any).participantAlt || (key as any).remoteJidAlt;
-        if (altJid) {
-          const currentLid = participant?.includes('@lid') ? participant : (remoteJid?.includes('@lid') ? remoteJid : null);
-          const currentPn = typeof altJid === 'string' && altJid.includes('@s.whatsapp.net') ? altJid : null;
-
-          if (currentLid && currentPn) {
-            // Proactively save this mapping immediately to satisfy future queries
-            await prisma.contact.upsert({
-              where: { id: currentPn },
-              update: { lid: currentLid },
-              create: { id: currentPn, lid: currentLid }
-            }).catch(err => console.error('[Alt Sniffer] Error saving alt mapping:', err));
-            console.log(`[Alt Sniffer] Caught active mapping from message: ${currentLid} <-> ${currentPn}`);
-          }
-        }
-
-        // ── THE FIX: PushName Sniffing ──
-        // If they aren't in our address book, grab the name they set for themselves.
-        if (msg.pushName) {
-          const senderId = participant || remoteJid;
-          if (senderId) {
-            // Fire and forget - don't await to avoid slowing down the message ingest
-            prisma.contact.upsert({
-              where: { id: senderId },
-              update: { notify: msg.pushName }, // Always update notify (pushName), do not overwrite name
-              create: { id: senderId, name: msg.pushName, notify: msg.pushName }
-            }).catch(() => { }); // Ignore unique constraint errors in background
-          }
-        }
-
-        // 4. Determine media message
-        if (messageType === 'imageMessage' && rawMessage && rawMessage.imageMessage) {
-            // We just leave the media in its encrypted form in the payload.
-            // When the user clicks download, the renderer calls the IPC handler.
-        }
-
-        // 5. Insert message into SQLite
-        if (messageType === 'reactionMessage') {
-           const reaction = rawMessage.reactionMessage
-           if (reaction && reaction.key && reaction.key.id) {
-              const targetId = reaction.key.id
-              const emoji = reaction.text
-              const senderId = participant || remoteJid
-              
-              if (!emoji) {
-                // Delete reaction if emoji is empty
-                await (prisma as any).reaction.deleteMany({
-                  where: { messageId: targetId, senderId }
-                }).catch(() => {})
-              } else {
-                // Upsert reaction
-                await (prisma as any).reaction.upsert({
-                  where: { messageId_senderId: { messageId: targetId, senderId } },
-                  update: { text: emoji, timestamp },
-                  create: {
-                    messageId: targetId,
-                    remoteJid,
-                    senderId,
-                    text: emoji,
-                    timestamp
-                  }
-                }).catch(err => console.error('[Reaction] Error upserting reaction:', err))
-              }
-           }
-        } else {
-          // Regular message insert
-          await prisma.message.upsert({
-            where: { id: key.id },
-            update: {
-              textContent,
-              messageType,
-              content: JSON.stringify(rawMessage || {}),
-              timestamp
-            },
-            create: {
-              id: key.id,
-              remoteJid,
-              fromMe: key.fromMe === true,
-              participant,
-              timestamp,
-              messageType,
-              content: JSON.stringify(rawMessage || {}),
-              textContent
-            }
-          })
-        }
-
-        // 5. Handle UI and Chat Metadata Updates
         if (type === 'notify') {
-          // New real-time message — update unread count & dispatch to UI
-          if (!key.fromMe) {
+          if (!processed.fromMe) {
             if (messageType !== 'reactionMessage') {
-              await prisma.chat.upsert({
-                where: { jid: remoteJid },
-                update: {
-                  unreadCount: { increment: 1 },
-                  timestamp
-                },
-                create: {
-                  jid: remoteJid,
-                  unreadCount: 1,
-                  timestamp
-                }
-              })
-            } else {
-               // Reaction from others - just fire IPC event, don't update chat metadata
+              await chatService.incrementUnread(remoteJid, timestamp)
             }
-          } else {
-            // Own message — just update the chat timestamp
-            if (messageType !== 'reactionMessage') {
-              await prisma.chat.upsert({
-                where: { jid: remoteJid },
-                update: { timestamp },
-                create: { jid: remoteJid, unreadCount: 0, timestamp }
-              })
-            }
+          } else if (messageType !== 'reactionMessage') {
+            await chatService.updateTimestamp(remoteJid, timestamp)
           }
 
-          // Fire IPC event so React can update in real-time
           if (mainWindow && !mainWindow.isDestroyed()) {
-            const senderId = participant || remoteJid;
-            const participantName = await resolveContactName(prisma, senderId, null, sock);
-            let finalContent: any = rawMessage || {};
-            
-            // Resolve quoted participant name on the fly for real-time messages too
-            const ctx = finalContent?.extendedTextMessage?.contextInfo || finalContent?.imageMessage?.contextInfo || finalContent?.videoMessage?.contextInfo || finalContent?.documentMessage?.contextInfo || finalContent?.contextInfo;
-            if (ctx) {
-               if (ctx.participant) {
-                  ctx.participantName = await resolveContactName(prisma, ctx.participant, null, sock);
-               }
-               // Resolve mentions in the main message
-               if (ctx.mentionedJid && Array.isArray(ctx.mentionedJid)) {
-                  ctx.mentions = {}
-                  for (const jid of ctx.mentionedJid) {
-                    ctx.mentions[jid] = await resolveContactName(prisma, jid, null, sock)
-                  }
-               }
-               // Resolve mentions in the quoted message
-               if (ctx.quotedMessage) {
-                  const q = unwrapMessage(ctx.quotedMessage);
-                  const qCtx = q?.extendedTextMessage?.contextInfo || q?.imageMessage?.contextInfo || q?.videoMessage?.contextInfo || q?.documentMessage?.contextInfo || q?.contextInfo;
-                  if (qCtx && qCtx.mentionedJid && Array.isArray(qCtx.mentionedJid)) {
-                    qCtx.mentions = {}
-                    for (const jid of qCtx.mentionedJid) {
-                      qCtx.mentions[jid] = await resolveContactName(prisma, jid, null, sock)
-                    }
-                  }
-               }
-            }
-
-            mainWindow.webContents.send('new-message', {
-              id: key.id,
-              remoteJid,
-              fromMe: key.fromMe === true,
-              participant,
-              participantName,
-              timestamp: timestamp.toString(),
-              messageType,
-              textContent,
-              content: JSON.stringify(finalContent)
-            })
+            const jids = new Set<string>([participant || remoteJid])
+            const nameMap = await contactService.batchResolveNames(Array.from(jids), sock)
+            const enriched = await messageService.enrichMessage(processed, sock, nameMap)
+            mainWindow.webContents.send('new-message', enriched)
           }
         } else {
-          // type === 'append' — background sync, silently ingest
-          // Just update the chat timestamp so sort order is correct
-          await prisma.chat.upsert({
-            where: { jid: remoteJid },
-            update: { timestamp },
-            create: { jid: remoteJid, unreadCount: 0, timestamp }
-          })
+          await chatService.updateTimestamp(remoteJid, timestamp)
         }
       } catch (err) {
         console.error('[messages.upsert] Error processing message:', err)
@@ -478,365 +245,71 @@ async function connectToWhatsApp(window: BrowserWindow) {
     }
   })
 
-  // ── Contacts Upsert (Phase 4) ──────────────────────────────────────
+  // ── Contacts Events ───────────────────────────────────────────────────
   sock.ev.on('contacts.upsert', async (contacts) => {
-    try {
-      contactsUpsertCount++
-      const debugDir = join(process.cwd(), 'debug')
-      if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true })
-      const filePath = join(debugDir, `contacts_upsert_${contactsUpsertCount}.json`)
-      fs.writeFileSync(filePath, JSON.stringify(contacts, (_, value) =>
-        typeof value === 'bigint' ? value.toString() : value
-        , 2))
-
-      console.log(`[Contacts] Received contacts.upsert for ${contacts.length} contacts (saved to ${filePath})`)
-
-      for (const contact of contacts) {
-        const id = contact.id as string | undefined
-        if (!id) continue
-
-        const lid = (contact as any).lid as string | undefined
-        const phoneNumber = (contact as any).phoneNumber as string | undefined
-        const newName = (contact as any).name as string | undefined
-        const newNotify = ((contact as any).notify ?? (contact as any).pushName) as string | undefined
-        const newVerifiedName = (contact as any).verifiedName as string | undefined
-
-        try {
-          const existing = await prisma.contact.findUnique({ where: { id } })
-
-          const dataToUpdate: any = {}
-          const dataToCreate: any = { id }
-
-          // Only populate 'lid' column for PN-based records to avoid unique constraint violation.
-          if (id.endsWith('@s.whatsapp.net')) {
-            if (lid) {
-              dataToUpdate.lid = lid
-              dataToCreate.lid = lid
-            }
-          } else {
-            dataToUpdate.lid = null
-            dataToCreate.lid = null
-          }
-
-          if (phoneNumber) {
-            dataToUpdate.phoneNumber = phoneNumber
-            dataToCreate.phoneNumber = phoneNumber
-          }
-          if (newNotify !== undefined) {
-             dataToUpdate.notify = newNotify
-             dataToCreate.notify = newNotify
-          }
-          if (newVerifiedName !== undefined) {
-             dataToUpdate.verifiedName = newVerifiedName
-             dataToCreate.verifiedName = newVerifiedName
-          }
-          if (newName !== undefined) {
-            // Never overwrite a good existing 'name' with a transient upsert name
-            if (!existing || !existing.name) {
-              dataToUpdate.name = newName
-            }
-            dataToCreate.name = newName
-          }
-
-          // Always try to upsert to ensure the entry is created if it doesn't exist
-          if (true) {
-            // Clear conflicting LID from other records first
-            if (dataToUpdate.lid) {
-              await prisma.contact.updateMany({
-                where: { lid: dataToUpdate.lid, id: { not: id } },
-                data: { lid: null }
-              })
-            }
-
-            await prisma.contact.upsert({
-              where: { id },
-              update: dataToUpdate,
-              create: dataToCreate
-            })
-
-            // Proactive LID mapping check if not already provided
-            if (!lid || !phoneNumber) {
-              const mappingStore = (sock as any).signalRepository?.lidMapping
-              if (mappingStore) {
-                if (id.endsWith('@lid') && !phoneNumber) {
-                  const pn = await mappingStore.getPNForLID(id)
-                  if (pn) {
-                    await prisma.contact.update({
-                      where: { id },
-                      data: { phoneNumber: pn }
-                    })
-                    console.log(`[LID Mapping] Proactively linked LID ${id} to PN ${pn}`)
-                  }
-                } else if (id.endsWith('@s.whatsapp.net') && !lid) {
-                  const l = await mappingStore.getLIDForPN(id)
-                  if (l) {
-                    await prisma.contact.update({
-                      where: { id },
-                      data: { lid: l }
-                    })
-                    console.log(`[LID Mapping] Proactively linked PN ${id} to LID ${l}`)
-                  }
-                }
-              }
-            }
-
-            // Cross-update logic
-            const currentLid = lid || dataToUpdate.lid
-            const currentPn = phoneNumber || dataToUpdate.phoneNumber
-
-            if (id.includes('@s.whatsapp.net') && currentLid) {
-              const existingByLid = await prisma.contact.findFirst({ where: { lid: currentLid } })
-              if (existingByLid && existingByLid.id !== id) {
-                await prisma.contact.update({
-                  where: { id: existingByLid.id },
-                  data: { phoneNumber: id, lid: null } // Ensure LID record doesn't claim its own LID in the unique column
-                })
-              }
-            } else if (id.includes('@lid') && currentPn) {
-              const existingByPn = await prisma.contact.findUnique({ where: { id: currentPn } })
-              if (existingByPn) {
-                await prisma.contact.update({
-                  where: { id: existingByPn.id },
-                  data: { lid: id }
-                })
-              }
-            }
-          }
-        } catch (err) {
-          console.error(`[Contacts] Error upserting contact ${id}:`, err)
-        }
-      }
-    } catch (err) {
-      console.error('[Contacts] Error in contacts.upsert handler:', err)
+    for (const contact of contacts) {
+      await contactService.upsertContact(contact).catch(() => {})
     }
   })
 
-  // ── LID Mapping Update ──────────────────────────────────────────────
+  sock.ev.on('contacts.update', async (updates) => {
+    for (const contact of updates) {
+      await contactService.upsertContact(contact, { overwriteName: true }).catch(() => {})
+    }
+  })
+
   sock.ev.on('lid-mapping.update', async (mappings) => {
-    try {
-      console.log(`[LID Mapping] Received ${mappings.length} updates`)
-      for (const mapping of mappings) {
-        const { lid, pn } = mapping
-        if (!lid || !pn) continue
-
-        console.log(`[LID Mapping] Linking ${lid} <-> ${pn}`)
-
-        // Clear this LID from any other record to satisfy unique constraint
-        await prisma.contact.updateMany({
-          where: { lid, id: { not: pn } },
-          data: { lid: null }
-        })
-
-        // Update the PN record with the LID
-        await prisma.contact.upsert({
-          where: { id: pn },
-          update: { lid },
-          create: { id: pn, lid }
-        })
-
-        // Update the LID record with the PN
-        await prisma.contact.upsert({
-          where: { id: lid },
-          update: { phoneNumber: pn, lid: null },
-          create: { id: lid, phoneNumber: pn, lid: null }
-        })
-      }
-    } catch (err) {
-      console.error('[LID Mapping] Error in lid-mapping.update handler:', err)
+    for (const mapping of mappings) {
+      const { lid, pn } = mapping
+      if (lid && pn) await contactService.linkLidAndPn(lid, pn).catch(() => {})
     }
   })
 
-
-  // ── Chats Update (Phase 4) ────────────────────────────────────────
+  // ── Chats Events ─────────────────────────────────────────────────────
   sock.ev.on('chats.update', async (updates) => {
     for (const update of updates) {
-      try {
-        const jid = update.id as string | undefined
-        if (!jid) continue
-
-        const data: Record<string, unknown> = {}
-
-        if (typeof update.unreadCount === 'number') {
-          data.unreadCount = update.unreadCount
-        }
-        if (typeof (update as any).pinned === 'number') {
-          data.pinned = (update as any).pinned
-        }
-        if ((update as any).muteExpiration !== undefined) {
-          const mute = (update as any).muteExpiration
-          data.muteExpiration = BigInt(typeof mute === 'number' ? mute : 0)
-        }
-        if ((update as any).archived !== undefined) {
-          data.isArchived = (update as any).archived === true
-        }
-
-        // Removed the name/subject checks here so TypeScript and Prisma stay happy
-
-        const ts = (update as any).conversationTimestamp ?? (update as any).timestamp
-        if (ts) {
-          data.timestamp = BigInt(
-            typeof ts === 'object' && ts !== null && 'low' in ts ? ts.low : ts
-          )
-        }
-
-        if (Object.keys(data).length > 0) {
-          await prisma.chat.upsert({
-            where: { jid },
-            update: data as any,
-            create: { jid, ...data } as any
-          })
-
-          // Notify renderer
+      const jid = update.id
+      if (jid) {
+          await chatService.upsertChat(jid, update).catch(() => {})
           if (!window.isDestroyed()) {
-            window.webContents.send('chat-updated', {
-              jid,
-              ...Object.fromEntries(
-                Object.entries(data).map(([k, v]) =>
-                  [k, typeof v === 'bigint' ? v.toString() : v]
-                )
-              )
-            })
+              // Map BigInt to string before sending to renderer
+              const formatted: any = {}
+              for (const [key, val] of Object.entries(update)) {
+                  formatted[key] = typeof val === 'bigint' ? val.toString() : val
+              }
+              window.webContents.send('chat-updated', { jid, ...formatted })
           }
-        }
-      } catch (err) {
-        console.error('[chats.update] Error:', err)
       }
     }
   })
 
-  // ── Chats Upsert (Phase 4) ────────────────────────────────────────
   sock.ev.on('chats.upsert', async (newChats) => {
     for (const chat of newChats) {
-      try {
-        const jid = chat.id as string | undefined
-        if (!jid) continue
-
-        const ts = (chat as any).conversationTimestamp ?? (chat as any).timestamp ?? 0
-        const timestamp = BigInt(
-          typeof ts === 'object' && ts !== null && 'low' in ts ? ts.low : ts
-        )
-
-        await prisma.chat.upsert({
-          where: { jid },
-          update: {
-            unreadCount: typeof chat.unreadCount === 'number' ? chat.unreadCount : undefined,
-            timestamp
-            // Removed name from update
-          },
-          create: {
-            jid,
-            unreadCount: typeof chat.unreadCount === 'number' ? chat.unreadCount : 0,
-            timestamp
-            // Removed name from create
-          }
-        })
-
-        if (!window.isDestroyed()) {
-          window.webContents.send('chat-updated', {
-            jid,
-            unreadCount: typeof chat.unreadCount === 'number' ? chat.unreadCount : 0,
-            timestamp: timestamp.toString()
-          })
-        }
-      } catch (err) {
-        console.error('[chats.upsert] Error:', err)
-      }
-    }
-  })
-
-  // ── Contacts Update (Phase 4) ─────────────────────────────────────
-  sock.ev.on('contacts.update', async (updates) => {
-    try {
-      contactsUpdateCount++
-      const debugDir = join(process.cwd(), 'debug')
-      if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true })
-      const filePath = join(debugDir, `contacts_update_${contactsUpdateCount}.json`)
-      fs.writeFileSync(filePath, JSON.stringify(updates, (_, value) =>
-        typeof value === 'bigint' ? value.toString() : value
-        , 2))
-
-      for (const contact of updates) {
-        try {
-          const id = contact.id as string | undefined
-          if (!id) continue
-
-          const lid = (contact as any).lid as string | undefined
-          const phoneNumber = (contact as any).phoneNumber as string | undefined
-          const newName = (contact as any).name as string | undefined
-          const newNotify = ((contact as any).notify ?? (contact as any).pushName) as string | undefined
-          const newVerifiedName = (contact as any).verifiedName as string | undefined
-
-          const dataToUpdate: any = {}
-          const dataToCreate: any = { id }
-
-          // Similar to upsert: only set lid mapping for PN records.
-          if (id.endsWith('@s.whatsapp.net')) {
-            if (lid) {
-              dataToUpdate.lid = lid
-              dataToCreate.lid = lid
-            }
-          } else {
-            dataToUpdate.lid = null
-            dataToCreate.lid = null
-          }
-
-          if (phoneNumber) {
-            dataToUpdate.phoneNumber = phoneNumber
-            dataToCreate.phoneNumber = phoneNumber
-          }
-          if (newNotify !== undefined) {
-             dataToUpdate.notify = newNotify
-             dataToCreate.notify = newNotify
-          }
-          if (newVerifiedName !== undefined) {
-             dataToUpdate.verifiedName = newVerifiedName
-             dataToCreate.verifiedName = newVerifiedName
-          }
-          if (newName !== undefined) {
-            // contacts.update usually means explicit change, so always update
-            dataToUpdate.name = newName
-            dataToCreate.name = newName
-          }
-
-          // Always try to upsert to ensure the entry is created if it doesn't exist
-          if (true) {
-            await prisma.contact.upsert({
-              where: { id },
-              update: dataToUpdate,
-              create: dataToCreate
-            })
-            console.log(`[contacts.update] Updated contact ${id}: ${JSON.stringify(dataToUpdate)}`)
-          }
-        } catch (err) {
-          console.error('[contacts.update] Inner Error:', err)
-        }
-      }
-    } catch (err) {
-      console.error('[contacts.update] Outer Error:', err)
+      const jid = chat.id
+      if (jid) await chatService.upsertChat(jid, chat).catch(() => {})
     }
   })
 
   // ── Presence Update ──────────────────────────────────────────────
   sock.ev.on('presence.update', async (update) => {
     const { id, presences } = update
-    console.log(`[Presence] Update for ${id}:`, JSON.stringify(presences))
     
     if (mainWindow && !mainWindow.isDestroyed()) {
-      // Resolve names for all participants in this presence update
-      const enrichedPresences = await Promise.all(
-        Object.entries(presences).map(async ([participantJid, status]) => {
+      const jids = Object.keys(presences)
+      const nameMap = await contactService.batchResolveNames(jids, sock)
+      
+      const enrichedPresences = Object.entries(presences).map(([participantJid, status]) => {
           const s = status as any
-          const name = await resolveContactName(prisma, participantJid, null)
           return [
             participantJid,
             {
               ...s,
-              name,
-              lastSeen: s.lastSeen ? s.lastSeen.toString() : undefined
+              name: nameMap.get(participantJid) || participantJid.replace(/@.*$/, ''),
+              lastSeen: s.lastSeen ? s.lastSeen.toString() : undefined,
+              timestamp: Date.now()
             }
           ]
-        })
-      )
+      })
 
       mainWindow.webContents.send('presence-update', {
         remoteJid: id,
@@ -844,9 +317,7 @@ async function connectToWhatsApp(window: BrowserWindow) {
       })
     }
   })
-
 }
-
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -864,7 +335,6 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     if (mainWindow) {
       mainWindow.show()
-      // Once window is ready, start WA connection attempt
       connectToWhatsApp(mainWindow)
     }
   })
@@ -907,12 +377,9 @@ app.whenReady().then(() => {
 
   ipcMain.on('ping', () => console.log('pong'))
 
-  // Register Phase 03 IPC handlers
   registerIpcHandlers(prisma, getSock)
 
-  // Let the renderer skip the remaining sync
   ipcMain.on('wa-skip-sync', () => {
-    console.log('[HistorySync] Sync skipped by user')
     if (currentFinishSync) currentFinishSync()
   })
 

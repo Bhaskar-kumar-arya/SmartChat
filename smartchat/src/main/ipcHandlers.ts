@@ -1,84 +1,14 @@
-import { ipcMain } from 'electron'
+import { ipcMain, app, dialog, BrowserWindow } from 'electron'
 import { PrismaClient } from '@prisma/client'
 import fs from 'fs'
 import { join } from 'path'
-import { app } from 'electron'
 import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
-
-export function unwrapMessage(msg: any): any {
-  if (!msg) return {}
-  let unwrapped = msg
-  if (unwrapped.ephemeralMessage) unwrapped = unwrapped.ephemeralMessage.message || unwrapped.ephemeralMessage
-  if (unwrapped.viewOnceMessage) unwrapped = unwrapped.viewOnceMessage.message || unwrapped.viewOnceMessage
-  if (unwrapped.viewOnceMessageV2) unwrapped = unwrapped.viewOnceMessageV2.message || unwrapped.viewOnceMessageV2
-  if (unwrapped.viewOnceMessageV2Extension) unwrapped = unwrapped.viewOnceMessageV2Extension.message || unwrapped.viewOnceMessageV2Extension
-  if (unwrapped.documentWithCaptionMessage) unwrapped = unwrapped.documentWithCaptionMessage.message || unwrapped.documentWithCaptionMessage
-  return unwrapped
-}
-
-/**
- * Resolves a display name for a chat JID, using LID cross-resolution when needed.
- */
-export async function resolveContactName(
-  prisma: PrismaClient,
-  jid: string,
-  chatName: string | null,
-  sock?: ReturnType<typeof import('@whiskeysockets/baileys').default> | null
-): Promise<string> {
-  // Check if it's "Me" (the logged-in user)
-  if (sock?.user) {
-    const myJid = sock.user.id.split(':')[0]
-    const myLid = (sock.user as any).lid?.split(':')[0]
-    if (jid.split(':')[0] === myJid || (myLid && jid.split(':')[0] === myLid)) {
-      return sock.user.name || 'Me'
-    }
-  }
-
-  const contacts = await prisma.contact.findMany({
-    where: {
-      OR: [
-        { id: jid },
-        { id: jid.split(':')[0] }, // Handle cases where :suffix might be in JID
-        { lid: jid },
-        { lid: jid.split(':')[0] },
-        { phoneNumber: jid },
-        { phoneNumber: jid.split(':')[0] }
-      ]
-    }
-  })
-
-  let phonebookName: string | null = null;
-  let pushName: string | null = null;
-  let verifiedName: string | null = null;
-  let linkedPhone: string | null = null;
-
-  for (const c of contacts) {
-    if (!c.id.includes('@lid') && c.name) {
-      phonebookName = c.name;
-    }
-    if (c.verifiedName) {
-      verifiedName = c.verifiedName;
-    }
-    if (c.notify) {
-      pushName = c.notify;
-    } else if (c.id.includes('@lid') && c.name) {
-      pushName = c.name; 
-    }
-    if (c.phoneNumber) linkedPhone = c.phoneNumber;
-  }
-
-  if (phonebookName) return phonebookName;
-  if (verifiedName) return verifiedName;
-  if (pushName) return pushName;
-  if (chatName) return chatName;
-  if (linkedPhone) return linkedPhone.replace(/@.*$/, '');
-
-  return jid.split('@')[0];
-}
+import { contactService } from './services/ContactService'
+import { messageService } from './services/MessageService'
+import { chatService } from './services/ChatService'
 
 /**
  * Registers all IPC handlers for chat data, messaging, and identity resolution.
- * Call this once at app startup.
  */
 export function registerIpcHandlers(
   prisma: PrismaClient,
@@ -87,12 +17,20 @@ export function registerIpcHandlers(
   // ── Get Chat List (paginated, sorted by latest timestamp) ────────────
   ipcMain.handle('get-chats', async (_event, page: number = 1, pageSize: number = 50) => {
     const chats = await prisma.chat.findMany()
+    const sock = getSock()
 
-    // Resolve display names from Contact table + fetch last message per chat
+    // 1. Collect all JIDs for name resolution
+    const jids = chats.map(c => c.jid)
+    
+    // 2. Fetch last messages in bulk (optional optimization, current implementation is one by one)
+    // For now, we'll keep the lastMsg fetch one-by-one but batch the names.
+    
+    // 3. Resolve all names in one DB query (Fixes N+1)
+    const nameMap = await contactService.batchResolveNames(jids, sock)
+
     const enriched = await Promise.all(
       chats.map(async (chat) => {
-        // Resolve name with LID cross-resolution
-        const name = await resolveContactName(prisma, chat.jid, chat.name, getSock())
+        const name = nameMap.get(chat.jid) || chat.name || chat.jid.split('@')[0]
 
         // Fetch the most recent message for preview
         const lastMsg = await prisma.message.findFirst({
@@ -101,7 +39,6 @@ export function registerIpcHandlers(
           select: { textContent: true, messageType: true, timestamp: true }
         })
 
-        // Use last message timestamp if chat timestamp is 0
         const effectiveTimestamp = lastMsg?.timestamp ?? chat.timestamp
 
         return {
@@ -113,27 +50,21 @@ export function registerIpcHandlers(
                        lastMsg?.messageType === 'imageMessage' ? 'Photo' : 
                        lastMsg?.messageType === 'videoMessage' ? 'Video' :
                        (lastMsg?.textContent || (lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
-          lastMessageTimestamp: (lastMsg?.timestamp ?? chat.timestamp).toString(),
+          lastMessageTimestamp: effectiveTimestamp.toString(),
           pinned: chat.pinned,
           muteExpiration: chat.muteExpiration.toString()
         }
       })
     )
 
-    // Sort: pinned chats first (by pin timestamp desc), then by last message timestamp desc
+    // Sort: pinned chats first, then by last message timestamp desc
     enriched.sort((a, b) => {
-      // Pinned chats first
       if (a.pinned > 0 && b.pinned <= 0) return -1
       if (b.pinned > 0 && a.pinned <= 0) return 1
-      // Within same pin group, sort by timestamp
-      if (a.pinned > 0 && b.pinned > 0) {
-        return b.pinned - a.pinned // Higher pin value = more recently pinned
-      }
+      if (a.pinned > 0 && b.pinned > 0) return b.pinned - a.pinned
       const tsA = BigInt(a.lastMessageTimestamp)
       const tsB = BigInt(b.lastMessageTimestamp)
-      if (tsB > tsA) return 1
-      if (tsB < tsA) return -1
-      return 0
+      return tsB > tsA ? 1 : (tsB < tsA ? -1 : 0)
     })
 
     const skip = (page - 1) * pageSize
@@ -145,105 +76,67 @@ export function registerIpcHandlers(
     'get-messages',
     async (_event, jid: string, page: number = 1, pageSize: number = 50) => {
       const skip = (page - 1) * pageSize
+      const sock = getSock()
 
       const messages = await prisma.message.findMany({
         where: { remoteJid: jid },
         orderBy: { timestamp: 'desc' },
         skip,
-        take: pageSize,
-        select: {
-          id: true,
-          remoteJid: true,
-          fromMe: true,
-          participant: true,
-          timestamp: true,
-          messageType: true,
-          textContent: true,
-          content: true
-        }
+        take: pageSize
       })
 
-      // Return in chronological order (oldest first) for rendering
+      // 1. Collect all JIDs for name resolution in this page
+      const jids = new Set<string>()
+      messages.forEach(m => {
+        if (m.participant) jids.add(m.participant)
+        jids.add(m.remoteJid)
+      })
+
+      // 2. Collect reaction sender IDs
       const messageIds = messages.map((m) => m.id)
       const allReactions = await (prisma as any).reaction.findMany({
         where: { messageId: { in: messageIds } }
       })
+      allReactions.forEach((r: any) => jids.add(r.senderId))
 
-      const senderIds = Array.from(new Set(allReactions.map((r: any) => r.senderId)))
-      const nameMap = new Map<string, string>()
-      await Promise.all(senderIds.map(async (id: any) => {
-        const name = await resolveContactName(prisma, id, null, getSock())
-        nameMap.set(id, name)
-      }))
+      // 3. Add context info (quoted participants and mentions) to resolution set
+      messages.forEach(m => {
+          try {
+              const content = JSON.parse(m.content)
+              const unwrapped = messageService.unwrapMessage(content)
+              const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.contextInfo
+              if (ctx) {
+                  if (ctx.participant) jids.add(ctx.participant)
+                  if (ctx.mentionedJid) ctx.mentionedJid.forEach((j: string) => jids.add(j))
+                  if (ctx.quotedMessage) {
+                      const q = messageService.unwrapMessage(ctx.quotedMessage)
+                      const qCtx = q?.extendedTextMessage?.contextInfo || q?.contextInfo
+                      if (qCtx && qCtx.mentionedJid) qCtx.mentionedJid.forEach((j: string) => jids.add(j))
+                  }
+              }
+          } catch(e) {}
+      })
 
+      // 4. Resolve all names in bulk (Fixes N+1)
+      const nameMap = await contactService.batchResolveNames(Array.from(jids), sock)
+
+      // 5. Enrich messages using service
       const messagesWithNames = await Promise.all(
         messages.map(async (m) => {
-          let contentStr = m.content
-          const msgReactions = allReactions.filter((r) => r.messageId === m.id)
-          if (contentStr) {
-            try {
-              const rawMsg = JSON.parse(contentStr)
-              const ctx = rawMsg?.extendedTextMessage?.contextInfo || rawMsg?.imageMessage?.contextInfo || rawMsg?.videoMessage?.contextInfo || rawMsg?.documentMessage?.contextInfo || rawMsg?.contextInfo
-              if (ctx) {
-                if (ctx.participant) {
-                  const resolved = await resolveContactName(prisma, ctx.participant, null, getSock())
-                  ctx.participantName = resolved
-                }
-                // Resolve mentions in the main message
-                if (ctx.mentionedJid && Array.isArray(ctx.mentionedJid)) {
-                  ctx.mentions = {}
-                  for (const jid of ctx.mentionedJid) {
-                    ctx.mentions[jid] = await resolveContactName(prisma, jid, null, getSock())
-                  }
-                }
-                
-                // Resolve mentions in the quoted message too
-                if (ctx.quotedMessage) {
-                  const q = unwrapMessage(ctx.quotedMessage)
-                  const qCtx = q?.extendedTextMessage?.contextInfo || q?.imageMessage?.contextInfo || q?.videoMessage?.contextInfo || q?.documentMessage?.contextInfo || q?.contextInfo
-                  if (qCtx && qCtx.mentionedJid && Array.isArray(qCtx.mentionedJid)) {
-                    qCtx.mentions = {}
-                    for (const jid of qCtx.mentionedJid) {
-                      qCtx.mentions[jid] = await resolveContactName(prisma, jid, null, getSock())
-                    }
-                  }
-                }
-
-                contentStr = (function safeStr(obj: any) {
-                  try {
-                    return JSON.stringify(obj)
-                  } catch (e) {
-                    return JSON.stringify(obj, (_k, v) => {
-                      if (v && typeof v === 'object' && typeof v.toJSON === 'function') {
-                        try {
-                          return v.toJSON()
-                        } catch (e) {
-                          const copy: any = {}
-                          for (const key in v) if (typeof v[key] !== 'function') copy[key] = v[key]
-                          return copy
-                        }
-                      }
-                      return v
-                    })
-                  }
-                })(rawMsg)
-              }
-            } catch (e) {}
-          }
-
+          const enriched = await messageService.enrichMessage(m, sock, nameMap)
+          const msgReactions = allReactions.filter((r: any) => r.messageId === m.id)
+          
           return {
-            ...m,
-            content: contentStr,
-            participantName: m.participant ? await resolveContactName(prisma, m.participant, null, getSock()) : null,
-            timestamp: m.timestamp.toString(),
+            ...enriched,
             reactions: msgReactions.map((r: any) => ({ 
               ...r, 
               timestamp: r.timestamp.toString(),
-              senderName: nameMap.get(r.senderId as string) || (r.senderId as string).replace(/@.*$/, '')
+              senderName: nameMap.get(r.senderId) || r.senderId.replace(/@.*$/, '')
             }))
           }
         })
       )
+
       return messagesWithNames.reverse()
     }
   )
@@ -251,247 +144,77 @@ export function registerIpcHandlers(
   // ── Send Message ─────────────────────────────────────────────────────
   ipcMain.handle('send-message', async (_event, jid: string, text: string, quotedMsgId?: string) => {
     const sock = getSock()
-    if (!sock) {
-      throw new Error('WhatsApp socket is not connected')
-    }
+    if (!sock) throw new Error('WhatsApp socket is not connected')
 
-    let quotedMessage: any = undefined
-    let quotedFromMe = false
+    let quoted: any = undefined
     if (quotedMsgId) {
       const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
       if (qm && qm.content) {
-        quotedFromMe = qm.fromMe
         try { 
-          const plainQuoted = JSON.parse(qm.content) 
-          quotedMessage = proto.Message.fromObject(plainQuoted)
-        } catch (e) {
-          console.error('[send-message] failed to hydrate quoted message', e)
-        }
+          quoted = { key: { id: quotedMsgId, remoteJid: jid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
+        } catch (e) {}
       }
     }
 
-    // Send via Baileys and await server confirmation
-    const options = quotedMessage ? { quoted: { key: { id: quotedMsgId, remoteJid: jid, fromMe: quotedFromMe }, message: quotedMessage } } : {}
-    const sentMsg = await sock.sendMessage(jid, { text }, options as any)
+    const sentMsg = await sock.sendMessage(jid, { text }, { quoted } as any)
+    if (!sentMsg) throw new Error('Failed to send message')
 
-    if (!sentMsg) {
-      throw new Error('Failed to send message — no response from server')
-    }
+    // Persist via Service
+    const processed = await messageService.processMessage(sentMsg, sock)
+    await chatService.updateTimestamp(jid, processed.timestamp)
 
-    // Extract fields for SQLite insertion
-    const key = sentMsg.key
-    const msgId = key?.id || `sent-${Date.now()}`
-    const rawTs = sentMsg.messageTimestamp
-    const timestamp = rawTs
-      ? BigInt(
-          typeof rawTs === 'object' && rawTs !== null && 'low' in (rawTs as unknown as Record<string, unknown>)
-            ? ((rawTs as unknown as Record<string, unknown>).low as number)
-            : (rawTs as number)
-        )
-      : BigInt(Math.floor(Date.now() / 1000))
-
-    // Determine actual type for SQLite
-    let messageType = 'conversation'
-    if (sentMsg.message) {
-      const typeKeys = ['conversation', 'extendedTextMessage', 'imageMessage', 'videoMessage', 'audioMessage', 'documentMessage']
-      for (const k of typeKeys) {
-        if ((sentMsg.message as any)[k]) { messageType = k; break; }
-      }
-    }
-
-    // Persist to SQLite
-    await prisma.message.upsert({
-      where: { id: msgId },
-      update: {},
-      create: {
-        id: msgId,
-        remoteJid: jid,
-        fromMe: true,
-        participant: null,
-        timestamp,
-        messageType,
-        content: (function safeStr(obj: any) {
-          try { return JSON.stringify(obj) } catch(e) {
-            return JSON.stringify(obj, (_k, v) => {
-              if (v && typeof v === 'object' && typeof v.toJSON === 'function') {
-                try { return v.toJSON() } catch(e) {
-                  const copy: any = {}; for(const key in v) if(typeof v[key] !== 'function') copy[key] = v[key]; return copy;
-                }
-              } return v;
-            })
-          }
-        })(sentMsg.message || {}),
-        textContent: text
-      }
-    })
-
-    // Update the chat timestamp
-    await prisma.chat.upsert({
-      where: { jid },
-      update: { timestamp },
-      create: { jid, timestamp, unreadCount: 0 }
-    })
-
-    // Return the message data for immediate UI rendering
-    const finalContent = sentMsg.message || {}
-    const ctx = (finalContent as any)?.extendedTextMessage?.contextInfo || (finalContent as any)?.contextInfo
-    if (ctx?.mentionedJid && Array.isArray(ctx.mentionedJid)) {
-      ctx.mentions = {}
-      for (const jid of ctx.mentionedJid) {
-        ctx.mentions[jid] = await resolveContactName(prisma, jid, null, getSock())
-      }
-    }
-
-    return {
-      id: msgId,
-      remoteJid: jid,
-      fromMe: true,
-      participant: null,
-      timestamp: timestamp.toString(),
-      messageType: 'conversation',
-      textContent: text,
-      content: JSON.stringify(finalContent)
-    }
+    // Enrich for UI
+    const nameMap = await contactService.batchResolveNames([processed.participant || jid], sock)
+    return messageService.enrichMessage(processed, sock, nameMap)
   })
 
   // ── Send Media Message ───────────────────────────────────────────────
   ipcMain.handle('send-media-message', async (_event, jid: string, filePath: string, caption?: string, quotedMsgId?: string) => {
     const sock = getSock()
-    if (!sock) {
-      throw new Error('WhatsApp socket is not connected')
-    }
+    if (!sock) throw new Error('WhatsApp socket is not connected')
 
-    let quotedMessage: any = undefined
-    let quotedFromMe = false
+    let quoted: any = undefined
     if (quotedMsgId) {
-      const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
-      if (qm && qm.content) {
-        quotedFromMe = qm.fromMe
-        try { 
-          const plainQuoted = JSON.parse(qm.content) 
-          quotedMessage = proto.Message.fromObject(plainQuoted)
-        } catch (e) {
-          console.error('[send-media-message] failed to hydrate quoted message', e)
+        const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
+        if (qm && qm.content) {
+          try { 
+            quoted = { key: { id: quotedMsgId, remoteJid: jid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
+          } catch (e) {}
         }
-      }
     }
 
     const buffer = fs.readFileSync(filePath)
-    const options = quotedMessage ? { quoted: { key: { id: quotedMsgId, remoteJid: jid, fromMe: quotedFromMe }, message: quotedMessage } } : {}
-    
-    // Determine media type based on extension
     const lowerPath = filePath.toLowerCase()
-    const isSticker = lowerPath.endsWith('.webp')
-    const isVideo = lowerPath.endsWith('.mp4') || lowerPath.endsWith('.mkv') || lowerPath.endsWith('.avi') || lowerPath.endsWith('.mov')
     
     let sendOptions: any
-    if (isSticker) {
-      sendOptions = { sticker: buffer }
-    } else if (isVideo) {
-      sendOptions = { video: buffer, caption }
-    } else {
-      sendOptions = { image: buffer, caption }
-    }
+    if (lowerPath.endsWith('.webp')) sendOptions = { sticker: buffer }
+    else if (['.mp4', '.mkv', '.avi', '.mov'].some(ext => lowerPath.endsWith(ext))) sendOptions = { video: buffer, caption }
+    else sendOptions = { image: buffer, caption }
 
-    const sentMsg = await sock.sendMessage(jid, sendOptions, options as any)
+    const sentMsg = await sock.sendMessage(jid, sendOptions, { quoted } as any)
+    if (!sentMsg) throw new Error('Failed to send media message')
 
-    if (!sentMsg) {
-      throw new Error('Failed to send media message — no response from server')
-    }
-
-    const key = sentMsg.key
-    const msgId = key?.id || `sent-${Date.now()}`
-    const rawTs = sentMsg.messageTimestamp
-    const timestamp = rawTs
-      ? BigInt(
-          typeof rawTs === 'object' && rawTs !== null && 'low' in (rawTs as unknown as Record<string, unknown>)
-            ? ((rawTs as unknown as Record<string, unknown>).low as number)
-            : (rawTs as number)
-        )
-      : BigInt(Math.floor(Date.now() / 1000))
-
-    // Determine actual type for SQLite
-    let messageType = 'imageMessage'
-    if (sentMsg.message) {
-      const typeKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage']
-      for (const k of typeKeys) {
-        if ((sentMsg.message as any)[k]) { messageType = k; break; }
-      }
-    }
-
-    await prisma.message.upsert({
-      where: { id: msgId },
-      update: {},
-      create: {
-        id: msgId,
-        remoteJid: jid,
-        fromMe: true,
-        participant: null,
-        timestamp,
-        messageType,
-        content: (function safeStr(obj: any) {
-          try { return JSON.stringify(obj) } catch(e) {
-            return JSON.stringify(obj, (_k, v) => {
-              if (v && typeof v === 'object' && typeof v.toJSON === 'function') {
-                try { return v.toJSON() } catch(e) {
-                  const copy: any = {}; for(const key in v) if(typeof v[key] !== 'function') copy[key] = v[key]; return copy;
-                }
-              } return v;
-            })
-          }
-        })(sentMsg.message || {}),
-        textContent: caption || null
-      }
-    })
-
-    await prisma.chat.upsert({
-      where: { jid },
-      update: { timestamp },
-      create: { jid, timestamp, unreadCount: 0 }
-    })
-
-    const finalContent = sentMsg.message || {}
-    const ctx = (finalContent as any)?.imageMessage?.contextInfo || (finalContent as any)?.videoMessage?.contextInfo || (finalContent as any)?.contextInfo
-    if (ctx?.mentionedJid && Array.isArray(ctx.mentionedJid)) {
-      ctx.mentions = {}
-      for (const jid of ctx.mentionedJid) {
-        ctx.mentions[jid] = await resolveContactName(prisma, jid, null, getSock())
-      }
-    }
-
-    return {
-      id: msgId,
-      remoteJid: jid,
-      fromMe: true,
-      participant: null,
-      timestamp: timestamp.toString(),
-      messageType: 'imageMessage',
-      textContent: caption || null,
-      content: JSON.stringify(finalContent)
-    }
+    // Persist and enrich
+    const processed = await messageService.processMessage(sentMsg, sock)
+    await chatService.updateTimestamp(jid, processed.timestamp)
+    
+    const nameMap = await contactService.batchResolveNames([processed.participant || jid], sock)
+    return messageService.enrichMessage(processed, sock, nameMap)
   })
 
-  // ── Mark Chat as Read (local only — no read receipts sent) ───────────
+  // ── Mark Chat as Read ───────────────────────────────────────────────
   ipcMain.handle('mark-read', async (_event, jid: string) => {
-    await prisma.chat.update({
-      where: { jid },
-      data: { unreadCount: 0 }
-    })
-    console.log(`[mark-read] Cleared unread count for ${jid}`)
-    return true
+    return chatService.markRead(jid)
   })
 
   // ── Select File Dialog ───────────────────────────────────────────────
   ipcMain.handle('select-file', async () => {
-    const { dialog, BrowserWindow } = require('electron')
-    // Get focused window safely
     const win = BrowserWindow.getFocusedWindow()
-    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
       properties: ['openFile'],
       filters: [{ name: 'Media', extensions: ['jpg', 'png', 'jpeg', 'mp4', 'mkv', 'avi', 'mov', 'pdf', 'webp'] }]
     })
-    if (canceled || filePaths.length === 0) return null
-    return filePaths[0]
+    return (canceled || filePaths.length === 0) ? null : filePaths[0]
   })
 
   // ── Download Media ───────────────────────────────────────────────────
@@ -500,21 +223,17 @@ export function registerIpcHandlers(
     if (!sock) throw new Error('WhatsApp socket is not connected')
 
     const dbMsg = await prisma.message.findUnique({ where: { id: msgId } })
-    if (!dbMsg || !dbMsg.content) throw new Error('Message not found or no content')
+    if (!dbMsg || !dbMsg.content) throw new Error('Message not found')
 
-    let rawMessage: any = {}
-    try { rawMessage = JSON.parse(dbMsg.content) } catch (e) { throw new Error('Corrupted content') }
-
-    const unwrapped = unwrapMessage(rawMessage)
-    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage
+    const rawMessage = JSON.parse(dbMsg.content)
+    const unwrapped = messageService.unwrapMessage(rawMessage)
     const mediaType = unwrapped.imageMessage ? 'image' : (unwrapped.stickerMessage ? 'sticker' : (unwrapped.videoMessage ? 'video' : null))
+    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage
 
-    if (!mediaMsg || !mediaType) throw new Error('Not an image, sticker, or video message')
+    if (!mediaMsg || !mediaType) throw new Error('Not a media message')
 
     const mediaDir = join(app.getPath('userData'), 'media')
-    if (!fs.existsSync(mediaDir)) {
-        fs.mkdirSync(mediaDir, { recursive: true })
-    }
+    if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
 
     const ext = mediaType === 'sticker' ? 'webp' : (mediaType === 'video' ? 'mp4' : 'jpg')
     const fileName = `${msgId}.${ext}`
@@ -524,76 +243,52 @@ export function registerIpcHandlers(
         try {
             const stream = await downloadContentFromMessage(mediaMsg, mediaType as any)
             let buffer = Buffer.from([])
-            for await (const chunk of stream) {
-                buffer = Buffer.concat([buffer, chunk])
-            }
+            for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk])
             fs.writeFileSync(filePath, buffer)
         } catch (err: any) {
-            console.error(`[Media] Error downloading media for ${msgId}:`, err)
-            if (err?.data === 410 || err?.message?.includes('410') || err?.output?.statusCode === 410) {
-                // To do late updateMediaMessage we need a full WAMessage object.
-                // Reconstruct simple WAMessage wrapper:
-                const msgWrapper = { key: { id: dbMsg.id, remoteJid: dbMsg.remoteJid, fromMe: dbMsg.fromMe, participant: dbMsg.participant }, message: rawMessage } as any
-                const updatedMsg = await sock.updateMediaMessage(msgWrapper)
-                const updatedMediaMsg = updatedMsg.message?.imageMessage || updatedMsg.message?.stickerMessage || updatedMsg.message?.videoMessage
-                
-                if (updatedMediaMsg) {
-                    const stream = await downloadContentFromMessage(updatedMediaMsg, mediaType as any)
+            // Re-fetch media if expired (410)
+            if (err?.data === 410 || err?.output?.statusCode === 410) {
+                const updatedMsg = await sock.updateMediaMessage({ key: { id: dbMsg.id, remoteJid: dbMsg.remoteJid, fromMe: dbMsg.fromMe, participant: dbMsg.participant }, message: rawMessage } as any)
+                const updatedMedia = messageService.unwrapMessage(updatedMsg.message)
+                const target = updatedMedia.imageMessage || updatedMedia.stickerMessage || updatedMedia.videoMessage
+                if (target) {
+                    const stream = await downloadContentFromMessage(target, mediaType as any)
                     let buffer = Buffer.from([])
-                    for await (const chunk of stream) { buffer = Buffer.concat([buffer, chunk]) }
+                    for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk])
                     fs.writeFileSync(filePath, buffer)
-                    if (updatedMsg.message?.imageMessage) rawMessage.imageMessage = updatedMsg.message.imageMessage
-                    if (updatedMsg.message?.stickerMessage) rawMessage.stickerMessage = updatedMsg.message.stickerMessage
-                    if (updatedMsg.message?.videoMessage) rawMessage.videoMessage = updatedMsg.message.videoMessage
-                } else {
-                    throw err
+                    Object.assign(unwrapped, updatedMedia) // Update local object
                 }
-            } else {
-                throw err
-            }
+            } else throw err
         }
     }
 
+    // Update local URI and save
     if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
     if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
     if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
-    const newContent = JSON.stringify(rawMessage)
 
     const updated = await prisma.message.update({
       where: { id: msgId },
-      data: { content: newContent }
+      data: { content: JSON.stringify(rawMessage) }
     })
 
-    return {
-      ...updated,
-      content: newContent,
-      participantName: updated.participant ? await resolveContactName(prisma, updated.participant, null, getSock()) : null,
-      timestamp: updated.timestamp.toString()
-    }
+    const nameMap = await contactService.batchResolveNames([updated.participant || updated.remoteJid], sock)
+    return messageService.enrichMessage(updated, sock, nameMap)
   })
 
-  // ── Logout & Wipe All Data ───────────────────────────────────────────
+  // ── Logout ──────────────────────────────────────────────────────────
   ipcMain.handle('logout', async () => {
-    console.log('[Logout] Wiping all data...')
-
-    // Close the Baileys socket (non-blocking — wipe data even if this fails)
     const sock = getSock()
-    if (sock) {
-      try {
-        await sock.logout('User requested logout')
-      } catch (err) {
-        console.warn('[Logout] Socket logout failed (will wipe data anyway):', err)
-      }
-    }
-
-    // Wipe all tables
+    if (sock) await sock.logout().catch(() => {})
     await prisma.message.deleteMany()
     await prisma.chat.deleteMany()
     await prisma.contact.deleteMany()
     await prisma.authState.deleteMany()
-
-    console.log('[Logout] All data wiped successfully')
     return true
   })
 }
 
+// Exporting helpers for index.ts (legacy compatibility)
+export const resolveContactName = (prisma: any, jid: string, chatName: string | null, sock: any) => 
+    contactService.resolveName(jid, chatName, sock)
+export const unwrapMessage = (msg: any) => messageService.unwrapMessage(msg)

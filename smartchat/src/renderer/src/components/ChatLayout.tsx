@@ -131,15 +131,46 @@ export default function ChatLayout() {
 
   useEffect(() => {
     const unSubPresence = window.api.onPresenceUpdate((update) => {
-      setPresences((prev) => ({
-        ...prev,
-        [update.remoteJid]: {
-          ...(prev[update.remoteJid] || {}),
-          ...update.presences
+      setPresences((prev) => {
+        const currentRemotePresence = prev[update.remoteJid] || {}
+        return {
+          ...prev,
+          [update.remoteJid]: {
+            ...currentRemotePresence,
+            ...update.presences
+          }
         }
-      }))
+      })
     })
-    return () => unSubPresence()
+
+    const interval = setInterval(() => {
+        setPresences((prev) => {
+          const now = Date.now()
+          let changed = false
+          const next = { ...prev }
+          
+          for (const jid of Object.keys(next)) {
+            const pMap = { ...next[jid] }
+            let subChanged = false
+            for (const subJid of Object.keys(pMap)) {
+              const s = pMap[subJid]
+              const isTyping = s.lastKnownPresence === 'composing' || s.lastKnownPresence === 'recording'
+              if (isTyping && s.timestamp && now - s.timestamp > 10000) {
+                pMap[subJid] = { ...s, lastKnownPresence: 'available' }
+                subChanged = true
+                changed = true
+              }
+            }
+            if (subChanged) next[jid] = pMap
+          }
+          return changed ? next : prev
+        })
+    }, 2000)
+
+    return () => {
+        unSubPresence()
+        clearInterval(interval)
+    }
   }, [])
 
   const getActivePresence = () => {
