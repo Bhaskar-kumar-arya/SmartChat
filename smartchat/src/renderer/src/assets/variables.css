@@ -2,7 +2,7 @@
   /* WhatsApp Dark Mode Palette - Green Tinted */
 
   --wa-bg-main: #171717;
-  --wa-bg-secondary: #1f2c33;
+  --wa-bg-secondary: #1d1f1e;
   --wa-bg-hover: #2f2f2f;
   --wa-bg-active: #2f2f2f;
 
@@ -38,8 +38,8 @@
   --wa-input-border: #2a3942;
 
   /* Borders */
-  --wa-border: #2a3942;
-  --wa-divider: #2a3942;
+  --wa-border: #3c3c3c;
+  --wa-divider: #3c3c3c;
 
   /* Notifications */
   --wa-badge: #00a884;
