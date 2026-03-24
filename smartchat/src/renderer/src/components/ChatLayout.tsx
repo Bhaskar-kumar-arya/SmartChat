@@ -15,6 +15,7 @@ export default function ChatLayout() {
   const [replyingTo, setReplyingTo] = useState<MessageItem | null>(null)
   const [overlayJid, setOverlayJid] = useState<string | null>(null)
   const [overlayName, setOverlayName] = useState<string>('')
+  const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
 
   const { 
     messages, 
@@ -27,11 +28,12 @@ export default function ChatLayout() {
 
   const { getActivePresence } = usePresence()
 
-  const handleSelectChat = (jid: string, name: string, profilePictureUrl?: string | null) => {
+  const handleSelectChat = (jid: string, name: string, profilePictureUrl?: string | null, messageId?: string | null) => {
     setActiveJid(jid)
     setActiveName(name)
     setActiveProfilePic(profilePictureUrl || null)
     setReplyingTo(null)
+    setTargetMessageId(messageId || null)
   }
 
   const handleSendMessage = async (text: string) => {
@@ -84,6 +86,8 @@ export default function ChatLayout() {
               onLoadMore={loadMore}
               onReply={(msg) => setReplyingTo(msg)}
               onDownloadMedia={handleDownloadMedia}
+              targetMessageId={targetMessageId}
+              onTargetScrolled={() => setTargetMessageId(null)}
             />
             <MessageInput
               onSend={handleSendMessage}

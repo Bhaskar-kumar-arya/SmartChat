@@ -6,6 +6,7 @@ import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
 import { contactService } from './services/ContactService'
 import { messageService } from './services/MessageService'
 import { chatService } from './services/ChatService'
+import { searchService } from './services/SearchService'
 
 /**
  * Registers all IPC handlers for chat data, messaging, and identity resolution.
@@ -312,6 +313,12 @@ export function registerIpcHandlers(
   ipcMain.handle('get-profile-picture', async (_event, jid: string, type: 'preview' | 'image' = 'preview') => {
     const sock = getSock()
     return contactService.getProfilePicture(jid, type, sock)
+  })
+
+  // ── Global Search (chats, contacts, messages) ───────────────────────
+  ipcMain.handle('search-all', async (_event, query: string) => {
+    const sock = getSock()
+    return searchService.searchAll(query, sock)
   })
 }
 

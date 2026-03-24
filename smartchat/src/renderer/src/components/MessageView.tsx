@@ -9,18 +9,22 @@ interface MessageViewProps {
   onLoadMore: () => Promise<number | undefined>
   onReply: (msg: IMessageItem) => void
   onDownloadMedia?: (msgId: string) => Promise<void>
+  targetMessageId?: string | null
+  onTargetScrolled?: () => void
 }
 
-export default function MessageView({ messages, loading, onLoadMore, onReply, onDownloadMedia }: MessageViewProps) {
+export default function MessageView({ messages, loading, onLoadMore, onReply, onDownloadMedia, targetMessageId, onTargetScrolled }: MessageViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [viewingReactions, setViewingReactions] = useState<IMessageItem | null>(null)
+  const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const prevScrollHeight = useRef(0)
   const isLoadingRef = useRef(false)
   const prevMessageId = useRef<string | null>(null)
   const isInitialRenderForChat = useRef(true)
+  const lastTargetId = useRef<string | null>(null)
 
   // Reset pagination state when switching chats
   useEffect(() => {
@@ -32,10 +36,24 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
       }
     }
     prevMessageId.current = firstId
+    // If messages length changed or chat changed, we might have new messages
   }, [messages])
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom on new messages (unless we have a target)
   useEffect(() => {
+    // If we have an active target message, skip auto-scroll to bottom
+    if (targetMessageId) {
+      lastTargetId.current = targetMessageId
+      isInitialRenderForChat.current = false
+      return
+    }
+
+    // If we just finished scrolling to a target (targetMessageId was just cleared), skip
+    if (lastTargetId.current && !targetMessageId) {
+      lastTargetId.current = null
+      return
+    }
+
     if (bottomRef.current && !loadingMore) {
       const behavior = isInitialRenderForChat.current ? 'auto' : 'smooth'
       bottomRef.current.scrollIntoView({ behavior })
@@ -43,7 +61,30 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
         setTimeout(() => { isInitialRenderForChat.current = false }, 100)
       }
     }
-  }, [messages.length, messages])
+  }, [messages.length, messages, targetMessageId]) 
+
+  // Scroll to and highlight target message when it's available
+  useEffect(() => {
+    if (!targetMessageId || messages.length === 0) return
+
+    // Wait a tick for DOM to settle
+    const timer = setTimeout(() => {
+      const el = containerRef.current?.querySelector(`[data-msg-id="${targetMessageId}"]`)
+      if (el) {
+        // Use auto behavior for first scroll to combat initial scroll interactions
+        el.scrollIntoView({ behavior: 'auto', block: 'center' })
+        setHighlightedId(targetMessageId)
+        onTargetScrolled?.()
+
+        // Remove highlight after animation
+        setTimeout(() => setHighlightedId(null), 2500)
+      } else {
+        console.warn(`[MessageView] Target message ${targetMessageId} not found in DOM`)
+      }
+    }, 100)
+
+    return () => clearTimeout(timer)
+  }, [targetMessageId, messages])
 
   // Restore scroll after loading older messages
   useEffect(() => {
@@ -106,7 +147,11 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
         <div className="message-empty"><p>No messages yet. Say hello! 👋</p></div>
       ) : (
         messages.map((msg, idx) => (
-          <div key={msg.id}>
+          <div
+            key={msg.id}
+            data-msg-id={msg.id}
+            className={highlightedId === msg.id ? 'msg-highlighted' : ''}
+          >
             {dateSeparators.has(idx) && (
               <div className="date-separator"><span>{dateSeparators.get(idx)}</span></div>
             )}

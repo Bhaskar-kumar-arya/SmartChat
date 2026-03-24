@@ -22,6 +22,21 @@ interface MessageItem {
   textContent: string | null
 }
 
+interface SearchResultItem {
+  type: 'chat' | 'message'
+  jid: string
+  name: string
+  lastMessage?: string
+  messageId?: string
+  snippet?: string
+  timestamp?: string
+}
+
+interface SearchResults {
+  chats: SearchResultItem[]
+  messages: SearchResultItem[]
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -47,6 +62,7 @@ declare global {
       onPresenceUpdate: (callback: (update: { remoteJid: string; presences: Record<string, any> }) => void) => () => void
       openFile: (localURI: string) => Promise<boolean>
       getProfilePicture: (jid: string, type: 'preview' | 'image') => Promise<string | null>
+      searchAll: (query: string) => Promise<SearchResults>
     }
   }
 }

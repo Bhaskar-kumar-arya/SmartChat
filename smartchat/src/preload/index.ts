@@ -78,6 +78,9 @@ const api = {
   },
   getProfilePicture: (jid: string, type: 'preview' | 'image') => {
     return ipcRenderer.invoke('get-profile-picture', jid, type)
+  },
+  searchAll: (query: string) => {
+    return ipcRenderer.invoke('search-all', query)
   }
 }
 

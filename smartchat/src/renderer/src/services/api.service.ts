@@ -1,4 +1,4 @@
-import { ChatItem, MessageItem } from '../types'
+import { ChatItem, MessageItem, SearchResults } from '../types'
 
 // This service wraps the window.api (Electron bridge) to provide a clean abstraction.
 // It allows us to mock the API in tests and decouple from the global window object.
@@ -65,4 +65,7 @@ export const api = {
 
   selectFile: (): Promise<string | null> =>
     window.api.selectFile(),
+
+  searchAll: (query: string): Promise<SearchResults> =>
+    window.api.searchAll(query),
 }

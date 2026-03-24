@@ -31,6 +31,21 @@ export interface MessageItem {
   reactions?: ReactionItem[]
 }
 
+export interface SearchResultItem {
+  type: 'chat' | 'message'
+  jid: string
+  name: string
+  lastMessage?: string
+  messageId?: string
+  snippet?: string
+  timestamp?: string
+}
+
+export interface SearchResults {
+  chats: SearchResultItem[]
+  messages: SearchResultItem[]
+}
+
 export interface PresenceUpdate {
   remoteJid: string
   presences: Record<string, {

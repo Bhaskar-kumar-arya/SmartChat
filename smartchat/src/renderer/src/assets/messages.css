@@ -246,3 +246,16 @@
   margin-left: 2px;
   pointer-events: auto;
 }
+
+/* ─── Search scroll-to-message highlight ──────────────────────────── */
+@keyframes msg-highlight-pulse {
+  0%   { background: rgba(37, 211, 102, 0.0); }
+  20%  { background: rgba(37, 211, 102, 0.28); }
+  60%  { background: rgba(37, 211, 102, 0.18); }
+  100% { background: rgba(37, 211, 102, 0.0); }
+}
+
+.msg-highlighted {
+  border-radius: 8px;
+  animation: msg-highlight-pulse 2.5s ease-out forwards;
+}
