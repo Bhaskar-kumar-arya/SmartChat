@@ -1,0 +1,91 @@
+/* ─── Chat Main Area ──────────────────────────────────────────────── */
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-width: 0;
+  background: var(--wa-chat-bg);
+}
+
+.chat-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1rem;
+  background: var(--wa-header-bg);
+  border-bottom: 1px solid var(--wa-border);
+}
+
+.chat-header-avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--wa-primary-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+  font-size: 1rem;
+  color: white;
+}
+
+.chat-header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-header-name {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--wa-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-header-jid {
+  font-size: 0.8125rem;
+  color: var(--wa-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-header-status {
+  font-size: 0.8125rem;
+  color: var(--wa-primary);
+  margin-top: 1px;
+}
+
+.presence-typing {
+  color: var(--wa-primary) !important;
+  font-weight: 400 !important;
+}
+
+/* Empty State */
+.chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: var(--wa-text-tertiary);
+}
+
+.chat-empty-icon {
+  opacity: 0.3;
+}
+
+.chat-empty h2 {
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: var(--wa-text-secondary);
+}
+
+.chat-empty p {
+  color: var(--wa-text-tertiary);
+  font-size: 0.875rem;
+}

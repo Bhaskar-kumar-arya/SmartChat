@@ -108,7 +108,6 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
                    jid={chat.jid} 
                    initialUrl={chat.profilePictureUrl} 
                    size={48} 
-                   className="mr-3"
                    onClick={(e) => {
                      e.stopPropagation();
                      onShowProfilePic(chat.jid, chat.name);

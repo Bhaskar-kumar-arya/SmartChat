@@ -76,17 +76,17 @@ export default function MessageItem({ msg, onReply, onDownloadMedia, onViewReact
     <div className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
       <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
         {!msg.fromMe && msg.participantName && (
-          <span className="message-sender-name" style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary, #00a884)', marginBottom: '4px', display: 'block' }}>
+          <span className="message-sender-name">
             {msg.participantName}
           </span>
         )}
 
         {isReply && (
-          <div className="message-quote" style={{ backgroundColor: 'rgba(0,0,0,0.05)', padding: '4px 8px', borderLeft: '4px solid var(--primary, #00a884)', borderRadius: '4px', marginBottom: '4px', fontSize: '0.85rem' }}>
-            <span style={{ fontWeight: 'bold', color: 'var(--primary, #00a884)', display: 'block' }}>{quotedSender}</span>
-            <span style={{ color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+          <div className="message-quote">
+            <span className="quote-sender">{quotedSender}</span>
+            <div className="quote-text">
                 <TextMessage text={quotedText} mentions={quotedMentions} />
-            </span>
+            </div>
           </div>
         )}
 
@@ -99,9 +99,9 @@ export default function MessageItem({ msg, onReply, onDownloadMedia, onViewReact
         <ReactionsDisplay reactions={msg.reactions} onClick={() => onViewReactions(msg)} />
         <span className="message-time">{formatTime(msg.timestamp)}</span>
       </div>
-      <div className="message-actions" style={{ display: 'flex', alignItems: 'center', opacity: 0.6, transition: 'opacity 0.2s', padding: '0 8px' }}>
-         <button onClick={() => onReply(msg)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: '4px' }} title="Reply">
-           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v1.5"/></svg>
+      <div className="message-actions">
+         <button className="action-btn" onClick={() => onReply(msg)} title="Reply">
+           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v1.5"/></svg>
          </button>
       </div>
     </div>

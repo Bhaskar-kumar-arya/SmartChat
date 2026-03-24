@@ -1,0 +1,192 @@
+/* ─── Setup Screens (QR, Sync, Init) ──────────────────────────────── */
+.setup-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wa-bg-main);
+}
+
+.setup-card {
+  max-width: 28rem;
+  width: 100%;
+  padding: 2rem;
+  background: var(--wa-bg-secondary);
+  border-radius: 1rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.setup-icon {
+  width: 4rem;
+  height: 4rem;
+  background: var(--wa-primary);
+  border-radius: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 15px -3px rgba(0, 168, 132, 0.3);
+}
+
+.setup-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: white;
+}
+
+.setup-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--wa-divider);
+}
+
+/* Sync State */
+.sync-container {
+  text-align: center;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.sync-badge {
+  padding: 1rem;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 0.75rem;
+}
+
+.sync-badge-text {
+  color: var(--wa-primary);
+  font-weight: 500;
+}
+
+.sync-progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sync-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.875rem;
+}
+
+.sync-label {
+  color: #94a3b8;
+}
+
+.sync-percent {
+  color: var(--wa-primary);
+  font-family: 'Segoe UI', Inter, sans-serif;
+  font-weight: 500;
+}
+
+.sync-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.5s ease-out;
+  background: var(--wa-primary);
+}
+/* Removal of blue tint in tracks */
+.sync-bar-track {
+  width: 100%;
+  height: 0.625rem;
+  background: var(--wa-divider);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.sync-subtitle {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.sync-skip-btn {
+  margin-top: 0.5rem;
+  padding: 0.375rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #94a3b8;
+  border: 1px solid #475569;
+  border-radius: 0.5rem;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sync-skip-btn:hover {
+  color: white;
+  border-color: #64748b;
+  background: #334155;
+}
+
+/* QR State */
+.qr-container {
+  text-align: center;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.qr-frame {
+  padding: 1rem;
+  background: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 0 0 4px rgba(51, 65, 85, 0.5);
+}
+
+.qr-image {
+  width: 100%;
+  height: auto;
+}
+
+.qr-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.qr-title {
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.qr-subtitle {
+  font-size: 0.875rem;
+  color: #64748b;
+  max-width: 250px;
+  margin: 0 auto;
+}
+
+/* Init State */
+.init-container {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.init-spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 4px solid var(--wa-primary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.init-text {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  animation: pulse 2s ease-in-out infinite;
+}

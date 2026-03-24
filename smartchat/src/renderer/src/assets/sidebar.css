@@ -1,0 +1,223 @@
+/* ─── Sidebar ─────────────────────────────────────────────────────── */
+.chat-sidebar {
+  width: 360px;
+  min-width: 360px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--wa-sidebar-bg);
+  border-right: 1px solid var(--wa-border);
+}
+
+.sidebar-header {
+  height: 60px;
+  padding: 0 1rem;
+  background: var(--wa-header-bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebar-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: white;
+}
+
+.logout-button {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--wa-icon);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.logout-button:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.sidebar-search {
+  padding: 7px 12px;
+  background: var(--wa-sidebar-bg);
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--wa-text-secondary);
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.4rem 0.75rem 0.4rem 2.5rem;
+  background: var(--wa-bg-hover);
+  border: none;
+  border-radius: 8px;
+  color: var(--wa-text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  transition: var(--wa-transition);
+}
+
+.search-input::placeholder {
+  color: var(--wa-text-secondary);
+}
+
+.search-input:focus {
+  background: var(--wa-bg-hover);
+}
+
+/* Chat List */
+.chat-list {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--wa-divider) transparent;
+}
+
+.chat-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-list::-webkit-scrollbar-thumb {
+  background: var(--wa-divider);
+  border-radius: 3px;
+}
+
+.chat-list-loading,
+.chat-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  color: var(--wa-text-tertiary);
+}
+
+.chat-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-bottom: 1px solid var(--wa-divider);
+  background: var(--wa-sidebar-bg);
+}
+
+.chat-list-item:hover {
+  background: var(--wa-bg-hover);
+}
+
+.chat-list-item.active {
+  background: var(--wa-bg-active);
+}
+
+.chat-item-avatar {
+  width: 3rem;
+  height: 3rem;
+  min-width: 3rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981, #059669);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1.125rem;
+  color: white;
+}
+
+.chat-item-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chat-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-item-name {
+  font-weight: 500;
+  font-size: 1rem;
+  color: var(--wa-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-item-time {
+  font-size: 0.75rem;
+  color: var(--wa-text-tertiary);
+  white-space: nowrap;
+  margin-left: 0.5rem;
+}
+
+.chat-item-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-item-preview {
+  font-size: 0.875rem;
+  color: var(--wa-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.chat-item-badge {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  background: var(--wa-primary);
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--wa-badge-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.5rem;
+}
+
+.chat-item-indicators {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--wa-text-tertiary);
+  margin-left: 0.5rem;
+}
+
+.indicator-icon {
+  opacity: 1;
+}
+
+.chat-list-item.muted .chat-item-name {
+  color: var(--wa-text-secondary);
+}
+
+.chat-list-item.muted .chat-item-preview {
+  color: var(--wa-text-tertiary);
+}

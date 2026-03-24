@@ -1,0 +1,53 @@
+:root {
+  /* WhatsApp Dark Mode Palette - Green Tinted */
+
+  --wa-bg-main: #171717;
+  --wa-bg-secondary: #1f2c33;
+  --wa-bg-hover: #2f2f2f;
+  --wa-bg-active: #2f2f2f;
+
+  --wa-header-bg: #171717;
+  --wa-sidebar-bg: #171717;
+  --wa-chat-bg: #0b141a;
+
+  /* Message bubbles */
+  --wa-bubble-sent: #134d37;
+  --wa-bubble-sent-text: #e9edef;
+
+  --wa-bubble-received: #242625;
+  --wa-bubble-received-text: #e9edef;
+
+  /* WhatsApp green */
+  --wa-primary: #22c05e;
+  --wa-primary-light: #25d366;
+  --wa-primary-dark: #008069;
+
+  /* Text */
+  --wa-text-primary: #e9edef;
+  --wa-text-secondary: #8696a0;
+  --wa-text-tertiary: #667781;
+  --wa-text-time: #8696a0;
+  --wa-text-typing: #00a884;
+
+  /* Icons */
+  --wa-icon: #aebac1;
+  --wa-icon-active: #00a884;
+
+  /* Inputs */
+  --wa-input-bg: #242625;
+  --wa-input-border: #2a3942;
+
+  /* Borders */
+  --wa-border: #2a3942;
+  --wa-divider: #2a3942;
+
+  /* Notifications */
+  --wa-badge: #00a884;
+  --wa-badge-text: #111b21;
+
+  /* Shadow */
+  --wa-shadow: rgba(0, 0, 0, 0.25);
+
+  /* Transitions */
+  --wa-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
