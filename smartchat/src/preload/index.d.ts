@@ -30,6 +30,7 @@ interface SearchResultItem {
   messageId?: string
   snippet?: string
   timestamp?: string
+  score?: number
 }
 
 interface SearchResults {
@@ -62,7 +63,10 @@ declare global {
       onPresenceUpdate: (callback: (update: { remoteJid: string; presences: Record<string, any> }) => void) => () => void
       openFile: (localURI: string) => Promise<boolean>
       getProfilePicture: (jid: string, type: 'preview' | 'image') => Promise<string | null>
-      searchAll: (query: string) => Promise<SearchResults>
+      searchAll: (query: string, mode?: 'normal' | 'deep', filters?: any) => Promise<SearchResults>
+      indexEmbeddings: () => Promise<void>
+      onEmbeddingProgress: (callback: (pct: number) => void) => () => void
+      clearVectors: () => Promise<void>
     }
   }
 }

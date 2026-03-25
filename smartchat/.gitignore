@@ -7,3 +7,5 @@ out
 
 /src/generated/prisma
 /debug
+venv/
+/src/main/models

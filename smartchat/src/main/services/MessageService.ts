@@ -1,5 +1,6 @@
 import { prisma } from '../auth'
 import { contactService } from './ContactService'
+import { embeddingService } from './EmbeddingService'
 
 export class MessageService {
   /**
@@ -131,6 +132,13 @@ export class MessageService {
             update: { textContent, messageType, content: JSON.stringify(rawMessage || {}), timestamp },
             create: { id: key.id, remoteJid, fromMe: key.fromMe === true, participant, timestamp, messageType, content: JSON.stringify(rawMessage || {}), textContent }
         })
+
+        // Auto-index new text messages for semantic search (fire-and-forget)
+        if (textContent && messageType !== 'reactionMessage') {
+            embeddingService.indexMessage(key.id, textContent).catch(err => {
+                console.error('[MessageService] real-time indexing failed:', err)
+            })
+        }
     }
 
     return {

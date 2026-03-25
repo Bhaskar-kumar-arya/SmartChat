@@ -1,0 +1,6 @@
+venv/
+smartchat/node_modules/
+smartchat/dist/
+smartchat/out/
+*.log*
+.DS_Store

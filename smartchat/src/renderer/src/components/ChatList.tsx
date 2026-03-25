@@ -1,11 +1,13 @@
+import { useState, useEffect } from 'react'
 import { useChats } from '../hooks/useChats'
 import { usePresence } from '../hooks/usePresence'
 import { useSearch } from '../hooks/useSearch'
 import { api } from '../services/api.service'
 import { formatChatTime, isMuted } from '../utils/formatters'
-import { ChatItem } from '../types'
+import { ChatItem, SearchFilters, SearchMode } from '../types'
 import { ProfilePicture } from './ProfilePicture'
 import { SearchResultsPanel } from './SearchResultsPanel'
+import { SearchFiltersPanel } from './SearchFiltersPanel'
 
 interface ChatListProps {
   activeJid: string | null
@@ -14,11 +16,27 @@ interface ChatListProps {
 }
 
 export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: ChatListProps) {
-  const { chats, loading, searchQuery, setSearchQuery, clearUnreadCount } = useChats(activeJid)
+  const { chats, allChats, loading, searchQuery, setSearchQuery, clearUnreadCount } = useChats(activeJid)
   const { presences } = usePresence()
-  const { results: searchResults, isSearching } = useSearch(searchQuery)
+  
+  const [searchMode, setSearchMode] = useState<SearchMode>('normal')
+  const [filters, setFilters] = useState<SearchFilters>({})
+  const [showFilters, setShowFilters] = useState(false)
+  const [indexingProgress, setIndexingProgress] = useState<number | null>(null)
+
+  const { results: searchResults, isSearching } = useSearch(searchQuery, searchMode, filters)
 
   const isSearchActive = searchQuery.trim().length > 0
+
+  useEffect(() => {
+    const unSub = api.onEmbeddingProgress((pct) => {
+      setIndexingProgress(pct)
+      if (pct === 100) {
+        setTimeout(() => setIndexingProgress(null), 3000)
+      }
+    })
+    return unSub
+  }, [])
 
   const handleLogout = async () => {
     if (confirm('Logout and delete all data? This cannot be undone.')) {
@@ -28,6 +46,19 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
       } catch (err) {
         console.error('Logout failed:', err)
       }
+    }
+  }
+
+  const handleStartIndexing = async () => {
+    if (confirm('Do you want to clear existing vectors before re-indexing? (Recommended when switching models)')) {
+      await api.clearVectors()
+    }
+    setIndexingProgress(0)
+    try {
+      await api.indexEmbeddings()
+    } catch (err) {
+      console.error('Indexing failed:', err)
+      setIndexingProgress(null)
     }
   }
 
@@ -59,13 +90,23 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
     <div className="chat-sidebar">
       <div className="sidebar-header">
         <h1 className="sidebar-title">Chats</h1>
-        <button className="logout-button" title="Logout" onClick={handleLogout}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
-        </button>
+        <div className="header-actions">
+          <button 
+            className={`sparkle-btn ${indexingProgress !== null ? 'spinning' : ''}`}
+            title="Index for Semantic Search"
+            onClick={handleStartIndexing}
+            disabled={indexingProgress !== null}
+          >
+            <span className="sparkle-icon">✦</span>
+          </button>
+          <button className="logout-button" title="Logout" onClick={handleLogout}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div className="sidebar-search">
@@ -81,6 +122,15 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input"
           />
+          <button 
+            className={`search-filter-toggle ${showFilters || Object.keys(filters).length > 0 ? 'active' : ''}`}
+            onClick={() => setShowFilters(!showFilters)}
+            title="Search Filters"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+            </svg>
+          </button>
           {isSearchActive && (
             <button className="search-clear-btn" onClick={() => setSearchQuery('')} title="Clear search">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -90,6 +140,28 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
             </button>
           )}
         </div>
+
+        {indexingProgress !== null && (
+          <div className="indexing-bar-container">
+            <div 
+              className="indexing-bar-fill" 
+              style={{ width: `${indexingProgress}%` }}
+            />
+            <span className="indexing-label">
+              {indexingProgress < 100 ? `Indexing: ${indexingProgress}%` : 'Indexing Complete'}
+            </span>
+          </div>
+        )}
+
+        {showFilters && (
+          <SearchFiltersPanel 
+            filters={filters}
+            onFiltersChange={setFilters}
+            chats={allChats.map(c => ({ jid: c.jid, name: c.name }))}
+            mode={searchMode}
+            onModeChange={setSearchMode}
+          />
+        )}
       </div>
 
       {/* Render search results panel when searching, normal chat list otherwise */}
@@ -100,6 +172,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
           isSearching={isSearching}
           query={searchQuery}
           activeJid={activeJid}
+          mode={searchMode}
           onSelectChat={(jid, name, messageId) => onSelectChat(jid, name, undefined, messageId)}
         />
       ) : (

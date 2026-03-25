@@ -7,6 +7,7 @@ import { contactService } from './services/ContactService'
 import { messageService } from './services/MessageService'
 import { chatService } from './services/ChatService'
 import { searchService } from './services/SearchService'
+import { embeddingService } from './services/EmbeddingService'
 
 /**
  * Registers all IPC handlers for chat data, messaging, and identity resolution.
@@ -316,9 +317,35 @@ export function registerIpcHandlers(
   })
 
   // ── Global Search (chats, contacts, messages) ───────────────────────
-  ipcMain.handle('search-all', async (_event, query: string) => {
+  ipcMain.handle('search-all', async (_event, query: string, mode: 'normal' | 'deep' = 'normal', filters?: { jids?: string[], fromDate?: string, toDate?: string }) => {
     const sock = getSock()
-    return searchService.searchAll(query, sock)
+    const parsedFilters = filters ? {
+      jids: filters.jids,
+      fromDate: filters.fromDate ? new Date(filters.fromDate) : undefined,
+      toDate: filters.toDate ? new Date(filters.toDate) : undefined
+    } : undefined
+    return searchService.searchAll(query, mode, sock, parsedFilters)
+  })
+
+  // ── Index Embeddings (background, with progress events) ──────────────
+  ipcMain.handle('index-embeddings', async (_event) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    try {
+      await embeddingService.indexAll((pct) => {
+        win?.webContents.send('embedding-progress', pct)
+      })
+      win?.webContents.send('embedding-progress', 100)
+    } catch (err) {
+      console.error('[IPC] index-embeddings failed:', err)
+    }
+  })
+
+  ipcMain.handle('clear-vectors', async (_event) => {
+    try {
+      await embeddingService.clearAllVectors()
+    } catch (err) {
+      console.error('[IPC] clear-vectors failed:', err)
+    }
   })
 }
 

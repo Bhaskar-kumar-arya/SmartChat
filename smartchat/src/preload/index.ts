@@ -79,8 +79,19 @@ const api = {
   getProfilePicture: (jid: string, type: 'preview' | 'image') => {
     return ipcRenderer.invoke('get-profile-picture', jid, type)
   },
-  searchAll: (query: string) => {
-    return ipcRenderer.invoke('search-all', query)
+  searchAll: (query: string, mode: 'normal' | 'deep' = 'normal', filters?: any) => {
+    return ipcRenderer.invoke('search-all', query, mode, filters)
+  },
+  indexEmbeddings: () => {
+    return ipcRenderer.invoke('index-embeddings')
+  },
+  onEmbeddingProgress: (callback: (pct: number) => void) => {
+    const listener = (_event: any, pct: number) => callback(pct)
+    ipcRenderer.on('embedding-progress', listener)
+    return () => { ipcRenderer.removeListener('embedding-progress', listener) }
+  },
+  clearVectors: () => {
+    return ipcRenderer.invoke('clear-vectors')
   }
 }
 

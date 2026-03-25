@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { embeddingService } from './services/EmbeddingService'
 
 /**
  * Determines the high-level message type from a Baileys proto.IMessage object.
@@ -366,6 +367,16 @@ export async function handleHistorySync(
         if (reactionOps.length > 0) await prisma.$transaction(reactionOps)
 
         messageCount += messageData.length
+
+        // Auto-index new text messages for semantic search (fire-and-forget)
+        const textMessages = messageData.filter(
+          (m) => m.textContent && m.messageType !== 'reactionMessage'
+        )
+        if (textMessages.length > 0) {
+          Promise.all(
+            textMessages.map((m) => embeddingService.indexMessage(m.id, m.textContent!))
+          ).catch((err) => console.error('[HistorySync] embedding failed:', err))
+        }
       }
 
     }

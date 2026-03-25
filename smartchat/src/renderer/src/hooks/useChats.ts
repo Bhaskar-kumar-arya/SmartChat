@@ -125,6 +125,7 @@ export const useChats = (activeJid: string | null) => {
 
   return { 
     chats: filteredChats, 
+    allChats: chats,
     loading, 
     searchQuery, 
     setSearchQuery,

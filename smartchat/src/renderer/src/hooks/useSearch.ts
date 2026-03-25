@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import { api } from '../services/api.service'
-import { SearchResults } from '../types'
+import { SearchFilters, SearchMode, SearchResults } from '../types'
 
 const DEBOUNCE_MS = 300
+const DEEP_DEBOUNCE_MS = 600
 
 /**
  * Hook to manage global search state.
- * Single Responsibility: only manages search query lifecycle and results.
+ * Supports keyword (normal) and semantic (deep) search with filters.
  */
-export const useSearch = (query: string) => {
+export const useSearch = (query: string, mode: SearchMode = 'normal', filters?: SearchFilters) => {
   const [results, setResults] = useState<SearchResults>({ chats: [], messages: [] })
   const [isSearching, setIsSearching] = useState(false)
 
@@ -19,22 +20,30 @@ export const useSearch = (query: string) => {
       return
     }
 
+    let ignored = false
     setIsSearching(true)
+
+    const debounce = mode === 'deep' ? DEEP_DEBOUNCE_MS : DEBOUNCE_MS
 
     const timer = setTimeout(async () => {
       try {
-        const data = await api.searchAll(query)
-        setResults(data)
+        const data = await api.searchAll(query, mode, filters)
+        if (!ignored) setResults(data)
       } catch (err) {
-        console.error('[useSearch] search failed:', err)
-        setResults({ chats: [], messages: [] })
+        if (!ignored) {
+          console.error('[useSearch] search failed:', err)
+          setResults({ chats: [], messages: [] })
+        }
       } finally {
-        setIsSearching(false)
+        if (!ignored) setIsSearching(false)
       }
-    }, DEBOUNCE_MS)
+    }, debounce)
 
-    return () => clearTimeout(timer)
-  }, [query])
+    return () => {
+      ignored = true
+      clearTimeout(timer)
+    }
+  }, [query, mode, filters])
 
   return { results, isSearching }
 }

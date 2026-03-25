@@ -25,6 +25,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@tiptap/react": "^3.20.3",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "@xenova/transformers": "^2.17.2",
     "electron-updater": "^6.3.9",
     "link-preview-js": "^3.2.0",
     "lucide-react": "^0.577.0",

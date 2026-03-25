@@ -39,6 +39,15 @@ export interface SearchResultItem {
   messageId?: string
   snippet?: string
   timestamp?: string
+  score?: number
+}
+
+export type SearchMode = 'normal' | 'deep'
+
+export interface SearchFilters {
+  jids?: string[]
+  fromDate?: string // ISO string
+  toDate?: string   // ISO string
 }
 
 export interface SearchResults {

@@ -63,7 +63,7 @@
 
 .search-input {
   width: 100%;
-  padding: 0.4rem 2rem 0.4rem 2.5rem;
+  padding: 0.4rem 3.5rem 0.4rem 2.5rem;
   background: var(--wa-bg-hover);
   border: none;
   border-radius: 8px;
@@ -224,12 +224,7 @@
 /* ─── Search clear button ──────────────────────────────────────────── */
 .search-clear-btn {
   position: absolute;
-  right: 0.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
+  right: 2.25rem;
   border: none;
   background: var(--wa-text-tertiary);
   color: var(--wa-sidebar-bg);
@@ -373,4 +368,126 @@
 
 .search-results-empty strong {
   color: var(--wa-text-secondary);
+}
+
+/* ─── Search Modes & Filtering ────────────────────────────────────── */
+
+.search-mode-tabs {
+  display: flex;
+  background: var(--wa-header-bg);
+  border-radius: 8px;
+  padding: 4px;
+  margin: 8px 12px;
+  gap: 4px;
+}
+
+.search-mode-tab {
+  flex: 1;
+  padding: 6px 4px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--wa-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.search-mode-tab:hover {
+  color: var(--wa-text-primary);
+}
+
+.search-mode-tab.active {
+  background: var(--wa-bg-active);
+  color: var(--wa-primary);
+}
+
+.search-filter-toggle {
+  position: absolute;
+  right: 0.5rem;
+  background: transparent;
+  border: none;
+  color: var(--wa-text-secondary);
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+.search-filter-toggle:hover, .search-filter-toggle.active {
+  color: var(--wa-primary);
+}
+
+/* ─── Indexing Progress ─────────────────────────────────────────── */
+
+.indexing-bar-container {
+  margin: 0 12px 12px;
+  height: 18px;
+  background: var(--wa-header-bg);
+  border-radius: 9px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.indexing-bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--wa-primary);
+  transition: width 0.3s ease;
+}
+
+.indexing-label {
+  position: relative;
+  z-index: 1;
+  font-size: 0.65rem;
+  color: #fff;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* ─── Header Actions ────────────────────────────────────────────── */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sparkle-btn {
+  background: transparent;
+  border: none;
+  color: var(--wa-icon);
+  padding: 6px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+}
+
+.sparkle-btn:hover:not(:disabled) {
+  background: rgba(37, 211, 102, 0.1);
+  color: var(--wa-primary);
+}
+
+.sparkle-btn.spinning .sparkle-icon {
+  animation: sparkle-rotate 2s linear infinite;
+  color: var(--wa-primary);
+}
+
+@keyframes sparkle-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sparkle-icon {
+  font-size: 1.1rem;
 }

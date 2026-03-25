@@ -1,4 +1,4 @@
-import { SearchResultItem } from '../types'
+import { SearchResultItem, SearchMode } from '../types'
 import { formatChatTime } from '../utils/formatters'
 
 interface SearchResultsPanelProps {
@@ -7,6 +7,7 @@ interface SearchResultsPanelProps {
   isSearching: boolean
   query: string
   activeJid: string | null
+  mode: SearchMode
   onSelectChat: (jid: string, name: string, messageId?: string | null) => void
 }
 
@@ -21,6 +22,7 @@ export function SearchResultsPanel({
   isSearching,
   query,
   activeJid,
+  mode,
   onSelectChat
 }: SearchResultsPanelProps) {
   const hasResults = chats.length > 0 || messages.length > 0
@@ -29,14 +31,29 @@ export function SearchResultsPanel({
     return (
       <div className="search-results-panel">
         <div className="search-results-loading">
-          <div className="spinner" />
-          <span>Searching...</span>
+          <div className="loading-animation">
+            <div className="circle pulse" />
+            <div className="circle pulse delay-1" />
+          </div>
+          <span className="loading-text">
+            {mode === 'deep' ? 'Searching deeper meanings...' : 'Searching...'}
+          </span>
+          <p className="loading-sub">
+            {mode === 'deep' 
+               ? 'This may take a few seconds for large histories' 
+               : 'Finding matches in your messages'}
+          </p>
+          {mode === 'deep' && (
+            <div className="search-tip">
+              <span className="tip-label">TIP:</span> Use filters to speed up search
+            </div>
+          )}
         </div>
       </div>
     )
   }
 
-  if (!hasResults) {
+  if (!hasResults && query.trim()) {
     return (
       <div className="search-results-panel">
         <div className="search-results-empty">
@@ -51,6 +68,7 @@ export function SearchResultsPanel({
   }
 
   const highlightMatch = (text: string, q: string) => {
+    if (!q.trim()) return <span>{text}</span>
     const idx = text.toLowerCase().indexOf(q.toLowerCase())
     if (idx === -1) return <span>{text}</span>
     return (
@@ -59,6 +77,21 @@ export function SearchResultsPanel({
         <mark className="search-highlight">{text.slice(idx, idx + q.length)}</mark>
         {text.slice(idx + q.length)}
       </span>
+    )
+  }
+
+  const renderScore = (score?: number) => {
+    if (mode !== 'deep' || score === undefined) return null
+    const pct = Math.round(score * 100)
+    let color = '#a0a0a0'
+    if (pct > 80) color = '#25D366'
+    else if (pct > 60) color = '#34B7F1'
+    
+    return (
+      <div className="result-score" style={{ color }}>
+        <span className="score-sparkle">✦</span>
+        {pct}% match
+      </div>
     )
   }
 
@@ -107,7 +140,10 @@ export function SearchResultsPanel({
                 </svg>
               </div>
               <div className="search-result-content">
-                <div className="search-result-name">{item.name}</div>
+                <div className="search-result-top-row">
+                  <span className="search-result-name">{item.name}</span>
+                  {renderScore(item.score)}
+                </div>
                 <div className="search-result-snippet">
                   {highlightMatch(item.snippet || '', query)}
                 </div>
