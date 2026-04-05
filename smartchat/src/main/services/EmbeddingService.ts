@@ -29,7 +29,7 @@ export class EmbeddingService implements IEmbeddingService {
   // Model loading (lazy + cached)
   // -----------------------------------------------------------------
 
-  private modelName = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2' // Correct Hub ID for online models
+  private modelName =  'bhasha-embed-onnx-quantized' //'Xenova/paraphrase-multilingual-MiniLM-L12-v2' // Correct Hub ID for online models
 
   public setModel(name: string): void {
     if (this.modelName !== name) {

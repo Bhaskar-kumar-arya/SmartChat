@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import ChatList from './ChatList'
 import MessageView from './MessageView'
 import MessageInput from './MessageInput'
@@ -7,6 +7,8 @@ import { usePresence } from '../hooks/usePresence'
 import { MessageItem } from '../types'
 import { ProfilePicture } from './ProfilePicture'
 import { ProfilePicOverlay } from './ProfilePicOverlay'
+import AIChatSidebar from './AIChatSidebar'
+import '../assets/sidebar.css'
 
 export default function ChatLayout() {
   const [activeJid, setActiveJid] = useState<string | null>(null)
@@ -16,6 +18,28 @@ export default function ChatLayout() {
   const [overlayJid, setOverlayJid] = useState<string | null>(null)
   const [overlayName, setOverlayName] = useState<string>('')
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
+  const [isAIOpen, setIsAIOpen] = useState<boolean>(false)
+  const [sidebarWidth, setSidebarWidth] = useState<number>(500)
+
+  const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
+    mouseDownEvent.preventDefault()
+    const startX = mouseDownEvent.clientX
+    const startWidth = sidebarWidth
+
+    const onMouseMove = (mouseMoveEvent: MouseEvent) => {
+      const delta = startX - mouseMoveEvent.clientX
+      const newWidth = Math.min(Math.max(startWidth + delta, 300), 800)
+      setSidebarWidth(newWidth)
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [sidebarWidth])
 
   const { 
     messages, 
@@ -108,6 +132,27 @@ export default function ChatLayout() {
           </div>
         )}
       </div>
+
+      {isAIOpen && (
+        <div 
+          className="ai-sidebar-resizer"
+          onMouseDown={startResizing}
+          style={{ right: `${sidebarWidth}px` }}
+        />
+      )}
+
+      <AIChatSidebar isOpen={isAIOpen} onClose={() => setIsAIOpen(false)} width={sidebarWidth} />
+
+      <button 
+        className={`ai-edge-tab ${isAIOpen ? 'open' : ''}`}
+        onClick={() => setIsAIOpen(!isAIOpen)}
+        title={isAIOpen ? "Close AI Assistant" : "Open AI Assistant"}
+        style={isAIOpen ? { right: `${sidebarWidth}px` } : {}}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {isAIOpen ? <polyline points="9 18 15 12 9 6"></polyline> : <polyline points="15 18 9 12 15 6"></polyline>}
+        </svg>
+      </button>
 
       {overlayJid && (
         <ProfilePicOverlay 

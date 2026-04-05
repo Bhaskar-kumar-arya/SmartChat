@@ -8,6 +8,7 @@ import { messageService } from './services/MessageService'
 import { chatService } from './services/ChatService'
 import { searchService } from './services/SearchService'
 import { embeddingService } from './services/EmbeddingService'
+import { aiService } from './services/AIService'
 
 /**
  * Registers all IPC handlers for chat data, messaging, and identity resolution.
@@ -346,6 +347,36 @@ export function registerIpcHandlers(
     } catch (err) {
       console.error('[IPC] clear-vectors failed:', err)
     }
+  })
+
+  // ── AI Handlers ───────────────────────────────────────────────────────
+  ipcMain.handle('ai-chat', async (_event, prompt: string, contextChats?: any[], history?: any[]) => {
+    return await aiService.generateResponse(prompt, contextChats, history);
+  })
+
+  ipcMain.handle('get-chat-context', async (_event, jid: string) => {
+    // Get top 100 messages
+    const messages = await prisma.message.findMany({
+      where: { remoteJid: jid },
+      orderBy: { timestamp: 'desc' },
+      take: 100
+    });
+    
+    const sock = getSock();
+    const jids = new Set<string>();
+    messages.forEach(m => {
+      jids.add(m.remoteJid);
+      if (m.participant) jids.add(m.participant);
+    });
+
+    const nameMap = await contactService.batchResolveNames(Array.from(jids), sock);
+    
+    const enriched = await Promise.all(
+      messages.map(async (m) => await messageService.enrichMessage(m, sock, nameMap))
+    );
+    
+    // Sort chronologically
+    return enriched.reverse();
   })
 }
 

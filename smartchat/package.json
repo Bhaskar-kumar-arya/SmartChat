@@ -23,6 +23,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@google/genai": "^1.48.0",
     "@tiptap/react": "^3.20.3",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "@xenova/transformers": "^2.17.2",
@@ -31,6 +32,8 @@
     "lucide-react": "^0.577.0",
     "node-cache": "^5.1.2",
     "qrcode.react": "^4.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.2.1"
   },
   "devDependencies": {

@@ -67,6 +67,8 @@ declare global {
       indexEmbeddings: () => Promise<void>
       onEmbeddingProgress: (callback: (pct: number) => void) => () => void
       clearVectors: () => Promise<void>
+      aiChat: (prompt: string, contextChats?: any[], history?: any[]) => Promise<string>
+      getChatContext: (jid: string) => Promise<MessageItem[]>
     }
   }
 }

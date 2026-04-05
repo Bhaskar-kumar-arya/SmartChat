@@ -16,7 +16,7 @@
 .reaction-modal {
   background: var(--wa-bg-secondary);
   border-radius: 12px;
-  width: 400px;
+  width: 500px;
   max-width: 90%;
   max-height: 80vh;
   display: flex;

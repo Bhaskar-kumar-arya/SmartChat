@@ -92,6 +92,14 @@ const api = {
   },
   clearVectors: () => {
     return ipcRenderer.invoke('clear-vectors')
+  },
+  
+  // ── AI Methods ──────────────────────────────────────────────────────
+  aiChat: (prompt: string, contextChats?: any[], history?: any[]) => {
+    return ipcRenderer.invoke('ai-chat', prompt, contextChats, history)
+  },
+  getChatContext: (jid: string) => {
+    return ipcRenderer.invoke('get-chat-context', jid)
   }
 }
 
