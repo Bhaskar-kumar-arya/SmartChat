@@ -201,14 +201,15 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         () => {
           setLoading(false);
           // Dump the rest of the stream instantly when the response fully completes
-          setMessages(prev => prev.map(m => {
-             if (m.id === aiMessageId && streamingBuffers.current[aiMessageId]) {
-                const remainder = streamingBuffers.current[aiMessageId];
-                delete streamingBuffers.current[aiMessageId];
-                return { ...m, content: m.content + remainder };
-             }
-             return m;
-          }));
+          // Must extract and delete outside setMessages to survive React 18 Strict Mode double-invocation
+          const remainder = streamingBuffers.current[aiMessageId];
+          delete streamingBuffers.current[aiMessageId];
+
+          if (remainder && remainder.length > 0) {
+            setMessages(prev => prev.map(m => 
+               m.id === aiMessageId ? { ...m, content: m.content + remainder } : m
+            ));
+          }
         },
         (error) => {
           console.error(error);
