@@ -7,6 +7,7 @@ interface AIChatMessage {
   id: string
   role: 'user' | 'ai'
   content: string
+  contexts?: any[]
 }
 
 interface SelectedContext {
@@ -113,12 +114,6 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     setContexts([])
     setShowMentionMenu(false)
 
-    // Add user message
-    setMessages(prev => [...prev, {
-      id: Date.now().toString(),
-      role: 'user',
-      content: prompt
-    }])
     setLoading(true)
 
     try {
@@ -128,6 +123,14 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         const msgs = await window.api.getChatContext(ctx.jid)
         resolvedContexts.push({ jid: ctx.jid, name: ctx.name, messages: msgs })
       }
+
+      // Add user message with attached contexts so it persists in history
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'user',
+        content: prompt,
+        contexts: resolvedContexts
+      }])
 
       const response = await window.api.aiChat(prompt, resolvedContexts, messages)
       
