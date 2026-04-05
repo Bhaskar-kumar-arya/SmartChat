@@ -354,6 +354,19 @@ export function registerIpcHandlers(
     return await aiService.generateResponse(prompt, contextChats, history);
   })
 
+  ipcMain.on('ai-chat-stream', async (event, args) => {
+    const { channelId, prompt, contextChats, history } = args;
+    try {
+      await aiService.generateResponseStream(prompt, contextChats, history, (chunk) => {
+        event.sender.send(`${channelId}-chunk`, chunk);
+      });
+      event.sender.send(`${channelId}-end`);
+    } catch (err: any) {
+      console.error('[IPC] ai-chat-stream error:', err);
+      event.sender.send(`${channelId}-error`, err.message || String(err));
+    }
+  });
+
   ipcMain.handle('get-chat-context', async (_event, jid: string) => {
     // Get top 100 messages
     const messages = await prisma.message.findMany({

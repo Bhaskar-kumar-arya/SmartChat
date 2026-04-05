@@ -68,6 +68,7 @@ declare global {
       onEmbeddingProgress: (callback: (pct: number) => void) => () => void
       clearVectors: () => Promise<void>
       aiChat: (prompt: string, contextChats?: any[], history?: any[]) => Promise<string>
+      aiChatStream: (prompt: string, contextChats: any[] | undefined, history: any[] | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: any) => void) => void
       getChatContext: (jid: string) => Promise<MessageItem[]>
     }
   }

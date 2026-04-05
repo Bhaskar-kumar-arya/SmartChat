@@ -34,6 +34,15 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   const [contexts, setContexts] = useState<SelectedContext[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  
+  const streamingBuffers = useRef<Record<string, string>>({})
+  const typingInterval = useRef<any>(null)
+
+  useEffect(() => {
+    return () => {
+      if (typingInterval.current) clearInterval(typingInterval.current);
+    }
+  }, [])
 
   useEffect(() => {
     if (isOpen && chatList.length === 0) {
@@ -43,7 +52,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+  }, [messages.length, loading])
 
   useEffect(() => {
     if (mentionQuery) {
@@ -124,21 +133,93 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         resolvedContexts.push({ jid: ctx.jid, name: ctx.name, messages: msgs })
       }
 
-      // Add user message with attached contexts so it persists in history
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: 'user',
-        content: prompt,
-        contexts: resolvedContexts
-      }])
+      // Generate unique IDs synchronously
+      const userMessageId = crypto.randomUUID();
+      const aiMessageId = crypto.randomUUID();
 
-      const response = await window.api.aiChat(prompt, resolvedContexts, messages)
-      
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'ai',
-        content: response
-      }])
+      // Add both messages atomically
+      setMessages(prev => [...prev, 
+        {
+          id: userMessageId,
+          role: 'user',
+          content: prompt,
+          contexts: resolvedContexts
+        },
+        {
+          id: aiMessageId,
+          role: 'ai',
+          content: ''
+        }
+      ]);
+
+      streamingBuffers.current[aiMessageId] = '';
+
+      const ensureDripper = () => {
+        if (!typingInterval.current) {
+          typingInterval.current = setInterval(() => {
+            let hasWork = false;
+            const updates: Record<string, string> = {};
+            
+            // Calculate and perform mutations safely OUTSIDE the React state setter
+            for (const key in streamingBuffers.current) {
+               const buffer = streamingBuffers.current[key];
+               if (buffer && buffer.length > 0) {
+                  hasWork = true;
+                  const charsToTake = Math.max(2, Math.ceil(buffer.length / 8)); 
+                  const chars = buffer.substring(0, charsToTake);
+                  updates[key] = chars;
+                  streamingBuffers.current[key] = buffer.substring(charsToTake);
+               }
+            }
+            
+            if (!hasWork) {
+               clearInterval(typingInterval.current);
+               typingInterval.current = null;
+               return;
+            }
+
+            // Pure state update lambda
+            setMessages(prev => prev.map(m => {
+               if (updates[m.id]) {
+                  return { ...m, content: m.content + updates[m.id] };
+               }
+               return m;
+            }));
+          }, 30);
+        }
+      };
+
+      window.api.aiChatStream(
+        prompt, 
+        resolvedContexts, 
+        messages,
+        (chunk) => {
+          setLoading(false); // hide loader on first chunk
+          streamingBuffers.current[aiMessageId] += chunk;
+          ensureDripper();
+        },
+        () => {
+          setLoading(false);
+          // Dump the rest of the stream instantly when the response fully completes
+          setMessages(prev => prev.map(m => {
+             if (m.id === aiMessageId && streamingBuffers.current[aiMessageId]) {
+                const remainder = streamingBuffers.current[aiMessageId];
+                delete streamingBuffers.current[aiMessageId];
+                return { ...m, content: m.content + remainder };
+             }
+             return m;
+          }));
+        },
+        (error) => {
+          console.error(error);
+          setLoading(false);
+          delete streamingBuffers.current[aiMessageId];
+          setMessages(prev => prev.map(m => 
+            m.id === aiMessageId ? { ...m, content: m.content + '\n\n**Error:** Failed to generate response.' } : m
+          ));
+        }
+      );
+
     } catch (error) {
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
@@ -146,7 +227,6 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         content: 'Sorry, I encountered an error. Please check the console.'
       }])
       console.error(error)
-    } finally {
       setLoading(false)
     }
   }

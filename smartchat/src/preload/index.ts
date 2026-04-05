@@ -98,6 +98,28 @@ const api = {
   aiChat: (prompt: string, contextChats?: any[], history?: any[]) => {
     return ipcRenderer.invoke('ai-chat', prompt, contextChats, history)
   },
+  aiChatStream: (prompt: string, contextChats: any[] | undefined, history: any[] | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: any) => void) => {
+    const channelId = `ai-chat-${Date.now()}`;
+    const chunkListener = (_event: any, chunk: string) => onChunk(chunk);
+    const endListener = () => {
+      ipcRenderer.removeListener(`${channelId}-chunk`, chunkListener);
+      ipcRenderer.removeListener(`${channelId}-end`, endListener);
+      ipcRenderer.removeListener(`${channelId}-error`, errorListener);
+      onEnd();
+    };
+    const errorListener = (_event: any, err: any) => {
+      ipcRenderer.removeListener(`${channelId}-chunk`, chunkListener);
+      ipcRenderer.removeListener(`${channelId}-end`, endListener);
+      ipcRenderer.removeListener(`${channelId}-error`, errorListener);
+      onError(err);
+    };
+
+    ipcRenderer.on(`${channelId}-chunk`, chunkListener);
+    ipcRenderer.on(`${channelId}-end`, endListener);
+    ipcRenderer.on(`${channelId}-error`, errorListener);
+
+    ipcRenderer.send('ai-chat-stream', { channelId, prompt, contextChats, history });
+  },
   getChatContext: (jid: string) => {
     return ipcRenderer.invoke('get-chat-context', jid)
   }

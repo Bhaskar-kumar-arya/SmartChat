@@ -57,6 +57,37 @@ export class AIService {
       throw error;
     }
   }
+
+  async generateResponseStream(
+    prompt: string, 
+    contextFiles?: any[],
+    history?: any[],
+    onChunk: (chunk: string) => void = () => {}
+  ): Promise<void> {
+    try {
+      const fullPrompt = this.buildFullPrompt(prompt, contextFiles);
+
+      const formattedHistory = (history || []).map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts) : msg.content }]
+      }));
+
+      const chat = this.ai.chats.create({
+        model: "gemma-4-31b-it", // gemma-3-27b-it
+        history: formattedHistory
+      });
+
+      const responseStream = await chat.sendMessageStream({ message: fullPrompt });
+      for await (const chunk of responseStream) {
+        if (chunk.text) {
+          onChunk(chunk.text);
+        }
+      }
+    } catch (error) {
+      console.error('[AIService] Error generating stream response:', error);
+      throw error;
+    }
+  }
 }
 
 export const aiService = new AIService();
