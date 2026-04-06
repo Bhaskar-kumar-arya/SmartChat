@@ -22,7 +22,6 @@ export interface IEmbeddingService {
  */
 export class EmbeddingService implements IEmbeddingService {
   private pipeline: any = null
-  private isLoading = false
   private loadPromise: Promise<void> | null = null
 
   // -----------------------------------------------------------------
@@ -49,7 +48,6 @@ export class EmbeddingService implements IEmbeddingService {
     if (this.loadPromise) return this.loadPromise
 
     this.loadPromise = (async () => {
-      this.isLoading = true
       try {
         // Dynamic import so the heavy ONNX runtime only loads when needed
         const { pipeline, env } = await import('@xenova/transformers')
@@ -100,8 +98,6 @@ export class EmbeddingService implements IEmbeddingService {
       } catch (err) {
         console.error('[EmbeddingService] Fatal error loading model:', err)
         throw err
-      } finally {
-        this.isLoading = false
       }
     })()
 
@@ -132,21 +128,51 @@ export class EmbeddingService implements IEmbeddingService {
     return dot // normalised vectors: cos(θ) = a·b
   }
 
+  // -----------------------------------------------------------------
+  // Queued Indexing logic to prevent main thread blocking
+  // -----------------------------------------------------------------
+
+  private indexQueue: Array<{ messageId: string; text: string }> = []
+  private isProcessingQueue = false
+
   /**
-   * Persist the embedding for a single message (upsert).
+   * Persist the embedding for a single message (queued).
+   * We use a queue to ensure we don't saturate the CPU with multiple 
+   * concurrent transformer inferences in the main process.
    */
   async indexMessage(messageId: string, text: string): Promise<void> {
     if (!text?.trim()) return
-    try {
-      const vector = await this.embed(text)
-      await (prisma as any).messageVector.upsert({
-        where: { messageId },
-        create: { messageId, vector: JSON.stringify(vector) },
-        update: { vector: JSON.stringify(vector) }
-      })
-    } catch (err) {
-      console.error(`[EmbeddingService] Failed to index message ${messageId}:`, err)
+    this.indexQueue.push({ messageId, text })
+    this.processQueue()
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.isProcessingQueue || this.indexQueue.length === 0) return
+    this.isProcessingQueue = true
+
+    while (this.indexQueue.length > 0) {
+      const item = this.indexQueue.shift()
+      if (!item) continue
+
+      try {
+        const { messageId, text } = item
+        const vector = await this.embed(text)
+        await (prisma as any).messageVector.upsert({
+          where: { messageId },
+          create: { messageId, vector: JSON.stringify(vector) },
+          update: { vector: JSON.stringify(vector) }
+        })
+      } catch (err) {
+        console.error(`[EmbeddingService] Failed to index message:`, err)
+      }
+
+      // Yield to event loop and add a small breather between embeddings
+      if (this.indexQueue.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
     }
+
+    this.isProcessingQueue = false
   }
 
   /**
@@ -173,13 +199,12 @@ export class EmbeddingService implements IEmbeddingService {
       return
     }
 
-    const BATCH = 50
     let done = 0
-
-    for (let i = 0; i < pending.length; i += BATCH) {
-      const batch = pending.slice(i, i + BATCH)
-      await Promise.all(batch.map((m) => this.indexMessage(m.id, m.textContent!)))
-      done += batch.length
+    for (let i = 0; i < pending.length; i++) {
+      const m = pending[i]
+      await this.indexMessage(m.id, m.textContent!)
+      
+      done++
       onProgress?.(Math.round((done / total) * 100))
     }
   }
