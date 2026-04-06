@@ -52,8 +52,9 @@ declare global {
       // Phase 3 & 4
       getChats: (page?: number, pageSize?: number) => Promise<ChatItem[]>
       getMessages: (jid: string, page?: number, pageSize?: number) => Promise<MessageItem[]>
-      sendMessage: (jid: string, text: string, quotedMsgId?: string) => Promise<MessageItem>
-      sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string) => Promise<MessageItem>
+      sendMessage: (jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => Promise<MessageItem>
+      sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => Promise<MessageItem>
+      getGroupParticipants: (jid: string) => Promise<{ jid: string, name: string, isAdmin: boolean, isMe: boolean }[]>
       downloadMedia: (msgId: string) => Promise<MessageItem>
       selectFile: () => Promise<string | null>
       onNewMessage: (callback: (msg: MessageItem) => void) => () => void

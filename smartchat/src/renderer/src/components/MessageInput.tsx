@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { Paperclip, X } from 'lucide-react'
+import { useMentions } from '../hooks/useMentions'
+import MentionMenu from './MentionMenu'
 
 interface MessageItem {
   id: string
@@ -9,17 +11,28 @@ interface MessageItem {
 }
 
 interface MessageInputProps {
-  onSend: (text: string) => void | Promise<void>
-  onSendMedia: (filePath: string, text: string) => void | Promise<void>
+  activeJid: string
+  onSend: (text: string, mentions?: string[]) => void | Promise<void>
+  onSendMedia: (filePath: string, text: string, mentions?: string[]) => void | Promise<void>
   replyingTo: MessageItem | null
   onCancelReply: () => void
 }
 
-export default function MessageInput({ onSend, onSendMedia, replyingTo, onCancelReply }: MessageInputProps) {
+export default function MessageInput({ activeJid, onSend, onSendMedia, replyingTo, onCancelReply }: MessageInputProps) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [selectedFile, setSelectedFile] = useState<{path: string, name: string} | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const { 
+    participants, 
+    showMenu, 
+    query, 
+    mentionedJids, 
+    handleInputChange, 
+    addMention, 
+    clearMentions 
+  } = useMentions(activeJid)
 
   useEffect(() => {
     if (replyingTo) {
@@ -27,20 +40,50 @@ export default function MessageInput({ onSend, onSendMedia, replyingTo, onCancel
     }
   }, [replyingTo])
 
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setText(val)
+    handleInputChange(val, e.target.selectionStart || 0)
+  }
+
+  const handleSelectParticipant = (participant: { jid: string, name: string, isAdmin: boolean, isMe: boolean }) => {
+    const cursor = inputRef.current?.selectionStart || 0
+    const textBeforeCursor = text.slice(0, cursor)
+    const lastAtPos = textBeforeCursor.lastIndexOf('@')
+
+    if (lastAtPos !== -1) {
+      const number = participant.jid.split('@')[0]
+      const newText = text.slice(0, lastAtPos) + `@${number} ` + text.slice(cursor)
+      setText(newText)
+      addMention(participant)
+      
+      // Move cursor after the mention
+      setTimeout(() => {
+        if (inputRef.current) {
+          const newPos = lastAtPos + number.length + 2
+          inputRef.current.focus()
+          inputRef.current.setSelectionRange(newPos, newPos)
+        }
+      }, 0)
+    }
+  }
+
   const handleSend = async () => {
     const trimmed = text.trim()
     if ((!trimmed && !selectedFile) || sending) return
 
     setSending(true)
+    const mentions = Array.from(mentionedJids)
     
     try {
       if (selectedFile) {
-        await onSendMedia(selectedFile.path, trimmed)
+        await onSendMedia(selectedFile.path, trimmed, mentions)
       } else {
-        await onSend(trimmed)
+        await onSend(trimmed, mentions)
       }
       setText('')
       setSelectedFile(null)
+      clearMentions()
     } finally {
       setSending(false)
       inputRef.current?.focus()
@@ -61,14 +104,23 @@ export default function MessageInput({ onSend, onSendMedia, replyingTo, onCancel
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !showMenu) {
       e.preventDefault()
       handleSend()
     }
   }
 
   return (
-    <div className="message-input-wrapper" style={{ display: 'flex', flexDirection: 'column', width: '100%', borderTop: '1px solid var(--border, #e5e5e5)' }}>
+    <div className="message-input-wrapper" style={{ display: 'flex', flexDirection: 'column', width: '100%', borderTop: '1px solid var(--border, #e5e5e5)', position: 'relative' }}>
+      {showMenu && (
+        <MentionMenu 
+          participants={participants} 
+          query={query} 
+          onSelect={handleSelectParticipant} 
+          onClose={() => handleInputChange(text, 0)} 
+        />
+      )}
+
       {replyingTo && (
         <div className="reply-preview" style={{ padding: '8px 16px', backgroundColor: '#f0f2f5', borderLeft: '4px solid var(--primary, #00a884)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -111,8 +163,9 @@ export default function MessageInput({ onSend, onSendMedia, replyingTo, onCancel
           className="message-input"
           placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={handleTextChange}
           onKeyDown={handleKeyDown}
+          onSelect={(e) => handleInputChange(text, (e.target as HTMLInputElement).selectionStart || 0)}
           disabled={sending}
           autoFocus
         />

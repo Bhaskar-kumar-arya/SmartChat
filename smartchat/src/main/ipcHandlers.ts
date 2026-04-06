@@ -147,7 +147,7 @@ export function registerIpcHandlers(
   )
 
   // ── Send Message ─────────────────────────────────────────────────────
-  ipcMain.handle('send-message', async (_event, jid: string, text: string, quotedMsgId?: string) => {
+  ipcMain.handle('send-message', async (_event, jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
 
@@ -161,7 +161,10 @@ export function registerIpcHandlers(
       }
     }
 
-    const sentMsg = await sock.sendMessage(jid, { text }, { quoted } as any)
+    const messageContent: any = { text }
+    if (mentions && mentions.length > 0) messageContent.mentions = mentions
+
+    const sentMsg = await sock.sendMessage(jid, messageContent, { quoted } as any)
     if (!sentMsg) throw new Error('Failed to send message')
 
     // Persist via Service
@@ -169,12 +172,12 @@ export function registerIpcHandlers(
     await chatService.updateTimestamp(jid, processed.timestamp)
 
     // Enrich for UI
-    const nameMap = await contactService.batchResolveNames([processed.participant || jid], sock)
+    const nameMap = await contactService.batchResolveNames([processed.participant || jid, ...(mentions || [])], sock)
     return messageService.enrichMessage(processed, sock, nameMap)
   })
 
   // ── Send Media Message ───────────────────────────────────────────────
-  ipcMain.handle('send-media-message', async (_event, jid: string, filePath: string, caption?: string, quotedMsgId?: string) => {
+  ipcMain.handle('send-media-message', async (_event, jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
 
@@ -190,6 +193,7 @@ export function registerIpcHandlers(
 
     const buffer = fs.readFileSync(filePath)
     const sendOptions = messageService.getMediaSendOptions(filePath, buffer, caption)
+    if (mentions && mentions.length > 0) sendOptions.mentions = mentions
 
     const sentMsg = await sock.sendMessage(jid, sendOptions, { quoted } as any)
     if (!sentMsg) throw new Error('Failed to send media message')
@@ -198,7 +202,7 @@ export function registerIpcHandlers(
     const processed = await messageService.processMessage(sentMsg, sock)
     await chatService.updateTimestamp(jid, processed.timestamp)
     
-    const nameMap = await contactService.batchResolveNames([processed.participant || jid], sock)
+    const nameMap = await contactService.batchResolveNames([processed.participant || jid, ...(mentions || [])], sock)
     return messageService.enrichMessage(processed, sock, nameMap)
   })
 
@@ -315,6 +319,26 @@ export function registerIpcHandlers(
   ipcMain.handle('get-profile-picture', async (_event, jid: string, type: 'preview' | 'image' = 'preview') => {
     const sock = getSock()
     return contactService.getProfilePicture(jid, type, sock)
+  })
+
+  // ── Get Group Metadata ────────────────────────────────────────────────
+  ipcMain.handle('get-group-participants', async (_event, jid: string) => {
+    const sock = getSock()
+    if (!sock || !jid.endsWith('@g.us')) return []
+    try {
+      const metadata = await sock.groupMetadata(jid)
+      const jids = metadata.participants.map(p => p.id)
+      const nameMap = await contactService.batchResolveNames(jids, sock)
+      return metadata.participants.map(p => ({
+        jid: p.id,
+        name: nameMap.get(p.id) || p.id.split('@')[0],
+        isAdmin: !!p.admin,
+        isMe: !!sock.user && p.id === sock.user.id
+      }))
+    } catch (err) {
+      console.error('[IPC] get-group-participants failed:', err)
+      return []
+    }
   })
 
   // ── Global Search (chats, contacts, messages) ───────────────────────

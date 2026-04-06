@@ -341,3 +341,87 @@ body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* ─── Mention Menu ─────────────────────────────────────────────── */
+
+.mention-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  width: 280px;
+  max-height: 320px;
+  background: var(--wa-header-bg, #202c33);
+  border: 1px solid var(--wa-border, #3b4a54);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  animation: slide-up 0.15s ease-out;
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.mention-item:hover, .mention-item.active {
+  background: var(--wa-bg-hover, #2a3942);
+}
+
+.mention-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--wa-primary, #00a884);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.mention-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+}
+
+.mention-name {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--wa-text-primary, #e9edef);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-jid {
+  font-size: 0.75rem;
+  color: var(--wa-text-secondary, #8696a0);
+}
+
+.mention-admin-badge {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  background: rgba(0, 168, 132, 0.1);
+  border: 1px solid rgba(0, 168, 132, 0.3);
+  border-radius: 4px;
+  color: var(--wa-primary, #00a884);
+  text-transform: uppercase;
+  font-weight: 700;
+}

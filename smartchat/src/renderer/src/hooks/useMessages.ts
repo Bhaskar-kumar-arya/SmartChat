@@ -127,10 +127,10 @@ export const useMessages = (activeJid: string | null) => {
     }
   }
 
-  const sendMessage = async (text: string, replyId?: string) => {
+  const sendMessage = async (text: string, replyId?: string, mentions?: string[]) => {
     if (!activeJid || !text.trim()) return
     try {
-      const sentMsg = await api.sendMessage(activeJid, text.trim(), replyId)
+      const sentMsg = await api.sendMessage(activeJid, text.trim(), replyId, mentions)
       setMessages((prev) => [...prev, sentMsg])
       return sentMsg
     } catch (err) {
@@ -139,10 +139,10 @@ export const useMessages = (activeJid: string | null) => {
     }
   }
 
-  const sendMediaMessage = async (filePath: string, text: string, replyId?: string) => {
+  const sendMediaMessage = async (filePath: string, text: string, replyId?: string, mentions?: string[]) => {
     if (!activeJid) return
     try {
-      const sentMsg = await api.sendMediaMessage(activeJid, filePath, text.trim(), replyId)
+      const sentMsg = await api.sendMediaMessage(activeJid, filePath, text.trim(), replyId, mentions)
       setMessages((prev) => [...prev, sentMsg])
       return sentMsg
     } catch (err) {

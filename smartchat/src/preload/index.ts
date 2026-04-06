@@ -40,11 +40,14 @@ const api = {
   getMessages: (jid: string, page: number = 1, pageSize: number = 50) => {
     return ipcRenderer.invoke('get-messages', jid, page, pageSize)
   },
-  sendMessage: (jid: string, text: string, quotedMsgId?: string) => {
-    return ipcRenderer.invoke('send-message', jid, text, quotedMsgId)
+  sendMessage: (jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => {
+    return ipcRenderer.invoke('send-message', jid, text, quotedMsgId, mentions)
   },
-  sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string) => {
-    return ipcRenderer.invoke('send-media-message', jid, filePath, caption, quotedMsgId)
+  sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => {
+    return ipcRenderer.invoke('send-media-message', jid, filePath, caption, quotedMsgId, mentions)
+  },
+  getGroupParticipants: (jid: string) => {
+    return ipcRenderer.invoke('get-group-participants', jid)
   },
   downloadMedia: (msgId: string) => {
     return ipcRenderer.invoke('download-media', msgId)

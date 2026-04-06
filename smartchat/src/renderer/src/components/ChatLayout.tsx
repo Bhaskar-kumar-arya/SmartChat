@@ -60,13 +60,13 @@ export default function ChatLayout() {
     setTargetMessageId(messageId || null)
   }
 
-  const handleSendMessage = async (text: string) => {
-    await sendMessage(text, replyingTo?.id)
+  const handleSendMessage = async (text: string, mentions?: string[]) => {
+    await sendMessage(text, replyingTo?.id, mentions)
     setReplyingTo(null)
   }
 
-  const handleSendMediaMessage = async (filePath: string, text: string) => {
-    await sendMediaMessage(filePath, text, replyingTo?.id)
+  const handleSendMediaMessage = async (filePath: string, text: string, mentions?: string[]) => {
+    await sendMediaMessage(filePath, text, replyingTo?.id, mentions)
     setReplyingTo(null)
   }
 
@@ -116,6 +116,7 @@ export default function ChatLayout() {
             <MessageInput
               onSend={handleSendMessage}
               onSendMedia={handleSendMediaMessage}
+              activeJid={activeJid}
               replyingTo={replyingTo}
               onCancelReply={() => setReplyingTo(null)}
             />

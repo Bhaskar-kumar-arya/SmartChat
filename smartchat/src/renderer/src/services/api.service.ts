@@ -14,11 +14,14 @@ export const api = {
   getMessages: (jid: string, page: number, limit: number): Promise<MessageItem[]> =>
     window.api.getMessages(jid, page, limit),
 
-  sendMessage: (jid: string, text: string, quotedId?: string): Promise<MessageItem> =>
-    window.api.sendMessage(jid, text, quotedId),
+  sendMessage: (jid: string, text: string, quotedId?: string, mentions?: string[]): Promise<MessageItem> =>
+    window.api.sendMessage(jid, text, quotedId, mentions),
 
-  sendMediaMessage: (jid: string, filePath: string, caption: string, quotedId?: string): Promise<MessageItem> =>
-    window.api.sendMediaMessage(jid, filePath, caption, quotedId),
+  sendMediaMessage: (jid: string, filePath: string, caption: string, quotedId?: string, mentions?: string[]): Promise<MessageItem> =>
+    window.api.sendMediaMessage(jid, filePath, caption, quotedId, mentions),
+
+  getGroupParticipants: (jid: string): Promise<{ jid: string, name: string, isAdmin: boolean, isMe: boolean }[]> =>
+    window.api.getGroupParticipants(jid),
 
   downloadMedia: (msgId: string): Promise<MessageItem> =>
     window.api.downloadMedia(msgId),
