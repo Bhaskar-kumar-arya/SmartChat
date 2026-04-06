@@ -10,7 +10,7 @@ export class ReadChatTool implements AITool {
     type: 'object',
     properties: {
       jid: { type: 'string', description: 'The exact WhatsApp JID to read messages from (e.g. 123@s.whatsapp.net or 123-456@g.us)' },
-      limit: { type: 'number', description: 'Maximum number of messages to return (default 50, max 500)', default: 50 },
+      limit: { type: 'number', description: 'Maximum number of messages to return. If not specified, defaults to 20,000.' },
       afterDate: { type: 'string', description: 'ISO date string or timestamp to fetch messages after' },
       beforeDate: { type: 'string', description: 'ISO date string or timestamp to fetch messages before' },
       afterMessageId: { type: 'string', description: 'Fetch messages sent after this specific message ID' },
@@ -27,11 +27,12 @@ export class ReadChatTool implements AITool {
   }
 
   async execute(args: any) {
-    const { jid, limit = 50, afterDate, beforeDate, afterMessageId, beforeMessageId, inclusive = false } = args;
+    const { jid, limit, afterDate, beforeDate, afterMessageId, beforeMessageId, inclusive = false } = args;
     
     if (!jid) throw new Error('Missing required argument: jid');
 
-    const finalLimit = Math.min(Math.max(1, limit), 500);
+    // Default to 20,000 if not explicitly provided
+    const finalLimit = limit !== undefined ? Math.min(Math.max(1, limit), 20000) : 20000;
     const where: any = { remoteJid: jid };
     
     // Handle specific message IDs first to get their timestamps
@@ -72,18 +73,21 @@ export class ReadChatTool implements AITool {
       }
     }
 
-    // Fetch messages
+    // Fetch messages (take finalLimit + 1 to check if there are more)
     const messages = await prisma.message.findMany({
       where,
       orderBy: { timestamp: 'desc' },
-      take: finalLimit
+      take: finalLimit + 1
     });
+
+    const hasMore = messages.length > finalLimit;
+    const resultMessages = hasMore ? messages.slice(0, finalLimit) : messages;
 
     const sock = this.getSock();
     
     // Resolve names for enrichment
     const jids = new Set<string>();
-    messages.forEach(m => {
+    resultMessages.forEach(m => {
       jids.add(m.remoteJid);
       if (m.participant) jids.add(m.participant);
     });
@@ -91,10 +95,24 @@ export class ReadChatTool implements AITool {
     const nameMap = await contactService.batchResolveNames(Array.from(jids), sock);
 
     // Format for AI
-    let formattedResponse = `Results for chat ${jid} (${messages.length} messages found):\n\n`;
+    let formattedResponse = `Results for chat ${jid}:\n`;
+    formattedResponse += `Range: ${resultMessages.length} messages found.\n`;
     
+    if (resultMessages.length > 0) {
+      const newest = resultMessages[0];
+      const oldest = resultMessages[resultMessages.length - 1];
+      formattedResponse += `Newest Message ID: ${newest.id} (${new Date(Number(newest.timestamp) * 1000).toLocaleString()})\n`;
+      formattedResponse += `Oldest Message ID: ${oldest.id} (${new Date(Number(oldest.timestamp) * 1000).toLocaleString()})\n`;
+    }
+    formattedResponse += `\n`;
+
+    if (hasMore) {
+      const oldest = resultMessages[resultMessages.length - 1];
+      formattedResponse += `> [!IMPORTANT]\n> Message limit (${finalLimit}) reached. Internal history continues beyond this point.\n> To fetch older messages, use 'beforeMessageId' with "${oldest.id}".\n\n`;
+    }
+
     // Process chronologically (oldest first)
-    const sorted = [...messages].reverse();
+    const sorted = [...resultMessages].reverse();
     const participantMap: Record<string, string> = {};
 
     sorted.forEach((m) => {
