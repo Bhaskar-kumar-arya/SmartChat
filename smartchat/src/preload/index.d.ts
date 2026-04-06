@@ -73,6 +73,7 @@ declare global {
 
       getChatContext: (jid: string) => Promise<MessageItem[]>
       executeTool: (toolName: string, args: any) => Promise<any>
+      getAiTools: () => Promise<any[]>
     }
   }
 }

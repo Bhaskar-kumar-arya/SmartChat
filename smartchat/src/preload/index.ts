@@ -129,6 +129,9 @@ const api = {
   },
   executeTool: (toolName: string, args: any) => {
     return ipcRenderer.invoke('execute-tool', toolName, args)
+  },
+  getAiTools: () => {
+    return ipcRenderer.invoke('get-ai-tools')
   }
 }
 

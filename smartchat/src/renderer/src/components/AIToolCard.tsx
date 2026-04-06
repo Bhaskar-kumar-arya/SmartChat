@@ -7,6 +7,7 @@ interface AIToolCardProps {
   }
   toolResult?: string
   isExecuting: boolean
+  requiresPermission: boolean
   onApprove: () => void
   onDecline: () => void
 }
@@ -15,6 +16,7 @@ const AIToolCard: React.FC<AIToolCardProps> = ({
   toolData, 
   toolResult, 
   isExecuting, 
+  requiresPermission,
   onApprove, 
   onDecline 
 }) => {
@@ -30,20 +32,28 @@ const AIToolCard: React.FC<AIToolCardProps> = ({
         </div>
       ) : (
         <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-          <button 
-            disabled={isExecuting}
-            onClick={onApprove}
-            style={{ flex: 1, padding: '6px 12px', border: 'none', background: '#0a84ff', color: 'white', borderRadius: '6px', cursor: isExecuting ? 'not-allowed' : 'pointer', fontWeight: 600 }}
-          >
-            {isExecuting ? 'Running...' : 'Approve'}
-          </button>
-          <button 
-            disabled={isExecuting}
-            onClick={onDecline}
-            style={{ flex: 1, padding: '6px 12px', background: 'transparent', color: '#ff453a', border: '1px solid #ff453a', borderRadius: '6px', cursor: isExecuting ? 'not-allowed' : 'pointer', fontWeight: 600 }}
-          >
-            Decline
-          </button>
+          {requiresPermission ? (
+            <>
+              <button 
+                disabled={isExecuting}
+                onClick={onApprove}
+                style={{ flex: 1, padding: '6px 12px', border: 'none', background: '#0a84ff', color: 'white', borderRadius: '6px', cursor: isExecuting ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+              >
+                {isExecuting ? 'Running...' : 'Approve'}
+              </button>
+              <button 
+                disabled={isExecuting}
+                onClick={onDecline}
+                style={{ flex: 1, padding: '6px 12px', background: 'transparent', color: '#ff453a', border: '1px solid #ff453a', borderRadius: '6px', cursor: isExecuting ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+              >
+                Decline
+              </button>
+            </>
+          ) : (
+            <div style={{ flex: 1, padding: '6px 12px', textAlign: 'center', background: 'rgba(255,255,255,0.05)', color: '#a8bbd9', borderRadius: '6px', fontSize: '12px', fontStyle: 'italic' }}>
+              {isExecuting ? '⚡ Auto-executing...' : 'Preparing action...'}
+            </div>
+          )}
         </div>
       )}
     </div>

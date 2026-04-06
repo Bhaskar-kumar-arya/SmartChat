@@ -15,6 +15,7 @@ interface AIChatMessage {
 
 interface AIMessageBubbleProps {
   message: AIChatMessage
+  availableTools: any[]
   isExecuting: boolean
   onApprove: (messageId: string, tool: string, args: any) => void
   onDecline: (messageId: string) => void
@@ -22,6 +23,7 @@ interface AIMessageBubbleProps {
 
 const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({ 
   message, 
+  availableTools,
   isExecuting, 
   onApprove, 
   onDecline 
@@ -46,6 +48,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
             toolData={toolData}
             toolResult={message.toolResult}
             isExecuting={isExecuting}
+            requiresPermission={availableTools.find(t => t.name === toolData.tool)?.requiresPermission !== false}
             onApprove={() => onApprove(message.id, toolData.tool, toolData.arguments)}
             onDecline={() => onDecline(message.id)}
           />

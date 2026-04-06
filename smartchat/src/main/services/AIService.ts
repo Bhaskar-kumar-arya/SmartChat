@@ -111,7 +111,7 @@ export class AIService {
       const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
 
       const chat = this.ai.chats.create({
-        model: "gemini-3.1-flash-lite-preview", // gemma-3-27b-it // gemini-3.1-flash-lite-preview // gemma-4-31b-it
+        model: "gemma-4-31b-it", // gemma-3-27b-it // gemini-3.1-flash-lite-preview // gemma-4-31b-it
         config,
         history: formattedHistory
       });

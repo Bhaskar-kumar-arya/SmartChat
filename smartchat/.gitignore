@@ -9,3 +9,4 @@ out
 /debug
 venv/
 /src/main/models
+/prisma

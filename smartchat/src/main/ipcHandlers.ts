@@ -10,7 +10,7 @@ import { searchService } from './services/SearchService'
 import { embeddingService } from './services/EmbeddingService'
 import { aiService } from './services/AIService'
 import { toolRegistry } from './services/AIToolService'
-import { SendMessageTool } from './tools/SendMessageTool'
+import { AIToolInitializer } from './services/AIToolInitializer'
 
 /**
  * Registers all IPC handlers for chat data, messaging, and identity resolution.
@@ -372,13 +372,21 @@ export function registerIpcHandlers(
 
   // ── AI Handlers ───────────────────────────────────────────────────────
   
-  // Register AI Tools
-  toolRegistry.registerTool(new SendMessageTool(getSock));
+  // Register AI Tools via dedicated initializer
+  AIToolInitializer.initializeAll(getSock);
 
   ipcMain.handle('execute-tool', async (_event, toolName: string, args: any) => {
     const tool = toolRegistry.getTool(toolName);
     if (!tool) throw new Error(`Tool ${toolName} not found`);
     return await tool.execute(args);
+  });
+
+  ipcMain.handle('get-ai-tools', async () => {
+    return toolRegistry.getAllTools().map(t => ({
+      name: t.name,
+      description: t.description,
+      requiresPermission: t.requiresPermission
+    }));
   });
 
   ipcMain.handle('ai-chat', async (_event, prompt: string, contextChats?: any[], history?: any[], mentions?: any[]) => {

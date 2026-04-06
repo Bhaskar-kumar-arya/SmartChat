@@ -29,6 +29,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   const [loading, setLoading] = useState(false)
   const [executingToolId, setExecutingToolId] = useState<string | null>(null)
   const [chatList, setChatList] = useState<ChatItem[]>([])
+  const [availableTools, setAvailableTools] = useState<any[]>([])
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
@@ -45,8 +46,11 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   }, [])
 
   useEffect(() => {
-    if (isOpen && chatList.length === 0) {
-      window.api.getChats(1, 100).then(setChatList).catch(console.error)
+    if (isOpen) {
+      if (chatList.length === 0) {
+        window.api.getChats(1, 100).then(setChatList).catch(console.error)
+      }
+      window.api.getAiTools().then(setAvailableTools).catch(console.error)
     }
   }, [isOpen])
 
@@ -97,9 +101,31 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
            setLoading(false);
            const remainder = streamingBuffers.current[aiMsgId];
            delete streamingBuffers.current[aiMsgId];
-           if (remainder && remainder.length > 0) {
-              setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + remainder } : m));
-           }
+           
+           let finalContent = '';
+           setMessages(p => p.map(m => {
+             if (m.id === aiMsgId) {
+               finalContent = m.content + remainder;
+               return { ...m, content: finalContent };
+             }
+             return m;
+           }));
+
+           // Check for auto-executable tool call
+           setTimeout(() => {
+             const toolMatch = finalContent.match(/<tool_call>([\s\S]*?)<\/tool_call>/);
+             if (toolMatch) {
+               try {
+                 const toolData = JSON.parse(toolMatch[1]);
+                 const tool = availableTools.find(t => t.name === toolData.tool);
+                 if (tool && tool.requiresPermission === false) {
+                   executeToolCall(aiMsgId, toolData.tool, toolData.arguments);
+                 }
+               } catch (e) {
+                 console.error('Failed to parse tool data for auto-exec:', e);
+               }
+             }
+           }, 100);
         },
         (err) => {
            setLoading(false);
@@ -272,6 +298,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
             <AIMessageBubble
               key={msg.id}
               message={msg}
+              availableTools={availableTools}
               isExecuting={executingToolId === msg.id}
               onApprove={executeToolCall}
               onDecline={declineToolCall}
