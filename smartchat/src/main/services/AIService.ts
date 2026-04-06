@@ -8,8 +8,19 @@ export class AIService {
     this.ai = new GoogleGenAI({ apiKey: 'AIzaSyB-pig4Fwo3LsdOmnwcqiv21p9otSDEaf8' });
   }
 
-  private buildFullPrompt(prompt: string, contextFiles?: any[]): string {
+  private buildFullPrompt(prompt: string, contextFiles?: any[], mentions?: any[]): string {
     let fullPrompt = prompt;
+
+    // 1. Handle Mentions (@JID injection)
+    if (mentions && mentions.length > 0) {
+      for (const m of mentions) {
+        const safeName = m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const mentionRegex = new RegExp(`@${safeName}`, 'g');
+        fullPrompt = fullPrompt.replace(mentionRegex, `@${m.jid}`);
+      }
+    }
+
+    // 2. Handle Contexts (Chat History)
     if (contextFiles && contextFiles.length > 0) {
       for (const chat of contextFiles) {
         let contextSection = `\n<chat_context metadata='{"name": "${chat.name}", "jid": "${chat.jid}"}'>\n`;
@@ -35,29 +46,32 @@ export class AIService {
         contextSection += `</chat_context>\n`;
 
         const safeName = chat.name ? chat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : chat.jid;
-        const mentionRegex = new RegExp(`@${safeName}`, 'g');
-        if (mentionRegex.test(fullPrompt)) {
-           fullPrompt = fullPrompt.replace(mentionRegex, `@${chat.name} ${contextSection}`);
+        const contextRegex = new RegExp(`/${safeName}`, 'g');
+        if (contextRegex.test(fullPrompt)) {
+           fullPrompt = fullPrompt.replace(contextRegex, `/${chat.jid} ${contextSection}`);
         } else {
-           fullPrompt += `\nContext for @${chat.name}:\n${contextSection}`;
+           fullPrompt += `\nContext for history reference /${chat.jid}:\n${contextSection}`;
         }
       }
     }
     return fullPrompt;
   }
 
+
   async generateResponse(
     prompt: string, 
     contextFiles?: any[],
-    history?: any[]
+    history?: any[],
+    mentions?: any[]
   ): Promise<string> {
     try {
-      const fullPrompt = this.buildFullPrompt(prompt, contextFiles);
+      const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
 
       const formattedHistory = (history || []).map(msg => ({
         role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts) : msg.content }]
+        parts: [{ text: msg.role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) : msg.content }]
       }));
+
 
       const systemInstructions = toolRegistry.getSystemInstructions();
       const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
@@ -81,15 +95,17 @@ export class AIService {
     prompt: string, 
     contextFiles?: any[],
     history?: any[],
+    mentions?: any[],
     onChunk: (chunk: string) => void = () => {}
   ): Promise<void> {
     try {
-      const fullPrompt = this.buildFullPrompt(prompt, contextFiles);
+      const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
 
       const formattedHistory = (history || []).map(msg => ({
         role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts) : msg.content }]
+        parts: [{ text: msg.role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) : msg.content }]
       }));
+
 
       const systemInstructions = toolRegistry.getSystemInstructions();
       const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;

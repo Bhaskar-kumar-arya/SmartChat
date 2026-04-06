@@ -793,28 +793,75 @@
   bottom: 100%;
   left: 12px;
   right: 12px;
-  max-height: 200px;
+  max-height: 280px;
   overflow-y: auto;
   background-color: var(--wa-sidebar-bg);
   border: 1px solid var(--wa-border);
-  border-radius: 8px;
-  box-shadow: 0 -4px 12px rgba(0,0,0,0.1);
-  margin-bottom: 8px;
-  z-index: 20;
+  border-radius: 12px;
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.2);
+  margin-bottom: 12px;
+  z-index: 100;
+  padding: 4px 0;
 }
 
 .ai-mention-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 10px 16px;
   cursor: pointer;
-  color: var(--wa-text-primary);
+  transition: background-color 0.2s;
 }
 
-.ai-mention-item:hover {
+.ai-mention-item:hover,
+.ai-mention-item.active {
   background-color: var(--wa-bg-hover);
 }
+
+
+.ai-mention-pic {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.ai-mention-pic-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #00a884, #008069);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ai-mention-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ai-mention-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--wa-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-mention-jid {
+  font-size: 11px;
+  color: var(--wa-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 
 .ai-context-list {
   display: flex;
@@ -824,27 +871,47 @@
 }
 
 .ai-context-chip {
-  background-color: #00a884;
-  color: #111b21;
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 12px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   font-weight: 500;
-  gap: 6px;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.ai-context-chip.history {
+  background-color: rgba(0, 168, 132, 0.15);
+  color: #00a884;
+  border: 1px solid rgba(0, 168, 132, 0.3);
+}
+
+.ai-context-chip.mention {
+  background-color: rgba(83, 189, 235, 0.15);
+  color: #53bdeb;
+  border: 1px solid rgba(83, 189, 235, 0.3);
 }
 
 .ai-context-chip button {
   background: none;
   border: none;
-  color: #111b21;
+  color: inherit;
   cursor: pointer;
-  padding: 0;
-  font-size: 14px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
-  opacity: 0.8;
+  opacity: 0.6;
+  border-radius: 4px;
 }
+
+.ai-context-chip button:hover {
+  opacity: 1;
+  background-color: rgba(0,0,0,0.1);
+}
+
 
 .ai-toggle-btn {
   background: none;

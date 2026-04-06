@@ -386,16 +386,17 @@ export function registerIpcHandlers(
     return await tool.execute(args);
   });
 
-  ipcMain.handle('ai-chat', async (_event, prompt: string, contextChats?: any[], history?: any[]) => {
-    return await aiService.generateResponse(prompt, contextChats, history);
+  ipcMain.handle('ai-chat', async (_event, prompt: string, contextChats?: any[], history?: any[], mentions?: any[]) => {
+    return await aiService.generateResponse(prompt, contextChats, history, mentions);
   })
 
   ipcMain.on('ai-chat-stream', async (event, args) => {
-    const { channelId, prompt, contextChats, history } = args;
+    const { channelId, prompt, contextChats, history, mentions } = args;
     try {
-      await aiService.generateResponseStream(prompt, contextChats, history, (chunk) => {
+      await aiService.generateResponseStream(prompt, contextChats, history, mentions, (chunk) => {
         event.sender.send(`${channelId}-chunk`, chunk);
       });
+
       event.sender.send(`${channelId}-end`);
     } catch (err: any) {
       console.error('[IPC] ai-chat-stream error:', err);
