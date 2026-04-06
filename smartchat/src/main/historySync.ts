@@ -1,5 +1,4 @@
 import { PrismaClient } from '@prisma/client'
-import { embeddingService } from './services/EmbeddingService'
 
 /**
  * Determines the high-level message type from a Baileys proto.IMessage object.
@@ -129,6 +128,7 @@ export async function handleHistorySync(
 
     const contactOps: any[] = [];
     const claimedLids = new Set<string>(); // Tracks LIDs in this specific batch
+    const lidsToClear = new Set<string>();
 
     for (const [id, data] of jidToData.entries()) {
       const isLid = id.endsWith('@lid');
@@ -162,14 +162,7 @@ export async function handleHistorySync(
           mappedLid = null; // Strip it if another record in this chunk already claimed it
         } else {
           claimedLids.add(mappedLid);
-
-          // Brutally clear this LID from any existing records in the database first
-          contactOps.push(
-            prisma.contact.updateMany({
-              where: { lid: mappedLid, id: { not: id } },
-              data: { lid: null }
-            })
-          );
+          lidsToClear.add(mappedLid);
         }
       }
 
@@ -200,9 +193,18 @@ export async function handleHistorySync(
     }
 
     if (contactOps.length > 0) {
-      const BATCH_SIZE = 500; // Keep batches small to avoid SQLite expression limits
+      // Yield to event loop to keep UI responsive
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      const BATCH_SIZE = 500;
       for (let i = 0; i < contactOps.length; i += BATCH_SIZE) {
-        await prisma.$transaction(contactOps.slice(i, i + BATCH_SIZE));
+        await prisma.$transaction([
+          prisma.contact.updateMany({
+            where: { lid: { in: Array.from(lidsToClear) } },
+            data: { lid: null }
+          }),
+          ...contactOps.slice(i, i + BATCH_SIZE)
+        ]);
       }
     }
     contactCount = jidToData.size
@@ -363,20 +365,26 @@ export async function handleHistorySync(
           }
         }
 
-        if (msgOps.length > 0) await prisma.$transaction(msgOps)
+        if (msgOps.length > 0) {
+          // Use createMany with skipDuplicates for much faster bulk insertion in SQLite
+          // This avoids the SELECT -> INSERT/UPDATE overhead of individual upserts
+          try {
+            await (prisma.message as any).createMany({
+              data: messageData.filter(m => m.messageType !== 'reactionMessage'),
+              skipDuplicates: true
+            })
+          } catch (e) {
+            // Fallback to individual upserts if createMany fails (unlikely in modern Prisma)
+            await prisma.$transaction(msgOps)
+          }
+        }
+        
         if (reactionOps.length > 0) await prisma.$transaction(reactionOps)
 
         messageCount += messageData.length
-
-        // Auto-index new text messages for semantic search (fire-and-forget)
-        const textMessages = messageData.filter(
-          (m) => m.textContent && m.messageType !== 'reactionMessage'
-        )
-        if (textMessages.length > 0) {
-          Promise.all(
-            textMessages.map((m) => embeddingService.indexMessage(m.id, m.textContent!))
-          ).catch((err) => console.error('[HistorySync] embedding failed:', err))
-        }
+        
+        // Yield to event loop between chunks
+        await new Promise(resolve => setTimeout(resolve, 0))
       }
 
     }
