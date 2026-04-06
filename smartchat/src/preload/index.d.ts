@@ -71,6 +71,7 @@ declare global {
       aiChat: (prompt: string, contextChats?: any[], history?: any[]) => Promise<string>
       aiChatStream: (prompt: string, contextChats: any[] | undefined, history: any[] | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: any) => void) => void
       getChatContext: (jid: string) => Promise<MessageItem[]>
+      executeTool: (toolName: string, args: any) => Promise<any>
     }
   }
 }

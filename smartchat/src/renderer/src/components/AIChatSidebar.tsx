@@ -8,6 +8,8 @@ interface AIChatMessage {
   role: 'user' | 'ai'
   content: string
   contexts?: any[]
+  isHidden?: boolean
+  toolResult?: string
 }
 
 interface SelectedContext {
@@ -25,6 +27,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   const [messages, setMessages] = useState<AIChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [loading, setLoading] = useState(false)
+  const [executingToolId, setExecutingToolId] = useState<string | null>(null)
   
   const [showMentionMenu, setShowMentionMenu] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
@@ -113,6 +116,95 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     setContexts(contexts.filter(c => c.jid !== jid))
   }
 
+  const declineToolCall = (messageId: string) => {
+    setMessages(prev => prev.map(m => m.id === messageId ? { ...m, toolResult: "User declined tool execution." } : m));
+  }
+
+  const executeToolCall = async (messageId: string, toolName: string, args: any) => {
+    setExecutingToolId(messageId);
+    let resultPayload = '';
+    try {
+      const result = await window.api.executeTool(toolName, args);
+      resultPayload = JSON.stringify(result, null, 2);
+    } catch (err: any) {
+      resultPayload = JSON.stringify({ error: err.message || String(err) });
+    }
+    
+    setExecutingToolId(null);
+    const sysMsgId = crypto.randomUUID();
+    const aiMsgId = crypto.randomUUID();
+    let historyToPass: AIChatMessage[] = [];
+    
+    setMessages(prev => {
+        const updated = prev.map(m => m.id === messageId ? { ...m, toolResult: resultPayload } : m);
+        historyToPass = [...updated, {
+            id: sysMsgId,
+            role: 'user' as const,
+            content: `Tool Execution Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\nContinue your response.`,
+            isHidden: true
+        }];
+        
+        return [...historyToPass, {
+            id: aiMsgId,
+            role: 'ai' as const,
+            content: ''
+        }];
+    });
+
+    // START SIDE EFFECTS OUTSIDE REACT UPDATER
+    streamingBuffers.current[aiMsgId] = '';
+    setLoading(true);
+
+    const ensureDripper = () => {
+      if (!typingInterval.current) {
+        typingInterval.current = setInterval(() => {
+          let hasWork = false;
+          const updates: Record<string, string> = {};
+          for (const key in streamingBuffers.current) {
+             const buffer = streamingBuffers.current[key];
+             if (buffer && buffer.length > 0) {
+                hasWork = true;
+                const charsToTake = Math.max(2, Math.ceil(buffer.length / 8)); 
+                updates[key] = buffer.substring(0, charsToTake);
+                streamingBuffers.current[key] = buffer.substring(charsToTake);
+             }
+          }
+          if (!hasWork) {
+             clearInterval(typingInterval.current);
+             typingInterval.current = null;
+             return;
+          }
+          setMessages(p => p.map(m => updates[m.id] ? { ...m, content: m.content + updates[m.id] } : m));
+        }, 30);
+      }
+    };
+
+    window.api.aiChatStream(
+        `Tool Execution Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool executed successfully. Continue your response by summarizing the action to the user seamlessly.`, 
+        [], 
+        historyToPass.filter(m => !m.isHidden),
+        (chunk) => {
+           setLoading(false);
+           if (streamingBuffers.current[aiMsgId] === undefined) streamingBuffers.current[aiMsgId] = '';
+           streamingBuffers.current[aiMsgId] += chunk;
+           ensureDripper();
+        },
+        () => {
+           setLoading(false);
+           const remainder = streamingBuffers.current[aiMsgId];
+           delete streamingBuffers.current[aiMsgId];
+           if (remainder && remainder.length > 0) {
+              setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + remainder } : m));
+           }
+        },
+        (err) => {
+           setLoading(false);
+           delete streamingBuffers.current[aiMsgId];
+           setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + '\n\n**Error:** ' + String(err) } : m));
+        }
+    );
+  }
+
   const handleSend = async () => {
     if (!inputValue.trim() && contexts.length === 0) return
     
@@ -195,6 +287,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         messages,
         (chunk) => {
           setLoading(false); // hide loader on first chunk
+          if (streamingBuffers.current[aiMessageId] === undefined) streamingBuffers.current[aiMessageId] = '';
           streamingBuffers.current[aiMessageId] += chunk;
           ensureDripper();
         },
@@ -271,13 +364,51 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
             <span>Type @ to include chat context.</span>
           </div>
         ) : (
-          messages.map(msg => (
-            <div key={msg.id} className={`ai-message-bubble ${msg.role}`}>
-              <div className="ai-message-content markdown-body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+          messages.filter(m => !m.isHidden).map(msg => {
+            const toolMatch = msg.content.match(/<tool_call>([\s\S]*?)<\/tool_call>/);
+            let toolData: any = null;
+            if (toolMatch) {
+              try { toolData = JSON.parse(toolMatch[1]); } catch(e) {}
+            }
+            return (
+              <div key={msg.id} className={`ai-message-bubble ${msg.role}`}>
+                <div className="ai-message-content markdown-body">
+                  {toolData ? (
+                    <div className="ai-tool-card" style={{ padding: '12px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <div style={{ fontWeight: 600, marginBottom: '8px', color: '#ffb340' }}>⚡ Tool Request: {toolData.tool}</div>
+                      <pre style={{ fontSize: '11px', background: 'rgba(0,0,0,0.4)', padding: '8px', borderRadius: '4px', overflowX: 'auto', margin: 0 }}>
+                        {JSON.stringify(toolData.arguments, null, 2)}
+                      </pre>
+                      {msg.toolResult ? (
+                        <div style={{ marginTop: '10px', fontSize: '12px', color: '#a8bbd9', background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '4px' }}>
+                          <span style={{fontWeight: 600}}>Result:</span> <pre style={{margin: 0, marginTop:'4px', whiteSpace: 'pre-wrap'}}>{msg.toolResult}</pre>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                          <button 
+                            disabled={executingToolId === msg.id}
+                            onClick={() => executeToolCall(msg.id, toolData.tool, toolData.arguments)}
+                            style={{ flex: 1, padding: '6px 12px', border: 'none', background: '#0a84ff', color: 'white', borderRadius: '6px', cursor: executingToolId === msg.id ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+                          >
+                            {executingToolId === msg.id ? 'Running...' : 'Approve'}
+                          </button>
+                          <button 
+                            disabled={executingToolId === msg.id}
+                            onClick={() => declineToolCall(msg.id)}
+                            style={{ flex: 1, padding: '6px 12px', background: 'transparent', color: '#ff453a', border: '1px solid #ff453a', borderRadius: '6px', cursor: executingToolId === msg.id ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                  )}
+                </div>
               </div>
-            </div>
-          ))
+            )
+          })
         )}
         {loading && (
           <div className="ai-message-bubble ai loading">

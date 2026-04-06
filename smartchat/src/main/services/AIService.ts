@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai'
+import { toolRegistry } from './AIToolService'
 
 export class AIService {
   private ai: any;
@@ -58,8 +59,12 @@ export class AIService {
         parts: [{ text: msg.role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts) : msg.content }]
       }));
 
+      const systemInstructions = toolRegistry.getSystemInstructions();
+      const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
+
       const chat = this.ai.chats.create({
         model: "gemma-4-31b-it", // gemma-3-27b-it
+        config,
         history: formattedHistory
       });
 
@@ -86,8 +91,12 @@ export class AIService {
         parts: [{ text: msg.role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts) : msg.content }]
       }));
 
+      const systemInstructions = toolRegistry.getSystemInstructions();
+      const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
+
       const chat = this.ai.chats.create({
         model: "gemma-4-31b-it", // gemma-3-27b-it
+        config,
         history: formattedHistory
       });
 

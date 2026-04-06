@@ -125,6 +125,9 @@ const api = {
   },
   getChatContext: (jid: string) => {
     return ipcRenderer.invoke('get-chat-context', jid)
+  },
+  executeTool: (toolName: string, args: any) => {
+    return ipcRenderer.invoke('execute-tool', toolName, args)
   }
 }
 

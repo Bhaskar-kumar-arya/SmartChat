@@ -9,6 +9,8 @@ import { chatService } from './services/ChatService'
 import { searchService } from './services/SearchService'
 import { embeddingService } from './services/EmbeddingService'
 import { aiService } from './services/AIService'
+import { toolRegistry } from './services/AIToolService'
+import { SendMessageTool } from './tools/SendMessageTool'
 
 /**
  * Registers all IPC handlers for chat data, messaging, and identity resolution.
@@ -374,6 +376,16 @@ export function registerIpcHandlers(
   })
 
   // ── AI Handlers ───────────────────────────────────────────────────────
+  
+  // Register AI Tools
+  toolRegistry.registerTool(new SendMessageTool(getSock));
+
+  ipcMain.handle('execute-tool', async (_event, toolName: string, args: any) => {
+    const tool = toolRegistry.getTool(toolName);
+    if (!tool) throw new Error(`Tool ${toolName} not found`);
+    return await tool.execute(args);
+  });
+
   ipcMain.handle('ai-chat', async (_event, prompt: string, contextChats?: any[], history?: any[]) => {
     return await aiService.generateResponse(prompt, contextChats, history);
   })
