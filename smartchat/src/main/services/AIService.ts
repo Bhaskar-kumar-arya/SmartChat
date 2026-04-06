@@ -12,11 +12,25 @@ export class AIService {
     if (contextFiles && contextFiles.length > 0) {
       for (const chat of contextFiles) {
         let contextSection = `\n<chat_context metadata='{"name": "${chat.name}", "jid": "${chat.jid}"}'>\n`;
+        contextSection += `Chat Name: ${chat.name}\nChat ID: ${chat.jid}\n\n`;
+        const participantMap: Record<string, string> = {};
+
         chat.messages.forEach((msg: any) => {
-           const sender = msg.fromMe ? 'Me' : (msg.participantName || msg.remoteJid);
+           const senderId = msg.participant || (msg.fromMe ? 'me' : msg.remoteJid);
+           const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0]);
            const content = msg.textContent || '[Non-text message]';
-           contextSection += `[${new Date(Number(msg.timestamp) * 1000).toLocaleString()}] ${sender}: ${content}\n`;
+           
+           if (senderId && !msg.fromMe && senderId !== 'me') {
+             participantMap[senderId] = senderName;
+           }
+
+           contextSection += `[${new Date(Number(msg.timestamp) * 1000).toLocaleString()}] ${senderName}: ${content}\n`;
         });
+
+        if (Object.keys(participantMap).length > 0) {
+          contextSection += `\nParticipant Identities (ID -> Name):\n${JSON.stringify(participantMap, null, 2)}\n`;
+        }
+
         contextSection += `</chat_context>\n`;
 
         const safeName = chat.name ? chat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : chat.jid;
