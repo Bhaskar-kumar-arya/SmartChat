@@ -21,16 +21,22 @@ export function registerIpcHandlers(
 ): void {
   // ── Get Chat List (paginated, sorted by latest timestamp) ────────────
   ipcMain.handle('get-chats', async (_event, page: number = 1, pageSize: number = 50) => {
-    const chats = await prisma.chat.findMany()
+    const skip = (page - 1) * pageSize
+    const chats = await prisma.chat.findMany({
+      orderBy: [
+        { pinned: 'desc' },
+        { timestamp: 'desc' }
+      ],
+      skip,
+      take: pageSize
+    })
+    
     const sock = getSock()
 
     // 1. Collect all JIDs for name resolution
     const jids = chats.map(c => c.jid)
     
-    // 2. Fetch last messages in bulk (optional optimization, current implementation is one by one)
-    // For now, we'll keep the lastMsg fetch one-by-one but batch the names.
-    
-    // 3. Resolve all names in one DB query (Fixes N+1)
+    // 2. Resolve all names in one DB query (Fixes N+1)
     const nameMap = await contactService.batchResolveNames(jids, sock)
 
     const enriched = await Promise.all(
@@ -64,18 +70,7 @@ export function registerIpcHandlers(
       })
     )
 
-    // Sort: pinned chats first, then by last message timestamp desc
-    enriched.sort((a, b) => {
-      if (a.pinned > 0 && b.pinned <= 0) return -1
-      if (b.pinned > 0 && a.pinned <= 0) return 1
-      if (a.pinned > 0 && b.pinned > 0) return b.pinned - a.pinned
-      const tsA = BigInt(a.lastMessageTimestamp)
-      const tsB = BigInt(b.lastMessageTimestamp)
-      return tsB > tsA ? 1 : (tsB < tsA ? -1 : 0)
-    })
-
-    const skip = (page - 1) * pageSize
-    return enriched.slice(skip, skip + pageSize)
+    return enriched
   })
 
   // ── Get Messages for a Chat (paginated) ──────────────────────────────
