@@ -54,8 +54,90 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, loading])
 
+  const startAIStream = (prompt: string, history: AIChatMessage[], aiMsgId: string, context: any[] = [], mentions: any[] = []) => {
+    streamingBuffers.current[aiMsgId] = '';
+    setLoading(true);
+
+    const drip = () => {
+      if (!typingInterval.current) {
+        typingInterval.current = setInterval(() => {
+          let hasWork = false;
+          const updates: Record<string, string> = {};
+          for (const key in streamingBuffers.current) {
+             const buffer = streamingBuffers.current[key];
+             if (buffer && buffer.length > 0) {
+                hasWork = true;
+                const charsToTake = Math.max(2, Math.ceil(buffer.length / 8)); 
+                updates[key] = buffer.substring(0, charsToTake);
+                streamingBuffers.current[key] = buffer.substring(charsToTake);
+             }
+          }
+          if (!hasWork) {
+             clearInterval(typingInterval.current);
+             typingInterval.current = null;
+             return;
+          }
+          setMessages(p => p.map(m => updates[m.id] ? { ...m, content: m.content + updates[m.id] } : m));
+        }, 30);
+      }
+    };
+
+    window.api.aiChatStream(
+        prompt, 
+        context, 
+        history.filter(m => !m.isHidden),
+        mentions,
+        (chunk) => {
+           setLoading(false);
+           if (streamingBuffers.current[aiMsgId] === undefined) streamingBuffers.current[aiMsgId] = '';
+           streamingBuffers.current[aiMsgId] += chunk;
+           drip();
+        },
+        () => {
+           setLoading(false);
+           const remainder = streamingBuffers.current[aiMsgId];
+           delete streamingBuffers.current[aiMsgId];
+           if (remainder && remainder.length > 0) {
+              setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + remainder } : m));
+           }
+        },
+        (err) => {
+           setLoading(false);
+           delete streamingBuffers.current[aiMsgId];
+           setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + '\n\n**Error:** ' + String(err) } : m));
+        }
+    );
+  }
+
   const declineToolCall = (messageId: string) => {
-    setMessages(prev => prev.map(m => m.id === messageId ? { ...m, toolResult: "User declined tool execution." } : m));
+    const resultPayload = "User declined tool execution.";
+    const sysMsgId = crypto.randomUUID();
+    const aiMsgId = crypto.randomUUID();
+    let historyToPass: AIChatMessage[] = [];
+
+    setMessages(prev => {
+        const updated = prev.map(m => m.id === messageId ? { ...m, toolResult: resultPayload } : m);
+        historyToPass = [...updated, {
+            id: sysMsgId,
+            role: 'user' as const,
+            content: `Tool Execution Result: ${resultPayload}`,
+            isHidden: true
+        }];
+        
+        return [...historyToPass, {
+            id: aiMsgId,
+            role: 'ai' as const,
+            content: ''
+        }];
+    });
+
+    const prompt = `Tool Execution Result: ${resultPayload}\n\nThe user declined the tool execution. Please acknowledge this and continue your response seamlessly.`;
+    
+    // Defer the stream start to ensure historyToPass is populated from the state update if needed, 
+    // but here we can just use the local historyToPass we constructed.
+    setTimeout(() => {
+        startAIStream(prompt, historyToPass, aiMsgId);
+    }, 0);
   }
 
 
@@ -90,60 +172,11 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         }];
     });
 
-    // START SIDE EFFECTS OUTSIDE REACT UPDATER
-    streamingBuffers.current[aiMsgId] = '';
-    setLoading(true);
-
-    const ensureDripper = () => {
-      if (!typingInterval.current) {
-        typingInterval.current = setInterval(() => {
-          let hasWork = false;
-          const updates: Record<string, string> = {};
-          for (const key in streamingBuffers.current) {
-             const buffer = streamingBuffers.current[key];
-             if (buffer && buffer.length > 0) {
-                hasWork = true;
-                const charsToTake = Math.max(2, Math.ceil(buffer.length / 8)); 
-                updates[key] = buffer.substring(0, charsToTake);
-                streamingBuffers.current[key] = buffer.substring(charsToTake);
-             }
-          }
-          if (!hasWork) {
-             clearInterval(typingInterval.current);
-             typingInterval.current = null;
-             return;
-          }
-          setMessages(p => p.map(m => updates[m.id] ? { ...m, content: m.content + updates[m.id] } : m));
-        }, 30);
-      }
-    };
-
-    window.api.aiChatStream(
-        `Tool Execution Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool executed successfully. Continue your response by summarizing the action to the user seamlessly.`, 
-        [], 
-        historyToPass.filter(m => !m.isHidden),
-        [], // Mentions
-        (chunk) => {
-           setLoading(false);
-           if (streamingBuffers.current[aiMsgId] === undefined) streamingBuffers.current[aiMsgId] = '';
-           streamingBuffers.current[aiMsgId] += chunk;
-           ensureDripper();
-        },
-        () => {
-           setLoading(false);
-           const remainder = streamingBuffers.current[aiMsgId];
-           delete streamingBuffers.current[aiMsgId];
-           if (remainder && remainder.length > 0) {
-              setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + remainder } : m));
-           }
-        },
-        (err) => {
-           setLoading(false);
-           delete streamingBuffers.current[aiMsgId];
-           setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + '\n\n**Error:** ' + String(err) } : m));
-        }
-    );
-
+    const prompt = `Tool Execution Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool executed successfully. Continue your response by summarizing the action to the user seamlessly.`;
+    
+    setTimeout(() => {
+        startAIStream(prompt, historyToPass, aiMsgId);
+    }, 0);
   }
 
   const handleSend = async (prompt: string, currentContexts: any[], currentMentions: any[]) => {
@@ -182,77 +215,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
           }
         ]);
 
-        streamingBuffers.current[aiMessageId] = '';
-
-        const ensureDripper = () => {
-          if (!typingInterval.current) {
-            typingInterval.current = setInterval(() => {
-              let hasWork = false;
-              const updates: Record<string, string> = {};
-              
-              // Calculate and perform mutations safely OUTSIDE the React state setter
-              for (const key in streamingBuffers.current) {
-                 const buffer = streamingBuffers.current[key];
-                 if (buffer && buffer.length > 0) {
-                    hasWork = true;
-                    const charsToTake = Math.max(2, Math.ceil(buffer.length / 8)); 
-                    const chars = buffer.substring(0, charsToTake);
-                    updates[key] = chars;
-                    streamingBuffers.current[key] = buffer.substring(charsToTake);
-                 }
-              }
-              
-              if (!hasWork) {
-                 clearInterval(typingInterval.current);
-                 typingInterval.current = null;
-                 return;
-              }
-
-              // Pure state update lambda
-              setMessages(prev => prev.map(m => {
-                 if (updates[m.id]) {
-                    return { ...m, content: m.content + updates[m.id] };
-                 }
-                 return m;
-              }));
-            }, 30);
-          }
-        };
-
-        window.api.aiChatStream(
-          prompt, 
-          resolvedContexts, 
-          messages,
-          currentMentions,
-          (chunk) => {
-            setLoading(false); // hide loader on first chunk
-            if (streamingBuffers.current[aiMessageId] === undefined) streamingBuffers.current[aiMessageId] = '';
-            streamingBuffers.current[aiMessageId] += chunk;
-            ensureDripper();
-          },
-
-        () => {
-          setLoading(false);
-          // Dump the rest of the stream instantly when the response fully completes
-          // Must extract and delete outside setMessages to survive React 18 Strict Mode double-invocation
-          const remainder = streamingBuffers.current[aiMessageId];
-          delete streamingBuffers.current[aiMessageId];
-
-          if (remainder && remainder.length > 0) {
-            setMessages(prev => prev.map(m => 
-               m.id === aiMessageId ? { ...m, content: m.content + remainder } : m
-            ));
-          }
-        },
-        (error) => {
-          console.error(error);
-          setLoading(false);
-          delete streamingBuffers.current[aiMessageId];
-          setMessages(prev => prev.map(m => 
-            m.id === aiMessageId ? { ...m, content: m.content + '\n\n**Error:** Failed to generate response.' } : m
-          ));
-        }
-      );
+        startAIStream(prompt, messages, aiMessageId, resolvedContexts, currentMentions);
 
     } catch (error) {
       setMessages(prev => [...prev, {
