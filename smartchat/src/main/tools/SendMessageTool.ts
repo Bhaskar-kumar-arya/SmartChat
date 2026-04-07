@@ -4,7 +4,7 @@ import { chatService } from '../services/ChatService';
 
 export class SendMessageTool implements AITool {
   name = 'sendMessage';
-  description = 'Send a message. To mention someone in a group, include @ID (the part of the JID before the @) in the text and also add their full JIDs to the mentions array.';
+  description = 'Send a message. When mentioning someone in the message text, use the format "@ID" (e.g., "@1234567890"). You MUST also include the full WhatsApp JIDs (e.g., ["1234567890@s.whatsapp.net"]) of everyone you mentioned in the text in the mentions array. When sending messages, use standard WhatsApp markdown for styling if needed: *bold*, _italic_, ~strikethrough~, \`\`\`monospace\`\`\`.';
   requiresPermission = true;
   parametersSchema = {
     type: 'object',

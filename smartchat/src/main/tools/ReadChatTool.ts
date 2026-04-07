@@ -114,6 +114,17 @@ export class ReadChatTool implements AITool {
     // Process chronologically (oldest first)
     const sorted = [...resultMessages].reverse();
     const participantMap: Record<string, string> = {};
+    sorted.forEach((m) => {
+      const senderId = m.participant || (m.fromMe ? 'me' : m.remoteJid);
+      const senderName = m.fromMe ? 'Me' : (nameMap.get(senderId) || senderId.split('@')[0]);
+      if (senderId && !m.fromMe && senderId !== 'me') {
+        participantMap[senderId] = senderName;
+      }
+    });
+
+    if (Object.keys(participantMap).length > 0) {
+      formattedResponse += `\nParticipant Identities (ID -> Name):\n${JSON.stringify(participantMap, null, 2)}\n\n`;
+    }
 
     sorted.forEach((m) => {
       const senderId = m.participant || (m.fromMe ? 'me' : m.remoteJid);
@@ -121,16 +132,8 @@ export class ReadChatTool implements AITool {
       const content = m.textContent || `[${m.messageType}]`;
       const dateStr = new Date(Number(m.timestamp) * 1000).toLocaleString();
 
-      if (senderId && !m.fromMe && senderId !== 'me') {
-        participantMap[senderId] = senderName;
-      }
-
       formattedResponse += `[${dateStr}] ${senderName}: ${content}\n`;
     });
-
-    if (Object.keys(participantMap).length > 0) {
-      formattedResponse += `\nParticipant Identities (ID -> Name):\n${JSON.stringify(participantMap, null, 2)}\n`;
-    }
 
     return formattedResponse;
   }

@@ -13,6 +13,7 @@ interface AIChatMessage {
   mentions?: any[]
   isHidden?: boolean
   toolResult?: string
+  hasError?: boolean
 }
 
 
@@ -130,7 +131,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         (err) => {
            setLoading(false);
            delete streamingBuffers.current[aiMsgId];
-           setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + '\n\n**Error:** ' + String(err) } : m));
+           setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + '\n\n**Error:** ' + String(err), hasError: true } : m));
         }
     );
   }
@@ -157,7 +158,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         }];
     });
 
-    const prompt = `Tool Execution Result: ${resultPayload}\n\nThe user declined the tool execution. Please acknowledge this and continue your response seamlessly.`;
+    const prompt = `Tool declined: ${resultPayload}.\n\nThe user declined the tool execution. Please acknowledge this and proceed with the conversation or tasks as appropriate based on the current context.`;
     
     // Defer the stream start to ensure historyToPass is populated from the state update if needed, 
     // but here we can just use the local historyToPass we constructed.
@@ -166,6 +167,25 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     }, 0);
   }
 
+
+  const handleRetry = (messageId: string) => {
+    const msgIndex = messages.findIndex(m => m.id === messageId);
+    if (msgIndex === -1 || msgIndex === 0) return;
+
+    const aiMsg = messages[msgIndex];
+    if (aiMsg.role !== 'ai') return;
+
+    // The trigger message is the one immediately before the failed AI response.
+    // It could be a user message or a hidden tool result.
+    const triggerMsg = messages[msgIndex - 1];
+    const history = messages.slice(0, msgIndex - 1);
+
+    // Reset AI message state
+    setMessages(p => p.map(m => m.id === messageId ? { ...m, content: '', hasError: false } : m));
+    
+    // Restart stream
+    startAIStream(triggerMsg.content, history, messageId, triggerMsg.contexts || [], triggerMsg.mentions || []);
+  }
 
   const executeToolCall = async (messageId: string, toolName: string, args: any) => {
     setExecutingToolId(messageId);
@@ -198,7 +218,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         }];
     });
 
-    const prompt = `Tool Execution Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool executed successfully. Continue your response by summarizing the action to the user seamlessly.`;
+    const prompt = `Tool Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool executed successfully..`;
     
     setTimeout(() => {
         startAIStream(prompt, historyToPass, aiMsgId);
@@ -302,6 +322,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
               isExecuting={executingToolId === msg.id}
               onApprove={executeToolCall}
               onDecline={declineToolCall}
+              onRetry={() => handleRetry(msg.id)}
             />
           ))
         )}

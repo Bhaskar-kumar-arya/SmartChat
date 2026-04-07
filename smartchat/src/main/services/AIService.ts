@@ -23,34 +23,37 @@ export class AIService {
     // 2. Handle Contexts (Chat History)
     if (contextFiles && contextFiles.length > 0) {
       for (const chat of contextFiles) {
-        let contextSection = `\n<chat_context metadata='{"name": "${chat.name}", "jid": "${chat.jid}"}'>\n`;
-        contextSection += `Chat Name: ${chat.name}\nChat ID: ${chat.jid}\n\n`;
+        let contextSection = `\n<chat_history id="${chat.jid}" name="${chat.name || 'Unknown'}">\n`;
         const participantMap: Record<string, string> = {};
+        chat.messages.forEach((msg: any) => {
+           const senderId = msg.participant || (msg.fromMe ? 'me' : msg.remoteJid);
+           const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0]);
+           if (senderId && !msg.fromMe && senderId !== 'me') {
+             participantMap[senderId] = senderName;
+           }
+        });
 
+        if (Object.keys(participantMap).length > 0) {
+          contextSection += `<participants>\n${JSON.stringify(participantMap, null, 2)}\n</participants>\n\n`;
+        }
+        
+        contextSection += `<messages>\n`;
         chat.messages.forEach((msg: any) => {
            const senderId = msg.participant || (msg.fromMe ? 'me' : msg.remoteJid);
            const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0]);
            const content = msg.textContent || '[Non-text message]';
-           
-           if (senderId && !msg.fromMe && senderId !== 'me') {
-             participantMap[senderId] = senderName;
-           }
-
-           contextSection += `[${new Date(Number(msg.timestamp) * 1000).toLocaleString()}] ${senderName}: ${content}\n`;
+           contextSection += `[${new Date(Number(msg.timestamp) * 1000).toLocaleString()}] ${senderName} (${senderId}): ${content}\n`;
         });
+        contextSection += `</messages>\n`;
 
-        if (Object.keys(participantMap).length > 0) {
-          contextSection += `\nParticipant Identities (ID -> Name):\n${JSON.stringify(participantMap, null, 2)}\n`;
-        }
-
-        contextSection += `</chat_context>\n`;
+        contextSection += `</chat_history>\n`;
 
         const safeName = chat.name ? chat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : chat.jid;
         const contextRegex = new RegExp(`/${safeName}`, 'g');
         if (contextRegex.test(fullPrompt)) {
-           fullPrompt = fullPrompt.replace(contextRegex, `/${chat.jid} ${contextSection}`);
+           fullPrompt = fullPrompt.replace(contextRegex, `/${chat.jid} \n${contextSection}`);
         } else {
-           fullPrompt += `\nContext for history reference /${chat.jid}:\n${contextSection}`;
+           fullPrompt += `\n\n=== RELEVANT CHAT CONTEXT ===\n${contextSection}`;
         }
       }
     }
