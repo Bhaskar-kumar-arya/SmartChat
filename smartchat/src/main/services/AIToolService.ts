@@ -45,6 +45,11 @@ To use a tool, you must output EXACTLY this format and nothing else. Ensure it i
   }
 }
 </tool_call>
+
+General Guidelines:
+1. When mentioning someone in a message (especially in groups), use the format "@ID" (the part of the JID before the @) in the text (e.g., @1234567890 or @207176874356812).
+2. For tools that support a "mentions" parameter, you MUST also include the full WhatsApp JIDs (e.g., "1234567890@s.whatsapp.net" or "207176874356812@lid") of everyone you mentioned in the text in that array.
+3. You can find participant JIDs and their names/IDs in the chat context or by using tools like 'readChat'.
 `;
   }
 }
