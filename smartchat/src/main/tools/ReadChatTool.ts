@@ -10,7 +10,7 @@ export class ReadChatTool implements AITool {
     type: 'object',
     properties: {
       jid: { type: 'string', description: 'The exact WhatsApp JID to read messages from (e.g. 123@s.whatsapp.net or 123-456@g.us)' },
-      limit: { type: 'number', description: 'Maximum number of messages to return. If not specified, defaults to 20,000.' },
+      limit: { type: 'number', description: 'Maximum number of messages to return. If not specified, defaults to 20,000.Specify if required value is drastically less than this' },
       afterDate: { type: 'string', description: 'ISO date string or timestamp to fetch messages after' },
       beforeDate: { type: 'string', description: 'ISO date string or timestamp to fetch messages before' },
       afterMessageId: { type: 'string', description: 'Fetch messages sent after this specific message ID' },

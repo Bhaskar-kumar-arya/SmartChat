@@ -60,32 +60,47 @@ export class AIService {
     return fullPrompt;
   }
 
+  private wrapWithRole(content: string, isSystem: boolean, role: 'user' | 'model'): string {
+    const label = role === 'model' ? 'AI' : (isSystem ? 'SYSTEM' : 'USER');
+    return `[${label}]: ${content}`;
+  }
+
 
   async generateResponse(
     prompt: string, 
     contextFiles?: any[],
     history?: any[],
-    mentions?: any[]
+    mentions?: any[],
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean }
   ): Promise<string> {
     try {
       const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
 
-      const formattedHistory = (history || []).map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) : msg.content }]
-      }));
+      const formattedHistory = (history || []).map(msg => {
+        const isMsgSystem = (msg as any).isSystem === true;
+        const role = (msg as any).role === 'user' ? 'user' : 'model';
+        const content = (msg as any).role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) : msg.content;
+        return {
+          role,
+          parts: [{ text: this.wrapWithRole(content, isMsgSystem, role as any) }]
+        };
+      });
+
+      const isPromptSystem = (options as any)?.isSystem === true;
+      const finalPrompt = this.wrapWithRole(fullPrompt, isPromptSystem, 'user');
 
 
-      const systemInstructions = toolRegistry.getSystemInstructions();
+      const useThinkMode = options?.useThinkMode !== false;
+      const systemInstructions = toolRegistry.getSystemInstructions(useThinkMode);
       const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
 
       const chat = this.ai.chats.create({
-        model: "gemma-4-31b-it", // gemma-3-27b-it
+        model: options?.model || "gemini-3.1-flash-lite-preview",
         config,
         history: formattedHistory
       });
 
-      const response = await chat.sendMessage({ message: fullPrompt });
+      const response = await chat.sendMessage({ message: finalPrompt });
 
       return response.text || '';
     } catch (error) {
@@ -99,27 +114,37 @@ export class AIService {
     contextFiles?: any[],
     history?: any[],
     mentions?: any[],
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean },
     onChunk: (chunk: string) => void = () => {}
   ): Promise<void> {
     try {
       const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
 
-      const formattedHistory = (history || []).map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) : msg.content }]
-      }));
+      const formattedHistory = (history || []).map(msg => {
+        const isMsgSystem = (msg as any).isSystem === true;
+        const role = (msg as any).role === 'user' ? 'user' : 'model';
+        const content = (msg as any).role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) : msg.content;
+        return {
+          role,
+          parts: [{ text: this.wrapWithRole(content, isMsgSystem, role as any) }]
+        };
+      });
+
+      const isPromptSystem = (options as any)?.isSystem === true;
+      const finalPrompt = this.wrapWithRole(fullPrompt, isPromptSystem, 'user');
 
 
-      const systemInstructions = toolRegistry.getSystemInstructions();
+      const useThinkMode = options?.useThinkMode !== false;
+      const systemInstructions = toolRegistry.getSystemInstructions(useThinkMode);
       const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
 
       const chat = this.ai.chats.create({
-        model: "gemma-4-31b-it", // gemma-3-27b-it // gemini-3.1-flash-lite-preview // gemma-4-31b-it
+        model: options?.model || "gemini-3.1-flash-lite-preview",
         config,
         history: formattedHistory
       });
 
-      const responseStream = await chat.sendMessageStream({ message: fullPrompt });
+      const responseStream = await chat.sendMessageStream({ message: finalPrompt });
       for await (const chunk of responseStream) {
         if (chunk.text) {
           onChunk(chunk.text);

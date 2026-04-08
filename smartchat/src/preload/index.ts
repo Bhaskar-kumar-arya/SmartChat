@@ -98,10 +98,10 @@ const api = {
   },
   
   // ── AI Methods ──────────────────────────────────────────────────────
-  aiChat: (prompt: string, contextChats?: any[], history?: any[], mentions?: any[]) => {
-    return ipcRenderer.invoke('ai-chat', prompt, contextChats, history, mentions)
+  aiChat: (prompt: string, contextChats?: any[], history?: any[], mentions?: any[], options?: any) => {
+    return ipcRenderer.invoke('ai-chat', prompt, contextChats, history, mentions, options)
   },
-  aiChatStream: (prompt: string, contextChats: any[] | undefined, history: any[] | undefined, mentions: any[] | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: any) => void) => {
+  aiChatStream: (prompt: string, contextChats: any[] | undefined, history: any[] | undefined, mentions: any[] | undefined, options: any | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: any) => void) => {
     const channelId = `ai-chat-${Date.now()}`;
     const chunkListener = (_event: any, chunk: string) => onChunk(chunk);
     const endListener = () => {
@@ -121,7 +121,7 @@ const api = {
     ipcRenderer.on(`${channelId}-end`, endListener);
     ipcRenderer.on(`${channelId}-error`, errorListener);
 
-    ipcRenderer.send('ai-chat-stream', { channelId, prompt, contextChats, history, mentions });
+    ipcRenderer.send('ai-chat-stream', { channelId, prompt, contextChats, history, mentions, options });
   },
 
   getChatContext: (jid: string) => {

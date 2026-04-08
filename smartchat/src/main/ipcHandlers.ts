@@ -389,14 +389,14 @@ export function registerIpcHandlers(
     }));
   });
 
-  ipcMain.handle('ai-chat', async (_event, prompt: string, contextChats?: any[], history?: any[], mentions?: any[]) => {
-    return await aiService.generateResponse(prompt, contextChats, history, mentions);
+  ipcMain.handle('ai-chat', async (_event, prompt: string, contextChats?: any[], history?: any[], mentions?: any[], options?: any) => {
+    return await aiService.generateResponse(prompt, contextChats, history, mentions, options);
   })
 
   ipcMain.on('ai-chat-stream', async (event, args) => {
-    const { channelId, prompt, contextChats, history, mentions } = args;
+    const { channelId, prompt, contextChats, history, mentions, options } = args;
     try {
-      await aiService.generateResponseStream(prompt, contextChats, history, mentions, (chunk) => {
+      await aiService.generateResponseStream(prompt, contextChats, history, mentions, options, (chunk) => {
         event.sender.send(`${channelId}-chunk`, chunk);
       });
 
