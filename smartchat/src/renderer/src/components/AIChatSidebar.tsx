@@ -153,7 +153,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         historyToPass = [...updated, {
             id: sysMsgId,
             role: 'user' as const,
-            content: `Tool Execution Result: ${resultPayload}`,
+            content: `[SYSTEM] Tool Execution Result: ${resultPayload}\n\nThe user declined this tool execution. Acknowledge and ask how to proceed.`,
             isHidden: true,
             isSystem: true
         }];
@@ -215,7 +215,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         historyToPass = [...updated, {
             id: sysMsgId,
             role: 'user' as const,
-            content: `Tool Execution Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\nContinue your response.`,
+            content: `Tool Execution Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\n`,
             isHidden: true,
             isSystem: true
         }];
@@ -228,7 +228,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         }];
     });
 
-    const prompt = `Tool Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool executed successfully..`;
+    const prompt = `[SYSTEM] Tool Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool has completed.`;
     
     // Keep it as system prompt
     setTimeout(() => {

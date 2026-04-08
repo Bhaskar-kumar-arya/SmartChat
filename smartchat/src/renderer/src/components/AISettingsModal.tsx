@@ -62,8 +62,8 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
               cursor: 'pointer'
             }}
           >
-            <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
             <option value="gemma-4-31b-it">Gemma 4 31B IT</option>
+            <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
             <option value="gemma-3-27b-it">Gemma 3 27B IT</option>
             <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
             <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>

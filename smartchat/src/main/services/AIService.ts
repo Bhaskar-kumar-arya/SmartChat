@@ -95,7 +95,7 @@ export class AIService {
       const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
 
       const chat = this.ai.chats.create({
-        model: options?.model || "gemini-3.1-flash-lite-preview",
+        model: options?.model || "gemma-4-31b-it",
         config,
         history: formattedHistory
       });
@@ -139,7 +139,7 @@ export class AIService {
       const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
 
       const chat = this.ai.chats.create({
-        model: options?.model || "gemini-3.1-flash-lite-preview",
+        model: options?.model || "gemma-4-31b-it",
         config,
         history: formattedHistory
       });
