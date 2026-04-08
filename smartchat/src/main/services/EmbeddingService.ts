@@ -28,7 +28,7 @@ export class EmbeddingService implements IEmbeddingService {
   // Model loading (lazy + cached)
   // -----------------------------------------------------------------
 
-  private modelName =  'bhasha-embed-onnx-quantized' //'Xenova/paraphrase-multilingual-MiniLM-L12-v2' // Correct Hub ID for online models
+  private modelName = 'bhasha-embed-onnx-quantized' //'Xenova/paraphrase-multilingual-MiniLM-L12-v2' // Correct Hub ID for online models
 
   public setModel(name: string): void {
     if (this.modelName !== name) {
@@ -58,16 +58,16 @@ export class EmbeddingService implements IEmbeddingService {
 
         // Determine where our locally bundled models are
         const localModelsRoot = path.join(app.getAppPath(), 'src', 'main', 'models')
-        
+
         // Environment settings for Electron Main process (standard Node.js vs Browser)
         env.localModelPath = localModelsRoot
         env.allowLocalModels = true
         env.allowRemoteModels = true
-        
+
         // Ensure standard fetch works in Node.js (some older versions needed custom fetch, but modern Electron is fine)
         // If we want to use specific HF models, they usually need to be in the "Xenova" or "sentence-transformers" org
         // The previous error was due to an incomplete Hub ID (paraphrase-multilingual-MiniLM-L12-v2 vs Xenova/paraphrase-multilingual-MiniLM-L12-v2)
-        
+
         console.log(`[EmbeddingService] Loading model: ${this.modelName} (Local Path: ${localModelsRoot})`)
 
         try {
@@ -88,11 +88,11 @@ export class EmbeddingService implements IEmbeddingService {
           console.error(`[EmbeddingService] Failed to load model through pipeline:`, pipeErr)
           // Fallback logic if the primary model fails (e.g., try another known local model)
           if (this.modelName !== 'bhasha-embed-onnx-quantized') {
-             console.log('[EmbeddingService] Falling back to default local model...')
-             this.modelName = 'bhasha-embed-onnx-quantized'
-             this.pipeline = await pipeline('feature-extraction', this.modelName, { quantized: true })
+            console.log('[EmbeddingService] Falling back to default local model...')
+            this.modelName = 'bhasha-embed-onnx-quantized'
+            this.pipeline = await pipeline('feature-extraction', this.modelName, { quantized: true })
           } else {
-             throw pipeErr
+            throw pipeErr
           }
         }
       } catch (err) {
@@ -143,6 +143,8 @@ export class EmbeddingService implements IEmbeddingService {
   async indexMessage(messageId: string, text: string): Promise<void> {
     if (!text?.trim()) return
     this.indexQueue.push({ messageId, text })
+
+    // We don't await the entire queue drain here to keep it non-blocking for real-time
     this.processQueue()
   }
 
@@ -166,9 +168,9 @@ export class EmbeddingService implements IEmbeddingService {
         console.error(`[EmbeddingService] Failed to index message:`, err)
       }
 
-      // Yield to event loop and add a small breather between embeddings
+      // Yield to event loop with a minimal breather
       if (this.indexQueue.length > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await new Promise(resolve => setTimeout(resolve, 10))
       }
     }
 
@@ -177,10 +179,13 @@ export class EmbeddingService implements IEmbeddingService {
 
   /**
    * Index ALL messages that have textContent but no existing vector.
-   * Processes in batches of 50 to keep the process responsive.
+   * Processes sequentially to ensure accuracy and progress reporting.
    * Calls onProgress with 0–100 integer.
    */
   async indexAll(onProgress?: (pct: number) => void): Promise<void> {
+    // Ensure model is loaded first
+    await this.loadModel()
+
     // Find message IDs that are already indexed
     const indexed = await (prisma as any).messageVector.findMany({ select: { messageId: true } })
     const indexedSet = new Set<string>(indexed.map((v: any) => v.messageId))
@@ -199,14 +204,33 @@ export class EmbeddingService implements IEmbeddingService {
       return
     }
 
+    console.log(`[EmbeddingService] Starting bulk indexing for ${total} messages...`)
+
     let done = 0
-    for (let i = 0; i < pending.length; i++) {
-      const m = pending[i]
-      await this.indexMessage(m.id, m.textContent!)
-      
+    for (const m of pending) {
+      try {
+        const vector = await this.embed(m.textContent!)
+        await (prisma as any).messageVector.upsert({
+          where: { messageId: m.id },
+          create: { messageId: m.id, vector: JSON.stringify(vector) },
+          update: { vector: JSON.stringify(vector) }
+        })
+      } catch (err) {
+        console.error(`[EmbeddingService] Failed to index message ${m.id}:`, err)
+      }
+
       done++
-      onProgress?.(Math.round((done / total) * 100))
+      if (done % 5 === 0 || done === total) {
+        onProgress?.(Math.round((done / total) * 100))
+      }
+
+      // Small breather every few messages to keep Main process responsive
+      if (done % 10 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0))
+      }
     }
+
+    console.log(`[EmbeddingService] Bulk indexing complete.`)
   }
 
   async clearAllVectors(): Promise<void> {
