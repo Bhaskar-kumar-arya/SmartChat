@@ -169,8 +169,10 @@ export class EmbeddingService implements IEmbeddingService {
         })
 
         // 2. Vector extension storage (Virtual table for fast search)
+        // We use DELETE then INSERT because REPLACE can sometimes fail on virtual tables
+        await prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, messageId)
         await prisma.$executeRawUnsafe(
-          `INSERT OR REPLACE INTO vec_messages(messageId, vector) VALUES (?, ?)`,
+          `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
           messageId,
           vectorJson
         )
@@ -228,8 +230,9 @@ export class EmbeddingService implements IEmbeddingService {
           update: { vector: vectorJson }
         })
 
+        await prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, m.id)
         await prisma.$executeRawUnsafe(
-          `INSERT OR REPLACE INTO vec_messages(messageId, vector) VALUES (?, ?)`,
+          `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
           m.id,
           vectorJson
         )
@@ -270,13 +273,14 @@ export class EmbeddingService implements IEmbeddingService {
     const BATCH_SIZE = 100
     for (let i = 0; i < all.length; i += BATCH_SIZE) {
       const batch = all.slice(i, i + BATCH_SIZE)
-      await Promise.all(batch.map(v => 
-        prisma.$executeRawUnsafe(
-          `INSERT OR REPLACE INTO vec_messages(messageId, vector) VALUES (?, ?)`,
+      await Promise.all(batch.map(async v => {
+        await prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, v.messageId)
+        return prisma.$executeRawUnsafe(
+          `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
           v.messageId,
           v.vector
         )
-      ))
+      }))
       if (i % 500 === 0) console.log(`[EmbeddingService] Synced ${i} vectors...`)
     }
     console.log('[EmbeddingService] Vector sync complete.')
