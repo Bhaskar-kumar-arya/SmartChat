@@ -5,7 +5,7 @@ import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { waConnectionManager } from './services/WhatsAppConnectionManager'
-import { prisma } from './auth'
+import { prisma, initVectorDb } from './auth'
 import { registerIpcHandlers } from './ipcHandlers'
 
 // Register 'app' protocol as privileged BEFORE app is ready
@@ -79,6 +79,7 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
 
   registerIpcHandlers(prisma, getSock)
+  initVectorDb()
 
   ipcMain.on('wa-skip-sync', () => {
     waConnectionManager.skipSync()

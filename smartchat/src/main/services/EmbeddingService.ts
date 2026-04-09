@@ -14,8 +14,8 @@ export interface IEmbeddingService {
 }
 
 /**
- * EmbeddingService generates 384-dim sentence vectors using
- * @xenova/transformers all-MiniLM-L6-v2.
+ * EmbeddingService generates 768-dim sentence vectors using
+ * @xenova/transformers (bhasha-embed-onnx-quantized).
  *
  * The model runs entirely locally (no API key). On first call it is
  * downloaded once (~25MB) and cached in userData/models.
@@ -109,7 +109,7 @@ export class EmbeddingService implements IEmbeddingService {
   // -----------------------------------------------------------------
 
   /**
-   * Generates a 384-dim embedding vector for a given text string.
+   * Generates a 768-dim embedding vector for a given text string.
    */
   async embed(text: string): Promise<number[]> {
     await this.loadModel()
@@ -119,8 +119,8 @@ export class EmbeddingService implements IEmbeddingService {
   }
 
   /**
-   * Compute cosine similarity between two 384-dim vectors.
-   * Both vectors are expected to be unit-normalised (all-MiniLM-L6-v2 outputs are).
+   * Compute cosine similarity between two 768-dim vectors.
+   * Both vectors are expected to be unit-normalised.
    */
   cosineSimilarity(a: number[], b: number[]): number {
     let dot = 0
@@ -159,11 +159,21 @@ export class EmbeddingService implements IEmbeddingService {
       try {
         const { messageId, text } = item
         const vector = await this.embed(text)
+        const vectorJson = JSON.stringify(vector)
+
+        // 1. Prisma storage (Standard table)
         await (prisma as any).messageVector.upsert({
           where: { messageId },
-          create: { messageId, vector: JSON.stringify(vector) },
-          update: { vector: JSON.stringify(vector) }
+          create: { messageId, vector: vectorJson },
+          update: { vector: vectorJson }
         })
+
+        // 2. Vector extension storage (Virtual table for fast search)
+        await prisma.$executeRawUnsafe(
+          `INSERT OR REPLACE INTO vec_messages(messageId, vector) VALUES (?, ?)`,
+          messageId,
+          vectorJson
+        )
       } catch (err) {
         console.error(`[EmbeddingService] Failed to index message:`, err)
       }
@@ -210,11 +220,19 @@ export class EmbeddingService implements IEmbeddingService {
     for (const m of pending) {
       try {
         const vector = await this.embed(m.textContent!)
+        const vectorJson = JSON.stringify(vector)
+
         await (prisma as any).messageVector.upsert({
           where: { messageId: m.id },
-          create: { messageId: m.id, vector: JSON.stringify(vector) },
-          update: { vector: JSON.stringify(vector) }
+          create: { messageId: m.id, vector: vectorJson },
+          update: { vector: vectorJson }
         })
+
+        await prisma.$executeRawUnsafe(
+          `INSERT OR REPLACE INTO vec_messages(messageId, vector) VALUES (?, ?)`,
+          m.id,
+          vectorJson
+        )
       } catch (err) {
         console.error(`[EmbeddingService] Failed to index message ${m.id}:`, err)
       }
@@ -235,7 +253,33 @@ export class EmbeddingService implements IEmbeddingService {
 
   async clearAllVectors(): Promise<void> {
     await (prisma as any).messageVector.deleteMany({})
+    await prisma.$executeRawUnsafe(`DELETE FROM vec_messages`)
     console.log('[EmbeddingService] All vectors cleared.')
+  }
+
+  /**
+   * Syncs existing vectors from the standard MessageVector table to the 
+   * sqlite-vec specialized virtual table. Useful after first update.
+   */
+  async syncVectors(): Promise<void> {
+    console.log('[EmbeddingService] Syncing vectors to virtual table...')
+    const all = await (prisma as any).messageVector.findMany()
+    console.log(`[EmbeddingService] Found ${all.length} vectors to sync.`)
+    
+    // Batch inserts for performance
+    const BATCH_SIZE = 100
+    for (let i = 0; i < all.length; i += BATCH_SIZE) {
+      const batch = all.slice(i, i + BATCH_SIZE)
+      await Promise.all(batch.map(v => 
+        prisma.$executeRawUnsafe(
+          `INSERT OR REPLACE INTO vec_messages(messageId, vector) VALUES (?, ?)`,
+          v.messageId,
+          v.vector
+        )
+      ))
+      if (i % 500 === 0) console.log(`[EmbeddingService] Synced ${i} vectors...`)
+    }
+    console.log('[EmbeddingService] Vector sync complete.')
   }
 }
 

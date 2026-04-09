@@ -10,6 +10,7 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { join } from "path";
 import { app } from "electron";
 import { is } from "@electron-toolkit/utils";
+import * as sqliteVec from "sqlite-vec";
 
 // In dev, use the local db. In prod, use the userData dir
 const dbPath = is.dev 
@@ -18,11 +19,92 @@ const dbPath = is.dev
 
 // In Prisma 7, we pass a config object to the adapter factory.
 // The factory will handle the creation of the better-sqlite3 instance.
-const adapter = new PrismaBetterSqlite3({ 
-  url: `file:${dbPath}`
+const baseAdapter = new PrismaBetterSqlite3({
+  url: `file:${dbPath}`,
+});
+
+/**
+ * ADAPTER WRAPPING: 
+ * We use a Proxy to intercept the 'connect' calls.
+ * This allows us to access the underlying better-sqlite3 instance ('client')
+ * and load the sqlite-vec extension directly into it.
+ */
+const adapter = new Proxy(baseAdapter, {
+  get(target, prop, receiver) {
+    const value = Reflect.get(target, prop, receiver);
+    if (prop === "connect" || prop === "connectToShadowDb") {
+      return async (...args: any[]) => {
+        const conn = await (value as Function).apply(target, args);
+        if (conn && conn.client) {
+          try {
+            sqliteVec.load(conn.client);
+            console.log("[AdapterPatch] sqlite-vec successfully loaded into connection");
+          } catch (e) {
+            console.error("[AdapterPatch] Failed to load sqlite-vec into connection:", e);
+          }
+        }
+        return conn;
+      };
+    }
+    return typeof value === "function" ? value.bind(target) : value;
+  },
 });
 
 export const prisma = new PrismaClient({ adapter } as any);
+
+/**
+ * Initializes the vector database by creating the virtual table.
+ * Should be called once at application startup.
+ */
+export const initVectorDb = async () => {
+  try {
+    // 1. Create the virtual table with the correct 768 dimensions for Bhasha model
+    await prisma.$executeRawUnsafe(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS vec_messages USING vec0(
+        messageId TEXT PRIMARY KEY,
+        vector FLOAT[768]
+      );
+    `);
+
+    // 2. SELF-HEAL: Check for dimension mismatch (e.g., if it was previously 384)
+    try {
+      const dummyVector = JSON.stringify(new Array(768).fill(0));
+      await prisma.$executeRawUnsafe(
+        `SELECT count(*) FROM vec_messages WHERE vector MATCH ? AND k=1`,
+        dummyVector
+      );
+    } catch (e: any) {
+      if (e.message.includes("Dimension mismatch")) {
+        console.warn("[VectorDB] Dimension mismatch detected. Recreating table with 768 dims...");
+        await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS vec_messages`);
+        await prisma.$executeRawUnsafe(`
+          CREATE VIRTUAL TABLE vec_messages USING vec0(
+            messageId TEXT PRIMARY KEY,
+            vector FLOAT[768]
+          );
+        `);
+      }
+    }
+
+    console.log("[VectorDB] sqlite-vec table initialized successfully (768 dims)");
+
+    // 3. Check if we need to sync existing vectors from MessageVector to vec_messages
+    const vecCountRaw = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT count(*) as count FROM vec_messages`
+    );
+    const vecCount = Number(vecCountRaw[0]?.count || 0);
+    const prismaCount = await (prisma as any).messageVector.count();
+
+    if (vecCount < prismaCount) {
+      console.log(`[VectorDB] Syncing missing vectors (${vecCount} vs ${prismaCount})...`);
+      // Dynamic import to avoid circular dependency
+      const { embeddingService } = await import("./services/EmbeddingService");
+      await embeddingService.syncVectors();
+    }
+  } catch (err) {
+    console.error("[VectorDB] Failed to initialize vector table:", err);
+  }
+};
 
 export const usePrismaAuthState = async (): Promise<{
   state: AuthenticationState;

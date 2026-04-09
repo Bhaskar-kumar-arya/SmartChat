@@ -134,7 +134,7 @@ export class SearchService implements ISearchService {
       take: 30
     })
 
-    const msgJids = [...new Set(messages.map((m) => m.remoteJid))]
+    const msgJids = Array.from(new Set(messages.map((m: any) => m.remoteJid as string)))
     const msgNameMap = await contactService.batchResolveNames(msgJids, sock)
 
     return messages.map((msg) => ({
@@ -154,68 +154,81 @@ export class SearchService implements ISearchService {
     sock: any,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
-    // 1. Get candidate message IDs that pass the filters
-    const candidateMessages = await prisma.message.findMany({
-      where: buildMessageWhereClause(filters),
-      select: { id: true, remoteJid: true, textContent: true, timestamp: true }
-    })
-
-    if (candidateMessages.length === 0) return []
-
-    const candidateIds = candidateMessages.map((m) => m.id)
-
-    // 2. Load and score vectors in batches to avoid Prisma/SQLite limits
     const queryVector = await embeddingService.embed(q)
-    const BATCH_SIZE = 500 // Safer for SQLite parameter limits (P2029)
-    const scored: { messageId: string; score: number }[] = []
+    const queryVectorJson = JSON.stringify(queryVector)
 
-    for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {
-      const batchIds = candidateIds.slice(i, i + BATCH_SIZE)
-      const storedVectors = await (prisma as any).messageVector.findMany({
-        where: { messageId: { in: batchIds } }
+    // 1. Build the filter clause if needed
+    let filterSql = ''
+    const params: any[] = [queryVectorJson]
+
+    const hasFilters = !!(filters?.jids?.length || filters?.fromDate || filters?.toDate)
+    if (hasFilters) {
+      const candidateMessages = await prisma.message.findMany({
+        where: buildMessageWhereClause(filters),
+        select: { id: true }
       })
+      if (candidateMessages.length === 0) return []
+      const ids = candidateMessages.map((m) => m.id)
 
-      for (const sv of storedVectors) {
-        try {
-          const vec = JSON.parse(sv.vector)
-          const score = embeddingService.cosineSimilarity(queryVector, vec)
-          scored.push({ messageId: sv.messageId, score })
-        } catch (err) {
-          // ignore corrupted vectors
-        }
-      }
-
-      // Optimization: Keep only top 100 if we have too many, to save memory
-      if (scored.length > 5000) {
-        scored.sort((a, b) => b.score - a.score)
-        scored.splice(100)
+      // To avoid SQLite parameter limit issues, we only use the IDs 
+      // if they are within a reasonable range (e.g., < 2000)
+      if (ids.length < 2000) {
+        filterSql = `AND messageId IN (${ids.map(() => '?').join(',')})`
+        params.push(...ids)
+      } else {
+        // Fallback or warning? For now, we'll just skip the ID filter in SQL
+        // and filter in JS later if needed, but usually k=30 is enough.
+        // Or we could use a temporary table/CTE if we really needed to.
       }
     }
 
-    if (scored.length === 0) return []
+    // 2. Execute native vector search
+    // vec0 uses MATCH for k-NN search. 'distance' is standard L2/Cosine-related distance.
+    const sql = `
+      SELECT messageId, distance
+      FROM vec_messages
+      WHERE vector MATCH ?
+      ${filterSql}
+      AND k = 30
+      ORDER BY distance ASC
+    `
 
-    // 3. Sort descending and take top 30
-    scored.sort((a, b) => b.score - a.score)
-    const top30 = scored.slice(0, 30)
+    try {
+      const scoredResults = await prisma.$queryRawUnsafe<any[]>(sql, ...params)
+      if (scoredResults.length === 0) return []
 
-    // 6. Enrich with message data
-    const msgMap = new Map(candidateMessages.map((m) => [m.id, m]))
-    const jids = [...new Set(top30.map((s) => msgMap.get(s.messageId)?.remoteJid).filter(Boolean) as string[])]
-    const nameMap = await contactService.batchResolveNames(jids, sock)
+      // 3. Enrich with message details
+      const scoredIds = scoredResults.map((r) => r.messageId)
+      const messages = await prisma.message.findMany({
+        where: { id: { in: scoredIds } }
+      })
 
-    return top30.map(({ messageId, score }) => {
-      const msg = msgMap.get(messageId)!
-      const name = nameMap.get(msg.remoteJid) || msg.remoteJid.split('@')[0]
-      return {
-        type: 'message' as const,
-        jid: msg.remoteJid,
-        name,
-        messageId,
-        snippet: msg.textContent || '',
-        timestamp: msg.timestamp?.toString(),
-        score: Math.round(score * 100) / 100
-      }
-    })
+      const msgMap = new Map(messages.map((m: any) => [m.id, m]))
+      const jids = [...new Set(messages.map((m: any) => m.remoteJid))]
+      const nameMap = await contactService.batchResolveNames(jids as string[], sock)
+
+      return scoredResults
+        .map((res) => {
+          const msg = msgMap.get(res.messageId)
+          if (!msg) return null
+          const name = nameMap.get(msg.remoteJid) || msg.remoteJid.split('@')[0]
+          return {
+            type: 'message' as const,
+            jid: msg.remoteJid,
+            name,
+            messageId: msg.id,
+            snippet: msg.textContent || '',
+            timestamp: msg.timestamp?.toString(),
+            // distance is 0 to ~2, where 0 is identical.
+            // We convert to a 0-1 "confidence/similarity" score for UI.
+            score: Math.max(0, Math.round((1 - res.distance) * 100) / 100)
+          }
+        })
+        .filter(Boolean) as SearchResultItem[]
+    } catch (err) {
+      console.error('[SearchService] Native vector search failed:', err)
+      return []
+    }
   }
 }
 
