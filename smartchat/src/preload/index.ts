@@ -79,8 +79,8 @@ const api = {
   openFile: (localURI: string) => {
     return ipcRenderer.invoke('open-file', localURI)
   },
-  getProfilePicture: (jid: string, type: 'preview' | 'image') => {
-    return ipcRenderer.invoke('get-profile-picture', jid, type)
+  getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean) => {
+    return ipcRenderer.invoke('get-profile-picture', jid, type, forceRefresh)
   },
   searchAll: (query: string, mode: 'normal' | 'deep' = 'normal', filters?: any) => {
     return ipcRenderer.invoke('search-all', query, mode, filters)

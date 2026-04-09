@@ -177,10 +177,11 @@ export class ContactService {
   async getProfilePicture(
     jid: string,
     type: 'preview' | 'image' = 'preview',
-    sock?: any
+    sock?: any,
+    forceRefresh: boolean = false
   ): Promise<string | null> {
     if (type === 'image') {
-      if (this.imageCache.has(jid)) return this.imageCache.get(jid)!
+      if (!forceRefresh && this.imageCache.has(jid)) return this.imageCache.get(jid)!
       if (!sock) return null
 
       try {
@@ -194,12 +195,14 @@ export class ContactService {
     }
 
     // Default: 'preview'
-    const contact = await prisma.contact.findUnique({
-      where: { id: jid },
-      select: { profilePictureUrl: true } as any
-    }) as any
+    if (!forceRefresh) {
+      const contact = await prisma.contact.findUnique({
+        where: { id: jid },
+        select: { profilePictureUrl: true } as any
+      }) as any
 
-    if (contact?.profilePictureUrl) return contact.profilePictureUrl
+      if (contact?.profilePictureUrl) return contact.profilePictureUrl
+    }
 
     if (!sock) return null
 

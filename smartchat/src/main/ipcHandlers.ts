@@ -313,9 +313,9 @@ export function registerIpcHandlers(
   })
 
   // ── Get Profile Picture ─────────────────────────────────────────────
-  ipcMain.handle('get-profile-picture', async (_event, jid: string, type: 'preview' | 'image' = 'preview') => {
+  ipcMain.handle('get-profile-picture', async (_event, jid: string, type: 'preview' | 'image' = 'preview', forceRefresh: boolean = false) => {
     const sock = getSock()
-    return contactService.getProfilePicture(jid, type, sock)
+    return contactService.getProfilePicture(jid, type, sock, forceRefresh)
   })
 
   // ── Get Group Metadata ────────────────────────────────────────────────

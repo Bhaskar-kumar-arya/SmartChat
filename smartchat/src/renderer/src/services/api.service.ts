@@ -63,8 +63,8 @@ export const api = {
   skipSync: () =>
     window.api.skipSync(),
 
-  getProfilePicture: (jid: string, type: 'preview' | 'image'): Promise<string | null> =>
-    window.api.getProfilePicture(jid, type),
+  getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean): Promise<string | null> =>
+    window.api.getProfilePicture(jid, type, forceRefresh),
 
   selectFile: (): Promise<string | null> =>
     window.api.selectFile(),

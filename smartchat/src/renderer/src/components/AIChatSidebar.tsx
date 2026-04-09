@@ -35,7 +35,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   const [availableTools, setAvailableTools] = useState<any[]>([])
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [aiOptions, setAiOptions] = useState({ useThinkMode: true, model: 'gemini-3.1-flash-lite-preview' })
+  const [aiOptions, setAiOptions] = useState({ useThinkMode: true, model: 'gemma-4-31b-it' })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
