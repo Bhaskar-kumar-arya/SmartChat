@@ -12,15 +12,22 @@ export class ContactService {
     const uniqueJids = Array.from(new Set(jids.filter(Boolean)))
     if (uniqueJids.length === 0) return new Map()
 
-    const contacts = await prisma.contact.findMany({
-      where: {
-        OR: [
-          { id: { in: uniqueJids } },
-          { lid: { in: uniqueJids } },
-          { phoneNumber: { in: uniqueJids } }
-        ]
-      }
-    })
+    // Chunking to avoid SQLite parameter limit (P2029)
+    const BATCH_SIZE = 250
+    const contacts: any[] = []
+    for (let i = 0; i < uniqueJids.length; i += BATCH_SIZE) {
+      const chunk = uniqueJids.slice(i, i + BATCH_SIZE)
+      const res = await prisma.contact.findMany({
+        where: {
+          OR: [
+            { id: { in: chunk } },
+            { lid: { in: chunk } },
+            { phoneNumber: { in: chunk } }
+          ]
+        }
+      })
+      contacts.push(...res)
+    }
 
     const nameMap = new Map<string, string>()
 

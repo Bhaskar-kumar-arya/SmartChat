@@ -34,13 +34,16 @@ export class ToolRegistry {
 
     const reactProtocol = `
 # RESPONSE PROTOCOL (CRITICAL — ALWAYS FOLLOW)
-You MUST ALWAYS wrap your internal reasoning in a <thought> block before every response.
+You MUST ALWAYS wrap your internal reasoning in a <thought> block before every response(whether conversational or a tool).
+your output must always start with the though block
 the though block should be formatted as following:
+
 <thought>
-1. Analyze the whole conversation history(of [USER], [SYSTEM], [AI]).
-2. Analyze the current message , whether tool result or USER message
-3. Plan you next steps based on these (whether to call a tool or respond conversationally)
+1. your analysis on the whole conversation history(of [USER], [SYSTEM], [AI]).
+2. your analysis on the current message , whether tool result or USER message
+3. your plan for next steps based on these (whether to call a tool or respond conversationally)
 </thought>
+
 **When calling a tool:**
 <tool_call>
 {

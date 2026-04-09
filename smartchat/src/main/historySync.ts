@@ -196,15 +196,21 @@ export async function handleHistorySync(
       // Yield to event loop to keep UI responsive
       await new Promise(resolve => setTimeout(resolve, 0))
 
+      // ── Clear LIDs in chunks to avoid SQLite limit ──
+      const lidArray = Array.from(lidsToClear);
+      const CLEAR_BATCH_SIZE = 500;
+      for (let i = 0; i < lidArray.length; i += CLEAR_BATCH_SIZE) {
+        const chunk = lidArray.slice(i, i + CLEAR_BATCH_SIZE);
+        await prisma.contact.updateMany({
+          where: { lid: { in: chunk } },
+          data: { lid: null }
+        });
+      }
+
+      // ── Process upserts in batches ──
       const BATCH_SIZE = 500;
       for (let i = 0; i < contactOps.length; i += BATCH_SIZE) {
-        await prisma.$transaction([
-          prisma.contact.updateMany({
-            where: { lid: { in: Array.from(lidsToClear) } },
-            data: { lid: null }
-          }),
-          ...contactOps.slice(i, i + BATCH_SIZE)
-        ]);
+        await prisma.$transaction(contactOps.slice(i, i + BATCH_SIZE));
       }
     }
     contactCount = jidToData.size

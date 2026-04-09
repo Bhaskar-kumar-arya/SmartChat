@@ -166,7 +166,7 @@ export class SearchService implements ISearchService {
 
     // 2. Load and score vectors in batches to avoid Prisma/SQLite limits
     const queryVector = await embeddingService.embed(q)
-    const BATCH_SIZE = 5000
+    const BATCH_SIZE = 500 // Safer for SQLite parameter limits (P2029)
     const scored: { messageId: string; score: number }[] = []
 
     for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {

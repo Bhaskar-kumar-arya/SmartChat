@@ -6,6 +6,7 @@ import {
   makeCacheableSignalKeyStore
 } from "@whiskeysockets/baileys";
 import { PrismaClient } from "@prisma/client";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { join } from "path";
 import { app } from "electron";
 import { is } from "@electron-toolkit/utils";
@@ -15,13 +16,13 @@ const dbPath = is.dev
   ? join(__dirname, '../../prisma/dev.db') 
   : join(app.getPath("userData"), "dev.db");
 
-export const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: `file:${dbPath}?connection_limit=1&timeout=30000`,
-    },
-  },
+// In Prisma 7, we pass a config object to the adapter factory.
+// The factory will handle the creation of the better-sqlite3 instance.
+const adapter = new PrismaBetterSqlite3({ 
+  url: `file:${dbPath}`
 });
+
+export const prisma = new PrismaClient({ adapter } as any);
 
 export const usePrismaAuthState = async (): Promise<{
   state: AuthenticationState;
