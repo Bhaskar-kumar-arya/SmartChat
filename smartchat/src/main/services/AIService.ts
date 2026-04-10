@@ -5,7 +5,7 @@ export class AIService {
   private ai: any;
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: 'AIzaSyB-pig4Fwo3LsdOmnwcqiv21p9otSDEaf8' });
+    this.ai = new GoogleGenAI({ apiKey: 'AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0' });
   }
 
   private buildFullPrompt(prompt: string, contextFiles?: any[], mentions?: any[]): string {

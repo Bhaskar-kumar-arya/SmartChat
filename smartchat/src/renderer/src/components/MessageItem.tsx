@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { MessageItem as IMessageItem, ReactionItem } from '../types'
 import { formatTime } from '../utils/formatters'
 import { TextMessage } from './messages/TextMessage'
-import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage } from './messages/MediaMessages'
+import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage, AudioMessage } from './messages/MediaMessages'
 
 /**
  * Utility to unwrap metadata from Baileys messages.
@@ -45,6 +45,7 @@ export default function MessageItem({ msg, onReply, onDownloadMedia, onViewReact
               rawMsg?.imageMessage?.contextInfo || 
               rawMsg?.videoMessage?.contextInfo || 
               rawMsg?.documentMessage?.contextInfo ||
+              rawMsg?.audioMessage?.contextInfo ||
               rawMsg?.contextInfo
   
   const isReply = !!ctx?.quotedMessage
@@ -61,13 +62,15 @@ export default function MessageItem({ msg, onReply, onDownloadMedia, onViewReact
   const isSticker = msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage
   const isVideo = msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage
   const isDocument = msg.messageType === 'documentMessage' || !!rawMsg?.documentMessage
-  const localURI = rawMsg?.imageMessage?.localURI || rawMsg?.stickerMessage?.localURI || rawMsg?.videoMessage?.localURI || rawMsg?.documentMessage?.localURI || msg.localURI
+  const isAudio = msg.messageType === 'audioMessage' || !!rawMsg?.audioMessage
+  const localURI = rawMsg?.imageMessage?.localURI || rawMsg?.stickerMessage?.localURI || rawMsg?.videoMessage?.localURI || rawMsg?.documentMessage?.localURI || rawMsg?.audioMessage?.localURI || msg.localURI
 
   const renderContent = () => {
     if (isImage) return <ImageMessage localURI={localURI} textContent={msg.textContent} onDownload={handleDownload} isDownloading={downloading} />
     if (isSticker) return <StickerMessage localURI={localURI} onDownload={handleDownload} isDownloading={downloading} />
     if (isVideo) return <VideoMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />
     if (isDocument) return <DocumentMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />
+    if (isAudio) return <AudioMessage localURI={localURI} senderJid={msg.participant || msg.remoteJid} onDownload={handleDownload} isDownloading={downloading} rawMsg={rawMsg} />
     if (msg.textContent) return <TextMessage text={msg.textContent} mentions={ctx?.mentions} />
     return <p className="message-text message-unsupported">[{msg.messageType}]</p>
   }

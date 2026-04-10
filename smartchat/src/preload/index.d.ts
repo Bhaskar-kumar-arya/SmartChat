@@ -63,7 +63,8 @@ declare global {
       logout: () => Promise<boolean>
       onPresenceUpdate: (callback: (update: { remoteJid: string; presences: Record<string, any> }) => void) => () => void
       openFile: (localURI: string) => Promise<boolean>
-      getProfilePicture: (jid: string, type: 'preview' | 'image') => Promise<string | null>
+      getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean) => Promise<string | null>
+      saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string) => Promise<string>
       searchAll: (query: string, mode?: 'normal' | 'deep', filters?: any) => Promise<SearchResults>
       indexEmbeddings: () => Promise<void>
       onEmbeddingProgress: (callback: (pct: number) => void) => () => void

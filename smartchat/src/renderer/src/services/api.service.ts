@@ -80,4 +80,7 @@ export const api = {
 
   clearVectors: (): Promise<void> =>
     window.api.clearVectors(),
+
+  saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string): Promise<string> =>
+    window.api.saveTempFile(buffer, fileName),
 }

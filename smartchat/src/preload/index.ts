@@ -55,6 +55,9 @@ const api = {
   selectFile: () => {
     return ipcRenderer.invoke('select-file')
   },
+  saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string) => {
+    return ipcRenderer.invoke('save-temp-file', buffer, fileName)
+  },
   onNewMessage: (callback: (msg: Record<string, unknown>) => void) => {
     const listener = (_event: any, msg: any) => callback(msg)
     ipcRenderer.on('new-message', listener)

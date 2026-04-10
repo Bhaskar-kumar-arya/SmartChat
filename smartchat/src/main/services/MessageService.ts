@@ -58,7 +58,7 @@ export class MessageService {
       } else if (unwrapped.extendedTextMessage?.text) {
         textContent = unwrapped.extendedTextMessage.text
       } else {
-        const mediaMsg = unwrapped.imageMessage || unwrapped.videoMessage || unwrapped.documentMessage
+        const mediaMsg = unwrapped.imageMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
         if (mediaMsg && typeof mediaMsg.caption === 'string') {
           textContent = mediaMsg.caption
         }
@@ -164,7 +164,7 @@ export class MessageService {
     try { finalContent = JSON.parse(msg.content) } catch (e) {}
 
     const unwrapped = this.unwrapMessage(finalContent)
-    const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.imageMessage?.contextInfo || unwrapped?.videoMessage?.contextInfo || unwrapped?.documentMessage?.contextInfo || unwrapped?.contextInfo
+    const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.imageMessage?.contextInfo || unwrapped?.videoMessage?.contextInfo || unwrapped?.documentMessage?.contextInfo || unwrapped?.audioMessage?.contextInfo || unwrapped?.contextInfo
 
     if (ctx) {
         if (ctx.participant) {
@@ -178,7 +178,7 @@ export class MessageService {
         }
         if (ctx.quotedMessage) {
             const q = this.unwrapMessage(ctx.quotedMessage)
-            const qCtx = q?.extendedTextMessage?.contextInfo || q?.imageMessage?.contextInfo || q?.videoMessage?.contextInfo || q?.documentMessage?.contextInfo || q?.contextInfo
+            const qCtx = q?.extendedTextMessage?.contextInfo || q?.imageMessage?.contextInfo || q?.videoMessage?.contextInfo || q?.documentMessage?.contextInfo || q?.audioMessage?.contextInfo || q?.contextInfo
             if (qCtx && qCtx.mentionedJid && Array.isArray(qCtx.mentionedJid)) {
                 qCtx.mentions = {}
                 for (const jid of qCtx.mentionedJid) {
@@ -205,6 +205,14 @@ export class MessageService {
     if (lowerPath.endsWith('.webp')) return { sticker: buffer }
     if (['.mp4', '.mkv', '.avi', '.mov'].some(ext => lowerPath.endsWith(ext))) return { video: buffer, caption }
     if (['.jpg', '.jpeg', '.png', '.gif'].some(ext => lowerPath.endsWith(ext))) return { image: buffer, caption }
+    if (['.ogg', '.opus', '.mp3', '.m4a'].some(ext => lowerPath.endsWith(ext))) {
+        const isPtt = lowerPath.endsWith('.ogg') || lowerPath.endsWith('.opus')
+        return { 
+          audio: buffer, 
+          mimetype: isPtt ? 'audio/ogg; codecs=opus' : undefined,
+          ptt: isPtt 
+        }
+    }
     
     // Fallback to document message
     const ext = lowerPath.split('.').pop() || 'bin'
@@ -236,6 +244,7 @@ export class MessageService {
     if (mediaType === 'image') return 'jpg'
     if (mediaType === 'sticker') return 'webp'
     if (mediaType === 'video') return 'mp4'
+    if (mediaType === 'audio') return 'ogg'
     
     if (mediaType === 'document') {
         const mime = mediaMsg.mimetype || ''

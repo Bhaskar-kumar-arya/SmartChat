@@ -1,4 +1,5 @@
 import { api } from '../../services/api.service'
+export { AudioMessage } from './AudioMessage'
 
 interface MediaMessageProps {
   localURI?: string

@@ -51,3 +51,76 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ─── Recording UI ──────────────────────────────────────────────────── */
+.recording-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 12px;
+  background: var(--wa-input-bg);
+  border-radius: 24px;
+  border: 1px solid var(--wa-border-light);
+}
+
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--wa-danger, #ea4335);
+  animation: pulse 1.5s infinite;
+}
+
+.recording-timer {
+  font-size: 0.9rem;
+  font-weight: 600;
+  min-width: 40px;
+  color: var(--wa-text-primary);
+}
+
+.recording-visualizer {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 24px;
+  flex: 1;
+  margin-left: 8px;
+}
+
+.visualizer-bar {
+  width: 3px;
+  background: var(--wa-primary);
+  border-radius: 2px;
+  transition: height 0.1s ease;
+}
+
+.recording-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: var(--wa-icon);
+  transition: var(--wa-transition);
+}
+
+.recording-action-btn:hover {
+  opacity: 0.8;
+}
+
+.recording-action-btn.danger {
+  color: var(--wa-danger, #ea4335);
+}
+
+.recording-action-btn.success {
+  color: var(--wa-primary);
+}
+
+@keyframes pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}

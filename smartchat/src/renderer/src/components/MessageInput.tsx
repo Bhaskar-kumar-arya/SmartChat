@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
-import { Paperclip, X } from 'lucide-react'
+import { Paperclip, X, Mic, Send, Trash2, StopCircle, Play, Pause } from 'lucide-react'
 import { useMentions } from '../hooks/useMentions'
+import { useAudioRecorder } from '../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'
 
 interface MessageItem {
@@ -33,6 +34,19 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     addMention, 
     clearMentions 
   } = useMentions(activeJid)
+  
+  const { 
+    isRecording, 
+    duration, 
+    audioBlob, 
+    visualizerData, 
+    startRecording, 
+    stopRecording, 
+    cancelRecording 
+  } = useAudioRecorder()
+  
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false)
+  const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     if (replyingTo) {
@@ -87,6 +101,56 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     } finally {
       setSending(false)
       inputRef.current?.focus()
+    }
+  }
+
+  const stopPreview = () => {
+    if (audioPreviewRef.current) {
+      audioPreviewRef.current.pause()
+      audioPreviewRef.current.currentTime = 0
+      setIsPlayingPreview(false)
+    }
+  }
+
+  const togglePreviewPlayback = () => {
+    if (!audioBlob) return
+
+    if (isPlayingPreview) {
+      stopPreview()
+    } else {
+      if (!audioPreviewRef.current) {
+        audioPreviewRef.current = new Audio()
+        audioPreviewRef.current.onended = () => setIsPlayingPreview(false)
+      }
+      
+      const url = URL.createObjectURL(audioBlob)
+      audioPreviewRef.current.src = url
+      audioPreviewRef.current.play()
+      setIsPlayingPreview(true)
+    }
+  }
+
+  const handleCancelRecording = () => {
+    stopPreview()
+    cancelRecording()
+  }
+
+  const handleSendVoice = async () => {
+    if (!audioBlob || sending) return
+    
+    stopPreview()
+    setSending(true)
+    try {
+      const arrayBuffer = await audioBlob.arrayBuffer()
+      const fileName = `voice_${Date.now()}.ogg`
+      const filePath = await window.api.saveTempFile(arrayBuffer, fileName)
+      
+      await onSendMedia(filePath, '', [])
+      cancelRecording() // Reset state
+    } catch (err) {
+      console.error('Failed to send voice message:', err)
+    } finally {
+      setSending(false)
     }
   }
 
@@ -146,40 +210,80 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         </div>
       )}
 
-      <div className="message-input-container" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <button 
-          className="attach-button"
-          onClick={handleAttachClick}
-          disabled={sending}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#54656f', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px' }}
-          title="Attach file"
-        >
-          <Paperclip size={24} />
-        </button>
+      <div className="message-input-container">
+        {!isRecording && !audioBlob ? (
+          <>
+            <button 
+              className="recording-action-btn"
+              onClick={handleAttachClick}
+              disabled={sending}
+              title="Attach file"
+            >
+              <Paperclip size={24} />
+            </button>
+    
+            <input
+              ref={inputRef}
+              type="text"
+              className="message-input"
+              placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
+              value={text}
+              onChange={handleTextChange}
+              onKeyDown={handleKeyDown}
+              onSelect={(e) => handleInputChange(text, (e.target as HTMLInputElement).selectionStart || 0)}
+              disabled={sending}
+              autoFocus
+            />
+          </>
+        ) : (
+          <div className="recording-container">
+            <button className="recording-action-btn danger" onClick={handleCancelRecording}>
+                <Trash2 size={20} />
+            </button>
+            
+            {audioBlob && (
+              <button className="recording-action-btn" onClick={togglePreviewPlayback}>
+                {isPlayingPreview ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+              </button>
+            )}
 
-        <input
-          ref={inputRef}
-          type="text"
-          className="message-input"
-          placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
-          value={text}
-          onChange={handleTextChange}
-          onKeyDown={handleKeyDown}
-          onSelect={(e) => handleInputChange(text, (e.target as HTMLInputElement).selectionStart || 0)}
-          disabled={sending}
-          autoFocus
-        />
-      <button
-        className="send-button"
-        onClick={handleSend}
-        disabled={(!text.trim() && !selectedFile) || sending}
-        title="Send message"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="m22 2-7 20-4-9-9-4Z" />
-          <path d="M22 2 11 13" />
-        </svg>
-      </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                {!audioBlob && <div className="recording-dot" />}
+                <span className="recording-timer">
+                    {Math.floor(duration / 60)}:{(duration % 60).toString().padStart(2, '0')}
+                </span>
+                <div className="recording-visualizer">
+                    {visualizerData.slice(0, 20).map((v, i) => (
+                        <div key={i} className="visualizer-bar" style={{ height: `${Math.max(v * 100, 10)}%` }} />
+                    ))}
+                </div>
+            </div>
+            {audioBlob ? (
+                <button className="recording-action-btn success" onClick={handleSendVoice}>
+                    <Send size={24} />
+                </button>
+            ) : (
+                <button className="recording-action-btn success" onClick={stopRecording}>
+                    <StopCircle size={24} />
+                </button>
+            )}
+          </div>
+        )}
+
+      {!isRecording && !audioBlob && (
+        <button
+            className="send-button"
+            onClick={text.trim() || selectedFile ? handleSend : startRecording}
+            disabled={sending}
+            title={text.trim() || selectedFile ? "Send message" : "Record voice message"}
+        >
+            {text.trim() || selectedFile ? (
+                <Send size={24} />
+            ) : (
+                <Mic size={24} />
+            )}
+        </button>
+      )}
       </div>
     </div>
   )

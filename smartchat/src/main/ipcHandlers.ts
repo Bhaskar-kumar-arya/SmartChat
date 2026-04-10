@@ -12,6 +12,8 @@ import { aiService } from './services/AIService'
 import { toolRegistry } from './services/AIToolService'
 import { AIToolInitializer } from './services/AIToolInitializer'
 
+import { audioTranscoderService } from './services/AudioTranscoderService'
+
 /**
  * Registers all IPC handlers for chat data, messaging, and identity resolution.
  */
@@ -203,6 +205,22 @@ export function registerIpcHandlers(
     return messageService.enrichMessage(processed, sock, nameMap)
   })
 
+  // ── Save Temp File ───────────────────────────────────────────────────
+  ipcMain.handle('save-temp-file', async (_event, buffer: Buffer | ArrayBuffer | Uint8Array, fileName: string) => {
+    const tempDir = join(app.getPath('userData'), 'temp')
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
+    
+    const filePath = join(tempDir, fileName)
+    const data = buffer instanceof Uint8Array ? buffer : Buffer.from(buffer as any)
+    fs.writeFileSync(filePath, data)
+
+    if (fileName.startsWith('voice_') && fileName.endsWith('.ogg')) {
+      return audioTranscoderService.transcodeToWAPtt(filePath, tempDir)
+    }
+
+    return filePath
+  })
+
   // ── Mark Chat as Read ───────────────────────────────────────────────
   ipcMain.handle('mark-read', async (_event, jid: string) => {
     return chatService.markRead(jid)
@@ -229,13 +247,14 @@ export function registerIpcHandlers(
     const rawMessage = JSON.parse(dbMsg.content)
     const unwrapped = messageService.unwrapMessage(rawMessage)
     
-    let mediaType: 'image' | 'sticker' | 'video' | 'document' | null = null
+    let mediaType: 'image' | 'sticker' | 'video' | 'document' | 'audio' | null = null
     if (unwrapped.imageMessage) mediaType = 'image'
     else if (unwrapped.stickerMessage) mediaType = 'sticker'
     else if (unwrapped.videoMessage) mediaType = 'video'
     else if (unwrapped.documentMessage) mediaType = 'document'
+    else if (unwrapped.audioMessage) mediaType = 'audio'
 
-    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage || unwrapped.documentMessage
+    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
 
     if (!mediaMsg || !mediaType) throw new Error('Not a media message')
 
@@ -256,7 +275,7 @@ export function registerIpcHandlers(
             if (err?.data === 410 || err?.output?.statusCode === 410) {
                 const updatedMsg = await sock.updateMediaMessage({ key: { id: dbMsg.id, remoteJid: dbMsg.remoteJid, fromMe: dbMsg.fromMe, participant: dbMsg.participant }, message: rawMessage } as any)
                 const updatedMedia = messageService.unwrapMessage(updatedMsg.message)
-                const target = updatedMedia.imageMessage || updatedMedia.stickerMessage || updatedMedia.videoMessage
+                const target = updatedMedia.imageMessage || updatedMedia.stickerMessage || updatedMedia.videoMessage || updatedMedia.audioMessage
                 if (target) {
                     const stream = await downloadContentFromMessage(target, mediaType as any)
                     let buffer = Buffer.from([])
@@ -273,6 +292,7 @@ export function registerIpcHandlers(
     if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
     if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
     if (unwrapped.documentMessage) unwrapped.documentMessage.localURI = `app://media/${fileName}`
+    if (unwrapped.audioMessage) unwrapped.audioMessage.localURI = `app://media/${fileName}`
 
     const updated = await prisma.message.update({
       where: { id: msgId },
