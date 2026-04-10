@@ -3,10 +3,10 @@
 This document tracks the features required to bring **smartChat** to complete feature parity with the official WhatsApp experience, categorized by functional area.
 
 ## 1. Core Messaging & Rich Media
-- [ ] **Voice Messages (PTT)**
-  - [ ] Support recording `.ogg` files in the `MessageInput`.
-  - [ ] Render playback with audio waveforms in `MessageItem`.
-  - [ ] Support "1x/1.5x/2x" playback speeds.
+- [x] **Voice Messages (PTT)**
+  - [x] Support recording `.ogg` files in the `MessageInput`.
+  - [x] Render playback with audio waveforms in `MessageItem`.
+  - [x] Support "1x/1.5x/2x" playback speeds.
 - [ ] **Stickers & GIFs**
   - [ ] Sticker picker integration.
   - [ ] Giphy/Tenor API integration for GIF search and sending.

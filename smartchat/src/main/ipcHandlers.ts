@@ -11,7 +11,7 @@ import { embeddingService } from './services/EmbeddingService'
 import { aiService } from './services/AIService'
 import { toolRegistry } from './services/AIToolService'
 import { AIToolInitializer } from './services/AIToolInitializer'
-
+import { communityLogger } from './services/CommunityLogger'
 import { audioTranscoderService } from './services/AudioTranscoderService'
 
 /**
@@ -149,6 +149,25 @@ export function registerIpcHandlers(
   ipcMain.handle('send-message', async (_event, jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
+
+    // Community Check & Logging
+    if (jid.endsWith('@g.us')) {
+      try {
+        const metaResult = await sock.groupMetadata(jid)
+        const meta = (metaResult as any).metadata || metaResult
+        const isAnnounce = meta.isCommunityAnnounce || meta.announce
+        const isComm = meta.isCommunity
+        
+        if (isComm || isAnnounce) {
+          communityLogger.log(`Sending message to ${jid}`, { isComm, isAnnounce })
+          if (isAnnounce && !metaResult.participants.find(p => p.id === sock.user?.id)?.admin) {
+            communityLogger.log(`WARNING: Sending message to announcement group where user might not be admin.`, { jid })
+          }
+        }
+      } catch (e) {
+        // Metadata might not be cached or accessible
+      }
+    }
 
     let quoted: any = undefined
     if (quotedMsgId) {
@@ -344,6 +363,18 @@ export function registerIpcHandlers(
     if (!sock || !jid.endsWith('@g.us')) return []
     try {
       const metadata = await sock.groupMetadata(jid)
+      
+      // Community metadata logging
+      // @ts-ignore
+      const meta = metadata.metadata || metadata
+      const isComm = meta.isCommunity
+      const isAnn = meta.isCommunityAnnounce
+      const parent = meta.linkedParentJid
+      
+      if (isComm || isAnn || parent) {
+        communityLogger.log(`Metadata fetched for ${jid}`, { isComm, isAnn, parent })
+      }
+
       const jids = metadata.participants.map(p => p.id)
       const nameMap = await contactService.batchResolveNames(jids, sock)
       return metadata.participants.map(p => ({
