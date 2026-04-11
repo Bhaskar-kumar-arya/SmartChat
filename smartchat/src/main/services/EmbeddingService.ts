@@ -11,6 +11,7 @@ export interface IEmbeddingService {
   clearAllVectors(): Promise<void>
   setModel(modelName: string): void
   getModel(): string
+  setPaused(paused: boolean): void
 }
 
 /**
@@ -23,6 +24,7 @@ export interface IEmbeddingService {
 export class EmbeddingService implements IEmbeddingService {
   private pipeline: any = null
   private loadPromise: Promise<void> | null = null
+  private isPaused = false
 
   // -----------------------------------------------------------------
   // Model loading (lazy + cached)
@@ -104,6 +106,13 @@ export class EmbeddingService implements IEmbeddingService {
     return this.loadPromise
   }
 
+  public setPaused(paused: boolean): void {
+    this.isPaused = paused
+    if (!paused) {
+      this.processQueue() // Resume processing if there were items queued
+    }
+  }
+
   // -----------------------------------------------------------------
   // Public API
   // -----------------------------------------------------------------
@@ -149,7 +158,7 @@ export class EmbeddingService implements IEmbeddingService {
   }
 
   private async processQueue(): Promise<void> {
-    if (this.isProcessingQueue || this.indexQueue.length === 0) return
+    if (this.isPaused || this.isProcessingQueue || this.indexQueue.length === 0) return
     this.isProcessingQueue = true
 
     while (this.indexQueue.length > 0) {
@@ -195,6 +204,10 @@ export class EmbeddingService implements IEmbeddingService {
    * Calls onProgress with 0–100 integer.
    */
   async indexAll(onProgress?: (pct: number) => void): Promise<void> {
+    if (this.isPaused) {
+      console.warn('[EmbeddingService] Bulk indexing deferred: history sync in progress.')
+      return
+    }
     // Ensure model is loaded first
     await this.loadModel()
 

@@ -8,6 +8,7 @@ import { handleHistorySync } from '../historySync'
 import { contactService } from './ContactService'
 import { messageService } from './MessageService'
 import { chatService } from './ChatService'
+import { embeddingService } from './EmbeddingService'
 
 export class WhatsAppConnectionManager {
   private currentSock: ReturnType<typeof makeWASocket> | null = null
@@ -28,6 +29,7 @@ export class WhatsAppConnectionManager {
   }
 
   public async connect() {
+    embeddingService.setPaused(false) // Clean start
     if (!this.mainWindow) {
       console.warn('[WhatsAppConnectionManager] No window set, cannot connect.')
       return
@@ -147,6 +149,7 @@ export class WhatsAppConnectionManager {
             const chatCount = await prisma.chat.count()
             if (chatCount > 0) {
               console.log(`[Connection] Reconnect: found ${chatCount} existing chats, skipping sync`)
+              embeddingService.setPaused(false)
               this.mainWindow.webContents.send('wa-sync-progress', 100)
               this.mainWindow.webContents.send('wa-sync-complete')
             } else {
@@ -169,6 +172,7 @@ export class WhatsAppConnectionManager {
     const finishSync = async () => {
       if (syncComplete) return
       syncComplete = true
+      embeddingService.setPaused(false)
       console.log(`[HistorySync] Sync complete after ${syncChunkCount} chunks`)
       
 
@@ -181,6 +185,7 @@ export class WhatsAppConnectionManager {
 
     sock.ev.on('messaging-history.set', async (data) => {
       try {
+        embeddingService.setPaused(true)
         syncChunkCount++
         const rawData = data as Record<string, unknown>
         const reportedProgress = typeof rawData.progress === 'number' ? rawData.progress : undefined
