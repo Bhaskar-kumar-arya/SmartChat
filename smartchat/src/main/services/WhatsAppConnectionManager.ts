@@ -8,7 +8,6 @@ import { handleHistorySync } from '../historySync'
 import { contactService } from './ContactService'
 import { messageService } from './MessageService'
 import { chatService } from './ChatService'
-import { communityLogger } from './CommunityLogger'
 
 export class WhatsAppConnectionManager {
   private currentSock: ReturnType<typeof makeWASocket> | null = null
@@ -172,55 +171,6 @@ export class WhatsAppConnectionManager {
       syncComplete = true
       console.log(`[HistorySync] Sync complete after ${syncChunkCount} chunks`)
       
-      // Log the full community structure after sync
-      if (this.currentSock) {
-        try {
-          communityLogger.log('Building community tree...')
-          const groups = await this.currentSock.groupFetchAllParticipating()
-          const communityRoots: any[] = []
-          const subgroups: any[] = []
-          const announcementChannels: any[] = []
-
-          for (const jid in groups) {
-            const g = groups[jid] as any
-            const isComm = g.isCommunity || g.isParentGroup
-            const isAnn = g.isCommunityAnnounce || g.isDefaultSubgroup
-            const parent = g.linkedParentJid || g.linkedParent || g.parentGroupId
-
-            if (isComm) communityRoots.push(g)
-            else if (isAnn) announcementChannels.push(g)
-            else if (parent) subgroups.push(g)
-          }
-
-          let treeText = `Detected ${communityRoots.length} Communities, ${announcementChannels.length} Announcement Channels, ${subgroups.length} Linked Subgroups\n\n`
-          
-          communityRoots.forEach(root => {
-            treeText += `Community: ${root.subject || root.name} (${root.id})\n`
-            
-            // Find announcement channel for this root
-            const ann = announcementChannels.find(a => {
-              const p = a.linkedParentJid || a.linkedParent || a.parentGroupId
-              return p === root.id
-            })
-            if (ann) treeText += `   ├── Announcement: ${ann.subject || ann.name} (${ann.id})\n`
-            
-            // Find regular subgroups for this root
-            const children = subgroups.filter(s => {
-              const p = s.linkedParentJid || s.linkedParent || s.parentGroupId
-              return p === root.id
-            })
-            
-            children.forEach((child, idx) => {
-              const prefix = idx === children.length - 1 ? '   └── ' : '   ├── '
-              treeText += `${prefix}${child.subject || child.name} (${child.id})\n`
-            })
-          })
-
-          communityLogger.logTree(treeText)
-        } catch (err) {
-          console.warn('[CommunityLogger] Failed to build community tree:', err)
-        }
-      }
 
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         this.mainWindow.webContents.send('wa-sync-progress', 100)
@@ -337,7 +287,7 @@ export class WhatsAppConnectionManager {
           const parent = meta.linkedParentJid
 
           if (isComm || isAnn || parent) {
-            communityLogger.log(`Chat Upsert (Community): ${jid}`, { isComm, isAnn, parent })
+            // metadata already mapped in upsertChat if passed correctly
           }
 
           await chatService.upsertChat(jid, chat).catch(() => {})
@@ -345,64 +295,6 @@ export class WhatsAppConnectionManager {
       }
     })
 
-    // Detect and Log Community Upserts
-    sock.ev.on('chats.upsert', (chats) => {
-      for (const chat of chats) {
-        const raw = chat as any
-        const isComm = raw.isCommunity || raw.isParentGroup
-        const isAnnounce = raw.isCommunityAnnounce || raw.isDefaultSubgroup
-        const parent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
-        
-        if (isComm || isAnnounce || parent) {
-          communityLogger.log(`Real-time Community Chat Upsert: ${chat.id}`, {
-            isCommunity: !!isComm,
-            isAnnounce: !!isAnnounce,
-            linkedParent: parent,
-            name: raw.name
-          })
-        }
-      }
-    })
-
-    // Detect and Log Group Updates (Real-time membership/links)
-    sock.ev.on('groups.update', (updates) => {
-      for (const update of updates) {
-        const raw = update as any
-        const isComm = raw.isCommunity || raw.isParentGroup
-        const isAnnounce = raw.isCommunityAnnounce || raw.isDefaultSubgroup
-        const parent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
-
-        if (isComm || isAnnounce || parent) {
-          communityLogger.log(`Real-time Community Group Update: ${update.id}`, {
-            isCommunity: !!isComm,
-            isAnnounce: !!isAnnounce,
-            linkedParent: parent
-          })
-        }
-      }
-    })
-
-    sock.ev.on('app-state.update', (patches) => {
-      communityLogger.log(`App State Update: Received ${patches.length} patches`)
-      for (const patch of patches) {
-        // App state patches often contain mutations that link groups to communities
-        // or set community-specific attributes.
-        const type = (patch as any).type
-        const mutations = (patch as any).mutations || []
-        
-        if (mutations.length > 0) {
-          communityLogger.log(`Patch Type: ${type} | Mutations: ${mutations.length}`, {
-            sampleMutation: mutations[0]
-          })
-          
-          // Look for community-related keywords in mutations
-          const stringified = JSON.stringify(mutations)
-          if (stringified.includes('community') || stringified.includes('parent') || stringified.includes('linked')) {
-            communityLogger.log(`CRITICAL: Found community-related data in app-state mutation!`, { mutations })
-          }
-        }
-      }
-    })
 
     // Presence Update
     sock.ev.on('presence.update', async (update) => {

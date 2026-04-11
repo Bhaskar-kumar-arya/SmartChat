@@ -1,5 +1,4 @@
 import { PrismaClient } from '@prisma/client'
-import { communityLogger } from './services/CommunityLogger'
 
 /**
  * Determines the high-level message type from a Baileys proto.IMessage object.
@@ -227,21 +226,12 @@ export async function handleHistorySync(
 
         const jid = String(c.id)
         
-        // Community Metadata Detection & Logging (REFINED based on log analysis)
+        // Community Metadata Detection
         // History Sync objects use 'isParentGroup' and 'parentGroupId'
         const raw = c as any
         const isCommunity = raw.isCommunity === true || raw.isParentGroup === true
         const isAnnounce = raw.isCommunityAnnounce === true || raw.isDefaultSubgroup === true
-        const linkedParent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
-
-        if (isCommunity || isAnnounce || linkedParent) {
-          communityLogger.log(`Found community-related chat: ${jid}`, {
-            isCommunity,
-            isAnnounce,
-            linkedParent,
-            name: raw.name
-          })
-        }
+        const linkedParentJid = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
 
         const unreadCount =
           typeof c.unreadCount === 'number'
@@ -272,15 +262,20 @@ export async function handleHistorySync(
         return prisma.chat.upsert({
           where: { jid },
           update: {
-            unreadCount,
             timestamp,
-            isArchived
+            isArchived,
+            isCommunity,
+            isAnnounce,
+            linkedParentJid
           },
           create: {
             jid,
             unreadCount: unreadCount ?? 0,
             timestamp: timestamp ?? BigInt(0),
-            isArchived: isArchived ?? false
+            isArchived: isArchived ?? false,
+            isCommunity,
+            isAnnounce,
+            linkedParentJid
           }
         })
 

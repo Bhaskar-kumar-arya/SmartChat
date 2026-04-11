@@ -11,7 +11,6 @@ import { embeddingService } from './services/EmbeddingService'
 import { aiService } from './services/AIService'
 import { toolRegistry } from './services/AIToolService'
 import { AIToolInitializer } from './services/AIToolInitializer'
-import { communityLogger } from './services/CommunityLogger'
 import { audioTranscoderService } from './services/AudioTranscoderService'
 
 /**
@@ -29,6 +28,18 @@ export function registerIpcHandlers(
         { pinned: 'desc' },
         { timestamp: 'desc' }
       ],
+      select: {
+        jid: true,
+        name: true,
+        unreadCount: true,
+        timestamp: true,
+        pinned: true,
+        muteExpiration: true,
+        isCommunity: true,
+        isAnnounce: true,
+        linkedParentJid: true,
+        profilePictureUrl: true
+      },
       skip,
       take: pageSize
     })
@@ -67,7 +78,10 @@ export function registerIpcHandlers(
           lastMessageTimestamp: effectiveTimestamp.toString(),
           pinned: chat.pinned,
           muteExpiration: chat.muteExpiration.toString(),
-          profilePictureUrl: (chat as any).profilePictureUrl
+          profilePictureUrl: (chat as any).profilePictureUrl,
+          isCommunity: chat.isCommunity,
+          isAnnounce: chat.isAnnounce,
+          linkedParentJid: chat.linkedParentJid
         }
       })
     )
@@ -159,9 +173,8 @@ export function registerIpcHandlers(
         const isComm = meta.isCommunity
         
         if (isComm || isAnnounce) {
-          communityLogger.log(`Sending message to ${jid}`, { isComm, isAnnounce })
           if (isAnnounce && !metaResult.participants.find(p => p.id === sock.user?.id)?.admin) {
-            communityLogger.log(`WARNING: Sending message to announcement group where user might not be admin.`, { jid })
+            // Logic handled by UI restriction usually
           }
         }
       } catch (e) {
@@ -372,7 +385,7 @@ export function registerIpcHandlers(
       const parent = meta.linkedParentJid
       
       if (isComm || isAnn || parent) {
-        communityLogger.log(`Metadata fetched for ${jid}`, { isComm, isAnn, parent })
+        // metadata processed locally if needed
       }
 
       const jids = metadata.participants.map(p => p.id)

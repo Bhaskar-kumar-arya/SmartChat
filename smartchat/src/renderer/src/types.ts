@@ -8,6 +8,9 @@ export interface ChatItem {
   pinned?: number
   muteExpiration?: string
   profilePictureUrl?: string | null
+  isCommunity?: boolean
+  isAnnounce?: boolean
+  linkedParentJid?: string | null
 }
 
 export interface ReactionItem {

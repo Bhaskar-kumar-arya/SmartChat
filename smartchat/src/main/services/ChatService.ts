@@ -21,6 +21,11 @@ export class ChatService {
       data.isArchived = update.archived === true
     }
 
+    // Community Metadata
+    if (update.isCommunity !== undefined) data.isCommunity = !!update.isCommunity
+    if (update.isAnnounce !== undefined) data.isAnnounce = !!update.isAnnounce
+    if (update.linkedParentJid !== undefined) data.linkedParentJid = update.linkedParentJid
+
     const ts = update.conversationTimestamp ?? update.timestamp
     if (ts) {
       data.timestamp = BigInt(
