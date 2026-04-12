@@ -96,6 +96,11 @@ const api = {
     ipcRenderer.on('embedding-progress', listener)
     return () => { ipcRenderer.removeListener('embedding-progress', listener) }
   },
+  onEmbeddingState: (callback: (isActive: boolean) => void) => {
+    const listener = (_event: any, isActive: boolean) => callback(isActive)
+    ipcRenderer.on('embedding-state', listener)
+    return () => { ipcRenderer.removeListener('embedding-state', listener) }
+  },
   clearVectors: () => {
     return ipcRenderer.invoke('clear-vectors')
   },

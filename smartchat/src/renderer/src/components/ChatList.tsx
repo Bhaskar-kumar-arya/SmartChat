@@ -24,6 +24,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
   const [filters, setFilters] = useState<SearchFilters>({})
   const [showFilters, setShowFilters] = useState(false)
   const [indexingProgress, setIndexingProgress] = useState<number | null>(null)
+  const [isAiIndexing, setIsAiIndexing] = useState(false)
   const [expandedCommunities, setExpandedCommunities] = useState<Set<string>>(new Set())
 
   const { results: searchResults, isSearching } = useSearch(searchQuery, searchMode, filters)
@@ -31,13 +32,19 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
   const isSearchActive = searchQuery.trim().length > 0
 
   useEffect(() => {
-    const unSub = api.onEmbeddingProgress((pct) => {
+    const unSubPrg = api.onEmbeddingProgress((pct) => {
       setIndexingProgress(pct)
       if (pct === 100) {
         setTimeout(() => setIndexingProgress(null), 3000)
       }
     })
-    return unSub
+    const unSubState = api.onEmbeddingState((active) => {
+      setIsAiIndexing(active)
+    })
+    return () => {
+      unSubPrg()
+      unSubState()
+    }
   }, [])
 
   const handleLogout = async () => {
@@ -259,6 +266,15 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
             <span className="indexing-label">
               {indexingProgress < 100 ? `Indexing: ${indexingProgress}%` : 'Indexing Complete'}
             </span>
+          </div>
+        )}
+
+        {isAiIndexing && indexingProgress === null && (
+          <div style={{ padding: '0 12px 12px' }}>
+            <div className="ai-indexing-tag">
+              <div className="indexing-pulse-dot" />
+              <span>AI Indexing active...</span>
+            </div>
           </div>
         )}
 

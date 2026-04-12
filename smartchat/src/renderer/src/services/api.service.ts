@@ -78,6 +78,9 @@ export const api = {
   onEmbeddingProgress: (callback: (pct: number) => void) =>
     window.api.onEmbeddingProgress(callback),
 
+  onEmbeddingState: (callback: (isActive: boolean) => void) =>
+    window.api.onEmbeddingState(callback),
+
   clearVectors: (): Promise<void> =>
     window.api.clearVectors(),
 

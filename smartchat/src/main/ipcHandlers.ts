@@ -438,6 +438,12 @@ export function registerIpcHandlers(
   
   // Register AI Tools via dedicated initializer
   AIToolInitializer.initializeAll(getSock);
+  
+  embeddingService.setOnActiveStateSync((isActive) => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      win.webContents.send('embedding-state', isActive)
+    })
+  })
 
   ipcMain.handle('execute-tool', async (_event, toolName: string, args: any) => {
     const tool = toolRegistry.getTool(toolName);
