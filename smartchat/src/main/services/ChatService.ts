@@ -21,10 +21,14 @@ export class ChatService {
       data.isArchived = update.archived === true
     }
 
-    // Community Metadata
-    if (update.isCommunity !== undefined) data.isCommunity = !!update.isCommunity
-    if (update.isAnnounce !== undefined) data.isAnnounce = !!update.isAnnounce
-    if (update.linkedParentJid !== undefined) data.linkedParentJid = update.linkedParentJid
+    // Community Metadata Normalization
+    const isComm = update.isCommunity === true || update.isParentGroup === true
+    const isAnn = update.isAnnounce === true || update.isCommunityAnnounce === true || update.isDefaultSubgroup === true
+    const parent = update.linkedParentJid || update.linkedParent || update.parentGroupId
+
+    if (update.isCommunity !== undefined || update.isParentGroup !== undefined) data.isCommunity = isComm
+    if (update.isAnnounce !== undefined || update.isCommunityAnnounce !== undefined || update.isDefaultSubgroup !== undefined) data.isAnnounce = isAnn
+    if (parent !== undefined) data.linkedParentJid = parent
 
     const ts = update.conversationTimestamp ?? update.timestamp
     if (ts) {

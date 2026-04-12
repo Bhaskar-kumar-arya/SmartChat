@@ -168,13 +168,31 @@ export class WhatsAppConnectionManager {
     let syncChunkCount = 0
     let maxProgress = 0
     let syncComplete = false
-
     const finishSync = async () => {
       if (syncComplete) return
       syncComplete = true
       embeddingService.setPaused(false)
       console.log(`[HistorySync] Sync complete after ${syncChunkCount} chunks`)
-      
+
+      if (this.currentSock) {
+        try {
+          const groups = await this.currentSock.groupFetchAllParticipating()
+          
+          // Persist the freshly fetched metadata to the DB
+          for (const jid in groups) {
+            const raw = groups[jid] as any
+            const isComm = raw.isCommunity || raw.isParentGroup
+            const isAnn = raw.isAnnounce || raw.isCommunityAnnounce || raw.isDefaultSubgroup
+            const parent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
+
+            if (isComm || isAnn || parent) {
+              await chatService.upsertChat(jid, raw).catch(() => {})
+            }
+          }
+        } catch (err) {
+          console.warn('[WhatsAppConnectionManager] Failed to sync community metadata:', err)
+        }
+      }
 
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         this.mainWindow.webContents.send('wa-sync-progress', 100)
@@ -284,21 +302,32 @@ export class WhatsAppConnectionManager {
       for (const chat of newChats) {
         const jid = chat.id
         if (jid) {
-          // Detect and log community metadata in upserted chats
+          // Flatten metadata for consistent detection
           // @ts-ignore
-          const meta = chat.metadata || chat
-          const isComm = meta.isCommunity === true
-          const isAnn = meta.isCommunityAnnounce === true
-          const parent = meta.linkedParentJid
+          const raw = { ...chat, ...(chat.metadata || {}) }
 
-          if (isComm || isAnn || parent) {
-            // metadata already mapped in upsertChat if passed correctly
-          }
-
-          await chatService.upsertChat(jid, chat).catch(() => {})
+          // Use the flattened raw object to ensure upsertChat catches all fields
+          await chatService.upsertChat(jid, raw).catch(() => {})
         }
       }
     })
+
+
+    // Persist Group Updates (Real-time membership/links)
+    sock.ev.on('groups.update', async (updates) => {
+      for (const update of updates) {
+        const raw = update as any
+        const isComm = raw.isCommunity || raw.isParentGroup
+        const isAnnounce = raw.isCommunityAnnounce || raw.isDefaultSubgroup
+        const parent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
+
+        if (isComm || isAnnounce || parent) {
+          // Persist this change to the database!
+          await chatService.upsertChat(update.id!, raw).catch(() => {})
+        }
+      }
+    })
+
 
 
     // Presence Update
