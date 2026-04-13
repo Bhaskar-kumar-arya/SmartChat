@@ -49,10 +49,11 @@ export class MessageService {
     const remoteJid = key.remoteJid || ''
     const participant = key.participant || null
 
-    // 2. Extract text content
+    // 2. Extract text content & Unwrap
     let textContent: string | null = null
-    if (rawMessage) {
-      const unwrapped = this.unwrapMessage(rawMessage)
+    const unwrapped = rawMessage ? this.unwrapMessage(rawMessage) : null
+    
+    if (unwrapped) {
       if (typeof unwrapped.conversation === 'string') {
         textContent = unwrapped.conversation
       } else if (unwrapped.extendedTextMessage?.text) {
@@ -107,7 +108,40 @@ export class MessageService {
         }
     }
 
-    // 6. Persist to DB
+    // 6. Handle Protocol Messages (Revoke/Edit) separately before persisting
+    if (messageType === 'protocolMessage' && unwrapped) {
+        const protocol = unwrapped.protocolMessage
+        const targetId = protocol?.key?.id
+        if (targetId) {
+            try {
+                if (protocol.type === 0 || protocol.type === 'REVOKE') {
+                    await prisma.message.update({
+                        where: { id: targetId },
+                        data: { isDeleted: true }
+                    }).catch(() => {})
+                    return { type: 'protocol', subType: 'revoke', targetId, key: protocol.key }
+                } else if (protocol.type === 14 || protocol.type === 'MESSAGE_EDIT') {
+                    const editedMsg = protocol.editedMessage
+                    const editContent = editedMsg?.conversation || editedMsg?.extendedTextMessage?.text || (editedMsg?.imageMessage?.caption) || (editedMsg?.videoMessage?.caption) || null
+                    
+                    await prisma.message.update({
+                        where: { id: targetId },
+                        data: { 
+                            content: JSON.stringify(editedMsg || {}), 
+                            textContent: editContent,
+                            isEdited: true 
+                        }
+                    }).catch(() => {})
+                    return { type: 'protocol', subType: 'edit', targetId, key: protocol.key }
+                }
+            } catch (err) {
+                console.error('[MessageService] Error handling protocol message:', err)
+            }
+        }
+        return null // Don't save the protocol message itself
+    }
+
+    // 7. Persist to DB
     if (messageType === 'reactionMessage') {
         const targetId = rawMessage.reactionMessage?.key?.id
         const emoji = rawMessage.reactionMessage?.text

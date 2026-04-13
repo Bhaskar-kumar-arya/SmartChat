@@ -8,12 +8,14 @@ interface MessageViewProps {
   loading: boolean
   onLoadMore: () => Promise<number | undefined>
   onReply: (msg: IMessageItem) => void
+  onEdit?: (messageId: string, newText: string) => Promise<any>
+  onDelete?: (messageId: string) => Promise<any>
   onDownloadMedia?: (msgId: string) => Promise<void>
   targetMessageId?: string | null
   onTargetScrolled?: () => void
 }
 
-export default function MessageView({ messages, loading, onLoadMore, onReply, onDownloadMedia, targetMessageId, onTargetScrolled }: MessageViewProps) {
+export default function MessageView({ messages, loading, onLoadMore, onReply, onEdit, onDelete, onDownloadMedia, targetMessageId, onTargetScrolled }: MessageViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -158,6 +160,8 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
             <MessageItem 
                 msg={msg} 
                 onReply={onReply} 
+                onEdit={onEdit}
+                onDelete={onDelete}
                 onDownloadMedia={onDownloadMedia} 
                 onViewReactions={(m) => setViewingReactions(m)} 
             />

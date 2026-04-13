@@ -235,6 +235,29 @@ export class WhatsAppConnectionManager {
           const processed = await messageService.processMessage(msg, sock)
           if (!processed) continue
 
+          // Handle protocol message updates (Revoke/Edit) that don't result in new messages
+          if (processed.type === 'protocol') {
+            if (processed.subType === 'revoke') {
+              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                this.mainWindow.webContents.send('message-deleted', { 
+                  id: processed.targetId, 
+                  remoteJid: processed.key.remoteJid,
+                  fromMe: processed.key.fromMe 
+                })
+              }
+            } else if (processed.subType === 'edit') {
+              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                const dbMsg = await prisma.message.findUnique({ where: { id: processed.targetId } })
+                if (dbMsg) {
+                  const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.remoteJid], sock)
+                  const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
+                  this.mainWindow.webContents.send('message-edited', enriched)
+                }
+              }
+            }
+            continue
+          }
+
           const { remoteJid, timestamp, messageType, participant } = processed
 
           if (type === 'notify') {
@@ -257,6 +280,65 @@ export class WhatsAppConnectionManager {
           }
         } catch (err) {
           console.error('[messages.upsert] Error processing message:', err)
+        }
+      }
+    })
+
+    // Handle Message Edits and Revokes
+    sock.ev.on('messages.update', async (updates) => {
+      for (const update of updates) {
+        const protocol = update.update?.protocolMessage
+        if (!protocol) continue
+
+        const key = protocol.key
+        if (!key?.id) continue
+
+        try {
+          switch (protocol.type) {
+            case 0: // REVOKE
+              console.log('[messages.update] Message revoked:', key.id)
+              await prisma.message.update({
+                where: { id: key.id },
+                data: { isDeleted: true }
+              }).catch(() => {})
+              
+              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                this.mainWindow.webContents.send('message-deleted', { 
+                  id: key.id, 
+                  remoteJid: key.remoteJid,
+                  fromMe: key.fromMe 
+                })
+              }
+              break
+
+            case 14: // MESSAGE_EDIT
+              console.log('[messages.update] Message edited:', key.id)
+              const editedMsg = protocol.editedMessage
+              if (editedMsg) {
+                const textContent = editedMsg.conversation || editedMsg.extendedTextMessage?.text || (editedMsg.imageMessage?.caption) || (editedMsg.videoMessage?.caption) || null
+                
+                await prisma.message.update({
+                  where: { id: key.id },
+                  data: { 
+                    content: JSON.stringify(editedMsg), 
+                    textContent,
+                    isEdited: true 
+                  }
+                }).catch(() => {})
+
+                if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                  const dbMsg = await prisma.message.findUnique({ where: { id: key.id } })
+                  if (dbMsg) {
+                    const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.remoteJid], sock)
+                    const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
+                    this.mainWindow.webContents.send('message-edited', enriched)
+                  }
+                }
+              }
+              break
+          }
+        } catch (err) {
+          console.error('[messages.update] Error processing update:', err)
         }
       }
     })

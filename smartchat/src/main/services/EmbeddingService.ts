@@ -10,6 +10,7 @@ export interface IEmbeddingService {
   indexMessage(messageId: string, text: string): Promise<void>
   indexAll(onProgress?: (pct: number) => void): Promise<void>
   clearAllVectors(): Promise<void>
+  syncVectors(): Promise<void>
   setModel(modelName: string): void
   getModel(): string
   setPaused(paused: boolean): void
@@ -286,6 +287,20 @@ export class EmbeddingService implements IEmbeddingService {
     await (prisma as any).messageVector.deleteMany({})
     await prisma.$executeRawUnsafe(`DELETE FROM vec_messages`)
     console.log('[EmbeddingService] All vectors cleared.')
+  }
+
+  async syncVectors(): Promise<void> {
+    const vectors = await (prisma as any).messageVector.findMany()
+    console.log(`[EmbeddingService] Syncing ${vectors.length} vectors to virtual table...`)
+    for (const v of vectors) {
+      await prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, v.messageId)
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
+        v.messageId,
+        v.vector
+      )
+    }
+    console.log('[EmbeddingService] Sync complete.')
   }
 }
 

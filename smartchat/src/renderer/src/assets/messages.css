@@ -259,3 +259,154 @@
   border-radius: 8px;
   animation: msg-highlight-pulse 2.5s ease-out forwards;
 }
+
+/* ─── Message Lifecycle & Dropdown ────────────────────────────── */
+.message-edited-badge {
+  font-size: 0.65rem;
+  opacity: 0.6;
+  margin-left: 4px;
+  font-style: italic;
+}
+
+.message-deleted-badge {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--wa-text-tertiary);
+  margin-bottom: 4px;
+}
+
+.message-deleted-text {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+.message-dropdown-container {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--wa-bg-secondary);
+  border: 1px solid var(--wa-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  min-width: 120px;
+  padding: 4px 0;
+  margin-top: 4px;
+  animation: dropdown-fade-in 0.15s ease-out;
+}
+
+@keyframes dropdown-fade-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dropdown-item {
+  width: 100%;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  color: var(--wa-text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dropdown-item.delete {
+  color: #ff4d4d;
+}
+
+.dropdown-item.delete:hover {
+  background: rgba(255, 77, 77, 0.1);
+}
+
+/* Inline Edit */
+.message-edit-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+}
+
+.message-edit-input {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--wa-border);
+  border-radius: 4px;
+  color: var(--wa-text-primary);
+  padding: 8px;
+  font-size: 0.875rem;
+  resize: vertical;
+  min-height: 60px;
+  outline: none;
+}
+
+.message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.edit-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border: none;
+}
+
+.edit-btn-save {
+  background: var(--wa-primary);
+  color: white;
+}
+
+.edit-btn-cancel {
+  background: transparent;
+  color: var(--wa-text-secondary);
+}
+
+/* Message Lifecycle Badges */
+.message-deleted-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  color: #ff4d4d;
+  border: 1px solid rgba(255, 77, 77, 0.3);
+  width: fit-content;
+}
+
+.message-content-vertical {
+  display: flex;
+  flex-direction: column;
+}
+
+.message-deleted-text {
+  font-size: 0.75rem;
+  font-style: italic;
+  font-weight: 500;
+}
+
+.message-edited-badge {
+  font-size: 0.7rem;
+  color: var(--wa-primary);
+  margin-left: 6px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}

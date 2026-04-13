@@ -17,6 +17,12 @@ export const api = {
   sendMessage: (jid: string, text: string, quotedId?: string, mentions?: string[]): Promise<MessageItem> =>
     window.api.sendMessage(jid, text, quotedId, mentions),
 
+  editMessage: (jid: string, messageId: string, newText: string): Promise<MessageItem> =>
+    window.api.editMessage(jid, messageId, newText),
+
+  deleteMessage: (jid: string, messageId: string): Promise<boolean> =>
+    window.api.deleteMessage(jid, messageId),
+
   sendMediaMessage: (jid: string, filePath: string, caption: string, quotedId?: string, mentions?: string[]): Promise<MessageItem> =>
     window.api.sendMediaMessage(jid, filePath, caption, quotedId, mentions),
 
@@ -38,6 +44,12 @@ export const api = {
   // Event Listeners
   onNewMessage: (callback: (msg: MessageItem) => void) =>
     window.api.onNewMessage(callback),
+
+  onMessageEdited: (callback: (msg: MessageItem) => void) =>
+    window.api.onMessageEdited(callback),
+
+  onMessageDeleted: (callback: (update: { id: string, remoteJid: string, fromMe: boolean }) => void) =>
+    window.api.onMessageDeleted(callback),
 
   onChatUpdated: (callback: (update: Partial<ChatItem> & { jid: string }) => void) =>
     window.api.onChatUpdated(callback),

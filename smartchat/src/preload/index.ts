@@ -43,6 +43,12 @@ const api = {
   sendMessage: (jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => {
     return ipcRenderer.invoke('send-message', jid, text, quotedMsgId, mentions)
   },
+  editMessage: (jid: string, messageId: string, newText: string) => {
+    return ipcRenderer.invoke('edit-message', jid, messageId, newText)
+  },
+  deleteMessage: (jid: string, messageId: string) => {
+    return ipcRenderer.invoke('delete-message', jid, messageId)
+  },
   sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => {
     return ipcRenderer.invoke('send-media-message', jid, filePath, caption, quotedMsgId, mentions)
   },
@@ -62,6 +68,16 @@ const api = {
     const listener = (_event: any, msg: any) => callback(msg)
     ipcRenderer.on('new-message', listener)
     return () => { ipcRenderer.removeListener('new-message', listener) }
+  },
+  onMessageEdited: (callback: (msg: Record<string, unknown>) => void) => {
+    const listener = (_event: any, msg: any) => callback(msg)
+    ipcRenderer.on('message-edited', listener)
+    return () => { ipcRenderer.removeListener('message-edited', listener) }
+  },
+  onMessageDeleted: (callback: (update: { id: string, remoteJid: string, fromMe: boolean }) => void) => {
+    const listener = (_event: any, update: any) => callback(update)
+    ipcRenderer.on('message-deleted', listener)
+    return () => { ipcRenderer.removeListener('message-deleted', listener) }
   },
   markRead: (jid: string) => {
     return ipcRenderer.invoke('mark-read', jid)

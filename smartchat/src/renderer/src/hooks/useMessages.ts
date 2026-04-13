@@ -88,7 +88,25 @@ export const useMessages = (activeJid: string | null) => {
       }
     })
 
-    return () => unSub()
+    const unSubEdit = api.onMessageEdited((msg: MessageItem) => {
+      if (msg.remoteJid === activeJid) {
+        setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
+      }
+    })
+
+    const unSubDelete = api.onMessageDeleted((update: { id: string, remoteJid: string, fromMe: boolean }) => {
+      if (update.remoteJid === activeJid) {
+        setMessages((prev) => 
+          prev.map((m) => (m.id === update.id ? { ...m, isDeleted: true } : m))
+        )
+      }
+    })
+
+    return () => {
+      unSub()
+      unSubEdit()
+      unSubDelete()
+    }
   }, [activeJid])
 
   const handleReactionUpdate = (msg: MessageItem) => {
@@ -151,6 +169,31 @@ export const useMessages = (activeJid: string | null) => {
     }
   }
 
+  const editMessage = async (messageId: string, newText: string) => {
+    if (!activeJid) return
+    try {
+      const updatedMsg = await api.editMessage(activeJid, messageId, newText)
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? updatedMsg : m)))
+      return updatedMsg
+    } catch (err) {
+      console.error('Failed to edit message:', err)
+      throw err
+    }
+  }
+
+  const deleteMessage = async (messageId: string) => {
+    if (!activeJid) return
+    try {
+      await api.deleteMessage(activeJid, messageId)
+      setMessages((prev) => 
+        prev.map((m) => (m.id === messageId ? { ...m, isDeleted: true } : m))
+      )
+    } catch (err) {
+      console.error('Failed to delete message:', err)
+      throw err
+    }
+  }
+
   return {
     messages,
     loading,
@@ -159,6 +202,8 @@ export const useMessages = (activeJid: string | null) => {
     handleDownloadMedia,
     sendMessage,
     sendMediaMessage,
+    editMessage,
+    deleteMessage,
     setMessages
   }
 }

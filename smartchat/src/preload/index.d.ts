@@ -20,6 +20,8 @@ interface MessageItem {
   timestamp: string
   messageType: string
   textContent: string | null
+  isDeleted?: boolean
+  isEdited?: boolean
 }
 
 interface SearchResultItem {
@@ -53,11 +55,15 @@ declare global {
       getChats: (page?: number, pageSize?: number) => Promise<ChatItem[]>
       getMessages: (jid: string, page?: number, pageSize?: number) => Promise<MessageItem[]>
       sendMessage: (jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => Promise<MessageItem>
+      editMessage: (jid: string, messageId: string, newText: string) => Promise<MessageItem>
+      deleteMessage: (jid: string, messageId: string) => Promise<boolean>
       sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => Promise<MessageItem>
       getGroupParticipants: (jid: string) => Promise<{ jid: string, name: string, isAdmin: boolean, isMe: boolean }[]>
       downloadMedia: (msgId: string) => Promise<MessageItem>
       selectFile: () => Promise<string | null>
       onNewMessage: (callback: (msg: MessageItem) => void) => () => void
+      onMessageEdited: (callback: (msg: MessageItem) => void) => () => void
+      onMessageDeleted: (callback: (update: { id: string, remoteJid: string, fromMe: boolean }) => void) => () => void
       markRead: (jid: string) => Promise<boolean>
       onChatUpdated: (callback: (chat: Partial<ChatItem> & { jid: string }) => void) => () => void
       logout: () => Promise<boolean>
@@ -68,6 +74,7 @@ declare global {
       searchAll: (query: string, mode?: 'normal' | 'deep', filters?: any) => Promise<SearchResults>
       indexEmbeddings: () => Promise<void>
       onEmbeddingProgress: (callback: (pct: number) => void) => () => void
+      onEmbeddingState: (callback: (isActive: boolean) => void) => () => void
       clearVectors: () => Promise<void>
       aiChat: (prompt: string, contextChats?: any[], history?: any[], mentions?: any[], options?: any) => Promise<string>
       aiChatStream: (prompt: string, contextChats: any[] | undefined, history: any[] | undefined, mentions: any[] | undefined, options: any | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: any) => void) => void

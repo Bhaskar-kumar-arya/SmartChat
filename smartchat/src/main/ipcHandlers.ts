@@ -207,6 +207,64 @@ export function registerIpcHandlers(
     return messageService.enrichMessage(processed, sock, nameMap)
   })
 
+  // ── Edit Message ─────────────────────────────────────────────────────
+  ipcMain.handle('edit-message', async (_event, jid: string, messageId: string, newText: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('WhatsApp socket is not connected')
+
+    const dbMsg = await prisma.message.findUnique({ where: { id: messageId } })
+    if (!dbMsg) throw new Error('Message not found')
+
+    const msgKey = {
+      remoteJid: jid,
+      fromMe: dbMsg.fromMe,
+      id: messageId,
+      participant: dbMsg.participant || undefined
+    }
+
+    const result = await sock.sendMessage(jid, {
+      text: newText,
+      edit: msgKey
+    })
+
+    if (!result) throw new Error('Failed to edit message')
+
+    // Update local DB and return enriched message
+    const updated = await prisma.message.update({
+      where: { id: messageId },
+      data: { textContent: newText, isEdited: true }
+    })
+
+    const nameMap = await contactService.batchResolveNames([updated.participant || jid], sock)
+    return messageService.enrichMessage(updated, sock, nameMap)
+  })
+
+  // ── Delete Message ───────────────────────────────────────────────────
+  ipcMain.handle('delete-message', async (_event, jid: string, messageId: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('WhatsApp socket is not connected')
+
+    const dbMsg = await prisma.message.findUnique({ where: { id: messageId } })
+    if (!dbMsg) throw new Error('Message not found')
+
+    const msgKey = {
+      remoteJid: jid,
+      fromMe: dbMsg.fromMe,
+      id: messageId,
+      participant: dbMsg.participant || undefined
+    }
+
+    await sock.sendMessage(jid, { delete: msgKey })
+
+    // Update local DB
+    await prisma.message.update({
+      where: { id: messageId },
+      data: { isDeleted: true }
+    })
+
+    return true
+  })
+
   // ── Send Media Message ───────────────────────────────────────────────
   ipcMain.handle('send-media-message', async (_event, jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()

@@ -47,7 +47,9 @@ export default function ChatLayout() {
     loadMore, 
     handleDownloadMedia, 
     sendMessage, 
-    sendMediaMessage 
+    sendMediaMessage,
+    editMessage,
+    deleteMessage
   } = useMessages(activeJid)
 
   const { getActivePresence } = usePresence()
@@ -109,6 +111,8 @@ export default function ChatLayout() {
               loading={loadingMessages}
               onLoadMore={loadMore}
               onReply={(msg) => setReplyingTo(msg)}
+              onEdit={editMessage}
+              onDelete={deleteMessage}
               onDownloadMedia={handleDownloadMedia}
               targetMessageId={targetMessageId}
               onTargetScrolled={() => setTargetMessageId(null)}

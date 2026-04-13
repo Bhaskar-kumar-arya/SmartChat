@@ -32,6 +32,8 @@ export interface MessageItem {
   content?: string
   localURI?: string
   reactions?: ReactionItem[]
+  isDeleted?: boolean
+  isEdited?: boolean
 }
 
 export interface SearchResultItem {
