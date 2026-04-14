@@ -142,37 +142,34 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     );
   }
 
-  const declineToolCall = (messageId: string) => {
+  const declineToolCall = async (messageId: string) => {
     const resultPayload = "User declined tool execution.";
     const sysMsgId = crypto.randomUUID();
     const aiMsgId = crypto.randomUUID();
-    let historyToPass: AIChatMessage[] = [];
 
-    setMessages(prev => {
-        const updated = prev.map(m => m.id === messageId ? { ...m, toolResult: resultPayload } : m);
-        historyToPass = [...updated, {
+    const prev = await new Promise<AIChatMessage[]>(resolve => setMessages(p => { resolve(p); return p; }));
+    const updated = prev.map(m => m.id === messageId ? { ...m, toolResult: resultPayload } : m);
+
+    setMessages([
+        ...updated,
+        {
             id: sysMsgId,
             role: 'user' as const,
             content: `[SYSTEM] Tool Execution Result: ${resultPayload}\n\nThe user declined this tool execution. Acknowledge and ask how to proceed.`,
             isHidden: true,
             isSystem: true
-        }];
-        
-        return [...historyToPass, {
+        },
+        {
             id: aiMsgId,
             role: 'ai' as const,
             content: '',
             isSystem: false
-        }];
-    });
+        }
+    ]);
 
     const prompt = `Tool declined: ${resultPayload}.\n\nThe user declined the tool execution. Please acknowledge this and proceed with the conversation or tasks as appropriate based on the current context.`;
     
-    // Defer the stream start to ensure historyToPass is populated from the state update if needed, 
-    // but here we can just use the local historyToPass we constructed.
-    setTimeout(() => {
-        startAIStream(prompt, historyToPass, aiMsgId, [], [], true);
-    }, 0);
+    startAIStream(prompt, updated, aiMsgId, [], [], true);
   }
 
 
@@ -208,32 +205,30 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     setExecutingToolId(null);
     const sysMsgId = crypto.randomUUID();
     const aiMsgId = crypto.randomUUID();
-    let historyToPass: AIChatMessage[] = [];
     
-    setMessages(prev => {
-        const updated = prev.map(m => m.id === messageId ? { ...m, toolResult: resultPayload } : m);
-        historyToPass = [...updated, {
+    const prev = await new Promise<AIChatMessage[]>(resolve => setMessages(p => { resolve(p); return p; }));
+    const updated = prev.map(m => m.id === messageId ? { ...m, toolResult: resultPayload } : m);
+    
+    setMessages([
+        ...updated,
+        {
             id: sysMsgId,
             role: 'user' as const,
             content: `Tool Execution Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\n`,
             isHidden: true,
             isSystem: true
-        }];
-        
-        return [...historyToPass, {
+        },
+        {
             id: aiMsgId,
             role: 'ai' as const,
             content: '',
             isSystem: false
-        }];
-    });
+        }
+    ]);
 
     const prompt = `[SYSTEM] Tool Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool has completed.`;
     
-    // Keep it as system prompt
-    setTimeout(() => {
-        startAIStream(prompt, historyToPass, aiMsgId, [], [], true);
-    }, 0);
+    startAIStream(prompt, updated, aiMsgId, [], [], true);
   }
 
   const handleSend = async (prompt: string, currentContexts: any[], currentMentions: any[]) => {

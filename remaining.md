@@ -11,8 +11,8 @@ This document tracks the features required to bring **smartChat** to complete fe
   - [ ] Sticker picker integration.
   - [ ] Giphy/Tenor API integration for GIF search and sending.
 - [ ] **Message Lifecycle**
-  - [ ] **Edit Messages**: Support for editing sent messages (IPC + UI).
-  - [ ] **Message Revocation**: "Delete for Everyone" and "Delete for Me" logic.
+  - [x] **Edit Messages**: Support for editing sent messages (IPC + UI).
+  - [x] **Message Revocation**: "Delete for Everyone" and "Delete for Me" logic.
   - [ ] **Read Receipts**: Visual update for Blue Ticks sync.
 - [ ] **Starred Messages**
   - [ ] Capability to "Star" messages.
@@ -29,7 +29,7 @@ This document tracks the features required to bring **smartChat** to complete fe
   - [ ] **Group Settings**: Restrict info editing or messaging to admins.
   - [ ] **Join via Link**: Support for WhatsApp group invite links.
 - [ ] **Communities & Channels**
-  - [ ] Support for Community structures and announcement channels.
+  - [x] Support for Community structures and announcement channels.
   - [ ] Support for Channels (Searching and following public broadcast feeds).
 - [ ] **Chat Organization**
   - [ ] **Archive Folder**: Move chats to and from an archive section.

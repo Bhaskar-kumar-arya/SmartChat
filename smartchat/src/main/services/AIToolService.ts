@@ -39,9 +39,9 @@ your output must always start with the though block
 the though block should be formatted as following:
 
 <thought>
-1. your analysis on the whole conversation history(of [USER], [SYSTEM], [AI]).
+1. your analysis on the whole conversation history from the start (between [USER], [SYSTEM], [AI]).
 2. your analysis on the current message , whether tool result or USER message
-3. your plan for next steps based on these (whether to call a tool or respond conversationally)
+3. your plan for next steps based on the current message and whole conversation history (whether to call a tool or respond conversationally)
 </thought>
 
 **When calling a tool:**
