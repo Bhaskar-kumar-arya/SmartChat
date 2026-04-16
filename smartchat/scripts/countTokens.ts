@@ -1,67 +1,53 @@
-// scripts/countTokens.ts
-import { PrismaClient } from '@prisma/client'
+import { execSync } from 'child_process'
+import { AutoTokenizer } from '@xenova/transformers'
+import path from 'path'
 
-const prisma = new PrismaClient({
-  datasourceUrl: process.env.DATABASE_URL || 'file:./prisma/dev.db'
-})
-
-/**
- * Local approximation heuristic:
- * - Average token is ~4 characters in English
- * - We also account for the 'overhead' of sending messages to AI 
- *   (Names, Timestamps, and structure tags)
- */
-function approximateTokens(text: string): number {
-  if (!text) return 0
-  // Standard heuristic: characters / 4
-  return Math.ceil(text.length / 4)
-}
-
-async function run() {
-  console.log('📊 Calculating local token approximation...')
+async function countTokensFromCli() {
+  console.log('🔄 Loading tokenizer (Gemma/GPT-4 equivalent via @xenova/transformers)...')
   
-  const messages = await prisma.message.findMany({
-    where: {
-      textContent: { not: null, not: "" }
-    },
-    select: { 
-      textContent: true,
-      timestamp: true,
-      fromMe: true,
-      participant: true
+  // Using a common tokenizer for estimation
+  const tokenizer = await AutoTokenizer.from_pretrained('Xenova/gpt-4')
+
+  const dbPath = path.resolve('..', 'prisma', 'dev.db')
+  console.log(`📂 Reading database from: ${dbPath}...`)
+
+  try {
+    // Get total text size first for a progress estimate if needed, 
+    // but message-by-message counting is safer for memory.
+    // We use a temporary file to dump the text to avoid shell buffer limits.
+    const sql = "SELECT textContent FROM Message WHERE textContent IS NOT NULL;"
+    const output = execSync(`sqlite3 "${dbPath}" "${sql}"`, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 50 }) // 50MB buffer
+
+    const messages = output.split('\n').filter(line => line.trim().length > 0)
+    
+    console.log(`📊 Processing ${messages.length} lines of text...`)
+
+    let totalTokens = 0
+    let totalChars = 0
+
+    for (const msg of messages) {
+      const tokens = tokenizer.encode(msg)
+      totalTokens += tokens.length
+      totalChars += msg.length
     }
-  })
 
-  if (messages.length === 0) {
-    console.log('❌ No messages found in the database.')
-    return
+    console.log('\n✅ Calculation Complete!')
+    console.log('--- TOKEN ESTIMATES ---')
+    console.log(`Total Messages: ${messages.length}`)
+    console.log(`Total Characters: ${totalChars}`)
+    console.log(`Estimated Tokens: ${totalTokens}`)
+    console.log(`Avg Tokens/Msg:   ${(totalTokens / messages.length).toFixed(1)}`)
+    console.log('------------------------\n')
+
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      console.error('❌ Error: `sqlite3` command not found. Please install it or use the native driver.')
+    } else {
+      console.error('❌ Error executing SQLite query:', error.message)
+    }
   }
-
-  let rawContentTokens = 0
-  let aiOverheadTokens = 0 // Accounting for Names/Timestamps added by AIService
-
-  messages.forEach(m => {
-    // 1. Raw Message Tokens
-    rawContentTokens += approximateTokens(m.textContent!)
-
-    // 2. AI Overhead (Format: [Timestamp] Name: ...)
-    // Approximate overhead: ~15 tokens per message header
-    aiOverheadTokens += 15 
-  })
-
-  const totalApprox = rawContentTokens + aiOverheadTokens
-
-  console.log('\n--- 📈 Results (Local Approximation) ---')
-  console.log(`Total Messages:       ${messages.length.toLocaleString()}`)
-  console.log(`Raw Content Tokens:   ~${rawContentTokens.toLocaleString()}`)
-  console.log(`AI Prompt Overhead:   ~${aiOverheadTokens.toLocaleString()}`)
-  console.log(`---------------------------------------`)
-  console.log(`Total Estimated:      ~${totalApprox.toLocaleString()} tokens`)
-  console.log(`---------------------------------------`)
-  console.log(`\n💡 Note: This is an offline estimate (1 token ≈ 4 chars).`)
-  console.log(`Actual API counts may vary by ±10-15%.`)
-  
-  await prisma.$disconnect()
 }
 
-run().catch(console.error)
+countTokensFromCli().catch(err => {
+  console.error('Fatal error:', err)
+})
