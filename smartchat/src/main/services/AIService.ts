@@ -1,11 +1,38 @@
-import { GoogleGenAI } from '@google/genai'
-import { toolRegistry } from './AIToolService'
+import { GeminiProvider } from './ai/GeminiProvider'
+import { LMStudioProvider } from './ai/LMStudioProvider'
+import { AIProvider, ModelInfo } from './ai/Provider'
 
 export class AIService {
-  private ai: any;
+  private providers: Record<string, AIProvider> = {}
+  private currentModelId: string = 'gemma-4-31b-it' // Default
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: 'AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0' });
+    this.providers['gemini'] = new GeminiProvider();
+    this.providers['lmstudio'] = new LMStudioProvider();
+  }
+
+  async cleanup(): Promise<void> {
+    console.log('[AIService] Cleaning up providers...');
+    for (const provider of Object.values(this.providers)) {
+      await provider.cleanup().catch(e => console.error('[AIService] Provider cleanup failed:', e));
+    }
+  }
+
+  private getProviderForModel(modelId: string): AIProvider {
+    // If it's a known Gemini model, use Gemini
+    if ([
+      'gemma-4-31b-it', 
+      'gemini-3.1-flash-lite-preview', 
+      'gemma-3-27b-it', 
+      'gemini-3-flash-preview', 
+      'gemini-2.5-flash-lite'
+    ].includes(modelId)) {
+      return this.providers['gemini'];
+    }
+    // Default to LM Studio for everything else (assuming user knows what they are doing)
+    // or we can detect by prefix if we add one.
+    // For now, let's assume if it's not in the Gemini list, it's LM Studio.
+    return this.providers['lmstudio'];
   }
 
   private buildFullPrompt(prompt: string, contextFiles?: any[], mentions?: any[]): string {
@@ -16,7 +43,7 @@ export class AIService {
       for (const m of mentions) {
         const safeName = m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const mentionRegex = new RegExp(`@${safeName}`, 'g');
-        fullPrompt = fullPrompt.replace(mentionRegex, `@${m.jid}`);
+        fullPrompt = fullPrompt.replace(mentionRegex, m.jid);
       }
     }
 
@@ -47,11 +74,10 @@ export class AIService {
         contextSection += `</messages>\n`;
 
         contextSection += `</chat_history>\n`;
-
         const safeName = chat.name ? chat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : chat.jid;
         const contextRegex = new RegExp(`/${safeName}`, 'g');
         if (contextRegex.test(fullPrompt)) {
-           fullPrompt = fullPrompt.replace(contextRegex, `/${chat.jid} \n${contextSection}`);
+           fullPrompt = fullPrompt.replace(contextRegex, `${chat.jid} \n${contextSection}`);
         } else {
            fullPrompt += `\n\n=== RELEVANT CHAT CONTEXT ===\n${contextSection}`;
         }
@@ -60,11 +86,11 @@ export class AIService {
     return fullPrompt;
   }
 
-  private wrapWithRole(content: string, isSystem: boolean, role: 'user' | 'model'): string {
-    const label = role === 'model' ? 'AI' : (isSystem ? 'SYSTEM' : 'USER');
-    return `[${label}]: ${content}`;
+  async getAvailableModels(): Promise<ModelInfo[]> {
+    const geminiModels = await this.providers['gemini'].getAvailableModels();
+    const lmsModels = await this.providers['lmstudio'].getAvailableModels();
+    return [...geminiModels, ...lmsModels];
   }
-
 
   async generateResponse(
     prompt: string, 
@@ -74,35 +100,19 @@ export class AIService {
     options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean }
   ): Promise<string> {
     try {
+      const modelId = options?.model || this.currentModelId;
+      const provider = this.getProviderForModel(modelId);
+      
       const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
 
-      const formattedHistory = (history || []).map(msg => {
-        const isMsgSystem = (msg as any).isSystem === true;
-        const role = (msg as any).role === 'user' ? 'user' : 'model';
-        const content = (msg as any).role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) : msg.content;
-        return {
-          role,
-          parts: [{ text: this.wrapWithRole(content, isMsgSystem, role as any) }]
-        };
+      const processedHistory = (history || []).map(msg => {
+        if (msg.role === 'user') {
+          return { ...msg, content: this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) };
+        }
+        return msg;
       });
 
-      const isPromptSystem = (options as any)?.isSystem === true;
-      const finalPrompt = this.wrapWithRole(fullPrompt, isPromptSystem, 'user');
-
-
-      const useThinkMode = options?.useThinkMode !== false;
-      const systemInstructions = toolRegistry.getSystemInstructions(useThinkMode);
-      const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
-
-      const chat = this.ai.chats.create({
-        model: options?.model || "gemma-4-31b-it",
-        config,
-        history: formattedHistory
-      });
-
-      const response = await chat.sendMessage({ message: finalPrompt });
-
-      return response.text || '';
+      return await provider.generateResponse(fullPrompt, processedHistory, { ...options, model: modelId });
     } catch (error) {
       console.error('[AIService] Error generating response:', error);
       throw error;
@@ -118,38 +128,19 @@ export class AIService {
     onChunk: (chunk: string) => void = () => {}
   ): Promise<void> {
     try {
+      const modelId = options?.model || this.currentModelId;
+      const provider = this.getProviderForModel(modelId);
+
       const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
 
-      const formattedHistory = (history || []).map(msg => {
-        const isMsgSystem = (msg as any).isSystem === true;
-        const role = (msg as any).role === 'user' ? 'user' : 'model';
-        const content = (msg as any).role === 'user' ? this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) : msg.content;
-        return {
-          role,
-          parts: [{ text: this.wrapWithRole(content, isMsgSystem, role as any) }]
-        };
-      });
-
-      const isPromptSystem = (options as any)?.isSystem === true;
-      const finalPrompt = this.wrapWithRole(fullPrompt, isPromptSystem, 'user');
-
-
-      const useThinkMode = options?.useThinkMode !== false;
-      const systemInstructions = toolRegistry.getSystemInstructions(useThinkMode);
-      const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
-
-      const chat = this.ai.chats.create({
-        model: options?.model || "gemma-4-31b-it",
-        config,
-        history: formattedHistory
-      });
-
-      const responseStream = await chat.sendMessageStream({ message: finalPrompt });
-      for await (const chunk of responseStream) {
-        if (chunk.text) {
-          onChunk(chunk.text);
+      const processedHistory = (history || []).map(msg => {
+        if (msg.role === 'user') {
+          return { ...msg, content: this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) };
         }
-      }
+        return msg;
+      });
+
+      await provider.generateResponseStream(fullPrompt, processedHistory, { ...options, model: modelId }, onChunk);
     } catch (error) {
       console.error('[AIService] Error generating stream response:', error);
       throw error;

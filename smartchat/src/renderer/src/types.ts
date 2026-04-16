@@ -60,6 +60,20 @@ export interface SearchResults {
   messages: SearchResultItem[]
 }
 
+export interface ModelInfo {
+  id: string
+  name: string
+  provider: 'gemini' | 'lmstudio'
+  description?: string
+  isLocal: boolean
+}
+
+export interface AIChatOptions {
+  useThinkMode: boolean
+  model: string
+  contextLength: number
+}
+
 export interface PresenceUpdate {
   remoteJid: string
   presences: Record<string, {

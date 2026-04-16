@@ -1,10 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChatItem } from '../types'
+import { ChatItem, ModelInfo, AIChatOptions } from '../types'
 import AISmartInput from './AISmartInput'
 import AIMessageBubble from './AIMessageBubble'
 import AISettingsModal from './AISettingsModal'
-
-
 
 interface AIChatMessage {
   id: string
@@ -18,9 +16,6 @@ interface AIChatMessage {
   hasError?: boolean
 }
 
-
-
-
 interface AIChatSidebarProps {
   isOpen: boolean
   onClose: () => void
@@ -33,17 +28,19 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   const [executingToolId, setExecutingToolId] = useState<string | null>(null)
   const [chatList, setChatList] = useState<ChatItem[]>([])
   const [availableTools, setAvailableTools] = useState<any[]>([])
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [aiOptions, setAiOptions] = useState({ useThinkMode: true, model: 'gemma-4-31b-it' })
+  const [aiOptions, setAiOptions] = useState<AIChatOptions>({ 
+    useThinkMode: true, 
+    model: 'gemma-4-31b-it',
+    contextLength: 24576 
+  })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
   const streamingBuffers = useRef<Record<string, string>>({})
   const typingInterval = useRef<any>(null)
-
-
-
 
   useEffect(() => {
     return () => {
@@ -57,6 +54,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         window.api.getChats(1, 100).then(setChatList).catch(console.error)
       }
       window.api.getAiTools().then(setAvailableTools).catch(console.error)
+      window.api.getAiModels().then(setAvailableModels).catch(console.error)
     }
   }, [isOpen])
 
@@ -289,6 +287,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         onClose={() => setIsSettingsOpen(false)} 
         options={aiOptions} 
         onOptionsChange={setAiOptions} 
+        availableModels={availableModels}
       />
       <div className="ai-header">
         <div className="ai-title">

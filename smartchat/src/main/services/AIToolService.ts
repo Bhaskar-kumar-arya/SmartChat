@@ -21,16 +21,17 @@ export class ToolRegistry {
     return Array.from(this.tools.values());
   }
 
-  getSystemInstructions(useThinkMode: boolean = true): string {
-    const tools = this.getAllTools();
-    if (tools.length === 0) return '';
-
-    // Create a JSON describing the tools
-    const toolDescriptions = tools.map(t => ({
+  getToolDefinitions(): any[] {
+    return this.getAllTools().map(t => ({
       name: t.name,
       description: t.description,
       parameters: t.parametersSchema
     }));
+  }
+
+  getSystemInstructions(useThinkMode: boolean = true): string {
+    const tools = this.getToolDefinitions();
+    if (tools.length === 0) return '';
 
     const reactProtocol = `
 # RESPONSE PROTOCOL (CRITICAL — ALWAYS FOLLOW)
@@ -86,7 +87,7 @@ Understand these labels strictly.
 
 # YOUR CAPABILITIES & TOOLS
 You have access to the following strictly defined tools to interact with the application and fulfill user requests:
-${JSON.stringify(toolDescriptions, null, 2)}
+${JSON.stringify(tools, null, 2)}
 ${useThinkMode ? reactProtocol : standardProtocol}
 # GENERAL DIRECTIVES & CONSTRAINTS
 1. CONVERSATION: If the user's request is a conversational query and does NOT require tool execution, respond naturally in text (but still wrap reasoning in <thought>).

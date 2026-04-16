@@ -156,6 +156,9 @@ const api = {
   },
   getAiTools: () => {
     return ipcRenderer.invoke('get-ai-tools')
+  },
+  getAiModels: () => {
+    return ipcRenderer.invoke('get-ai-models')
   }
 }
 

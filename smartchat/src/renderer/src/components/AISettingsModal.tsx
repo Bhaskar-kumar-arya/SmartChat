@@ -1,16 +1,14 @@
-interface AIChatOptions {
-  useThinkMode: boolean;
-  model: string;
-}
+import { AIChatOptions, ModelInfo } from '../types';
 
 interface AISettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   options: AIChatOptions;
   onOptionsChange: (newOptions: AIChatOptions) => void;
+  availableModels: ModelInfo[];
 }
 
-export default function AISettingsModal({ isOpen, onClose, options, onOptionsChange }: AISettingsModalProps) {
+export default function AISettingsModal({ isOpen, onClose, options, onOptionsChange, availableModels }: AISettingsModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -30,7 +28,7 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
           backgroundColor: 'var(--wa-sidebar-bg)', 
           padding: '24px', 
           borderRadius: '12px', 
-          minWidth: '280px', 
+          minWidth: '320px', 
           border: '1px solid var(--wa-border)',
           boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
         }}
@@ -59,15 +57,57 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
               border: '1px solid var(--wa-border)', 
               borderRadius: '6px',
               outline: 'none',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              fontSize: '13px'
             }}
           >
-            <option value="gemma-4-31b-it">Gemma 4 31B IT</option>
-            <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
-            <option value="gemma-3-27b-it">Gemma 3 27B IT</option>
-            <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
-            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+            {availableModels.length === 0 && (
+              <option value={options.model}>{options.model} (Loading...)</option>
+            )}
+            
+            <optgroup label="Remote (Gemini)">
+               {availableModels.filter(m => m.provider === 'gemini').map(m => (
+                 <option key={m.id} value={m.id}>{m.name}</option>
+               ))}
+            </optgroup>
+
+            {availableModels.some(m => m.provider === 'lmstudio') && (
+              <optgroup label="Local (LM Studio)">
+                {availableModels.filter(m => m.provider === 'lmstudio').map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
+          {availableModels.find(m => m.id === options.model)?.description && (
+            <span style={{ fontSize: '11px', color: 'var(--wa-primary)', opacity: 0.8 }}>
+              {availableModels.find(m => m.id === options.model)?.description}
+            </span>
+          )}
+        </div>
+
+        <div style={{ margin: '15px 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: 'var(--wa-text-primary)', fontSize: '14px' }}>Context Size</span>
+            <span style={{ color: 'var(--wa-primary)', fontSize: '12px', fontWeight: '600' }}>{options.contextLength} tokens</span>
+          </div>
+          <input 
+            type="range" 
+            min="2048" 
+            max="128000" 
+            step="2048"
+            value={options.contextLength} 
+            onChange={(e) => onOptionsChange({ ...options, contextLength: parseInt(e.target.value) })}
+            style={{ 
+              width: '100%',
+              cursor: 'pointer',
+              accentColor: 'var(--wa-primary)'
+            }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--wa-text-secondary)' }}>
+            <span>2K</span>
+            <span>128K</span>
+          </div>
         </div>
 
         <button 
