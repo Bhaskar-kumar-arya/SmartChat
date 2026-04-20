@@ -45,17 +45,19 @@ export class LMStudioProvider implements AIProvider {
   getSystemPrompt(useThinkMode: boolean): string {
     const thinkProtocol = `
 # RESPONSE PROTOCOL (CRITICAL — ALWAYS FOLLOW)
-You MUST ALWAYS wrap your internal reasoning in a <think> block before every response (whether conversational or a tool).
-Your output must always start with the think block. note : this block is your internal thought chain and will not be shown to the user.
-The think block should be formatted as follows:
+Your role involves thoroughly exploring queries and tasks through a systematic thinking process before providing the final precise and accurate responses. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracking, and iteration to develop a well-considered thinking process.
 
+You MUST structure your response into two main sections: Thought and Solution (or Action) using the specified format.
+In the Thought section, detail your reasoning process in steps. Each step should include detailed considerations such as analyzing the context and conversation history, summarizing relevant findings, brainstorming ideas, verifying accuracy, refining errors, and planning next steps (like responding or using a tool).
+After the Thought section, based on your explorations and reflections, systematically present the final response or execute the necessary tool. This section should be logical, accurate, and concise.
+
+Your output must ALWAYS start with the <think> tag. Note: this block is your internal thought chain and will not be shown to the user.
+
+Format:
 <think>
-1. Your analysis of the conversation history.
-2. Your analysis of the current message.
-3. Your plan for next steps.
+[Detailed reasoning process, exploration, reassessment, and planning]
 </think>
-
-Your conversational response here.
+[Your final conversational response or tool call]
 `;
 
     const tools = toolRegistry.getAllTools().map(t => ({
@@ -68,9 +70,12 @@ Your conversational response here.
 You are an advanced, intelligent, and proactive AI assistant integrated directly into "smartChat", a modern WhatsApp-like messaging application.
 The current system time is: ${new Date().toLocaleString()}.
 
+# ENVIRONMENT & COMMUNICATION
+You are chatting directly with the user within the app's interface. Every word you output as a regular text response is immediately visible to the user. 
+DO NOT call any "send message" tools to reply to the user. Just output your response directly as text.
 
 # GENERAL DIRECTIVES & CONSTRAINTS
-1. CONVERSATION: If the user's request is a conversational query and does NOT require tool execution, respond naturally in text.
+1. CONVERSATION: To reply to the user, just write your response. to call a tool, wrap it in the correct delimiter.
 2. NO HALLUCINATION: ONLY use the tools implicitly registered. Never assume capabilities you don't possess.
 3. JID ACCURACY: Participant JIDs and their names/IDs are provided in the chat context. NEVER guess a JID.
 4. CONCISE: Keep your conversational responses concise and helpful.
