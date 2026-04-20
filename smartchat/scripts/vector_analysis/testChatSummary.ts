@@ -49,7 +49,7 @@ async function main() {
   console.log("🔍 Searching for 'Bhaskara Brothers' chat...");
 
   // Search both Chat and Contact tables for a robust match
-  const chatSearchSql = `SELECT id as jid, COALESCE(name, notify) as name FROM Contact WHERE name LIKE '%Bhaskara%' OR notify LIKE '%Bhaskara%' UNION SELECT jid, name FROM Chat WHERE name LIKE '%Bhaskara%' LIMIT 1;`;
+  const chatSearchSql = `SELECT id as jid, COALESCE(name, notify) as name FROM Contact WHERE name LIKE '%Study group%' OR notify LIKE '%Study group%' UNION SELECT jid, name FROM Chat WHERE name LIKE '%Study group%' LIMIT 1;`;
   const chats = runSql(dbPath, chatSearchSql);
 
   if (chats.length === 0) {
