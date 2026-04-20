@@ -1,4 +1,4 @@
-import { LMStudioClient } from '@lmstudio/sdk'
+import { Chat, LMStudioClient, rawFunctionTool } from '@lmstudio/sdk'
 import { AIProvider, ModelInfo } from './Provider'
 import { toolRegistry } from '../AIToolService'
 
@@ -42,17 +42,7 @@ export class LMStudioProvider implements AIProvider {
     }
   }
 
-  private formatHistory(history: any[]) {
-    return (history || []).map(msg => ({
-      role: msg.role === 'user' ? 'user' : (msg.role === 'ai' || msg.role === 'model' ? 'assistant' : 'system'),
-      content: msg.content
-    }));
-  }
-
   getSystemPrompt(useThinkMode: boolean): string {
-    const tools = toolRegistry.getToolDefinitions();
-    if (tools.length === 0) return '';
-
     const thinkProtocol = `
 # RESPONSE PROTOCOL (CRITICAL — ALWAYS FOLLOW)
 You MUST ALWAYS wrap your internal reasoning in a <think> block before every response (whether conversational or a tool).
@@ -61,58 +51,32 @@ The think block should be formatted as follows:
 
 <think>
 1. Your analysis of the conversation history.
-2. Your analysis of the current message (tool result or User message).
+2. Your analysis of the current message.
 3. Your plan for next steps.
 </think>
 
-**When calling a tool:**
-<tool_call>
-{
-  "tool": "toolName",
-  "arguments": {
-    "argName": "value"
-  }
-}
-</tool_call>
-
-**When responding conversationally:**
-Your response here.
+Your conversational response here.
 `;
 
-    const standardProtocol = `
-# TOOL EXECUTION PROTOCOL (CRITICAL)
-When you need to perform an action using a tool, you MUST use the following exact XML structure.
-Do NOT reply with conversational text outside of these blocks when executing a tool. ONLY output the XML.
-ensure to wrap in <tool_call>.....</tool_call>
-<tool_call>
-{
-  "tool": "toolName",
-  "arguments": {
-    "argName": "value"
-  }
-}
-</tool_call>
-`;
+    const tools = toolRegistry.getAllTools().map(t => ({
+      name: t.name,
+      description: t.description,
+      parameters: t.parametersSchema
+    }));
 
     return `
 You are an advanced, intelligent, and proactive AI assistant integrated directly into "smartChat", a modern WhatsApp-like messaging application.
 The current system time is: ${new Date().toLocaleString()}.
 
-# YOUR CAPABILITIES & TOOLS
-You have access to the following strictly defined tools to interact with the application and fulfill user requests:
-${JSON.stringify(tools, null, 2)}
-NOTE : you dont have to unnecessarily use a tool in every message if not required, and if calling a tool , MAKE SURE you wrap it in <tool_call>...<.tool_call>
-
-${useThinkMode ? thinkProtocol : standardProtocol}
-
 
 # GENERAL DIRECTIVES & CONSTRAINTS
 1. CONVERSATION: If the user's request is a conversational query and does NOT require tool execution, respond naturally in text.
-2. NO HALLUCINATION: ONLY use the tools explicitly listed above. Never invent tool names or assume capabilities you don't possess.
+2. NO HALLUCINATION: ONLY use the tools implicitly registered. Never assume capabilities you don't possess.
 3. JID ACCURACY: Participant JIDs and their names/IDs are provided in the chat context. NEVER guess a JID.
 4. CONCISE: Keep your conversational responses concise and helpful.
-5. YOU MUST STRICTLY FOLLOW THE RESPONSE FORMAT AT ANY COST AND MAKE NO MISTAKES IN THAT.
-6. THINK BEFORE YOU RESPOND
+5. THINK BEFORE YOU RESPOND
+
+${useThinkMode ? thinkProtocol : ''}
 `;
   }
 
@@ -128,24 +92,67 @@ ${useThinkMode ? thinkProtocol : standardProtocol}
     this.loadedModels.clear();
   }
 
+  private getRawToolsInfo() {
+    return {
+      type: "toolArray",
+      tools: toolRegistry.getAllTools().map(t => ({
+        type: "function",
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parametersSchema
+        }
+      }))
+    };
+  }
+
   async generateResponse(prompt: string, history: any[], options: any): Promise<string> {
     const modelKey = options?.model;
     if (!modelKey) throw new Error('No model specified for LM Studio');
 
     const model = await this.getOrLoadModel(modelKey, options?.contextLength);
-    const formattedHistory = this.formatHistory(history);
+    const chat = Chat.empty();
     
     const useThinkMode = options?.useThinkMode !== false;
     const systemInstructions = this.getSystemPrompt(useThinkMode);
     if (systemInstructions) {
-      formattedHistory.unshift({ role: 'system', content: systemInstructions });
+      chat.append('system', systemInstructions);
     }
 
-    formattedHistory.push({ role: 'user', content: prompt });
+    for (const msg of history || []) {
+       // LM Studio's chat.append requires strings or specific chat elements.
+       chat.append(msg.role === 'user' ? 'user' : 'assistant', msg.content);
+    }
 
-    const result = await model.respond(formattedHistory);
-    const finalResult = await result.result();
-    return finalResult.content || '';
+    chat.append('user', prompt);
+
+    let finalResponse = '';
+
+    const prediction = model.respond(chat, {
+      reasoning : {
+        effort : 'high'
+      },
+      rawTools: this.getRawToolsInfo() as any,
+      onPredictionFragment: (fragment) => {
+         if (fragment.content) {
+            finalResponse += fragment.content;
+         }
+      },
+      onToolCallRequestEnd: (callId, info) => {
+         const req = info.toolCallRequest as any;
+         let argsObj = req.arguments || {};
+         try {
+             if (typeof argsObj === 'string') {
+                 argsObj = JSON.parse(argsObj);
+             }
+         } catch (e) {}
+         const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
+         finalResponse += xml;
+      },
+    });
+
+    await prediction;
+    return finalResponse;
   }
 
   async generateResponseStream(
@@ -158,22 +165,44 @@ ${useThinkMode ? thinkProtocol : standardProtocol}
     if (!modelKey) throw new Error('No model specified for LM Studio');
 
     const model = await this.getOrLoadModel(modelKey, options?.contextLength);
-    const formattedHistory = this.formatHistory(history);
+    const chat = Chat.empty();
 
     const useThinkMode = options?.useThinkMode !== false;
     const systemInstructions = this.getSystemPrompt(useThinkMode);
     if (systemInstructions) {
-      formattedHistory.unshift({ role: 'system', content: systemInstructions });
+      chat.append('system', systemInstructions);
     }
 
-    formattedHistory.push({ role: 'user', content: prompt });
+    for (const msg of history || []) {
+       chat.append(msg.role === 'user' ? 'user' : 'assistant', msg.content);
+    }
 
-    const stream = model.respond(formattedHistory);
-    for await (const chunk of stream) {
-      if (chunk.content) {
-        onChunk(chunk.content);
+    chat.append('user', prompt);
+
+    const prediction = model.respond(chat, {
+      reasoning : {
+        effort : 'high'
+      },
+      rawTools: this.getRawToolsInfo() as any,
+      onPredictionFragment: (fragment) => {
+         if (fragment.content) {
+            onChunk(fragment.content);
+         }
+      },
+      onToolCallRequestEnd: (callId, info) => {
+         const req = info.toolCallRequest as any;
+         let argsObj = req.arguments || {};
+         try {
+             if (typeof argsObj === 'string') {
+                 argsObj = JSON.parse(argsObj);
+             }
+         } catch (e) {}
+         const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
+         onChunk(xml);
       }
-    }
+    });
+
+    await prediction;
   }
 
   async getAvailableModels(): Promise<ModelInfo[]> {

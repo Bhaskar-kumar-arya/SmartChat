@@ -92,8 +92,23 @@ app.whenReady().then(() => {
   })
 })
 
+import { aiService } from './services/AIService'
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+app.on('will-quit', async (e) => {
+  // Prevent immediate quit to allow cleanup
+  e.preventDefault();
+  try {
+    await aiService.cleanup();
+  } catch (err) {
+    console.error('[App] Error during cleanup:', err);
+  } finally {
+    // Re-trigger quit now that cleanup is done
+    app.exit(0);
   }
 })

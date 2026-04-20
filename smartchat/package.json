@@ -45,7 +45,8 @@
     "remark-gfm": "^4.0.1",
     "sqlite-vec": "^0.1.9",
     "tailwindcss": "^4.2.1",
-    "wavesurfer.js": "^7.12.6"
+    "wavesurfer.js": "^7.12.6",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

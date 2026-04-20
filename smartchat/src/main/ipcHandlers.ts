@@ -521,6 +521,10 @@ export function registerIpcHandlers(
     return await aiService.generateResponse(prompt, contextChats, history, mentions, options);
   })
 
+  ipcMain.handle('get-ai-models', async () => {
+    return await aiService.getAvailableModels();
+  })
+
   ipcMain.on('ai-chat-stream', async (event, args) => {
     const { channelId, prompt, contextChats, history, mentions, options } = args;
     try {
