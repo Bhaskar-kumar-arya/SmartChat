@@ -98,7 +98,12 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
             toolResult={message.toolResult}
             isExecuting={isExecuting}
             requiresPermission={availableTools.find(t => t.name === toolData.tool)?.requiresPermission !== false}
-            onApprove={() => onApprove(message.id, toolData.tool, toolData.arguments)}
+            onApprove={() => {
+              const args = toolData.arguments !== undefined 
+                ? toolData.arguments 
+                : Object.fromEntries(Object.entries(toolData).filter(([k]) => k !== 'tool'));
+              onApprove(message.id, toolData.tool, args);
+            }}
             onDecline={() => onDecline(message.id)}
           />
         )}
