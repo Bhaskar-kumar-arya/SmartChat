@@ -35,9 +35,9 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
 
   if (message.isHidden) return null
 
-  // Extract <thought> block
-  const thoughtMatch = message.content.match(/<thought>([\s\S]*?)<\/thought>/)
-  const thoughtContent = thoughtMatch ? thoughtMatch[1].trim() : null
+  // Extract <thought> or <think> block
+  const thoughtMatch = message.content.match(/<(thought|think)>([\s\S]*?)<\/\1>/)
+  const thoughtContent = thoughtMatch ? thoughtMatch[2].trim() : null
 
   // Extract <tool_call> block
   const toolMatch = message.content.match(/<tool_call>([\s\S]*?)<\/tool_call>/)
@@ -50,9 +50,9 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
     }
   }
 
-  // Clean the display content: strip both <thought> and <tool_call> blocks
+  // Clean the display content: strip thought/think and <tool_call> blocks
   const displayContent = message.content
-    .replace(/<thought>[\s\S]*?<\/thought>/g, '')
+    .replace(/<(thought|think)>[\s\S]*?<\/\1>/g, '')
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
     .trim()
 
