@@ -31,7 +31,7 @@ export class LMStudioProvider implements AIProvider {
 
     try {
       const model = await this.client.llm.load(modelKey, { 
-        config: { contextLength: requestedLength, flashAttention : true }, 
+        config: { contextLength: requestedLength, flashAttention : true, gpu: { ratio: "max" } }, 
         ttl: 600 // 10 mins TTL
       });
       this.loadedModels.set(modelKey, { model, contextLength: requestedLength });
@@ -80,6 +80,8 @@ DO NOT call any "send message" tools to reply to the user. Just output your resp
 3. JID ACCURACY: Participant JIDs and their names/IDs are provided in the chat context. NEVER guess a JID.
 4. CONCISE: Keep your conversational responses concise and helpful.
 5. THINK BEFORE YOU RESPOND
+6. TOOL CHAINING : you are allowed to use tools one after another. you need to wait for response of previous tool call before calling next one.
+
 
 ${useThinkMode ? thinkProtocol : ''}
 `;
