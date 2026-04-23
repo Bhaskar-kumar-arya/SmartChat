@@ -506,7 +506,7 @@ export function registerIpcHandlers(
   ipcMain.handle('execute-tool', async (_event, toolName: string, args: any) => {
     const tool = toolRegistry.getTool(toolName);
     if (!tool) throw new Error(`Tool ${toolName} not found`);
-    return await tool.execute(args);
+    return await tool.execute(args || {});
   });
 
   ipcMain.handle('get-ai-tools', async () => {

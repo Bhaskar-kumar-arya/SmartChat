@@ -20,11 +20,15 @@ const AIToolCard: React.FC<AIToolCardProps> = ({
   onApprove, 
   onDecline 
 }) => {
+  const displayArgs = toolData.arguments !== undefined 
+    ? toolData.arguments 
+    : Object.fromEntries(Object.entries(toolData).filter(([k]) => k !== 'tool'));
+
   return (
     <div className="ai-tool-card" style={{ padding: '12px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
       <div style={{ fontWeight: 600, marginBottom: '8px', color: '#ffb340' }}>⚡ Tool Request: {toolData.tool}</div>
       <pre style={{ fontSize: '11px', background: 'rgba(0,0,0,0.4)', padding: '8px', borderRadius: '4px', overflowX: 'auto', margin: 0 }}>
-        {JSON.stringify(toolData.arguments, null, 2)}
+        {JSON.stringify(displayArgs, null, 2)}
       </pre>
       {toolResult ? (
         <div style={{ marginTop: '10px', fontSize: '12px', color: '#a8bbd9', background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '4px' }}>
