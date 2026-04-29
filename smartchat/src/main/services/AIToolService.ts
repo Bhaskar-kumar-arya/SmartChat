@@ -4,6 +4,8 @@ export interface AITool {
   parametersSchema: object;
   requiresPermission: boolean;
   execute: (args: any) => Promise<any>;
+  /** Optional async setup (e.g. DB introspection). Called once after registration. */
+  initialize?: () => Promise<void>;
 }
 
 export class ToolRegistry {
