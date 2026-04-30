@@ -144,7 +144,7 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
   }
 
   const selectItem = (chat: ChatItem) => {
-    const displayName = chat.name || chat.jid.split('@')[0] || '??';
+    const displayName = (chat.name || chat.jid.split('@')[0] || '??').trim();
     if (menuType === 'context') {
       if (!contexts.find(c => c.jid === chat.jid)) {
         setContexts([...contexts, { jid: chat.jid, name: displayName }])

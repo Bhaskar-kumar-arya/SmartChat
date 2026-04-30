@@ -41,7 +41,8 @@ export class AIService {
     // 1. Handle Mentions (@JID injection)
     if (mentions && mentions.length > 0) {
       for (const m of mentions) {
-        const safeName = m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const trimmedName = (m.name || '').trim();
+        const safeName = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const mentionRegex = new RegExp(`@${safeName}`, 'g');
         fullPrompt = fullPrompt.replace(mentionRegex, m.jid);
       }
