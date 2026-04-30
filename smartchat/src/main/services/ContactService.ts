@@ -214,8 +214,14 @@ export class ContactService {
   /**
    * Internal helper to find an Identity ID by a JID (alias).
    */
-  async getIdentityIdByJid(jid: string): Promise<number | null> {
+  async getIdentityIdByJid(jid: string | any): Promise<number | null> {
     if (!jid) return null
+    if (typeof jid === 'object' && jid.id) {
+      jid = jid.id
+    } else if (typeof jid !== 'string') {
+      return null
+    }
+
     const alias = await prisma.identityAlias.findUnique({ where: { jid } })
     if (alias) return alias.identityId
     

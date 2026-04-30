@@ -36,51 +36,65 @@ export class ChatService {
     }
 
     // Community Metadata Normalization
-    const isComm = update.isCommunity === true || update.isParentGroup === true
-    const isAnn = update.isAnnounce === true || update.isCommunityAnnounce === true || update.isDefaultSubgroup === true
-    const parent = update.linkedParentJid || update.linkedParent || update.parentGroupId
+    const hasCommunityData = update.isCommunity !== undefined || 
+                             update.isParentGroup !== undefined || 
+                             update.isAnnounce !== undefined || 
+                             update.isCommunityAnnounce !== undefined || 
+                             update.isDefaultSubgroup !== undefined || 
+                             update.linkedParentJid !== undefined || 
+                             update.linkedParent !== undefined || 
+                             update.parentGroupId !== undefined;
 
-    let type = 'DM'
-    if (jid.endsWith('@g.us')) {
-      if (isComm) type = 'COMMUNITY'
-      else if (isAnn) type = 'ANNOUNCE'
-      else if (parent) type = 'SUBGROUP'
-      else type = 'GROUP'
-    }
-    
-    // Determine the root community JID if applicable
-    const rootJid = isComm ? jid : (parent || null)
-    let communityId: number | null = null
+    if (hasCommunityData) {
+      const isComm = update.isCommunity === true || update.isParentGroup === true
+      const isAnn = update.isAnnounce === true || update.isCommunityAnnounce === true || update.isDefaultSubgroup === true
+      const parent = update.linkedParentJid || update.linkedParent || update.parentGroupId
 
-    if (rootJid) {
-      const updateData: any = {}
-      if (isComm && chatName) updateData.name = chatName
-
-      // Ensure Community exists
-      const comm = await prisma.community.upsert({
-        where: { jid: rootJid },
-        update: updateData,
-        create: { jid: rootJid, name: isComm ? chatName : null }
-      })
-      communityId = comm.id
-      
-      // Update announce channel if known
-      if (isAnn && rootJid) {
-        await prisma.community.update({
-          where: { id: communityId },
-          data: { announceJid: jid }
-        })
+      let type = 'DM'
+      if (jid.endsWith('@g.us')) {
+        if (isComm) type = 'COMMUNITY'
+        else if (isAnn) type = 'ANNOUNCE'
+        else if (parent) type = 'SUBGROUP'
+        else type = 'GROUP'
       }
+      data.type = type
+      
+      // Determine the root community JID if applicable
+      const rootJid = isComm ? jid : (parent || null)
+      let communityId: number | null = null
+
+      if (rootJid) {
+        const updateData: any = {}
+        if (isComm && chatName) updateData.name = chatName
+
+        // Ensure Community exists
+        const comm = await prisma.community.upsert({
+          where: { jid: rootJid },
+          update: updateData,
+          create: { jid: rootJid, name: isComm ? chatName : null }
+        })
+        communityId = comm.id
+        
+        // Update announce channel if known
+        if (isAnn && rootJid) {
+          await prisma.community.update({
+            where: { id: communityId },
+            data: { announceJid: jid }
+          })
+        }
+      }
+      data.communityId = communityId
     }
 
-    if (Object.keys(data).length > 0 || type) {
+    if (Object.keys(data).length > 0) {
+      const createType = data.type || (jid.endsWith('@g.us') ? 'GROUP' : 'DM')
       await prisma.chat.upsert({
         where: { jid },
-        update: { ...data, type, communityId },
+        update: data,
         create: { 
           jid, 
-          type, 
-          communityId, 
+          type: createType, 
+          communityId: data.communityId || null, 
           ...data 
         }
       })

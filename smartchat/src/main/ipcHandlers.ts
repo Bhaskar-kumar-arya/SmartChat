@@ -45,6 +45,29 @@ export function registerIpcHandlers(
       take: pageSize
     })
     
+    // Auto-inject missing root communities so the frontend can properly nest subgroups
+    const fetchedJids = new Set(chats.map(c => c.jid))
+    const missingCommunityJids = new Set<string>()
+    for (const chat of chats) {
+      if ((chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') && chat.community?.jid) {
+        if (!fetchedJids.has(chat.community.jid)) {
+          missingCommunityJids.add(chat.community.jid)
+        }
+      }
+    }
+
+    if (missingCommunityJids.size > 0) {
+      const missingCommunities = await prisma.chat.findMany({
+        where: { jid: { in: Array.from(missingCommunityJids) } },
+        select: {
+          jid: true, name: true, unreadCount: true, timestamp: true,
+          pinned: true, muteExpiration: true, type: true, communityId: true,
+          community: { select: { jid: true } }, profilePictureUrl: true
+        }
+      })
+      chats.push(...missingCommunities)
+    }
+
     // Fallback if chat.name is missing for a DM: resolve it dynamically
     const enriched = await Promise.all(
       chats.map(async (chat) => {

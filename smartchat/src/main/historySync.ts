@@ -119,36 +119,14 @@ export async function handleHistorySync(
       if (!c.id) continue
       const jid = String(c.id)
       const raw = c as any
-      const isCommunity = raw.isCommunity === true || raw.isParentGroup === true
-      const isAnnounce = raw.isCommunityAnnounce === true || raw.isDefaultSubgroup === true
-      const linkedParentJid = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
-
-      let type = 'DM'
-      if (jid.endsWith('@g.us')) {
-        if (isCommunity) type = 'COMMUNITY'
-        else if (isAnnounce) type = 'ANNOUNCE'
-        else if (linkedParentJid) type = 'SUBGROUP'
-        else type = 'GROUP'
-      }
-
-      const rootJid = isCommunity ? jid : (linkedParentJid || null)
-      let communityId: number | null = null
-
-      if (rootJid) {
-        const comm = await prisma.community.upsert({
-          where: { jid: rootJid },
-          update: {},
-          create: { jid: rootJid, name: isCommunity ? raw.name : null }
-        })
-        communityId = comm.id
-        
-        if (isAnnounce && rootJid) {
-          await prisma.community.update({
-            where: { id: communityId },
-            data: { announceJid: jid }
-          }).catch(() => {})
-        }
-      }
+      const hasCommunityData = raw.isCommunity !== undefined || 
+                               raw.isParentGroup !== undefined || 
+                               raw.isAnnounce !== undefined || 
+                               raw.isCommunityAnnounce !== undefined || 
+                               raw.isDefaultSubgroup !== undefined || 
+                               raw.linkedParentJid !== undefined || 
+                               raw.linkedParent !== undefined || 
+                               raw.parentGroupId !== undefined;
 
       const ts = c.conversationTimestamp ?? c.timestamp
       let timestamp = BigInt(0)
@@ -162,22 +140,56 @@ export async function handleHistorySync(
 
       const isArchived = ('archived' in c || 'isArchived' in c) ? (c.archived === true || c.isArchived === true) : false
 
+      const updateData: any = {}
+      if (timestamp !== BigInt(0)) updateData.timestamp = timestamp
+      updateData.isArchived = isArchived
+      if (raw.name !== undefined) updateData.name = raw.name
+
+      let type = 'DM'
+      let communityId: number | null = null
+
+      if (hasCommunityData) {
+        const isCommunity = raw.isCommunity === true || raw.isParentGroup === true
+        const isAnnounce = raw.isCommunityAnnounce === true || raw.isDefaultSubgroup === true
+        const linkedParentJid = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
+
+        if (jid.endsWith('@g.us')) {
+          if (isCommunity) type = 'COMMUNITY'
+          else if (isAnnounce) type = 'ANNOUNCE'
+          else if (linkedParentJid) type = 'SUBGROUP'
+          else type = 'GROUP'
+        }
+        updateData.type = type
+
+        const rootJid = isCommunity ? jid : (linkedParentJid || null)
+        if (rootJid) {
+          const comm = await prisma.community.upsert({
+            where: { jid: rootJid },
+            update: {},
+            create: { jid: rootJid, name: isCommunity ? raw.name : null }
+          })
+          communityId = comm.id
+          
+          if (isAnnounce && rootJid) {
+            await prisma.community.update({
+              where: { id: communityId },
+              data: { announceJid: jid }
+            }).catch(() => {})
+          }
+        }
+        updateData.communityId = communityId
+      }
+
       await prisma.chat.upsert({
         where: { jid },
-        update: {
-          timestamp,
-          isArchived,
-          communityId,
-          type,
-          name: raw.name
-        },
+        update: updateData,
         create: {
           jid,
           unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
           timestamp,
           isArchived,
-          communityId,
-          type,
+          communityId: hasCommunityData ? communityId : null,
+          type: hasCommunityData ? type : (jid.endsWith('@g.us') ? 'GROUP' : 'DM'),
           name: raw.name
         }
       })

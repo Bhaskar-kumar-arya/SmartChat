@@ -59,6 +59,7 @@ export const useChats = (activeJid: string | null) => {
         const isCurrentChat = activeJidRef.current === msg.remoteJid
         
         const updatedChat: ChatItem = {
+          ...(existing || {}),
           jid: msg.remoteJid,
           name: existing ? existing.name : msg.remoteJid.replace(/@.*$/, ''),
           unreadCount: existing 
