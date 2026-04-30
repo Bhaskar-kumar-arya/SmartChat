@@ -69,6 +69,9 @@ export const api = {
   onWaSyncProgress: (callback: (progress: number) => void) =>
     window.api.onWaSyncProgress(callback),
 
+  onWaSyncStatus: (callback: (status: string) => void) =>
+    window.api.onWaSyncStatus(callback),
+
   onWaSyncComplete: (callback: () => void) =>
     window.api.onWaSyncComplete(callback),
 

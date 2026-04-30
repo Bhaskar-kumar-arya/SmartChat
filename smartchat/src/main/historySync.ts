@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { contactService } from './services/ContactService'
 
 /**
  * Determines the high-level message type from a Baileys proto.IMessage object.
@@ -94,245 +95,162 @@ export async function handleHistorySync(
   let messageCount = 0
 
   // ── 1. Process LID <-> PN mappings FIRST ───────────────────────────
-
-  const mappingDict = new Map<string, string>() // LID -> PN
-
-
   if (lidPnMappings && lidPnMappings.length > 0) {
     for (const mapping of lidPnMappings) {
       if (mapping.lid && mapping.pn) {
-        mappingDict.set(mapping.lid, mapping.pn)
+        await contactService.linkLidAndPn(mapping.lid, mapping.pn).catch(() => {})
       }
     }
   }
 
-  // ── 2. Contacts ────────────────────────────────────────────────────
-
   // ── 2. Contacts ────────────────────────────────────────────────────────
   if (contacts && contacts.length > 0) {
-    const jidToData = new Map<string, { name?: string, notify?: string, verifiedName?: string, lid?: string }>()
-
-    // Initial collection
     for (const c of contacts) {
       if (!c.id) continue
-      const id = String(c.id)
-      const existing = jidToData.get(id) || {}
-
-      jidToData.set(id, {
-        name: (c.name as string) || existing.name,
-        notify: (c.notify as string) || (c.pushName as string) || existing.notify,
-        verifiedName: (c.verifiedName as string) || existing.verifiedName,
-        lid: (c.lid as string) || existing.lid // Grab LID directly from contact if it exists
-      })
+      await contactService.upsertContact(c).catch(() => {})
     }
-
-    const contactOps: any[] = [];
-    const claimedLids = new Set<string>(); // Tracks LIDs in this specific batch
-    const lidsToClear = new Set<string>();
-
-    for (const [id, data] of jidToData.entries()) {
-      const isLid = id.endsWith('@lid');
-      const isPn = id.endsWith('@s.whatsapp.net');
-
-      let mappedLid: string | null = null;
-      let mappedPn: string | null = null;
-
-      if (isLid) {
-        // RULE 1: If the ID is a LID, the 'lid' column MUST be null to prevent P2002.
-        if (mappingDict.has(id)) {
-          mappedPn = mappingDict.get(id)!;
-        }
-      } else if (isPn) {
-        // RULE 2: If the ID is a PN, we can safely set the 'lid' column.
-        for (const [keyLid, valPn] of mappingDict.entries()) {
-          if (valPn === id) {
-            mappedLid = keyLid;
-            break;
-          }
-        }
-        // Fallback: use the LID provided in the contact payload
-        if (!mappedLid && data.lid) {
-          mappedLid = data.lid;
-        }
-      }
-
-      // RULE 3: Prevent duplicate LIDs within the same transaction batch
-      if (mappedLid) {
-        if (claimedLids.has(mappedLid)) {
-          mappedLid = null; // Strip it if another record in this chunk already claimed it
-        } else {
-          claimedLids.add(mappedLid);
-          lidsToClear.add(mappedLid);
-        }
-      }
-
-      const bestName = data.name || data.notify || data.verifiedName;
-
-      // Build the update payload dynamically so we don't squash 'name' with 'notify'
-      const updatePayload: any = {};
-      if (data.name) updatePayload.name = data.name;
-      if (data.notify !== undefined) updatePayload.notify = data.notify;
-      if (data.verifiedName !== undefined) updatePayload.verifiedName = data.verifiedName;
-      if (mappedLid !== null) updatePayload.lid = mappedLid;
-      if (mappedPn !== null) updatePayload.phoneNumber = mappedPn;
-
-      contactOps.push(
-        prisma.contact.upsert({
-          where: { id },
-          update: updatePayload,
-          create: {
-            id,
-            name: bestName || null,
-            notify: data.notify || null,
-            verifiedName: data.verifiedName || null,
-            lid: mappedLid || null,
-            phoneNumber: mappedPn || null
-          }
-        })
-      );
-    }
-
-    if (contactOps.length > 0) {
-      // Yield to event loop to keep UI responsive
-      await new Promise(resolve => setTimeout(resolve, 0))
-
-      // ── Clear LIDs in chunks to avoid SQLite limit ──
-      const lidArray = Array.from(lidsToClear);
-      const CLEAR_BATCH_SIZE = 500;
-      for (let i = 0; i < lidArray.length; i += CLEAR_BATCH_SIZE) {
-        const chunk = lidArray.slice(i, i + CLEAR_BATCH_SIZE);
-        await prisma.contact.updateMany({
-          where: { lid: { in: chunk } },
-          data: { lid: null }
-        });
-      }
-
-      // ── Process upserts in batches ──
-      const BATCH_SIZE = 500;
-      for (let i = 0; i < contactOps.length; i += BATCH_SIZE) {
-        await prisma.$transaction(contactOps.slice(i, i + BATCH_SIZE));
-      }
-    }
-    contactCount = jidToData.size
+    contactCount = contacts.length
   }
 
   // ── Chats ─────────────────────────────────────────────────────────
 
   if (chats && chats.length > 0) {
+    for (const c of chats) {
+      if (!c.id) continue
+      const jid = String(c.id)
+      const raw = c as any
+      const isCommunity = raw.isCommunity === true || raw.isParentGroup === true
+      const isAnnounce = raw.isCommunityAnnounce === true || raw.isDefaultSubgroup === true
+      const linkedParentJid = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
 
-    const chatOps = chats
-      .filter((c) => c.id)
-      .map((c) => {
+      let type = 'DM'
+      if (jid.endsWith('@g.us')) {
+        if (isCommunity) type = 'COMMUNITY'
+        else if (isAnnounce) type = 'ANNOUNCE'
+        else if (linkedParentJid) type = 'SUBGROUP'
+        else type = 'GROUP'
+      }
 
-        const jid = String(c.id)
-        
-        // Community Metadata Detection
-        // History Sync objects use 'isParentGroup' and 'parentGroupId'
-        const raw = c as any
-        const isCommunity = raw.isCommunity === true || raw.isParentGroup === true
-        const isAnnounce = raw.isCommunityAnnounce === true || raw.isDefaultSubgroup === true
-        const linkedParentJid = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
+      const rootJid = isCommunity ? jid : (linkedParentJid || null)
+      let communityId: number | null = null
 
-        const unreadCount =
-          typeof c.unreadCount === 'number'
-            ? c.unreadCount
-            : undefined
-
-        const isArchived =
-          ('archived' in c || 'isArchived' in c)
-            ? (c.archived === true || c.isArchived === true)
-            : undefined
-
-        let timestamp: bigint | undefined = undefined
-
-        const ts =
-          c.conversationTimestamp ??
-          c.timestamp
-
-        if (ts !== undefined && ts !== null) {
-
-          timestamp = BigInt(
-            typeof ts === 'object' && 'low' in (ts as Record<string, unknown>)
-              ? (ts as Record<string, unknown>).low as number
-              : (ts as number)
-          )
-
-        }
-
-        return prisma.chat.upsert({
-          where: { jid },
-          update: {
-            timestamp,
-            isArchived,
-            isCommunity,
-            isAnnounce,
-            linkedParentJid
-          },
-          create: {
-            jid,
-            unreadCount: unreadCount ?? 0,
-            timestamp: timestamp ?? BigInt(0),
-            isArchived: isArchived ?? false,
-            isCommunity,
-            isAnnounce,
-            linkedParentJid
-          }
+      if (rootJid) {
+        const comm = await prisma.community.upsert({
+          where: { jid: rootJid },
+          update: {},
+          create: { jid: rootJid, name: isCommunity ? raw.name : null }
         })
+        communityId = comm.id
+        
+        if (isAnnounce && rootJid) {
+          await prisma.community.update({
+            where: { id: communityId },
+            data: { announceJid: jid }
+          }).catch(() => {})
+        }
+      }
 
+      const ts = c.conversationTimestamp ?? c.timestamp
+      let timestamp = BigInt(0)
+      if (ts !== undefined && ts !== null) {
+        timestamp = BigInt(
+          typeof ts === 'object' && 'low' in (ts as Record<string, unknown>)
+            ? (ts as Record<string, unknown>).low as number
+            : (ts as number)
+        )
+      }
+
+      const isArchived = ('archived' in c || 'isArchived' in c) ? (c.archived === true || c.isArchived === true) : false
+
+      await prisma.chat.upsert({
+        where: { jid },
+        update: {
+          timestamp,
+          isArchived,
+          communityId,
+          type,
+          name: raw.name
+        },
+        create: {
+          jid,
+          unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
+          timestamp,
+          isArchived,
+          communityId,
+          type,
+          name: raw.name
+        }
       })
-
-    if (chatOps.length > 0) {
-      await prisma.$transaction(chatOps)
-      chatCount = chatOps.length
     }
-
+    chatCount = chats.length
   }
 
   // ── Messages ──────────────────────────────────────────────────────
 
   if (messages && messages.length > 0) {
+    // 1. Build an in-memory cache of JID -> identityId to avoid millions of awaits
+    const aliasRows = await prisma.identityAlias.findMany()
+    const identityCache = new Map<string, number>()
+    for (const row of aliasRows) identityCache.set(row.jid, row.identityId)
 
     const BATCH_SIZE = 500
 
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
-
       const batch = messages.slice(i, i + BATCH_SIZE)
+      const messageData: any[] = []
 
-      const messageData = batch
-        .filter((m) => {
-          const key = m.key as Record<string, unknown> | undefined
-          return key && key.id
-        })
-        .map((m) => {
+      for (const m of batch) {
+        const key = m.key as Record<string, unknown> | undefined
+        if (!key || !key.id) continue
 
-          const key = m.key as Record<string, unknown>
-          const message = m.message as Record<string, unknown> | null | undefined
+        const message = m.message as Record<string, unknown> | null | undefined
+        const ts = m.messageTimestamp ?? 0
+        const timestamp = BigInt(
+          typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
+            ? (ts as Record<string, unknown>).low as number
+            : (ts as number)
+        )
 
-          const ts = m.messageTimestamp ?? 0
-
-          const timestamp = BigInt(
-            typeof ts === 'object' &&
-              ts !== null &&
-              'low' in (ts as Record<string, unknown>)
-              ? (ts as Record<string, unknown>).low as number
-              : (ts as number)
-          )
-
-          return {
-            id: String(key.id),
-            remoteJid: String(key.remoteJid ?? ''),
-            fromMe: key.fromMe === true,
-            participant: key.participant ? String(key.participant) : null,
-            timestamp,
-            messageType: getMessageType(message),
-            content: JSON.stringify(message ?? {}),
-            textContent: extractTextContent(message)
+        const remoteJid = String(key.remoteJid ?? '')
+        const participantString = key.participant ? String(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
+        
+        let senderId: number | null = null
+        if (!key.fromMe && participantString) {
+          if (identityCache.has(participantString)) {
+            senderId = identityCache.get(participantString)!
+          } else {
+            // Need to create it
+            await contactService.upsertContact({ id: participantString }).catch(() => {})
+            const newId = await contactService.getIdentityIdByJid(participantString)
+            if (newId) {
+              senderId = newId
+              identityCache.set(participantString, newId)
+            }
           }
+        }
 
+        // Ensure Chat exists
+        const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
+        await prisma.chat.upsert({
+          where: { jid: remoteJid },
+          update: {},
+          create: { jid: remoteJid, type: chatType }
+        }).catch(() => {})
+
+        messageData.push({
+          id: String(key.id),
+          chatJid: remoteJid,
+          fromMe: key.fromMe === true,
+          senderId,
+          participant: participantString,
+          timestamp,
+          messageType: getMessageType(message),
+          content: JSON.stringify(message ?? {}),
+          textContent: extractTextContent(message)
         })
+      }
 
       if (messageData.length > 0) {
-
         const msgOps: any[] = []
         const reactionOps: any[] = []
 
@@ -344,17 +262,21 @@ export async function handleHistorySync(
               if (reaction && reaction.key && reaction.key.id) {
                 const targetId = reaction.key.id
                 const emoji = reaction.text
-                const senderId = msg.participant || msg.remoteJid
                 
-                if (emoji) {
+                let reactorId = msg.senderId
+                if (msg.fromMe) {
+                  const meIdent = await prisma.identity.findFirst({ where: { isMe: true } })
+                  if (meIdent) reactorId = meIdent.id
+                }
+
+                if (emoji && reactorId) {
                   reactionOps.push(
                     (prisma as any).reaction.upsert({
-                      where: { messageId_senderId: { messageId: targetId, senderId } },
+                      where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
                       update: { text: emoji, timestamp: msg.timestamp },
                       create: {
                         messageId: targetId,
-                        remoteJid: msg.remoteJid,
-                        senderId,
+                        senderId: reactorId,
                         text: emoji,
                         timestamp: msg.timestamp
                       }
@@ -365,8 +287,9 @@ export async function handleHistorySync(
             } catch (e) {}
           } else {
             const update: Record<string, unknown> = {}
-            if (msg.remoteJid) update.remoteJid = msg.remoteJid
-            if (msg.participant !== null) update.participant = msg.participant
+            if (msg.chatJid) update.chatJid = msg.chatJid
+            if (msg.senderId !== undefined) update.senderId = msg.senderId
+            if (msg.participant !== undefined) update.participant = msg.participant
             if (msg.timestamp) update.timestamp = msg.timestamp
             if (msg.messageType !== 'unknown') update.messageType = msg.messageType
             if (msg.content !== '{}') update.content = msg.content
@@ -384,15 +307,12 @@ export async function handleHistorySync(
         }
 
         if (msgOps.length > 0) {
-          // Use createMany with skipDuplicates for much faster bulk insertion in SQLite
-          // This avoids the SELECT -> INSERT/UPDATE overhead of individual upserts
           try {
             await (prisma.message as any).createMany({
               data: messageData.filter(m => m.messageType !== 'reactionMessage'),
               skipDuplicates: true
             })
           } catch (e) {
-            // Fallback to individual upserts if createMany fails (unlikely in modern Prisma)
             await prisma.$transaction(msgOps)
           }
         }
@@ -400,17 +320,13 @@ export async function handleHistorySync(
         if (reactionOps.length > 0) await prisma.$transaction(reactionOps)
 
         messageCount += messageData.length
-        
-        // Yield to event loop between chunks
         await new Promise(resolve => setTimeout(resolve, 0))
       }
-
     }
-
   }
 
   console.log(
-    `[HistorySync] progress=${progress}% | contacts=${contactCount} chats=${chatCount} messages=${messageCount} | isLatest=${isLatest} | LID PN Mappings: ${mappingDict.size}`
+    `[HistorySync] progress=${progress}% | contacts=${contactCount} chats=${chatCount} messages=${messageCount} | isLatest=${isLatest}`
   )
 
   return {
@@ -420,5 +336,4 @@ export async function handleHistorySync(
     chatCount,
     messageCount
   }
-
 }

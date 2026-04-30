@@ -34,8 +34,10 @@ KEY RULES:
 - Only SELECT (or WITH...SELECT) statements are permitted.
 - Timestamps are stored as Unix epoch in SECONDS (not milliseconds).
 - To filter by date use: strftime('%s', 'YYYY-MM-DD') to convert a date string to a unix timestamp.
-- 'fromMe = 1' means the logged-in user sent the message; 'fromMe = 0' means received.
-- participant is only set for group messages (the actual sender); remoteJid is always the chat JID.
+- 'fromMe = 1' means the logged-in user sent the message.
+- SCHEMA CONTEXT - Message table: 'senderId' maps to the Identity table. 'participant' is the raw JID string. 'chatJid' is the chat/group ID.
+- SCHEMA CONTEXT - Identity table: 'displayName' is the local name the user explicitly saved in their contacts(null if not saved). 'pushName' is the public name chosen by the person themselves on WhatsApp. 'phoneNumber' may be null if hidden by group privacy (PNP).
+- SCHEMA CONTEXT - Group Members: Join ChatMember with Identity. To get their raw LIDs/JIDs, join with IdentityAlias.
 - Always provide a plain-English 'explanation' field — it is shown to the user before execution.
 - Results are capped at ${MAX_ROWS} rows automatically.`;
 

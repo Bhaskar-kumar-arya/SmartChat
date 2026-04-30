@@ -24,6 +24,11 @@ const api = {
     ipcRenderer.on('wa-sync-progress', listener)
     return () => { ipcRenderer.removeListener('wa-sync-progress', listener) }
   },
+  onWaSyncStatus: (callback: (status: string) => void) => {
+    const listener = (_event: any, status: string) => callback(status)
+    ipcRenderer.on('wa-sync-status', listener)
+    return () => { ipcRenderer.removeListener('wa-sync-status', listener) }
+  },
   onWaSyncComplete: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('wa-sync-complete', listener)

@@ -1,11 +1,10 @@
 import { AITool } from '../services/AIToolService';
 import { prisma } from '../auth';
-import { contactService } from '../services/ContactService';
 
 export class ReadChatTool implements AITool {
   name = 'readChat';
   description = 'Read messages from a specific WhatsApp chat with filtering options like date range, message limit, or relative to a message ID.';
-  requiresPermission = true; // Reading local history is generally safe for context
+  requiresPermission = true;
   parametersSchema = {
     type: 'object',
     properties: {
@@ -31,11 +30,9 @@ export class ReadChatTool implements AITool {
     
     if (!jid) throw new Error('Missing required argument: jid');
 
-    // Default to 20,000 if not explicitly provided
     const finalLimit = limit !== undefined ? Math.min(Math.max(1, limit), 20000) : 20000;
-    const where: any = { remoteJid: jid };
+    const where: any = { chatJid: jid }; // updated from remoteJid
     
-    // Handle specific message IDs first to get their timestamps
     let afterTs: bigint | undefined;
     let beforeTs: bigint | undefined;
 
@@ -49,7 +46,6 @@ export class ReadChatTool implements AITool {
       if (msg) beforeTs = msg.timestamp;
     }
 
-    // Handle date strings/timestamps
     if (afterDate) {
       const d = new Date(afterDate);
       const ts = BigInt(Math.floor(d.getTime() / 1000));
@@ -62,7 +58,6 @@ export class ReadChatTool implements AITool {
       if (!beforeTs || ts < beforeTs) beforeTs = ts;
     }
 
-    // Construct the timestamp filter
     if (afterTs !== undefined || beforeTs !== undefined) {
       where.timestamp = {};
       if (afterTs !== undefined) {
@@ -73,28 +68,16 @@ export class ReadChatTool implements AITool {
       }
     }
 
-    // Fetch messages (take finalLimit + 1 to check if there are more)
     const messages = await prisma.message.findMany({
       where,
       orderBy: { timestamp: 'desc' },
-      take: finalLimit + 1
+      take: finalLimit + 1,
+      include: { sender: true, chat: true } // includes relational data
     });
 
     const hasMore = messages.length > finalLimit;
     const resultMessages = hasMore ? messages.slice(0, finalLimit) : messages;
 
-    const sock = this.getSock();
-    
-    // Resolve names for enrichment
-    const jids = new Set<string>();
-    resultMessages.forEach(m => {
-      jids.add(m.remoteJid);
-      if (m.participant) jids.add(m.participant);
-    });
-
-    const nameMap = await contactService.batchResolveNames(Array.from(jids), sock);
-
-    // Format for AI
     let formattedResponse = `Results for chat ${jid}:\n`;
     formattedResponse += `Range: ${resultMessages.length} messages found.\n`;
     
@@ -111,14 +94,18 @@ export class ReadChatTool implements AITool {
       formattedResponse += `> [!IMPORTANT]\n> Message limit (${finalLimit}) reached. Internal history continues beyond this point.\n> To fetch older messages, use 'beforeMessageId' with "${oldest.id}".\n\n`;
     }
 
-    // Process chronologically (oldest first)
     const sorted = [...resultMessages].reverse();
     const participantMap: Record<string, string> = {};
+    
     sorted.forEach((m) => {
-      const senderId = m.participant || (m.fromMe ? 'me' : m.remoteJid);
-      const senderName = m.fromMe ? 'Me' : (nameMap.get(senderId) || senderId.split('@')[0]);
-      if (senderId && !m.fromMe && senderId !== 'me') {
-        participantMap[senderId] = senderName;
+      let senderName = 'Unknown';
+      if (m.fromMe) senderName = 'Me';
+      else if (m.sender) senderName = m.sender.displayName || m.sender.pushName || m.sender.verifiedName || m.sender.phoneNumber?.split('@')[0] || 'Unknown';
+      else if (m.participant) senderName = m.participant.split('@')[0];
+      else senderName = m.chatJid.split('@')[0];
+
+      if (!m.fromMe && m.participant) {
+        participantMap[m.participant] = senderName;
       }
     });
 
@@ -127,8 +114,12 @@ export class ReadChatTool implements AITool {
     }
 
     sorted.forEach((m) => {
-      const senderId = m.participant || (m.fromMe ? 'me' : m.remoteJid);
-      const senderName = m.fromMe ? 'Me' : (nameMap.get(senderId) || senderId.split('@')[0]);
+      let senderName = 'Unknown';
+      if (m.fromMe) senderName = 'Me';
+      else if (m.sender) senderName = m.sender.displayName || m.sender.pushName || m.sender.verifiedName || m.sender.phoneNumber?.split('@')[0] || 'Unknown';
+      else if (m.participant) senderName = m.participant.split('@')[0];
+      else senderName = m.chatJid.split('@')[0];
+
       const content = m.textContent || `[${m.messageType}]`;
       const dateStr = new Date(Number(m.timestamp) * 1000).toLocaleString();
 

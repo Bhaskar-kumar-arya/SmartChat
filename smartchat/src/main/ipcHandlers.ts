@@ -13,9 +13,6 @@ import { toolRegistry } from './services/AIToolService'
 import { AIToolInitializer } from './services/AIToolInitializer'
 import { audioTranscoderService } from './services/AudioTranscoderService'
 
-/**
- * Registers all IPC handlers for chat data, messaging, and identity resolution.
- */
 export function registerIpcHandlers(
   prisma: PrismaClient,
   getSock: () => ReturnType<typeof import('@whiskeysockets/baileys').default> | null
@@ -35,30 +32,37 @@ export function registerIpcHandlers(
         timestamp: true,
         pinned: true,
         muteExpiration: true,
-        isCommunity: true,
-        isAnnounce: true,
-        linkedParentJid: true,
+        type: true,
+        communityId: true,
+        community: {
+          select: {
+            jid: true
+          }
+        },
         profilePictureUrl: true
       },
       skip,
       take: pageSize
     })
     
-    const sock = getSock()
-
-    // 1. Collect all JIDs for name resolution
-    const jids = chats.map(c => c.jid)
-    
-    // 2. Resolve all names in one DB query (Fixes N+1)
-    const nameMap = await contactService.batchResolveNames(jids, sock)
-
+    // Fallback if chat.name is missing for a DM: resolve it dynamically
     const enriched = await Promise.all(
       chats.map(async (chat) => {
-        const name = nameMap.get(chat.jid) || chat.name || chat.jid.split('@')[0]
+        let name = chat.name
+        if (!name) {
+          if (chat.type === 'DM') {
+            const identId = await contactService.getIdentityIdByJid(chat.jid)
+            if (identId) {
+              const ident = await prisma.identity.findUnique({ where: { id: identId } })
+              if (ident) name = ident.displayName || ident.pushName || ident.verifiedName || ident.phoneNumber?.split('@')[0] || null
+            }
+          }
+          if (!name) name = chat.jid.split('@')[0]
+        }
 
         // Fetch the most recent message for preview
         const lastMsg = await prisma.message.findFirst({
-          where: { remoteJid: chat.jid },
+          where: { chatJid: chat.jid },
           orderBy: { timestamp: 'desc' },
           select: { textContent: true, messageType: true, timestamp: true }
         })
@@ -74,14 +78,14 @@ export function registerIpcHandlers(
                        lastMsg?.messageType === 'imageMessage' ? 'Photo' : 
                        lastMsg?.messageType === 'videoMessage' ? 'Video' :
                        lastMsg?.messageType === 'documentMessage' ? 'Document' :
-                       (lastMsg?.textContent || (lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
+                       (lastMsg?.textContent || (lastMsg?.messageType && lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
           lastMessageTimestamp: effectiveTimestamp.toString(),
           pinned: chat.pinned,
           muteExpiration: chat.muteExpiration.toString(),
-          profilePictureUrl: (chat as any).profilePictureUrl,
-          isCommunity: chat.isCommunity,
-          isAnnounce: chat.isAnnounce,
-          linkedParentJid: chat.linkedParentJid
+          profilePictureUrl: chat.profilePictureUrl,
+          isCommunity: chat.type === 'COMMUNITY',
+          isAnnounce: chat.type === 'ANNOUNCE',
+          linkedParentJid: (chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') ? chat.community?.jid : null
         }
       })
     )
@@ -97,59 +101,51 @@ export function registerIpcHandlers(
       const sock = getSock()
 
       const messages = await prisma.message.findMany({
-        where: { remoteJid: jid },
+        where: { chatJid: jid },
         orderBy: { timestamp: 'desc' },
         skip,
-        take: pageSize
+        take: pageSize,
+        include: { sender: true }
       })
 
-      // 1. Collect all JIDs for name resolution in this page
-      const jids = new Set<string>()
-      messages.forEach(m => {
-        if (m.participant) jids.add(m.participant)
-        jids.add(m.remoteJid)
-      })
-
-      // 2. Collect reaction sender IDs
-      const messageIds = messages.map((m) => m.id)
-      const allReactions = await (prisma as any).reaction.findMany({
-        where: { messageId: { in: messageIds } }
-      })
-      allReactions.forEach((r: any) => jids.add(r.senderId))
-
-      // 3. Add context info (quoted participants and mentions) to resolution set
+      // We still need to parse contextInfo for mentions
+      const additionalJids = new Set<string>()
       messages.forEach(m => {
           try {
               const content = JSON.parse(m.content)
               const unwrapped = messageService.unwrapMessage(content)
               const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.contextInfo
               if (ctx) {
-                  if (ctx.participant) jids.add(ctx.participant)
-                  if (ctx.mentionedJid) ctx.mentionedJid.forEach((j: string) => jids.add(j))
+                  if (ctx.participant) additionalJids.add(ctx.participant)
+                  if (ctx.mentionedJid) ctx.mentionedJid.forEach((j: string) => additionalJids.add(j))
                   if (ctx.quotedMessage) {
                       const q = messageService.unwrapMessage(ctx.quotedMessage)
                       const qCtx = q?.extendedTextMessage?.contextInfo || q?.contextInfo
-                      if (qCtx && qCtx.mentionedJid) qCtx.mentionedJid.forEach((j: string) => jids.add(j))
+                      if (qCtx && qCtx.mentionedJid) qCtx.mentionedJid.forEach((j: string) => additionalJids.add(j))
                   }
               }
           } catch(e) {}
       })
 
-      // 4. Resolve all names in bulk (Fixes N+1)
-      const nameMap = await contactService.batchResolveNames(Array.from(jids), sock)
+      const nameMap = await contactService.batchResolveNames(Array.from(additionalJids), sock)
 
-      // 5. Enrich messages using service
+      const messageIds = messages.map((m) => m.id)
+      const allReactions = await prisma.reaction.findMany({
+        where: { messageId: { in: messageIds } },
+        include: { sender: true }
+      })
+
       const messagesWithNames = await Promise.all(
         messages.map(async (m) => {
           const enriched = await messageService.enrichMessage(m, sock, nameMap)
-          const msgReactions = allReactions.filter((r: any) => r.messageId === m.id)
+          const msgReactions = allReactions.filter((r) => r.messageId === m.id)
           
           return {
             ...enriched,
-            reactions: msgReactions.map((r: any) => ({ 
+            reactions: msgReactions.map((r) => ({ 
               ...r, 
               timestamp: r.timestamp.toString(),
-              senderName: nameMap.get(r.senderId) || r.senderId.replace(/@.*$/, '')
+              senderName: r.sender.displayName || r.sender.pushName || r.sender.phoneNumber?.split('@')[0] || 'Unknown'
             }))
           }
         })
@@ -164,30 +160,12 @@ export function registerIpcHandlers(
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
 
-    // Community Check & Logging
-    if (jid.endsWith('@g.us')) {
-      try {
-        const metaResult = await sock.groupMetadata(jid)
-        const meta = (metaResult as any).metadata || metaResult
-        const isAnnounce = meta.isCommunityAnnounce || meta.announce
-        const isComm = meta.isCommunity
-        
-        if (isComm || isAnnounce) {
-          if (isAnnounce && !metaResult.participants.find(p => p.id === sock.user?.id)?.admin) {
-            // Logic handled by UI restriction usually
-          }
-        }
-      } catch (e) {
-        // Metadata might not be cached or accessible
-      }
-    }
-
     let quoted: any = undefined
     if (quotedMsgId) {
       const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
       if (qm && qm.content) {
         try { 
-          quoted = { key: { id: quotedMsgId, remoteJid: jid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
+          quoted = { key: { id: quotedMsgId, remoteJid: qm.chatJid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
         } catch (e) {}
       }
     }
@@ -198,11 +176,9 @@ export function registerIpcHandlers(
     const sentMsg = await sock.sendMessage(jid, messageContent, { quoted } as any)
     if (!sentMsg) throw new Error('Failed to send message')
 
-    // Persist via Service
     const processed = await messageService.processMessage(sentMsg, sock)
     await chatService.updateTimestamp(jid, processed.timestamp)
 
-    // Enrich for UI
     const nameMap = await contactService.batchResolveNames([processed.participant || jid, ...(mentions || [])], sock)
     return messageService.enrichMessage(processed, sock, nameMap)
   })
@@ -212,11 +188,11 @@ export function registerIpcHandlers(
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
 
-    const dbMsg = await prisma.message.findUnique({ where: { id: messageId } })
+    const dbMsg = await prisma.message.findUnique({ where: { id: messageId }, include: { sender: true } })
     if (!dbMsg) throw new Error('Message not found')
 
     const msgKey = {
-      remoteJid: jid,
+      remoteJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe,
       id: messageId,
       participant: dbMsg.participant || undefined
@@ -229,13 +205,13 @@ export function registerIpcHandlers(
 
     if (!result) throw new Error('Failed to edit message')
 
-    // Update local DB and return enriched message
     const updated = await prisma.message.update({
       where: { id: messageId },
-      data: { textContent: newText, isEdited: true }
+      data: { textContent: newText, isEdited: true },
+      include: { sender: true }
     })
 
-    const nameMap = await contactService.batchResolveNames([updated.participant || jid], sock)
+    const nameMap = await contactService.batchResolveNames([updated.participant || updated.chatJid], sock)
     return messageService.enrichMessage(updated, sock, nameMap)
   })
 
@@ -248,7 +224,7 @@ export function registerIpcHandlers(
     if (!dbMsg) throw new Error('Message not found')
 
     const msgKey = {
-      remoteJid: jid,
+      remoteJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe,
       id: messageId,
       participant: dbMsg.participant || undefined
@@ -256,7 +232,6 @@ export function registerIpcHandlers(
 
     await sock.sendMessage(jid, { delete: msgKey })
 
-    // Update local DB
     await prisma.message.update({
       where: { id: messageId },
       data: { isDeleted: true }
@@ -275,7 +250,7 @@ export function registerIpcHandlers(
         const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
         if (qm && qm.content) {
           try { 
-            quoted = { key: { id: quotedMsgId, remoteJid: jid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
+            quoted = { key: { id: quotedMsgId, remoteJid: qm.chatJid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
           } catch (e) {}
         }
     }
@@ -287,7 +262,6 @@ export function registerIpcHandlers(
     const sentMsg = await sock.sendMessage(jid, sendOptions, { quoted } as any)
     if (!sentMsg) throw new Error('Failed to send media message')
 
-    // Persist and enrich
     const processed = await messageService.processMessage(sentMsg, sock)
     await chatService.updateTimestamp(jid, processed.timestamp)
     
@@ -361,9 +335,8 @@ export function registerIpcHandlers(
             for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk])
             fs.writeFileSync(filePath, buffer)
         } catch (err: any) {
-            // Re-fetch media if expired (410)
             if (err?.data === 410 || err?.output?.statusCode === 410) {
-                const updatedMsg = await sock.updateMediaMessage({ key: { id: dbMsg.id, remoteJid: dbMsg.remoteJid, fromMe: dbMsg.fromMe, participant: dbMsg.participant }, message: rawMessage } as any)
+                const updatedMsg = await sock.updateMediaMessage({ key: { id: dbMsg.id, remoteJid: dbMsg.chatJid, fromMe: dbMsg.fromMe, participant: dbMsg.participant }, message: rawMessage } as any)
                 const updatedMedia = messageService.unwrapMessage(updatedMsg.message)
                 const target = updatedMedia.imageMessage || updatedMedia.stickerMessage || updatedMedia.videoMessage || updatedMedia.audioMessage
                 if (target) {
@@ -371,13 +344,12 @@ export function registerIpcHandlers(
                     let buffer = Buffer.from([])
                     for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk])
                     fs.writeFileSync(filePath, buffer)
-                    Object.assign(unwrapped, updatedMedia) // Update local object
+                    Object.assign(unwrapped, updatedMedia)
                 }
             } else throw err
         }
     }
 
-    // Update local URI and save
     if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
     if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
     if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
@@ -386,10 +358,11 @@ export function registerIpcHandlers(
 
     const updated = await prisma.message.update({
       where: { id: msgId },
-      data: { content: JSON.stringify(rawMessage) }
+      data: { content: JSON.stringify(rawMessage) },
+      include: { sender: true }
     })
 
-    const nameMap = await contactService.batchResolveNames([updated.participant || updated.remoteJid], sock)
+    const nameMap = await contactService.batchResolveNames([updated.participant || updated.chatJid], sock)
     return messageService.enrichMessage(updated, sock, nameMap)
   })
 
@@ -406,7 +379,6 @@ export function registerIpcHandlers(
         }
         return false
     } catch (err) {
-        console.error('[IPC] Failed to open file:', err)
         return false
     }
   })
@@ -416,8 +388,11 @@ export function registerIpcHandlers(
     const sock = getSock()
     if (sock) await sock.logout().catch(() => {})
     await prisma.message.deleteMany()
+    await prisma.chatMember.deleteMany()
     await prisma.chat.deleteMany()
-    await prisma.contact.deleteMany()
+    await prisma.community.deleteMany()
+    await prisma.identityAlias.deleteMany()
+    await prisma.identity.deleteMany()
     await prisma.authState.deleteMany()
     return true
   })
@@ -428,24 +403,12 @@ export function registerIpcHandlers(
     return contactService.getProfilePicture(jid, type, sock, forceRefresh)
   })
 
-  // ── Get Group Metadata ────────────────────────────────────────────────
+  // ── Get Group Participants ────────────────────────────────────────────
   ipcMain.handle('get-group-participants', async (_event, jid: string) => {
     const sock = getSock()
     if (!sock || !jid.endsWith('@g.us')) return []
     try {
       const metadata = await sock.groupMetadata(jid)
-      
-      // Community metadata logging
-      // @ts-ignore
-      const meta = metadata.metadata || metadata
-      const isComm = meta.isCommunity
-      const isAnn = meta.isCommunityAnnounce
-      const parent = meta.linkedParentJid
-      
-      if (isComm || isAnn || parent) {
-        // metadata processed locally if needed
-      }
-
       const jids = metadata.participants.map(p => p.id)
       const nameMap = await contactService.batchResolveNames(jids, sock)
       return metadata.participants.map(p => ({
@@ -455,12 +418,11 @@ export function registerIpcHandlers(
         isMe: !!sock.user && p.id === sock.user.id
       }))
     } catch (err) {
-      console.error('[IPC] get-group-participants failed:', err)
       return []
     }
   })
 
-  // ── Global Search (chats, contacts, messages) ───────────────────────
+  // ── Global Search ────────────────────────────────────────────────────
   ipcMain.handle('search-all', async (_event, query: string, mode: 'normal' | 'deep' = 'normal', filters?: { jids?: string[], fromDate?: string, toDate?: string }) => {
     const sock = getSock()
     const parsedFilters = filters ? {
@@ -471,7 +433,7 @@ export function registerIpcHandlers(
     return searchService.searchAll(query, mode, sock, parsedFilters)
   })
 
-  // ── Index Embeddings (background, with progress events) ──────────────
+  // ── Index Embeddings ────────────────────────────────────────────────
   ipcMain.handle('index-embeddings', async (_event) => {
     const win = BrowserWindow.getAllWindows()[0]
     try {
@@ -487,14 +449,11 @@ export function registerIpcHandlers(
   ipcMain.handle('clear-vectors', async (_event) => {
     try {
       await embeddingService.clearAllVectors()
-    } catch (err) {
-      console.error('[IPC] clear-vectors failed:', err)
-    }
+    } catch (err) {}
   })
 
   // ── AI Handlers ───────────────────────────────────────────────────────
   
-  // Register AI Tools via dedicated initializer
   AIToolInitializer.initializeAll(getSock);
   
   embeddingService.setOnActiveStateSync((isActive) => {
@@ -531,41 +490,32 @@ export function registerIpcHandlers(
       await aiService.generateResponseStream(prompt, contextChats, history, mentions, options, (chunk) => {
         event.sender.send(`${channelId}-chunk`, chunk);
       });
-
       event.sender.send(`${channelId}-end`);
     } catch (err: any) {
-      console.error('[IPC] ai-chat-stream error:', err);
       event.sender.send(`${channelId}-error`, err.message || String(err));
     }
   });
 
   ipcMain.handle('get-chat-context', async (_event, jid: string) => {
-    // Get top 100 messages
     const messages = await prisma.message.findMany({
-      where: { remoteJid: jid },
+      where: { chatJid: jid },
       orderBy: { timestamp: 'desc' },
-      take: 100
+      take: 100,
+      include: { sender: true }
     });
     
     const sock = getSock();
-    const jids = new Set<string>();
-    messages.forEach(m => {
-      jids.add(m.remoteJid);
-      if (m.participant) jids.add(m.participant);
-    });
+    const nameMap = new Map<string, string>() // fallback map, usually resolved via sender
 
-    const nameMap = await contactService.batchResolveNames(Array.from(jids), sock);
-    
     const enriched = await Promise.all(
       messages.map(async (m) => await messageService.enrichMessage(m, sock, nameMap))
     );
     
-    // Sort chronologically
     return enriched.reverse();
   })
 }
 
-// Exporting helpers for index.ts (legacy compatibility)
+// Exporting helpers for index.ts
 export const resolveContactName = (jid: string, chatName: string | null, sock: any) => 
     contactService.resolveName(jid, chatName, sock)
 export const unwrapMessage = (msg: any) => messageService.unwrapMessage(msg)

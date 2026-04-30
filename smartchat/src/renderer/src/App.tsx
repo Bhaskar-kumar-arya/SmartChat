@@ -9,6 +9,7 @@ export function App() {
   const [qr, setQr] = useState<string | null>(null)
   const [appState, setAppState] = useState<AppState>('initializing')
   const [syncProgress, setSyncProgress] = useState<number>(0)
+  const [syncStatus, setSyncStatus] = useState<string>('Importing your chat history into local storage...')
 
   useEffect(() => {
     const unSubQr = api.onWaQr((newQr: string) => {
@@ -35,6 +36,10 @@ export function App() {
       }
     })
 
+    const unSubSyncStatus = api.onWaSyncStatus((status: string) => {
+      setSyncStatus(status)
+    })
+
     const unSubSyncComp = api.onWaSyncComplete(() => {
       setSyncProgress(100)
       setAppState('ready')
@@ -45,6 +50,7 @@ export function App() {
       unSubConn()
       unSubLogout()
       unSubSyncPrg()
+      unSubSyncStatus()
       unSubSyncComp()
     }
   }, [appState])
@@ -85,7 +91,7 @@ export function App() {
                 />
               </div>
               <p className="sync-subtitle">
-                Importing your chat history into local storage...
+                {syncStatus}
               </p>
               <button
                 onClick={() => window.api.skipSync()}

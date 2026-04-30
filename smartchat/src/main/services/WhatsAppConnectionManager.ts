@@ -59,9 +59,14 @@ export class WhatsAppConnectionManager {
       const orphanChats = await prisma.chat.count()
       if (orphanChats > 0) {
         console.log(`[Cleanup] No auth creds but found ${orphanChats} orphan chats — wiping stale data`)
+        await prisma.reaction.deleteMany()
+        await prisma.messageVector.deleteMany()
         await prisma.message.deleteMany()
+        await prisma.chatMember.deleteMany()
         await prisma.chat.deleteMany()
-        await prisma.contact.deleteMany()
+        await prisma.community.deleteMany()
+        await prisma.identityAlias.deleteMany()
+        await prisma.identity.deleteMany()
       }
     }
 
@@ -129,9 +134,14 @@ export class WhatsAppConnectionManager {
         } else {
           console.log('Logged out — wiping all data for fresh QR...')
           try {
+            await prisma.reaction.deleteMany()
+            await prisma.messageVector.deleteMany()
             await prisma.message.deleteMany()
+            await prisma.chatMember.deleteMany()
             await prisma.chat.deleteMany()
-            await prisma.contact.deleteMany()
+            await prisma.community.deleteMany()
+            await prisma.identityAlias.deleteMany()
+            await prisma.identity.deleteMany()
             await prisma.authState.deleteMany()
           } catch (err) {
             console.error('Error wiping data:', err)
@@ -179,14 +189,31 @@ export class WhatsAppConnectionManager {
           const groups = await this.currentSock.groupFetchAllParticipating()
           
           // Persist the freshly fetched metadata to the DB
-          for (const jid in groups) {
+          const groupKeys = Object.keys(groups)
+          const totalGroups = groupKeys.length
+          let groupCount = 0
+
+          this.mainWindow?.webContents.send('wa-sync-progress', 99)
+          this.mainWindow?.webContents.send('wa-sync-status', 'Fetching group metadata from WhatsApp...')
+
+          for (const jid of groupKeys) {
+            if (++groupCount % 5 === 0) {
+              await new Promise(r => setImmediate(r)) // Yield
+              this.mainWindow?.webContents.send('wa-sync-status', `Syncing group members... (${groupCount} / ${totalGroups})`)
+            }
             const raw = groups[jid] as any
             const isComm = raw.isCommunity || raw.isParentGroup
             const isAnn = raw.isAnnounce || raw.isCommunityAnnounce || raw.isDefaultSubgroup
             const parent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
 
-            if (isComm || isAnn || parent) {
-              await chatService.upsertChat(jid, raw).catch(() => {})
+            // Ensure the Chat exists (for both regular groups and communities)
+            await chatService.upsertChat(jid, raw).catch(() => {})
+
+            // Sync all members
+            if (raw.participants && raw.participants.length > 0) {
+              await chatService.syncGroupMembers(jid, raw.participants).catch((err) => {
+                console.error(`Failed to sync members for ${jid}:`, err)
+              })
             }
           }
         } catch (err) {
@@ -249,7 +276,7 @@ export class WhatsAppConnectionManager {
               if (this.mainWindow && !this.mainWindow.isDestroyed()) {
                 const dbMsg = await prisma.message.findUnique({ where: { id: processed.targetId } })
                 if (dbMsg) {
-                  const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.remoteJid], sock)
+                  const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.chatJid], sock)
                   const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
                   this.mainWindow.webContents.send('message-edited', enriched)
                 }
@@ -329,7 +356,7 @@ export class WhatsAppConnectionManager {
                 if (this.mainWindow && !this.mainWindow.isDestroyed()) {
                   const dbMsg = await prisma.message.findUnique({ where: { id: key.id } })
                   if (dbMsg) {
-                    const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.remoteJid], sock)
+                    const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.chatJid], sock)
                     const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
                     this.mainWindow.webContents.send('message-edited', enriched)
                   }
@@ -411,6 +438,34 @@ export class WhatsAppConnectionManager {
     })
 
 
+    // Group Participants Update (real-time add/remove/promote)
+    sock.ev.on('group-participants.update', async (update) => {
+      const { id, participants, action } = update
+      if (!id || !participants) return
+
+      for (const jid of participants) {
+        let identityId = await contactService.getIdentityIdByJid(jid)
+        if (!identityId) {
+           await contactService.upsertContact({ id: jid }).catch(() => {})
+           identityId = await contactService.getIdentityIdByJid(jid)
+        }
+
+        if (identityId) {
+           if (action === 'add' || action === 'promote' || action === 'demote') {
+              const role = action === 'promote' ? 'ADMIN' : 'MEMBER' // Baileys doesn't easily expose superadmin on promote
+              await prisma.chatMember.upsert({
+                where: { chatJid_identityId: { chatJid: id, identityId } },
+                update: { role },
+                create: { chatJid: id, identityId, role }
+              }).catch(() => {})
+           } else if (action === 'remove') {
+              await prisma.chatMember.delete({
+                where: { chatJid_identityId: { chatJid: id, identityId } }
+              }).catch(() => {})
+           }
+        }
+      }
+    })
 
     // Presence Update
     sock.ev.on('presence.update', async (update) => {

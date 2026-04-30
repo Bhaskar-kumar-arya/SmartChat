@@ -47,7 +47,7 @@ export class MessageService {
     }
 
     const remoteJid = key.remoteJid || ''
-    const participant = key.participant || null
+    const participantString = key.participant || (remoteJid.endsWith('@g.us') ? null : remoteJid)
 
     // 2. Extract text content & Unwrap
     let textContent: string | null = null
@@ -93,22 +93,29 @@ export class MessageService {
     )
 
     // 5. Ingest metadata (PushName, AltJID)
-    if (msg.pushName) {
-        const senderId = participant || remoteJid
-        if (senderId) {
-            contactService.upsertContact({ id: senderId, name: msg.pushName, notify: msg.pushName }, { overwriteName: false }).catch(() => {})
-        }
+    if (msg.pushName && participantString) {
+      await contactService.upsertContact({ id: participantString, name: msg.pushName, notify: msg.pushName }, { overwriteName: false }).catch(() => {})
     }
 
     const altJid = (key as any).participantAlt || (key as any).remoteJidAlt;
     if (altJid && typeof altJid === 'string' && altJid.includes('@s.whatsapp.net')) {
-        const currentLid = participant?.includes('@lid') ? participant : (remoteJid?.includes('@lid') ? remoteJid : null);
-        if (currentLid) {
-            contactService.linkLidAndPn(currentLid, altJid).catch(() => {})
-        }
+      const currentLid = participantString?.includes('@lid') ? participantString : (remoteJid?.includes('@lid') ? remoteJid : null);
+      if (currentLid) {
+        await contactService.linkLidAndPn(currentLid, altJid).catch(() => {})
+      }
     }
 
-    // 6. Handle Protocol Messages (Revoke/Edit) separately before persisting
+    // 6. Resolve Identity ID
+    let senderId: number | null = null
+    if (!key.fromMe && participantString) {
+      senderId = await contactService.getIdentityIdByJid(participantString)
+      if (!senderId) {
+        await contactService.upsertContact({ id: participantString })
+        senderId = await contactService.getIdentityIdByJid(participantString)
+      }
+    }
+
+    // 7. Handle Protocol Messages (Revoke/Edit) separately before persisting
     if (messageType === 'protocolMessage' && unwrapped) {
         const protocol = unwrapped.protocolMessage
         const targetId = protocol?.key?.id
@@ -141,30 +148,55 @@ export class MessageService {
         return null // Don't save the protocol message itself
     }
 
-    // 7. Persist to DB
+    // Ensure chat exists
+    const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
+    await prisma.chat.upsert({
+      where: { jid: remoteJid },
+      update: {},
+      create: { jid: remoteJid, type: chatType }
+    }).catch(() => {})
+
+    // 8. Persist to DB
     if (messageType === 'reactionMessage') {
         const targetId = rawMessage.reactionMessage?.key?.id
         const emoji = rawMessage.reactionMessage?.text
-        const senderId = participant || remoteJid
-        
-        if (targetId && senderId) {
+        const reactorString = participantString || remoteJid
+        let reactorId = senderId
+
+        if (key.fromMe) {
+          // If fromMe, we need our own identity
+          const meIdent = await prisma.identity.findFirst({ where: { isMe: true } })
+          if (meIdent) reactorId = meIdent.id
+        }
+
+        if (targetId && reactorId) {
             if (!emoji) {
                 await (prisma as any).reaction.deleteMany({
-                    where: { messageId: targetId, senderId }
+                    where: { messageId: targetId, senderId: reactorId }
                 }).catch(() => {})
             } else {
                 await (prisma as any).reaction.upsert({
-                    where: { messageId_senderId: { messageId: targetId, senderId } },
+                    where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
                     update: { text: emoji, timestamp },
-                    create: { messageId: targetId, remoteJid, senderId, text: emoji, timestamp }
+                    create: { messageId: targetId, senderId: reactorId, text: emoji, timestamp }
                 }).catch(() => {})
             }
         }
     } else {
         await prisma.message.upsert({
             where: { id: key.id },
-            update: { textContent, messageType, content: JSON.stringify(rawMessage || {}), timestamp },
-            create: { id: key.id, remoteJid, fromMe: key.fromMe === true, participant, timestamp, messageType, content: JSON.stringify(rawMessage || {}), textContent }
+            update: { textContent, messageType, content: JSON.stringify(rawMessage || {}), timestamp, senderId, participant: participantString },
+            create: { 
+              id: key.id, 
+              chatJid: remoteJid, 
+              fromMe: key.fromMe === true, 
+              senderId, 
+              participant: participantString,
+              timestamp, 
+              messageType, 
+              content: JSON.stringify(rawMessage || {}), 
+              textContent 
+            }
         })
 
         // Auto-index new text messages for semantic search (fire-and-forget)
@@ -179,7 +211,8 @@ export class MessageService {
         id: key.id,
         remoteJid,
         fromMe: key.fromMe === true,
-        participant,
+        senderId,
+        participant: participantString, // passing it up for UI/IPC enriched handling
         timestamp,
         messageType,
         textContent,
@@ -191,8 +224,16 @@ export class MessageService {
    * Enriches a message object with contact names and other metadata for UI display.
    */
   async enrichMessage(msg: any, _sock: any, nameMap: Map<string, string>): Promise<any> {
-    const senderId = msg.participant || msg.remoteJid
-    const participantName = nameMap.get(senderId) || senderId.replace(/@.*$/, '')
+    // msg.senderId is the Integer ID. nameMap should probably be changed or we resolve it locally.
+    // If msg has `sender` populated from Prisma:
+    let participantName = 'Unknown'
+    if (msg.fromMe) {
+      participantName = 'Me'
+    } else if (msg.sender) {
+      participantName = msg.sender.displayName || msg.sender.pushName || msg.sender.verifiedName || msg.sender.phoneNumber?.split('@')[0] || 'Unknown'
+    } else if (msg.participant) { // fallback
+      participantName = nameMap.get(msg.participant) || msg.participant.replace(/@.*$/, '')
+    }
 
     let finalContent: any = {}
     try { finalContent = JSON.parse(msg.content) } catch (e) {}
