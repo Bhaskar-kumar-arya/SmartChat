@@ -73,9 +73,7 @@ export class ExecuteScriptTool implements AITool {
       .getAllTools()
       .filter(t => t.name !== this.name) // no recursive script execution
       .map(t => {
-        // Use only the first line of each description to keep the prompt concise
-        const oneLiner = t.description.split('\n').find(l => l.trim().length > 0) ?? t.description;
-        return `  • ${t.name}(args)  →  ${oneLiner}`;
+        return `\n--- TOOL: ${t.name}(args) ---\n${t.description}\n`;
       })
       .join('\n');
 

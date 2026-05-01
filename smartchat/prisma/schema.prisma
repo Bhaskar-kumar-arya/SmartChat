@@ -1,0 +1,191 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ── 1. IDENTITY ──────────────────────────────────────────────────────────────
+/// Canonical record for a person (contact or self). One row per unique human.
+model Identity {
+  /// Auto-increment primary key (internal — use JID/alias for lookups).
+  id                Int       @id @default(autoincrement())
+  /// Primary phone-number JID, e.g. 919931386969@s.whatsapp.net. Unique if known.
+  phoneNumber       String?   @unique
+  /// Name saved locally in the phonebook — highest display priority, null if not a saved contact.
+  displayName       String?
+  /// Public name the person set on their own WhatsApp profile (push/notify name).
+  pushName          String?
+  /// WhatsApp Business verified name (only set for WA Business accounts).
+  verifiedName      String?
+  /// URL to the contact's profile picture (may be stale after privacy changes).
+  profilePictureUrl String?
+  /// True if this Identity row represents the logged-in user.
+  isMe              Boolean   @default(false)
+
+  aliases           IdentityAlias[]
+  memberships       ChatMember[]
+  messages          Message[]
+  reactions         Reaction[]
+
+  @@index([phoneNumber])
+}
+
+/// Maps every known JID variant (phone, LID, bot) to a canonical Identity row.
+/// [AI RULE]: One person often has both 'LID' and 'PN' rows. To get exactly one 
+/// JID per person AND PRIORITIZE LID, you MUST 
+/// use this SQL pattern:
+/// SELECT jid FROM IdentityAlias WHERE type IN ('LID', 'PN') GROUP BY identityId HAVING type = MIN(type)
+model IdentityAlias {
+  /// The raw WhatsApp JID string (e.g. 919XXXXXXXXX@s.whatsapp.net, @lid, @bot).
+  jid        String    @id
+  /// JID type: "LID" (Linked ID - CANONICAL), "PN" (Phone Number), "BOT".
+  type       String
+  identity   Identity  @relation(fields: [identityId], references: [id])
+  /// FK → Identity.id — the canonical person this alias belongs to.
+  identityId Int
+
+  @@index([identityId])
+}
+
+// ── 3. AUTH STATE ────────────────────────────────────────────────────────────
+/// Internal Baileys/WhatsApp session persistence. Do not query directly.
+model AuthState {
+  id   String @id
+  data String
+}
+
+// ── 4. CHAT HIERARCHY ────────────────────────────────────────────────────────
+/// Every WhatsApp conversation: DMs, groups, communities, and announcement channels.
+model Chat {
+  /// WhatsApp JID for this chat (e.g. 919XXXXXXXXX@s.whatsapp.net for DM, groupid@g.us for group).
+  jid              String    @id
+  /// Conversation type: "DM", "GROUP", "COMMUNITY" (root), "ANNOUNCE" (read-only channel), "SUBGROUP".
+  type             String
+  /// Number of unread messages. 0 means fully read.
+  unreadCount      Int       @default(0)
+  /// Unix timestamp (seconds) of the most recent message in this chat.
+  timestamp        BigInt    @default(0)
+  /// 1 if pinned to the top of the chat list, 0 otherwise.
+  pinned           Int       @default(0)
+  /// Unix timestamp (seconds) until which this chat is muted. 0 = not muted.
+  muteExpiration   BigInt    @default(0)
+  /// True if the user has archived this chat.
+  isArchived       Boolean   @default(false)
+  /// URL to the group/chat profile picture.
+  profilePictureUrl String?
+  /// Display name of the chat as shown in the contact/group list.
+  name             String?
+
+  community        Community? @relation("CommunityChats", fields: [communityId], references: [id])
+  /// FK → Community.id — the parent community this chat belongs to (null for DMs and standalone groups).
+  communityId      Int?
+
+  members          ChatMember[]
+  messages         Message[]
+
+  @@index([timestamp])
+  @@index([communityId])
+}
+
+// ── 5. COMMUNITY ─────────────────────────────────────────────────────────────
+/// A WhatsApp Community — a parent container that groups related sub-chats together.
+model Community {
+  /// Auto-increment primary key.
+  id             Int      @id @default(autoincrement())
+  /// Root/owner group JID for the community (the @g.us JID of the community itself).
+  jid            String   @unique
+  /// Display name of the community.
+  name           String?
+  /// JID of the linked announcement-only channel for this community.
+  announceJid    String?
+
+  chats          Chat[]   @relation("CommunityChats")
+}
+
+// ── 6. CHAT MEMBERSHIP ───────────────────────────────────────────────────────
+/// Records which Identity is a member of which Chat (group). Composite PK on (chatJid, identityId).
+model ChatMember {
+  chat       Chat     @relation(fields: [chatJid], references: [jid])
+  /// FK → Chat.jid — which group this membership belongs to.
+  chatJid    String
+  identity   Identity @relation(fields: [identityId], references: [id])
+  /// FK → Identity.id — the member. JOIN with Identity to get display/push name.
+  identityId Int
+  /// Member's role in the group: "MEMBER", "ADMIN", or "SUPERADMIN".
+  role       String   @default("MEMBER")
+  /// Unix timestamp (seconds) when this person joined the group (may be null if unknown).
+  joinedAt   BigInt?
+
+  @@id([chatJid, identityId])
+  @@index([identityId])
+}
+
+// ── 7. MESSAGE ───────────────────────────────────────────────────────────────
+/// Every individual WhatsApp message across all chats.
+model Message {
+  /// Unique WhatsApp message ID (scoped per chat).
+  id          String    @id
+  chat        Chat      @relation(fields: [chatJid], references: [jid])
+  /// FK → Chat.jid — which conversation this message belongs to.
+  chatJid     String
+  sender      Identity? @relation(fields: [senderId], references: [id])
+  /// FK → Identity.id — who sent this message. NULL when fromMe=true (sent by logged-in user).
+  senderId    Int?
+  /// Raw sender JID for this specific message (needed for edits/revokes in community chats).
+  participant String?
+  /// True if the logged-in user sent this message, false if received.
+  fromMe      Boolean
+  /// Unix timestamp in SECONDS when the message was sent.
+  timestamp   BigInt
+  /// WhatsApp message type: "text", "image", "video", "audio", "document", "sticker", "poll", etc.
+  messageType String
+  /// Full serialised message content (JSON). Use textContent for plain readable text.
+  content     String
+  /// Extracted plain-text body of the message (null for media-only messages with no caption).
+  textContent String?
+  /// True if the message was deleted/revoked by the sender.
+  isDeleted   Boolean   @default(false)
+  /// True if the message was subsequently edited by the sender.
+  isEdited    Boolean   @default(false)
+
+  reactions   Reaction[]
+  vector      MessageVector?
+
+  @@index([chatJid, timestamp(sort: Desc)])
+  @@index([timestamp])
+  @@index([senderId])
+}
+
+// ── 8. REACTION ──────────────────────────────────────────────────────────────
+/// Emoji reactions on messages. Composite PK on (messageId, senderId).
+model Reaction {
+  message    Message  @relation(fields: [messageId], references: [id])
+  /// FK → Message.id — which message was reacted to.
+  messageId  String
+  sender     Identity @relation(fields: [senderId], references: [id])
+  /// FK → Identity.id — who reacted.
+  senderId   Int
+  /// The emoji used as the reaction (e.g. "👍", "❤️").
+  text       String
+  /// Unix timestamp (seconds) when the reaction was sent.
+  timestamp  BigInt
+
+  @@id([messageId, senderId])
+  @@index([messageId])
+}
+
+// ── 9. MESSAGE VECTOR ────────────────────────────────────────────────────────
+/// Stores embedding vectors for semantic search (managed by VectorDB / sqlite-vec).
+model MessageVector {
+  message   Message @relation(fields: [messageId], references: [id])
+  /// FK → Message.id — the message this vector represents.
+  messageId String  @id
+  /// Serialised float32 embedding vector (768 dimensions).
+  vector    String
+}
