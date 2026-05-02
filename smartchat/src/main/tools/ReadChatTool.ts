@@ -3,7 +3,31 @@ import { prisma } from '../auth';
 
 export class ReadChatTool implements AITool {
   name = 'readChat';
-  description = 'Read messages from a specific WhatsApp chat with filtering options like date range, message limit, or relative to a message ID.';
+  description = `Read the message history of a specific WhatsApp chat by JID.
+
+WHEN TO USE:
+- When you need the actual text content of messages in a specific chat
+- Use queryDatabase for aggregations, cross-chat analysis, or when you only need counts/metadata
+
+HOW TO USE:
+- 'jid' is required and must be the exact WhatsApp JID of the chat
+- 'limit' is optional — omit it to fetch up to 20,000 messages. Only set it when you need fewer than the full history
+- Use 'afterDate' / 'beforeDate' (ISO strings) to scope to a time window
+- For pagination: take the 'Oldest Message ID' from a previous result and pass it as 'beforeMessageId'
+
+WHAT YOU RECEIVE BACK:
+A single plain text string (not a JSON object).
+The string contains, in order:
+1. Header: message count found, newest message ID + timestamp, oldest message ID + timestamp
+2. (If limit was hit) Pagination notice with the 'beforeMessageId' value to use for the next page
+3. Participant identity map: { "jid@s.whatsapp.net": "Display Name", ... }
+4. Messages in chronological order: [M/D/YYYY, H:MM:SS AM/PM] SenderName: message text
+
+CONSTRAINTS:
+- Hard cap of 20,000 messages per call
+- 'jid' must be exact`;
+
+
   requiresPermission = true;
   parametersSchema = {
     type: 'object',

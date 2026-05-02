@@ -2,31 +2,38 @@ import vm from 'vm';
 import { AITool, toolRegistry } from '../services/AIToolService';
 
 const MAX_EXECUTION_MS = 30_000; // 30 second wall-clock timeout
-const MAX_TOOL_CALLS = 50;       // prevent runaway loops
+const MAX_TOOL_CALLS = 200;       // prevent runaway loops
 
-// ── Static parts of the description ───────────────────────────────────────────
 const DESCRIPTION_BASE = `Write and execute a JavaScript program that can call registered tools with full control flow — loops, conditionals, variables, and any standard JS logic.
 
-WHEN TO USE THIS TOOL (prefer this over chaining multiple individual tool calls):
-- Multi-step operations: "mark all unread chats as read", "react with 👍 to every message from X today"
-- Conditional logic: "if the group has more than 10 unread messages, summarise them, else just mark read"
-- Data + action pipelines: query the DB for a list, then perform an action on each result
-- Any task that would require more than 2 sequential tool calls
+WHEN TO USE:
+- Multi-step workflows that require control flow: loops, conditionals, branching
+- Any task that requires more than one sequential tool call (e.g. query → process → act pipelines)
+- Batch operations across multiple records or chats
+- When you need to aggregate or transform tool outputs with JavaScript logic before responding
 
 HOW TO WRITE THE SCRIPT:
-- All tool calls MUST use 'await' (they are async)
-- Available tools are injected as global async functions — call them by name directly
-- Use 'return' to provide a final result (string, object, or array)
-- console.log() is captured and returned in the output
-- Scripts time out after ${MAX_EXECUTION_MS / 1000} seconds
-- Maximum ${MAX_TOOL_CALLS} tool calls per script execution
+- All tool calls MUST use 'await' (they are async). Forgetting 'await' returns a Promise, not a result.
+- Available tools are injected as global async functions — call them by name directly.
+- Your script runs inside an async IIFE. Use 'return' at the top level to emit a final result.
+- If you define a named async function, call it with \`return await main()\` to ensure the IIFE waits for it and captures its return value.
+- console.log() is captured and returned in the output under 'logs'.
+- Scripts time out after ${MAX_EXECUTION_MS / 1000} seconds. Max ${MAX_TOOL_CALLS} tool calls per execution.
+- Forgetting \`await\` returns a Promise, not a result. Forgetting \`return await\` on a named async function means the script exits before it finishes.
+
+WHAT YOU RECEIVE BACK:
+{
+  success: true | false,
+  result: <your return value>,        // present on success
+  logs: ["[log] ...", "[tool:name] call #1", ...],
+  toolCallCount: N,
+  error: "<message>",                 // present on failure
+  timedOut: true                      // present only if the 30s wall-clock was hit
+}
+If success is false, read 'error' and 'logs' to diagnose — then retry with a corrected script.
 
 EXAMPLE — mark all unread chats as read:
 \`\`\`js
-const { rows } = (await queryDatabase({
-  sql: "SELECT jid FROM Chat WHERE unreadCount > 0 LIMIT 50",
-  explanation: "Find all unread chats"
-})).rows;   // wait — rows is on the result object:
 const result = await queryDatabase({
   sql: "SELECT jid FROM Chat WHERE unreadCount > 0 LIMIT 50",
   explanation: "Find all unread chats"

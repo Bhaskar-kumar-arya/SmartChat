@@ -44,48 +44,37 @@ export class LMStudioProvider implements AIProvider {
 
   getSystemPrompt(useThinkMode: boolean): string {
     const thinkProtocol = `
-# RESPONSE PROTOCOL (CRITICAL — ALWAYS FOLLOW)
-Your role involves thoroughly exploring queries and tasks through a systematic thinking process before providing the final precise and accurate responses. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracking, and iteration to develop a well-considered thinking process.
+# RESPONSE PROTOCOL
+You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request. You may make multiple sequential tool calls before you have enough information to respond.
 
-You MUST structure your response into two main sections: Thought and Solution (or Action) using the specified format.
-In the Thought section, detail your reasoning process in steps. Each step should include detailed considerations such as analyzing the context and conversation history, summarizing relevant findings, brainstorming ideas, verifying accuracy, refining errors, and planning next steps (like responding or using a tool).
-After the Thought section, based on your explorations and reflections, systematically present the final response or execute the necessary tool. This section should be logical, accurate, and concise.
-
-Your output must ALWAYS start with the <think> tag. Note: this block is your internal thought chain and will not be shown to the user.
-
-Format:
+Every response MUST start with a <think> block. This is your private reasoning space — it is not shown to the user.
 <think>
-[Detailed reasoning process, exploration, reassessment, and planning]
+Reason through the full situation before acting:
+— What is the user truly asking for, considering the entire conversation history?
+— Have I received any tool results? Did they succeed, and do they fully answer the user's need — or do I need to act further?
+— If a tool failed, what exactly went wrong and what should I change?
+— What is the best next action: use a tool, chain multiple tool calls, or respond directly?
+— What would make the most complete, accurate, and helpful response?
 </think>
 [Your final conversational response or tool call]
 `;
 
-    const tools = toolRegistry.getAllTools().map(t => ({
-      name: t.name,
-      description: t.description,
-      parameters: t.parametersSchema
-    }));
-
     return `
-You are an advanced, intelligent, and proactive AI assistant integrated directly into "smartChat", a modern WhatsApp-like messaging application.
-The current system time is: ${new Date().toLocaleString()}.
+# SYSTEM CONTEXT
+You are an advanced, proactive AI agent embedded in "smartChat" — a modern WhatsApp-like desktop application.
+The current time is: ${new Date().toLocaleString()}.
 
-# ENVIRONMENT & COMMUNICATION
-You are chatting directly with the user within the app's interface. Every word you output as a regular text response is immediately visible to the user. 
-DO NOT call any "send message" tools to reply to the user. Just output your response directly as text.
+# YOUR TOOLS
+You have access to a set of registered tools. Each tool's description tells you exactly when, how, and why to use it. Only use tools that are registered.
 
-# GENERAL DIRECTIVES & CONSTRAINTS
-1. CONVERSATION: To reply to the user, just write your response. to call a tool, wrap it in the correct delimiter.
-2. NO HALLUCINATION: ONLY use the tools implicitly registered. Never assume capabilities you don't possess.
-3. JID ACCURACY: Participant JIDs and their names/IDs are provided in the chat context. NEVER guess a JID.
-4. CONCISE: Keep your conversational responses concise and helpful.
-5. THINK BEFORE YOU RESPOND
-6. TOOL CHAINING : you are allowed to use tools one after another. you need to wait for response of previous tool call before calling next one.
+# IMPORTANT
+Do NOT use the sendMessage tool to reply to the user in this chatbar — respond conversationally for that. The sendMessage tool is only for sending real WhatsApp messages on the user's behalf.
 
-
-${useThinkMode ? thinkProtocol : ''}
+${useThinkMode ? thinkProtocol : `# RESPONSE PROTOCOL
+You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request. You may make multiple sequential tool calls before you have enough information to respond.`}
 `;
   }
+
 
   async cleanup(): Promise<void> {
     console.log(`[LMStudioProvider] Cleaning up... Unloading ${this.loadedModels.size} models.`);
@@ -135,6 +124,7 @@ ${useThinkMode ? thinkProtocol : ''}
 
     let finalResponse = '';
 
+    
     const prediction = model.respond(chat, {
       reasoning : {
         effort : 'high'

@@ -100,20 +100,30 @@ function parsePrismaDocComments(): Record<string, SchemaDescriptions> {
   return result;
 }
 
-const BASE_DESCRIPTION = `Execute a read-only SQL SELECT query directly against the local SQLite database.
+const BASE_DESCRIPTION = `Execute a read-only SQL SELECT query against the local SQLite database.
 
-Use this tool to dynamically fetch, filter, or aggregate any data required to answer the user's questions, especially when the information extends beyond the immediate conversation context. Prefer using this tool to retrieve accurate data over making assumptions or guessing.
+WHEN TO USE:
+- When you need any structured, filtered, counted, or aggregated data from the database
+- When facts about chats, messages, contacts, groups, or communities aren't already present in the conversation context
+- Prefer this over making assumptions — accurate data always beats guessing
 
-KEY RULES:
-- Only SELECT (or WITH...SELECT) statements are permitted.
-- Timestamps are stored as Unix epoch in SECONDS (not milliseconds).
-- To filter by date use: strftime('%s', 'YYYY-MM-DD') to convert a date string to a unix timestamp.
-- 'fromMe = 1' means the logged-in user sent the message.
-- SCHEMA CONTEXT - Message table: 'senderId' maps to the Identity table. 'participant' is the raw JID string. 'chatJid' is the chat/group ID.
-- SCHEMA CONTEXT - Identity table: 'displayName' is the local name the user explicitly saved in their contacts(null if not saved). 'pushName' is the public name chosen by the person themselves on WhatsApp. 'phoneNumber' may be null if hidden by group privacy (PNP).
-- SCHEMA CONTEXT - Group Members: Join ChatMember with Identity. To get their raw LIDs/JIDs, join with IdentityAlias.
-- Always provide a plain-English 'explanation' field — it is shown to the user before execution.
-- Results are capped at ${MAX_ROWS} rows automatically.`;
+HOW TO USE:
+- Only SELECT (or WITH...SELECT) statements are permitted
+- Schema relationships and column descriptions are documented in the DATABASE SCHEMA section below — always refer to it before writing a query
+- Always provide a plain-English 'explanation' field — it is shown to the user before execution
+
+WHAT YOU RECEIVE BACK:
+{
+  "rowCount": N,
+  "cappedAt": ${MAX_ROWS},
+  "rows": [{ "column": "value", ... }]
+}
+Note: Timestamp columns may be returned as strings due to BigInt serialization.
+
+CONSTRAINTS:
+- Results are capped at ${MAX_ROWS} rows automatically
+- Read-only — INSERT, UPDATE, DELETE, DROP and similar mutations are rejected`;
+
 
 export class QueryDatabaseTool implements AITool {
   name = 'queryDatabase';
@@ -127,11 +137,16 @@ export class QueryDatabaseTool implements AITool {
     properties: {
       sql: {
         type: 'string',
-        description: 'A valid SQLite SELECT (or WITH...SELECT) statement. No mutations allowed.'
+        description: 'A valid SQLite SELECT (or WITH...SELECT) statement. Use ? placeholders for parameterized values.'
       },
       explanation: {
         type: 'string',
         description: 'A plain-English one-line summary of what this query does. Shown to the user before execution.'
+      },
+      params: {
+        type: 'array',
+        items: {},
+        description: 'Optional array of values to substitute into ? placeholders in the SQL string, in order.'
       }
     },
     required: ['sql', 'explanation']
@@ -198,7 +213,7 @@ export class QueryDatabaseTool implements AITool {
   // ── Execution ─────────────────────────────────────────────────────────────────
 
   async execute(args: any): Promise<any> {
-    const { sql, explanation } = args;
+    const { sql, explanation, params } = args;
 
     if (!sql || typeof sql !== 'string') {
       throw new Error('Missing required argument: sql');
@@ -236,7 +251,7 @@ export class QueryDatabaseTool implements AITool {
     // ── Execute ───────────────────────────────────────────────────────────────
     let rows: any[];
     try {
-      rows = await prisma.$queryRawUnsafe<any[]>(finalSql);
+      rows = await prisma.$queryRawUnsafe<any[]>(finalSql, ...(Array.isArray(params) ? params : []));
     } catch (err: any) {
       throw new Error(`SQL execution failed: ${err?.message || String(err)}`);
     }

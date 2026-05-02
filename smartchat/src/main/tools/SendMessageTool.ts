@@ -4,17 +4,33 @@ import { chatService } from '../services/ChatService';
 
 export class SendMessageTool implements AITool {
   name = 'sendMessage';
-  description = 'Send a message to a chat on the behalf of the user itself.this tool is not required when responding to the user directly. When mentioning someone in the message text, use the format "@ID" (e.g., "@1234567890"). You MUST also include the full WhatsApp JIDs (e.g., ["1234567890@s.whatsapp.net"]) of everyone you mentioned in the text in the mentions array. When sending messages, use standard WhatsApp markdown for styling if needed: *bold*, _italic_, ~strikethrough~, \`\`\`monospace\`\`\`.';
+  description = `Send a WhatsApp message to a chat or person on the user's behalf.
+
+WHEN TO USE:
+- ONLY when the user explicitly asks to send a message to a person or group
+- Do NOT use this to reply to the user in the chatbar — respond conversationally for that
+
+HOW TO USE:
+- 'jid' must be the exact WhatsApp JID or LID (e.g. 919876543210@s.whatsapp.net, 123-456@g.us, or 123456@lid). If unsure, query the database first — never guess.
+- To mention someone in a group message: put @phoneNumber in 'text' AND include their full JID in the 'mentions' array
+- WhatsApp markdown: *bold*, _italic_, ~strikethrough~, \`\`\`monospace\`\`\`
+
+WHAT YOU RECEIVE BACK:
+{ "success": true, "detail": "Message sent successfully to <jid>" }
+If the send fails, the tool throws — check the [SYSTEM] result for the reason.
+
+CONSTRAINTS:
+- Always verify the JID before calling — wrong JIDs send to the wrong person`;
   requiresPermission = true;
   parametersSchema = {
     type: 'object',
     properties: {
-      jid: { type: 'string', description: 'The exact WhatsApp JID to send the message to (e.g. 123@s.whatsapp.net or 123-456@g.us)' },
-      text: { type: 'string', description: 'The content of the message to send. Use @ID/phone_number to mention someone.' },
+      jid: { type: 'string', description: 'The exact WhatsApp JID or LID to send the message to (e.g. 123@s.whatsapp.net, 123-456@g.us, or 123@lid)' },
+      text: { type: 'string', description: 'The content of the message to send. Use @phoneNumber to mention someone in a group.' },
       mentions: { 
         type: 'array', 
         items: { type: 'string' }, 
-        description: 'Optional array of full WhatsApp JIDs (e.g. 1234567890@s.whatsapp.net or 1234567890@lid) to mention in the message. These should correspond to @ID mentions in the text.' 
+        description: 'Optional array of full WhatsApp JIDs or LIDs to mention in a group message. Must correspond to @phoneNumber references in the text.' 
       }
     },
     required: ['jid', 'text']
