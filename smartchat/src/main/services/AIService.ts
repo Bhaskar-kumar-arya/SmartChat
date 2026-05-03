@@ -5,6 +5,7 @@ import { AIProvider, ModelInfo } from './ai/Provider'
 export class AIService {
   private providers: Record<string, AIProvider> = {}
   private currentModelId: string = 'gemma-4-31b-it' // Default
+  private activeRequests: Map<string, AbortController> = new Map()
 
   constructor() {
     this.providers['gemini'] = new GeminiProvider();
@@ -98,7 +99,7 @@ export class AIService {
     contextFiles?: any[],
     history?: any[],
     mentions?: any[],
-    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean }
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string }
   ): Promise<string> {
     try {
       const modelId = options?.model || this.currentModelId;
@@ -113,8 +114,24 @@ export class AIService {
         return msg;
       });
 
-      return await provider.generateResponse(fullPrompt, processedHistory, { ...options, model: modelId });
+      let signal: AbortSignal | undefined;
+      if (options?.requestId) {
+        const controller = new AbortController();
+        this.activeRequests.set(options.requestId, controller);
+        signal = controller.signal;
+      }
+
+      const result = await provider.generateResponse(fullPrompt, processedHistory, { ...options, model: modelId }, signal);
+      
+      if (options?.requestId) {
+        this.activeRequests.delete(options.requestId);
+      }
+      
+      return result;
     } catch (error) {
+      if (options?.requestId) {
+        this.activeRequests.delete(options.requestId);
+      }
       console.error('[AIService] Error generating response:', error);
       throw error;
     }
@@ -125,7 +142,7 @@ export class AIService {
     contextFiles?: any[],
     history?: any[],
     mentions?: any[],
-    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean },
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string },
     onChunk: (chunk: string) => void = () => {}
   ): Promise<void> {
     try {
@@ -141,10 +158,32 @@ export class AIService {
         return msg;
       });
 
-      await provider.generateResponseStream(fullPrompt, processedHistory, { ...options, model: modelId }, onChunk);
+      let signal: AbortSignal | undefined;
+      if (options?.requestId) {
+        const controller = new AbortController();
+        this.activeRequests.set(options.requestId, controller);
+        signal = controller.signal;
+      }
+
+      try {
+        await provider.generateResponseStream(fullPrompt, processedHistory, { ...options, model: modelId }, onChunk, signal);
+      } finally {
+        if (options?.requestId) {
+          this.activeRequests.delete(options.requestId);
+        }
+      }
     } catch (error) {
       console.error('[AIService] Error generating stream response:', error);
       throw error;
+    }
+  }
+
+  abortResponse(requestId: string): void {
+    const controller = this.activeRequests.get(requestId);
+    if (controller) {
+      console.log(`[AIService] Aborting request: ${requestId}`);
+      controller.abort();
+      this.activeRequests.delete(requestId);
     }
   }
 }

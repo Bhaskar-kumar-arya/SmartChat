@@ -510,13 +510,22 @@ export function registerIpcHandlers(
   ipcMain.on('ai-chat-stream', async (event, args) => {
     const { channelId, prompt, contextChats, history, mentions, options } = args;
     try {
-      await aiService.generateResponseStream(prompt, contextChats, history, mentions, options, (chunk) => {
+      await aiService.generateResponseStream(prompt, contextChats, history, mentions, { ...options, requestId: channelId }, (chunk) => {
         event.sender.send(`${channelId}-chunk`, chunk);
       });
       event.sender.send(`${channelId}-end`);
     } catch (err: any) {
-      event.sender.send(`${channelId}-error`, err.message || String(err));
+      if (err.name === 'AbortError' || err.message?.includes('abort')) {
+         event.sender.send(`${channelId}-end`); // Treat abort as normal end for the frontend
+      } else {
+         event.sender.send(`${channelId}-error`, err.message || String(err));
+      }
     }
+  });
+
+  ipcMain.handle('abort-ai-chat', async (_event, requestId: string) => {
+    aiService.abortResponse(requestId);
+    return true;
   });
 
   ipcMain.handle('get-chat-context', async (_event, jid: string) => {
