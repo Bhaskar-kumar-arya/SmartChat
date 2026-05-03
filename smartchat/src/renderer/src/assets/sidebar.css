@@ -732,8 +732,11 @@
 
 .ai-message-bubble {
   max-width: 85%;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-radius: 12px;
+  margin-bottom: 8px;
+  position: relative;
+  transition: all 0.2s ease;
 }
 
 .ai-message-content {
@@ -847,6 +850,108 @@
 .retry-button svg {
   width: 14px;
   height: 14px;
+}
+
+.ai-message-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  position: absolute;
+  bottom: -23px;
+  right: 8px;
+  background-color: var(--wa-sidebar-bg);
+  padding: 2px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--wa-border);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  z-index: 10;
+}
+
+.ai-message-bubble:hover .ai-message-actions {
+  opacity: 1;
+}
+
+.ai-action-btn {
+  background: none;
+  border: none;
+  color: var(--wa-text-tertiary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.ai-action-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--wa-text-primary);
+}
+
+.ai-message-edit-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.ai-message-edit-textarea {
+  width: 100%;
+  min-height: 80px;
+  background-color: var(--wa-sidebar-bg);
+  color: var(--wa-text-primary);
+  border: 1px solid var(--wa-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  outline: none;
+}
+
+.ai-message-edit-textarea:focus {
+  border-color: #00a884;
+}
+
+.ai-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.ai-edit-hint {
+  font-size: 11px;
+  color: var(--wa-text-tertiary);
+  margin-right: auto;
+}
+
+.ai-save-btn {
+  background-color: #00a884;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-cancel-btn {
+  background: none;
+  border: 1px solid var(--wa-border);
+  color: var(--wa-text-secondary);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-cancel-btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .markdown-body p {
@@ -984,17 +1089,16 @@
   position: absolute;
   top: 0;
   left: 0;
-  bottom: 0;
   right: 0;
+  bottom: 0;
   padding: 8px 12px;
-  white-space: pre;
-  overflow: hidden;
+  white-space: pre-wrap;
+  word-wrap: break-word;
   pointer-events: none;
   color: var(--wa-text-primary);
-  font-family: inherit;
   font-size: 14px;
-  display: flex;
-  align-items: center;
+  display: block;
+  line-height: 1.4;
 }
 
 .ai-input-match {
@@ -1014,6 +1118,11 @@
   margin: 0;
   font-family: inherit;
   font-size: 14px;
+  resize: none;
+  overflow-y: hidden;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  line-height: 1.4;
 }
 
 .ai-send-btn {
@@ -1053,6 +1162,14 @@
   margin-bottom: 12px;
   z-index: 100;
   padding: 4px 0;
+}
+
+.ai-message-edit-container .ai-mention-menu {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
 }
 
 .ai-mention-item {

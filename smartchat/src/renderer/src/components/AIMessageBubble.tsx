@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import AIToolCard from './AIToolCard'
+import AISmartInput from './AISmartInput'
 
 interface AIChatMessage {
   id: string
@@ -21,6 +22,10 @@ interface AIMessageBubbleProps {
   onApprove: (messageId: string, tool: string, args: any) => void
   onDecline: (messageId: string) => void
   onRetry: () => void
+  onEdit?: (messageId: string) => void
+  onReRun?: (messageId: string) => void
+  onSave?: (messageId: string, newContent: string, contexts: any[], mentions: any[]) => void
+  chatList: any[]
 }
 
 const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({ 
@@ -29,9 +34,15 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
   isExecuting, 
   onApprove, 
   onDecline,
-  onRetry
+  onRetry,
+  onEdit,
+  onReRun,
+  onSave,
+  chatList
 }) => {
   const [thoughtExpanded, setThoughtExpanded] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editContent, setEditContent] = useState(message.content)
 
   if (message.isHidden) return null
 
@@ -42,11 +53,15 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
   // Extract <tool_call> block
   const toolMatch = message.content.match(/<tool_call>([\s\S]*?)<\/tool_call>/)
   let toolData: any = null
+  let parseError: string | null = null
   if (toolMatch) {
     try { 
-      toolData = JSON.parse(toolMatch[1]) 
-    } catch (e) {
+      let jsonStr = toolMatch[1].trim()
+      jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+      toolData = JSON.parse(jsonStr) 
+    } catch (e: any) {
       console.error('Failed to parse tool data:', e)
+      parseError = e.message || String(e)
     }
   }
 
@@ -108,9 +123,77 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
           />
         )}
 
+        {/* Tool parse error */}
+        {!toolData && parseError && toolMatch && (
+           <div className="ai-tool-error" style={{ padding: '12px', background: 'var(--bg-hover)', color: 'var(--text-secondary)', borderLeft: '4px solid #ef4444', borderRadius: '4px', marginBottom: '8px', fontSize: '13px' }}>
+              <strong style={{ color: '#ef4444' }}>Failed to parse tool call</strong>
+              <p style={{ margin: '4px 0 0 0' }}>{parseError}</p>
+              <pre style={{ margin: '8px 0 0 0', background: 'var(--bg-primary)', padding: '8px', borderRadius: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                {toolMatch[1].trim()}
+              </pre>
+           </div>
+        )}
+
         {/* Main response text */}
-        {displayContent && (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
+        {isEditing ? (
+          <div className="ai-message-edit-container">
+            <AISmartInput
+              chatList={chatList}
+              onSend={(newContent, contexts, mentions) => {
+                onSave?.(message.id, newContent, contexts, mentions);
+                setIsEditing(false);
+              }}
+              onCancel={() => setIsEditing(false)}
+              externalValue={{
+                prompt: message.content,
+                contexts: message.contexts || [],
+                mentions: message.mentions || []
+              }}
+            />
+            <div className="ai-edit-actions" style={{ marginTop: '8px' }}>
+              <span className="ai-edit-hint">ESC to cancel</span>
+              <button 
+                className="ai-cancel-btn" 
+                onClick={() => {
+                  setIsEditing(false);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {displayContent && (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
+            )}
+
+            {message.role === 'user' && (
+              <div className="ai-message-actions">
+                <button 
+                  className="ai-action-btn" 
+                  onClick={() => setIsEditing(true)}
+                  title="Edit"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button 
+                  className="ai-action-btn" 
+                  onClick={() => onReRun?.(message.id)}
+                  title="Re-run"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M23 4v6h-6"></path>
+                    <path d="M1 20v-6h6"></path>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         {message.hasError && (

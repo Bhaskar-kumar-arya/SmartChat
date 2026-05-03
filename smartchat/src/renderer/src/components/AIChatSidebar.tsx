@@ -26,9 +26,12 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   const [messages, setMessages] = useState<AIChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [executingToolId, setExecutingToolId] = useState<string | null>(null)
+  const [activeChannelId, setActiveChannelId] = useState<string | null>(null)
   const [chatList, setChatList] = useState<ChatItem[]>([])
   const [availableTools, setAvailableTools] = useState<any[]>([])
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
+  const [editValue, setEditValue] = useState<{ prompt: string, contexts: any[], mentions: any[] } | null>(null)
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [aiOptions, setAiOptions] = useState<AIChatOptions>({ 
@@ -90,7 +93,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
       }
     };
 
-    window.api.aiChatStream(
+    const channelId = window.api.aiChatStream(
         prompt, 
         context, 
         history,
@@ -104,6 +107,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         },
         () => {
            setLoading(false);
+           setActiveChannelId(null);
            const remainder = streamingBuffers.current[aiMsgId];
            delete streamingBuffers.current[aiMsgId];
            
@@ -121,7 +125,9 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
              const toolMatch = finalContent.match(/<tool_call>([\s\S]*?)<\/tool_call>/);
              if (toolMatch) {
                try {
-                 const toolData = JSON.parse(toolMatch[1]);
+                 let jsonStr = toolMatch[1].trim();
+                 jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+                 const toolData = JSON.parse(jsonStr);
                  const tool = availableTools.find(t => t.name === toolData.tool);
                  if (tool && tool.requiresPermission === false) {
                    executeToolCall(aiMsgId, toolData.tool, toolData.arguments);
@@ -134,10 +140,12 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         },
         (err) => {
            setLoading(false);
+           setActiveChannelId(null);
            delete streamingBuffers.current[aiMsgId];
            setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + '\n\n**Error:** ' + String(err), hasError: true } : m));
         }
     );
+    setActiveChannelId(channelId);
   }
 
   const declineToolCall = async (messageId: string) => {
@@ -229,11 +237,20 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     startAIStream(prompt, updated, aiMsgId, [], [], true);
   }
 
-  const handleSend = async (prompt: string, currentContexts: any[], currentMentions: any[]) => {
+  const handleSend = async (prompt: string, currentContexts: any[], currentMentions: any[], overrideHistory?: AIChatMessage[]) => {
+    let baseHistory = overrideHistory || messages;
+    
+    if (editingMessageId && !overrideHistory) {
+      const msgIndex = messages.findIndex(m => m.id === editingMessageId);
+      if (msgIndex !== -1) {
+        baseHistory = messages.slice(0, msgIndex);
+        setMessages(baseHistory);
+      }
+      setEditingMessageId(null);
+    }
+
     if (!prompt && currentContexts.length === 0) return
 
-
-      
       setLoading(true)
 
 
@@ -250,7 +267,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         const aiMessageId = crypto.randomUUID();
 
         // Add both messages atomically
-        setMessages(prev => [...prev, 
+        setMessages([...baseHistory, 
           {
             id: userMessageId,
             role: 'user',
@@ -265,7 +282,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
           }
         ]);
 
-        startAIStream(prompt, messages, aiMessageId, resolvedContexts, currentMentions, false);
+        startAIStream(prompt, baseHistory, aiMessageId, resolvedContexts, currentMentions, false);
 
     } catch (error) {
       setMessages(prev => [...prev, {
@@ -275,6 +292,59 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
       }])
       console.error(error)
       setLoading(false)
+      setActiveChannelId(null)
+    }
+  }
+
+  const handleEditMessage = (messageId: string) => {
+    const msgIndex = messages.findIndex(m => m.id === messageId);
+    if (msgIndex === -1) return;
+    const msg = messages[msgIndex];
+    
+    // Set for editing
+    setEditValue({
+      prompt: msg.content,
+      contexts: msg.contexts || [],
+      mentions: msg.mentions || []
+    });
+    setEditingMessageId(messageId);
+    
+    // Clear edit value after a tick so AISmartInput can reset if needed
+    setTimeout(() => setEditValue(null), 100);
+  }
+
+  const handleReRunMessage = (messageId: string) => {
+    setEditingMessageId(null);
+    const msgIndex = messages.findIndex(m => m.id === messageId);
+    if (msgIndex === -1) return;
+    const msg = messages[msgIndex];
+    
+    // Truncate messages from this point onwards
+    const truncatedHistory = messages.slice(0, msgIndex);
+    // Note: No need to setMessages here if we pass truncatedHistory to handleSend
+    // handleSend will update messages state itself
+    
+    // Re-trigger handleSend with the same prompt and contexts
+    handleSend(msg.content, msg.contexts || [], msg.mentions || [], truncatedHistory);
+  }
+
+  const handleSaveMessage = (messageId: string, newContent: string, contexts: any[], mentions: any[]) => {
+    const msgIndex = messages.findIndex(m => m.id === messageId);
+    if (msgIndex === -1) return;
+    const msg = messages[msgIndex];
+    
+    // Truncate messages from this point onwards
+    const truncatedHistory = messages.slice(0, msgIndex);
+    
+    // Re-trigger handleSend with the new content
+    handleSend(newContent, contexts || [], mentions || [], truncatedHistory);
+  }
+
+  const handleAbort = async () => {
+    if (activeChannelId) {
+      await window.api.abortAiChat(activeChannelId);
+      setActiveChannelId(null);
+      setLoading(false);
     }
   }
 
@@ -310,7 +380,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
           </button>
           <button 
             className="ai-close-btn" 
-            onClick={() => { setMessages([]) }} 
+            onClick={() => { setMessages([]); setEditingMessageId(null); }} 
             title="Clear Chat"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -344,6 +414,10 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
               onApprove={executeToolCall}
               onDecline={declineToolCall}
               onRetry={() => handleRetry(msg.id)}
+              onEdit={handleEditMessage}
+              onReRun={handleReRunMessage}
+              onSave={handleSaveMessage}
+              chatList={chatList}
             />
           ))
         )}
@@ -360,7 +434,9 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
       <AISmartInput 
         chatList={chatList} 
         onSend={handleSend} 
-        disabled={loading} 
+        disabled={loading || !!activeChannelId} 
+        onAbort={handleAbort}
+        externalValue={editValue}
       />
     </div>
   )

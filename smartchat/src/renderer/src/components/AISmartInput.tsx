@@ -10,9 +10,19 @@ interface AISmartInputProps {
   chatList: ChatItem[]
   onSend: (prompt: string, contexts: SelectedContext[], mentions: SelectedContext[]) => void
   disabled?: boolean
+  onAbort?: () => void
+  externalValue?: { prompt: string, contexts: SelectedContext[], mentions: SelectedContext[] } | null
+  onCancel?: () => void
 }
 
-const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled }) => {
+const AISmartInput: React.FC<AISmartInputProps> = ({ 
+  chatList, 
+  onSend, 
+  disabled, 
+  onAbort, 
+  externalValue, 
+  onCancel
+}) => {
   const [inputValue, setInputValue] = useState('')
   const [showMentionMenu, setShowMentionMenu] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
@@ -23,8 +33,40 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
   const [contexts, setContexts] = useState<SelectedContext[]>([])
   const [mentions, setMentions] = useState<SelectedContext[]>([])
 
-  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setShowMentionMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (externalValue) {
+      setInputValue(externalValue.prompt);
+      setContexts(externalValue.contexts);
+      setMentions(externalValue.mentions);
+      
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          // Move cursor to end
+          const length = inputRef.current.value.length;
+          inputRef.current.setSelectionRange(length, length);
+          
+          // Recalculate height
+          inputRef.current.style.height = 'auto';
+          inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
+        }
+      }, 0);
+    }
+  }, [externalValue]);
 
   useEffect(() => {
     setMentions(prev => prev.filter(m => inputValue.includes(`@${m.name}`)));
@@ -45,9 +87,15 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
     setSelectedIndex(0)
   }, [mentionQuery, chatList])
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value
     setInputValue(val)
+    
+    // Auto-grow height
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
+    }
 
     const lastSlashPos = val.lastIndexOf('/')
     if (lastSlashPos !== -1) {
@@ -74,7 +122,7 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
     setShowMentionMenu(false)
   }
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentionMenu) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -88,6 +136,8 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
           selectItem(filteredChats[selectedIndex])
         }
       } else if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
         setShowMentionMenu(false)
       }
       return
@@ -121,6 +171,13 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
           const lenToDel = prefix.length + matchToDelete.name.length + (isSpace ? 1 : 0);
           const newText = inputValue.slice(0, cursorStart - lenToDel) + inputValue.slice(cursorStart);
           setInputValue(newText);
+          
+          if (matchType === 'mention') {
+            setMentions(mentions.filter(m => m.jid !== matchToDelete!.jid));
+          } else {
+            setContexts(contexts.filter(c => c.jid !== matchToDelete!.jid));
+          }
+          
           setTimeout(() => {
             if (inputRef.current) {
               const newPos = cursorStart - lenToDel;
@@ -132,13 +189,24 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
       }
     }
 
+    if (e.key === 'Escape') {
+      onCancel?.();
+      return;
+    }
+
     if (e.key === 'Enter') {
-      const prompt = inputValue.trim()
-      if (prompt || contexts.length > 0) {
-        onSend(prompt, contexts, mentions)
-        setInputValue('')
-        setContexts([])
-        setMentions([])
+      if (!e.shiftKey) {
+        e.preventDefault(); // Prevent newline
+        const prompt = inputValue.trim()
+        if (prompt || contexts.length > 0) {
+          onSend(prompt, contexts, mentions)
+          setInputValue('')
+          setContexts([])
+          setMentions([])
+          if (inputRef.current) inputRef.current.style.height = 'auto';
+        }
+      } else {
+        // Shift+Enter: Allow default behavior (newline)
       }
     }
   }
@@ -168,13 +236,16 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
         inputRef.current.focus();
         const length = inputRef.current.value.length;
         inputRef.current.setSelectionRange(length, length);
+        inputRef.current.style.height = 'auto';
+        inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
       }
     }, 0);
   }
 
-  const handleInputScroll = () => {
-    if (inputRef.current && highlightRef.current) {
-      highlightRef.current.scrollLeft = inputRef.current.scrollLeft;
+  const handleInputScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
+    if (highlightRef.current) {
+      highlightRef.current.scrollTop = e.currentTarget.scrollTop;
+      highlightRef.current.scrollLeft = e.currentTarget.scrollLeft;
     }
   };
 
@@ -195,7 +266,7 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
       const matchedItem = activeItems.find(item => item.text === part);
       if (matchedItem) {
         return (
-          <span key={i} style={{ color: '#00a884', backgroundColor: 'rgba(0, 168, 132, 0.15)', borderRadius: '4px' }}>
+          <span key={i} className="ai-input-match">
             {part}
           </span>
         );
@@ -205,7 +276,7 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
   };
 
   return (
-    <div className="ai-input-wrapper">
+    <div ref={containerRef} className="ai-input-wrapper">
       <div className="ai-context-list-container">
         {contexts.length > 0 && (
           <div className="ai-context-list">
@@ -255,43 +326,55 @@ const AISmartInput: React.FC<AISmartInputProps> = ({ chatList, onSend, disabled 
       )}
 
       <div className="ai-input-box">
-        <div style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div className="ai-input-inner">
           <div 
             ref={highlightRef}
-            style={{ position: 'absolute', top: 0, left: 0, bottom: 0, right: 0, padding: '8px 12px', whiteSpace: 'pre', overflow: 'hidden', pointerEvents: 'none', color: 'var(--wa-text-primary)', fontFamily: 'inherit', fontSize: '14px', display: 'flex', alignItems: 'center' }}
+            className="ai-input-highlight"
           >
             {renderHighlightedText()}
           </div>
-          <input 
+          <textarea 
             ref={inputRef}
-            type="text" 
             placeholder="Ask AI... (/ history, @ mention)" 
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             onScroll={handleInputScroll}
             disabled={disabled}
-            style={{ width: '100%', color: 'transparent', caretColor: 'var(--wa-text-primary)', background: 'transparent', outline: 'none', border: 'none', padding: '8px 12px', margin: 0, fontFamily: 'inherit', fontSize: '14px' }}
+            className="ai-input-field"
+            rows={1}
           />
         </div>
-        <button 
-          className="ai-send-btn" 
-          onClick={() => {
-            const prompt = inputValue.trim()
-            if (prompt || contexts.length > 0) {
-              onSend(prompt, contexts, mentions)
-              setInputValue('')
-              setContexts([])
-              setMentions([])
-            }
-          }} 
-          disabled={disabled || (!inputValue.trim() && contexts.length === 0)}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-          </svg>
-        </button>
+        {disabled && onAbort ? (
+          <button 
+            className="ai-send-btn abort" 
+            onClick={onAbort} 
+            title="Stop Generation"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12"></rect>
+            </svg>
+          </button>
+        ) : (
+          <button 
+            className="ai-send-btn" 
+            onClick={() => {
+              const prompt = inputValue.trim()
+              if (prompt || contexts.length > 0) {
+                onSend(prompt, contexts, mentions)
+                setInputValue('')
+                setContexts([])
+                setMentions([])
+              }
+            }} 
+            disabled={disabled || (!inputValue.trim() && contexts.length === 0)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   )
