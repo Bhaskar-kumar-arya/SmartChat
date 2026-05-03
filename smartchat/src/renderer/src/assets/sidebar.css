@@ -973,13 +973,47 @@
   border: 1px solid var(--wa-border);
 }
 
-.ai-input-box input {
+.ai-input-inner {
+  position: relative;
   flex: 1;
-  background: none;
+  display: flex;
+  overflow: hidden;
+}
+
+.ai-input-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  padding: 8px 12px;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--wa-text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+}
+
+.ai-input-match {
+  color: #00a884;
+  background-color: rgba(0, 168, 132, 0.15);
+  border-radius: 4px;
+}
+
+.ai-input-field {
+  width: 100%;
+  color: transparent;
+  caret-color: var(--wa-text-primary);
+  background: transparent;
+  outline: none;
   border: none;
   padding: 8px 12px;
-  color: var(--wa-text-primary);
-  outline: none;
+  margin: 0;
+  font-family: inherit;
+  font-size: 14px;
 }
 
 .ai-send-btn {
@@ -994,6 +1028,10 @@
   justify-content: center;
   cursor: pointer;
   transition: opacity 0.2s;
+}
+
+.ai-send-btn.abort {
+  color: var(--wa-danger);
 }
 
 .ai-send-btn:disabled {

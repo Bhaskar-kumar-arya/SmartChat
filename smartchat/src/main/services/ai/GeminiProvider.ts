@@ -42,15 +42,17 @@ export class GeminiProvider implements AIProvider {
 
     const useThinkMode = options?.useThinkMode !== false;
     const systemInstructions = this.getSystemPrompt(useThinkMode);
-    const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
-
-    const chat = this.ai.chats.create({
+    
+    // Prepare contents including history and current prompt
+    const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
+    
+    const response = await this.ai.models.generateContent({
       model: options?.model || "gemma-4-31b-it",
-      config,
-      history: formattedHistory
+      contents,
+      config: systemInstructions ? { systemInstruction: systemInstructions } : undefined,
+      signal: options?.signal
     });
 
-    const response = await chat.sendMessage({ message: finalPrompt });
     return response.text || '';
   }
 
@@ -58,7 +60,8 @@ export class GeminiProvider implements AIProvider {
     prompt: string,
     history: any[],
     options: any,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    signal?: AbortSignal
   ): Promise<void> {
     const formattedHistory = this.formatHistory(history);
     const isPromptSystem = options?.isSystem === true;
@@ -66,16 +69,20 @@ export class GeminiProvider implements AIProvider {
 
     const useThinkMode = options?.useThinkMode !== false;
     const systemInstructions = this.getSystemPrompt(useThinkMode);
-    const config = systemInstructions ? { systemInstruction: systemInstructions } : undefined;
-
-    const chat = this.ai.chats.create({
+    
+    // Prepare contents including history and current prompt
+    const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
+    
+    const actualSignal = options?.signal || signal;
+    const responseStream = await this.ai.models.generateContentStream({
       model: options?.model || "gemma-4-31b-it",
-      config,
-      history: formattedHistory
+      contents,
+      config: systemInstructions ? { systemInstruction: systemInstructions } : undefined,
+      signal: actualSignal
     });
 
-    const responseStream = await chat.sendMessageStream({ message: finalPrompt });
     for await (const chunk of responseStream) {
+      if (actualSignal?.aborted) break;
       if (chunk.text) {
         onChunk(chunk.text);
       }

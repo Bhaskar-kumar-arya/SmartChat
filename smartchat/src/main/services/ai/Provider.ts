@@ -24,7 +24,8 @@ export interface AIProvider {
     prompt: string,
     history: any[],
     options: any,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    signal?: AbortSignal
   ): Promise<void>;
 
   /**
@@ -33,7 +34,8 @@ export interface AIProvider {
   generateResponse(
     prompt: string,
     history: any[],
-    options: any
+    options: any,
+    signal?: AbortSignal
   ): Promise<string>;
 
   /**

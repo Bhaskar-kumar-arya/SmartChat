@@ -45,17 +45,28 @@ export class LMStudioProvider implements AIProvider {
   getSystemPrompt(useThinkMode: boolean): string {
     const thinkProtocol = `
 # RESPONSE PROTOCOL
-You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request. You may make multiple sequential tool calls before you have enough information to respond.
+You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request.
 
-Every response MUST start with a <think> block. This is your private reasoning space — it is not shown to the user.
-<think>
-Reason through the full situation before acting:
+CRITICAL TOOL RULES:
+1. You can only emit ONE tool call per response. 
+2. You may make multiple sequential tool calls across multiple turns (tool -> result -> tool -> result).
+3. The "CAN BE USED FOR" guidelines in tool descriptions are just examples. Use tools open-endedly and creatively for any task where their core capabilities apply.
+4. Tool results are processed entirely in the background. The user only sees a brief execution status, not the raw data. Do not restrict data gathering out of concern for visual overwhelm.
+5. Tool calls MUST be valid JSON. Multi-line strings (like scripts or SQL) MUST use escaped newlines (\n) — literal newlines are strictly forbidden inside JSON string values.
+
+Every response MUST start with a <think> block. This is your private reasoning space — it is not shown to the user. Use it to reason through:
 — What is the user truly asking for, considering the entire conversation history?
 — Have I received any tool results? Did they succeed, and do they fully answer the user's need — or do I need to act further?
 — If a tool failed, what exactly went wrong and what should I change?
 — What is the best next action: use a tool, chain multiple tool calls, or respond directly?
 — What would make the most complete, accurate, and helpful response?
+— Is the requested scope fully feasible? If not, explicitly communicate this rather than silently altering the user's intent.
+
+Format:
+<think>
+[Your private reasoning here]
 </think>
+
 [Your final conversational response or tool call]
 `;
 
@@ -71,7 +82,14 @@ You have access to a set of registered tools. Each tool's description tells you 
 Do NOT use the sendMessage tool to reply to the user in this chatbar — respond conversationally for that. The sendMessage tool is only for sending real WhatsApp messages on the user's behalf.
 
 ${useThinkMode ? thinkProtocol : `# RESPONSE PROTOCOL
-You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request. You may make multiple sequential tool calls before you have enough information to respond.`}
+You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request.
+
+CRITICAL TOOL RULES:
+1. You can only emit ONE tool call per response. 
+2. You may make multiple sequential tool calls across multiple turns (tool -> result -> tool -> result).
+3. The "CAN BE USED FOR" guidelines in tool descriptions are just examples. Use tools open-endedly and creatively for any task where their core capabilities apply.
+4. Tool results are processed entirely in the background. The user only sees a brief execution status, not the raw data. Do not restrict data gathering out of concern for visual overwhelm.
+5. Tool calls MUST be valid JSON. Multi-line strings (like scripts or SQL) MUST use escaped newlines (\n) — literal newlines are strictly forbidden inside JSON string values.`}
 `;
   }
 
@@ -129,7 +147,9 @@ You have the freedom to choose your response method — use a tool or respond co
       reasoning : {
         effort : 'high'
       },
+      temperature : 0.2,
       rawTools: this.getRawToolsInfo() as any,
+      signal: options?.signal || signal,
       onPredictionFragment: (fragment) => {
          if (fragment.content) {
             finalResponse += fragment.content;
@@ -156,7 +176,8 @@ You have the freedom to choose your response method — use a tool or respond co
     prompt: string,
     history: any[],
     options: any,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    signal?: AbortSignal
   ): Promise<void> {
     const modelKey = options?.model;
     if (!modelKey) throw new Error('No model specified for LM Studio');
@@ -180,7 +201,9 @@ You have the freedom to choose your response method — use a tool or respond co
       reasoning : {
         effort : 'high'
       },
+      temperature : 0.2,
       rawTools: this.getRawToolsInfo() as any,
+      signal: options?.signal || signal,
       onPredictionFragment: (fragment) => {
          if (fragment.content) {
             onChunk(fragment.content);
