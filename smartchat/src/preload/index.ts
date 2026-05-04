@@ -134,15 +134,15 @@ const api = {
     const channelId = `ai-chat-${Date.now()}`;
     const chunkListener = (_event: any, chunk: string) => onChunk(chunk);
     const endListener = () => {
-      ipcRenderer.removeListener(`${channelId}-chunk`, chunkListener);
-      ipcRenderer.removeListener(`${channelId}-end`, endListener);
-      ipcRenderer.removeListener(`${channelId}-error`, errorListener);
+      ipcRenderer.removeAllListeners(`${channelId}-chunk`);
+      ipcRenderer.removeAllListeners(`${channelId}-end`);
+      ipcRenderer.removeAllListeners(`${channelId}-error`);
       onEnd();
     };
     const errorListener = (_event: any, err: any) => {
-      ipcRenderer.removeListener(`${channelId}-chunk`, chunkListener);
-      ipcRenderer.removeListener(`${channelId}-end`, endListener);
-      ipcRenderer.removeListener(`${channelId}-error`, errorListener);
+      ipcRenderer.removeAllListeners(`${channelId}-chunk`);
+      ipcRenderer.removeAllListeners(`${channelId}-end`);
+      ipcRenderer.removeAllListeners(`${channelId}-error`);
       onError(err);
     };
 
@@ -151,6 +151,11 @@ const api = {
     ipcRenderer.on(`${channelId}-error`, errorListener);
 
     ipcRenderer.send('ai-chat-stream', { channelId, prompt, contextChats, history, mentions, options });
+    return channelId;
+  },
+
+  abortAiChat: (channelId: string) => {
+    return ipcRenderer.invoke('abort-ai-chat', channelId);
   },
 
   getChatContext: (jid: string) => {
@@ -164,6 +169,32 @@ const api = {
   },
   getAiModels: () => {
     return ipcRenderer.invoke('get-ai-models')
+  },
+  
+  // ── AI Session Methods ──────────────────────────────────────────────
+  createAiSession: (title: string, modelId?: string) => {
+    return ipcRenderer.invoke('ai-session-create', title, modelId)
+  },
+  listAiSessions: (page?: number, pageSize?: number) => {
+    return ipcRenderer.invoke('ai-session-list', page, pageSize)
+  },
+  getAiSession: (id: string) => {
+    return ipcRenderer.invoke('ai-session-get', id)
+  },
+  renameAiSession: (id: string, title: string) => {
+    return ipcRenderer.invoke('ai-session-rename', id, title)
+  },
+  deleteAiSession: (id: string) => {
+    return ipcRenderer.invoke('ai-session-delete', id)
+  },
+  saveAiSessionMessages: (sessionId: string, messages: any[]) => {
+    return ipcRenderer.invoke('ai-session-save-messages', sessionId, messages)
+  },
+  getAiAutoSave: () => {
+    return ipcRenderer.invoke('ai-session-get-autosave')
+  },
+  setAiAutoSave: (enabled: boolean) => {
+    return ipcRenderer.invoke('ai-session-set-autosave', enabled)
   }
 }
 

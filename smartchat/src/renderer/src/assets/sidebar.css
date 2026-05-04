@@ -680,6 +680,11 @@
   color: var(--wa-text-primary);
 }
 
+.ai-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .ai-title {
   display: flex;
   align-items: center;
@@ -796,6 +801,14 @@
 
 .ai-thought-toggle span {
   flex: 1;
+}
+
+.ai-thought-arrow {
+  transition: transform 0.2s;
+}
+
+.ai-thought-arrow.expanded {
+  transform: rotate(180deg);
 }
 
 .ai-thought-content {

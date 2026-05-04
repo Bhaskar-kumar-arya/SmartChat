@@ -139,9 +139,10 @@ model Message {
   senderId    Int?
   /// Raw sender JID for this specific message (needed for edits/revokes in community chats).
   participant String?
-  /// True if the logged-in user sent this message, false if received.
+  /// True if the logged-in user sent this message, false if received. In SQL, use 'fromMe = 1' to filter for messages sent by the user.
   fromMe      Boolean
   /// Unix timestamp in SECONDS when the message was sent.
+  /// [AI RULE]: To compare timestamps, convert ISO date/time strings to seconds: timestamp >= CAST(strftime('%s', 'YYYY-MM-DD HH:MM:SS') AS INT)
   timestamp   BigInt
   /// WhatsApp message type: "text", "image", "video", "audio", "document", "sticker", "poll", etc.
   messageType String
@@ -188,4 +189,53 @@ model MessageVector {
   messageId String  @id
   /// Serialised float32 embedding vector (768 dimensions).
   vector    String
+}
+
+// ── 10. AI CHAT SESSION ──────────────────────────────────────────────────
+/// A saved AI assistant conversation session.
+model AIChatSession {
+  /// UUID primary key.
+  id        String   @id @default(uuid())
+  /// Display title — defaults to first user prompt, user can rename.
+  title     String
+  /// Unix timestamp (ms) when the session was created.
+  createdAt BigInt
+  /// Unix timestamp (ms) of the last activity.
+  updatedAt BigInt
+  /// AI model ID used during this session (e.g. "gemma-4-31b-it").
+  modelId   String?
+
+  messages  AIChatMessage[]
+
+  @@index([updatedAt(sort: Desc)])
+}
+
+// ── 11. AI CHAT MESSAGE ──────────────────────────────────────────────────
+/// A single message within an AI chat session.
+model AIChatMessage {
+  /// UUID primary key.
+  id         String   @id @default(uuid())
+  session    AIChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  /// FK → AIChatSession.id.
+  sessionId  String
+  /// "user" | "ai"
+  role       String
+  /// The text content of the message.
+  content    String
+  /// JSON-serialized contexts array (chat history attachments).
+  contexts   String?
+  /// JSON-serialized mentions array.
+  mentions   String?
+  /// True if this message is a hidden system/tool-result message.
+  isHidden   Boolean  @default(false)
+  /// True if this is a system-injected message (tool results, etc.).
+  isSystem   Boolean  @default(false)
+  /// JSON string of tool execution result, if any.
+  toolResult String?
+  /// True if the AI response had an error.
+  hasError   Boolean  @default(false)
+  /// Ordering index within the session (0-based).
+  orderIndex Int
+
+  @@index([sessionId, orderIndex])
 }

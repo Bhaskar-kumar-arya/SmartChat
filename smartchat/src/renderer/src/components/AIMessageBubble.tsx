@@ -93,7 +93,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2.5"
-                style={{ transform: thoughtExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+                className={`ai-thought-arrow ${thoughtExpanded ? 'expanded' : ''}`}
               >
                 <polyline points="6 9 12 15 18 9"/>
               </svg>
@@ -125,12 +125,10 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
 
         {/* Tool parse error */}
         {!toolData && parseError && toolMatch && (
-           <div className="ai-tool-error" style={{ padding: '12px', background: 'var(--bg-hover)', color: 'var(--text-secondary)', borderLeft: '4px solid #ef4444', borderRadius: '4px', marginBottom: '8px', fontSize: '13px' }}>
-              <strong style={{ color: '#ef4444' }}>Failed to parse tool call</strong>
-              <p style={{ margin: '4px 0 0 0' }}>{parseError}</p>
-              <pre style={{ margin: '8px 0 0 0', background: 'var(--bg-primary)', padding: '8px', borderRadius: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                {toolMatch[1].trim()}
-              </pre>
+           <div className="ai-tool-error">
+              <strong>Failed to parse tool call</strong>
+              <p>{parseError}</p>
+              <pre>{toolMatch[1].trim()}</pre>
            </div>
         )}
 
@@ -150,13 +148,11 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
                 mentions: message.mentions || []
               }}
             />
-            <div className="ai-edit-actions" style={{ marginTop: '8px' }}>
+            <div className="ai-edit-actions">
               <span className="ai-edit-hint">ESC to cancel</span>
               <button 
                 className="ai-cancel-btn" 
-                onClick={() => {
-                  setIsEditing(false);
-                }}
+                onClick={() => setIsEditing(false)}
               >
                 Cancel
               </button>

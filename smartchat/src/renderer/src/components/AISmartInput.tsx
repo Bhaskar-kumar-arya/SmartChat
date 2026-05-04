@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, KeyboardEvent } from 'react'
+import React, { useState, useRef, useEffect, KeyboardEvent, useImperativeHandle, forwardRef } from 'react'
 import { ChatItem } from '../types'
 
 interface SelectedContext {
@@ -15,14 +15,18 @@ interface AISmartInputProps {
   onCancel?: () => void
 }
 
-const AISmartInput: React.FC<AISmartInputProps> = ({ 
+export interface AISmartInputRef {
+  focus: () => void;
+}
+
+const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({ 
   chatList, 
   onSend, 
   disabled, 
   onAbort, 
   externalValue, 
   onCancel
-}) => {
+}, ref) => {
   const [inputValue, setInputValue] = useState('')
   const [showMentionMenu, setShowMentionMenu] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
@@ -36,6 +40,12 @@ const AISmartInput: React.FC<AISmartInputProps> = ({
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      inputRef.current?.focus()
+    }
+  }))
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -378,6 +388,6 @@ const AISmartInput: React.FC<AISmartInputProps> = ({
       </div>
     </div>
   )
-}
+})
 
 export default AISmartInput

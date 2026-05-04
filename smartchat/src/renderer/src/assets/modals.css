@@ -124,3 +124,253 @@
 .reaction-modal-emoji {
   font-size: 1.25rem;
 }
+
+/* ─── AI Chat Modals (History & Settings) ────────────────────────── */
+
+.ai-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-modal-container {
+  background-color: var(--wa-sidebar-bg);
+  padding: 24px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--wa-border);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+
+.ai-modal-confirm-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  border-radius: 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 10;
+}
+
+.ai-modal-confirm-text {
+  color: white;
+  margin: 0;
+  font-size: 15px;
+}
+
+.ai-modal-btn-group {
+  display: flex;
+  gap: 12px;
+}
+
+.ai-modal-btn {
+  padding: 8px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.ai-modal-btn:hover {
+  opacity: 0.9;
+}
+
+.ai-modal-btn.cancel {
+  border: 1px solid var(--wa-border);
+  background: var(--wa-bg);
+  color: white;
+}
+
+.ai-modal-btn.delete {
+  border: none;
+  background: #ef4444;
+  color: white;
+}
+
+.ai-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.ai-modal-header h3 {
+  color: white;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.ai-modal-close-icon-btn {
+  background: none;
+  border: none;
+  color: var(--wa-text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.ai-modal-close-icon-btn:hover {
+  background-color: var(--wa-bg-hover);
+  color: var(--wa-text-primary);
+}
+
+.ai-history-list {
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-history-empty {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--wa-text-secondary);
+  font-size: 14px;
+}
+
+.ai-history-item {
+  padding: 12px;
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.ai-history-item:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.ai-history-item.active {
+  background-color: var(--wa-bg-active);
+  border-color: var(--wa-primary);
+}
+
+.ai-history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.ai-history-item-title {
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-history-item-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.ai-history-item:hover .ai-history-item-actions {
+  opacity: 1;
+}
+
+.ai-history-item-btn {
+  background: none;
+  border: none;
+  color: var(--wa-text-secondary);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-history-item-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.ai-history-item-btn.delete:hover {
+  color: #ef4444;
+}
+
+.ai-history-item-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--wa-text-secondary);
+}
+
+/* AI Settings rows */
+.ai-settings-row {
+  margin: 15px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ai-settings-label {
+  color: var(--wa-text-primary);
+  font-size: 14px;
+}
+
+.ai-settings-select {
+  background: var(--wa-header-bg);
+  color: white;
+  border: 1px solid var(--wa-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  max-width: 200px;
+  font-size: 13px;
+}
+
+.ai-settings-checkbox {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+}
+
+.ai-settings-save-btn {
+  margin-top: 20px;
+  width: 100%;
+  padding: 10px;
+  background-color: var(--wa-primary);
+  color: var(--wa-badge-text);
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.ai-settings-save-btn:hover {
+  opacity: 0.9;
+}
+

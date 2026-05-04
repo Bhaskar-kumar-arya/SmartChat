@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { ChatItem, ModelInfo, AIChatOptions } from '../types'
-import AISmartInput from './AISmartInput'
+import AISmartInput, { AISmartInputRef } from './AISmartInput'
 import AIMessageBubble from './AIMessageBubble'
 import AISettingsModal from './AISettingsModal'
+import AIChatHistoryModal from './AIChatHistoryModal'
+import { useAIChatSessions } from '../hooks/useAIChatSessions'
 
 interface AIChatMessage {
   id: string
@@ -37,13 +39,35 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   const [aiOptions, setAiOptions] = useState<AIChatOptions>({ 
     useThinkMode: true, 
     model: 'gemma-4-31b-it',
-    contextLength: 24576 
+    contextLength: 24576,
+    autoSaveChats: true
   })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesRef = useRef<AIChatMessage[]>([])
+  const activeSessionIdRef = useRef<string | null>(null)
+  const inputRef = useRef<AISmartInputRef>(null)
+  
+  const {
+    sessions,
+    activeSessionId,
+    isHistoryModalOpen,
+    setIsHistoryModalOpen,
+    createSession,
+    selectSession,
+    saveCurrentMessages,
+    renameSession,
+    deleteSession,
+    startNewChat
+  } = useAIChatSessions()
+
+  // Keep a ref in sync so stream callbacks can access the latest sessionId
+  useEffect(() => { activeSessionIdRef.current = activeSessionId }, [activeSessionId])
   
   const streamingBuffers = useRef<Record<string, string>>({})
   const typingInterval = useRef<any>(null)
+
+  const focusInput = () => setTimeout(() => inputRef.current?.focus(), 50)
 
   useEffect(() => {
     return () => {
@@ -58,6 +82,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
       }
       window.api.getAiTools().then(setAvailableTools).catch(console.error)
       window.api.getAiModels().then(setAvailableModels).catch(console.error)
+      window.api.getAiAutoSave().then(autoSave => setAiOptions(prev => ({ ...prev, autoSaveChats: autoSave }))).catch(console.error)
     }
   }, [isOpen])
 
@@ -112,13 +137,17 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
            delete streamingBuffers.current[aiMsgId];
            
            let finalContent = '';
-           setMessages(p => p.map(m => {
-             if (m.id === aiMsgId) {
-               finalContent = m.content + remainder;
-               return { ...m, content: finalContent };
-             }
-             return m;
-           }));
+           setMessages(p => {
+             const next = p.map(m => {
+               if (m.id === aiMsgId) {
+                 finalContent = m.content + remainder;
+                 return { ...m, content: finalContent };
+               }
+               return m;
+             });
+             messagesRef.current = next;
+             return next;
+           });
 
            // Check for auto-executable tool call
            setTimeout(() => {
@@ -135,14 +164,24 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
                } catch (e) {
                  console.error('Failed to parse tool data for auto-exec:', e);
                }
-             }
+              } else {
+               // No tool execution requested, perform auto-save if enabled
+               const sid = activeSessionIdRef.current;
+               if (aiOptions.autoSaveChats && sid) {
+                 saveCurrentMessages(sid, messagesRef.current);
+               }
+              }
            }, 100);
         },
         (err) => {
            setLoading(false);
            setActiveChannelId(null);
            delete streamingBuffers.current[aiMsgId];
-           setMessages(p => p.map(m => m.id === aiMsgId ? { ...m, content: m.content + '\n\n**Error:** ' + String(err), hasError: true } : m));
+           setMessages(p => {
+             const next = p.map(m => m.id === aiMsgId ? { ...m, content: m.content + '\n\n**Error:** ' + String(err), hasError: true } : m);
+             messagesRef.current = next;
+             return next;
+           });
         }
     );
     setActiveChannelId(channelId);
@@ -192,7 +231,11 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     const history = messages.slice(0, msgIndex - 1);
 
     // Reset AI message state
-    setMessages(p => p.map(m => m.id === messageId ? { ...m, content: '', hasError: false } : m));
+    setMessages(p => {
+      const next = p.map(m => m.id === messageId ? { ...m, content: '', hasError: false } : m);
+      messagesRef.current = next;
+      return next;
+    });
     
     // Restart stream
     startAIStream(triggerMsg.content, history, messageId, triggerMsg.contexts || [], triggerMsg.mentions || [], triggerMsg.isSystem);
@@ -215,7 +258,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     const prev = await new Promise<AIChatMessage[]>(resolve => setMessages(p => { resolve(p); return p; }));
     const updated = prev.map(m => m.id === messageId ? { ...m, toolResult: resultPayload } : m);
     
-    setMessages([
+    const nextMessages = [
         ...updated,
         {
             id: sysMsgId,
@@ -230,7 +273,9 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
             content: '',
             isSystem: false
         }
-    ]);
+    ];
+    setMessages(nextMessages);
+    messagesRef.current = nextMessages;
 
     const prompt = `[SYSTEM] Tool Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool has completed.`;
     
@@ -245,6 +290,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
       if (msgIndex !== -1) {
         baseHistory = messages.slice(0, msgIndex);
         setMessages(baseHistory);
+        messagesRef.current = baseHistory;
       }
       setEditingMessageId(null);
     }
@@ -267,20 +313,30 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         const aiMessageId = crypto.randomUUID();
 
         // Add both messages atomically
-        setMessages([...baseHistory, 
+        const newMessages = [...baseHistory, 
           {
             id: userMessageId,
-            role: 'user',
+            role: 'user' as const,
             content: prompt,
             contexts: resolvedContexts,
             mentions: currentMentions
           },
           {
             id: aiMessageId,
-            role: 'ai',
+            role: 'ai' as const,
             content: ''
           }
-        ]);
+        ];
+        
+        setMessages(newMessages);
+        messagesRef.current = newMessages;
+
+        // Create a session if this is the first message and we don't have an active session
+        if (!activeSessionIdRef.current && baseHistory.length === 0) {
+          if (aiOptions.autoSaveChats) {
+            createSession(prompt, aiOptions.model);
+          }
+        }
 
         startAIStream(prompt, baseHistory, aiMessageId, resolvedContexts, currentMentions, false);
 
@@ -348,10 +404,40 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     }
   }
 
+  // Remove the old useEffect that was auto-loading sessions on activeSessionId change.
+  // Sessions are now explicitly loaded via onSelectSession in the history modal.
+
   if (!isOpen) return null
 
   return (
     <div className="ai-sidebar" style={{ width: `${width}px`, position: 'relative' }}>
+      <AIChatHistoryModal 
+        isOpen={isHistoryModalOpen}
+        onClose={() => {
+          setIsHistoryModalOpen(false);
+          focusInput();
+        }}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={(id) => {
+          selectSession(id).then(msgs => {
+            setMessages(msgs);
+            messagesRef.current = msgs;
+            setEditingMessageId(null);
+          });
+        }}
+        onRenameSession={renameSession}
+        onDeleteSession={(id) => {
+          deleteSession(id);
+          if (activeSessionId === id || activeSessionIdRef.current === id) {
+            setMessages([]);
+            messagesRef.current = [];
+            setEditingMessageId(null);
+          }
+          setIsHistoryModalOpen(false);
+          focusInput();
+        }}
+      />
       <AISettingsModal 
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
@@ -367,7 +453,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
           </svg>
           <h3>AI Assistant</h3>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="ai-header-actions">
           <button 
             className="ai-close-btn" 
             onClick={() => setIsSettingsOpen(true)} 
@@ -380,12 +466,29 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
           </button>
           <button 
             className="ai-close-btn" 
-            onClick={() => { setMessages([]); setEditingMessageId(null); }} 
-            title="Clear Chat"
+            onClick={() => setIsHistoryModalOpen(true)} 
+            title="History"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </button>
+          <button 
+            className="ai-close-btn" 
+            onClick={async () => {
+              setMessages([]); 
+              messagesRef.current = [];
+              setEditingMessageId(null);
+              startNewChat();
+              setIsHistoryModalOpen(false);
+              focusInput();
+            }} 
+            title="New Chat"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
           </button>
           <button className="ai-close-btn" onClick={onClose} title="Close Sidebar">
@@ -432,6 +535,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
       </div>
 
       <AISmartInput 
+        ref={inputRef}
         chatList={chatList} 
         onSend={handleSend} 
         disabled={loading || !!activeChannelId} 

@@ -12,6 +12,7 @@ import { aiService } from './services/AIService'
 import { toolRegistry } from './services/AIToolService'
 import { AIToolInitializer } from './services/AIToolInitializer'
 import { audioTranscoderService } from './services/AudioTranscoderService'
+import { aiChatSessionService } from './services/AIChatSessionService'
 
 export function registerIpcHandlers(
   prisma: PrismaClient,
@@ -545,6 +546,39 @@ export function registerIpcHandlers(
     
     return enriched.reverse();
   })
+
+  // ── AI Chat Session Handlers ─────────────────────────────────────────
+  ipcMain.handle('ai-session-create', async (_event, title: string, modelId?: string) => {
+    return await aiChatSessionService.createSession(title, modelId);
+  });
+
+  ipcMain.handle('ai-session-list', async (_event, page?: number, pageSize?: number) => {
+    return await aiChatSessionService.listSessions(page, pageSize);
+  });
+
+  ipcMain.handle('ai-session-get', async (_event, id: string) => {
+    return await aiChatSessionService.getSession(id);
+  });
+
+  ipcMain.handle('ai-session-rename', async (_event, id: string, title: string) => {
+    return await aiChatSessionService.renameSession(id, title);
+  });
+
+  ipcMain.handle('ai-session-delete', async (_event, id: string) => {
+    return await aiChatSessionService.deleteSession(id);
+  });
+
+  ipcMain.handle('ai-session-save-messages', async (_event, sessionId: string, messages: any[]) => {
+    return await aiChatSessionService.saveMessages(sessionId, messages);
+  });
+
+  ipcMain.handle('ai-session-get-autosave', async () => {
+    return await aiChatSessionService.getAutoSavePreference();
+  });
+
+  ipcMain.handle('ai-session-set-autosave', async (_event, enabled: boolean) => {
+    return await aiChatSessionService.setAutoSavePreference(enabled);
+  });
 }
 
 // Exporting helpers for index.ts

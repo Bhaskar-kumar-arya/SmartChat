@@ -72,6 +72,15 @@ export interface AIChatOptions {
   useThinkMode: boolean
   model: string
   contextLength: number
+  autoSaveChats: boolean
+}
+
+export interface AIChatSessionItem {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  modelId?: string
 }
 
 export interface PresenceUpdate {
