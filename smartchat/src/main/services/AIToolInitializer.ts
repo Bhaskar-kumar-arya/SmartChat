@@ -3,6 +3,7 @@ import { SendMessageTool } from '../tools/SendMessageTool';
 import { ReadChatTool } from '../tools/ReadChatTool';
 import { QueryDatabaseTool } from '../tools/QueryDatabaseTool';
 import { ExecuteScriptTool } from '../tools/ExecuteScriptTool';
+import { MessageActionTool } from '../tools/MessageActionTool';
 
 export class AIToolInitializer {
   /**
@@ -16,6 +17,7 @@ export class AIToolInitializer {
     const sendMessageTool = new SendMessageTool(getSock);
     const readChatTool = new ReadChatTool(getSock);
     const queryDatabaseTool = new QueryDatabaseTool();
+    const messageActionTool = new MessageActionTool(getSock);
     // ExecuteScriptTool must be instantiated last — its initialize() builds the
     // injected-tool list from the registry, so all other tools must be registered first.
     const executeScriptTool = new ExecuteScriptTool();
@@ -24,6 +26,7 @@ export class AIToolInitializer {
     toolRegistry.registerTool(sendMessageTool);
     toolRegistry.registerTool(readChatTool);
     toolRegistry.registerTool(queryDatabaseTool);
+    toolRegistry.registerTool(messageActionTool);
     toolRegistry.registerTool(executeScriptTool);
 
     // 3. Run optional async initialization on tools that need it (fire-and-forget)
