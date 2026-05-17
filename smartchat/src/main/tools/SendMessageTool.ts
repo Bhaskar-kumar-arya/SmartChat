@@ -6,7 +6,7 @@ export class SendMessageTool implements AITool {
   name = 'sendMessage';
   description = `Send a WhatsApp message to a chat or person on the user's behalf.
 
-WHEN TO USE:
+CAN BE USED FOR:
 - ONLY when the user explicitly asks to send a message to a person or group
 - Do NOT use this to reply to the user in the chatbar — respond conversationally for that
 

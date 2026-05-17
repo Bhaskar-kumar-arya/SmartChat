@@ -5,13 +5,13 @@ export class ReadChatTool implements AITool {
   name = 'readChat';
   description = `Read the message history of a specific WhatsApp chat by JID.
 
-WHEN TO USE:
+CAN BE USED FOR:
 - When you need the actual text content of messages in a specific chat
 - Use queryDatabase for aggregations, cross-chat analysis, or when you only need counts/metadata
 
 HOW TO USE:
 - 'jid' is required and must be the exact WhatsApp JID of the chat
-- 'limit' is optional — omit it to fetch up to 20,000 messages. Only set it when you need fewer than the full history
+- 'limit': Optional. Fetches only the N most recent messages. 
 - Use 'afterDate' / 'beforeDate' (ISO strings) to scope to a time window
 - For pagination: take the 'Oldest Message ID' from a previous result and pass it as 'beforeMessageId'
 
@@ -24,7 +24,6 @@ The string contains, in order:
 4. Messages in chronological order: [M/D/YYYY, H:MM:SS AM/PM] SenderName: message text
 
 CONSTRAINTS:
-- Hard cap of 20,000 messages per call
 - 'jid' must be exact`;
 
 

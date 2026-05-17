@@ -1,16 +1,22 @@
 import vm from 'vm';
 import { AITool, toolRegistry } from '../services/AIToolService';
 
-const MAX_EXECUTION_MS = 30_000; // 30 second wall-clock timeout
-const MAX_TOOL_CALLS = 200;       // prevent runaway loops
+const MAX_EXECUTION_MS = 60_000; // 30 second wall-clock timeout
+const MAX_TOOL_CALLS = 1000;       // prevent runaway loops
 
 const DESCRIPTION_BASE = `Write and execute a JavaScript program that can call registered tools with full control flow — loops, conditionals, variables, and any standard JS logic.
 
-WHEN TO USE:
-- Multi-step workflows that require control flow: loops, conditionals, branching
-- Any task that requires more than one sequential tool call (e.g. query → process → act pipelines)
-- Batch operations across multiple records or chats
-- When you need to aggregate or transform tool outputs with JavaScript logic before responding
+CAN BE USED FOR:
+- Workflows that require control flow (example:loops, conditionals)
+- Tasks requiring multiple sequential tool calls
+- Batch operations
+- Data aggregation and transformation
+- Programmatic data generation and text manipulation
+- Mathematical and deterministic calculations
+- Data filtering, sorting, and regex parsing
+- Piping output from one tool as dynamic input to another
+
+NOTE: If a task requires multiple tools or iteration, prefer handling it entirely inside a single script rather than splitting it across turns.
 
 HOW TO WRITE THE SCRIPT:
 - All tool calls MUST use 'await' (they are async). Forgetting 'await' returns a Promise, not a result.
@@ -18,7 +24,6 @@ HOW TO WRITE THE SCRIPT:
 - Your script runs inside an async IIFE. Use 'return' at the top level to emit a final result.
 - If you define a named async function, call it with \`return await main()\` to ensure the IIFE waits for it and captures its return value.
 - console.log() is captured and returned in the output under 'logs'.
-- Scripts time out after ${MAX_EXECUTION_MS / 1000} seconds. Max ${MAX_TOOL_CALLS} tool calls per execution.
 - Forgetting \`await\` returns a Promise, not a result. Forgetting \`return await\` on a named async function means the script exits before it finishes.
 
 WHAT YOU RECEIVE BACK:
@@ -35,7 +40,7 @@ If success is false, read 'error' and 'logs' to diagnose — then retry with a c
 EXAMPLE — mark all unread chats as read:
 \`\`\`js
 const result = await queryDatabase({
-  sql: "SELECT jid FROM Chat WHERE unreadCount > 0 LIMIT 50",
+  sql: "SELECT jid FROM Chat WHERE unreadCount > 0",
   explanation: "Find all unread chats"
 });
 let count = 0;

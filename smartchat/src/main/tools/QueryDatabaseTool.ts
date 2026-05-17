@@ -11,7 +11,7 @@ const FORBIDDEN_KEYWORDS = [
 ];
 
 // Hard cap on returned rows to prevent memory issues
-const MAX_ROWS = 500;
+const MAX_ROWS = 1500;
 
 // Tables managed by Prisma/sqlite-vec internals — excluded from schema introspection
 const EXCLUDED_TABLE_PREFIXES = ['_prisma', 'sqlite_', 'vec_'];
@@ -102,10 +102,10 @@ function parsePrismaDocComments(): Record<string, SchemaDescriptions> {
 
 const BASE_DESCRIPTION = `Execute a read-only SQL SELECT query against the local SQLite database.
 
-WHEN TO USE:
-- When you need any structured, filtered, counted, or aggregated data from the database
-- When facts about chats, messages, contacts, groups, or communities aren't already present in the conversation context
-- Prefer this over making assumptions — accurate data always beats guessing
+CAN BE USED FOR:
+- Data retrieval, filtering, and aggregation
+- Fetching factual information not present in the current context
+- Verifying assumptions against the source data
 
 HOW TO USE:
 - Only SELECT (or WITH...SELECT) statements are permitted
