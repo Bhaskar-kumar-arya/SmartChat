@@ -70,6 +70,7 @@ export interface HistorySyncData {
   contacts: Array<Record<string, unknown>>
   messages: Array<Record<string, unknown>>
   lidPnMappings?: Array<{ lid: string; pn: string }>
+  phoneNumberToLidMappings?: Array<{ lidJid: string; pnJid: string }>
   syncType: unknown
   isLatest: boolean
   progress: number
@@ -88,7 +89,7 @@ export async function handleHistorySync(
   prisma: PrismaClient
 ): Promise<HistorySyncResult> {
 
-  const { chats, contacts, messages, lidPnMappings, progress, isLatest } = data
+  const { chats, contacts, messages, lidPnMappings, phoneNumberToLidMappings, progress, isLatest } = data
 
   let contactCount = 0
   let chatCount = 0
@@ -98,7 +99,15 @@ export async function handleHistorySync(
   if (lidPnMappings && lidPnMappings.length > 0) {
     for (const mapping of lidPnMappings) {
       if (mapping.lid && mapping.pn) {
-        await contactService.linkLidAndPn(mapping.lid, mapping.pn).catch(() => {})
+        await contactService.linkLidAndPn(mapping.lid, mapping.pn, 'history.sync').catch(() => {})
+      }
+    }
+  }
+
+  if (phoneNumberToLidMappings && phoneNumberToLidMappings.length > 0) {
+    for (const mapping of phoneNumberToLidMappings) {
+      if (mapping.lidJid && mapping.pnJid) {
+        await contactService.linkLidAndPn(mapping.lidJid, mapping.pnJid, 'history.sync.ph').catch(() => {})
       }
     }
   }
@@ -107,7 +116,21 @@ export async function handleHistorySync(
   if (contacts && contacts.length > 0) {
     for (const c of contacts) {
       if (!c.id) continue
+
+      // Skip bare LID contacts with no name data — they are group participants
+      // whose phone number will be resolved later via syncGroupMembers /
+      // groupFetchAllParticipating. Creating them here just makes nameless ghost stubs.
+      const isBareLid = (c.id as string).endsWith('@lid')
+        && !c.name && !c.notify && !c.pushName && !c.verifiedName
+      if (isBareLid) continue
+
       await contactService.upsertContact(c).catch(() => {})
+
+      // If the contact carries both a PN id and a separate lid, link them now
+      // so the LID alias points to the correct identity immediately.
+      if (!(c.id as string).endsWith('@lid') && c.lid) {
+        await contactService.linkLidAndPn(c.lid as string, c.id as string, 'history.sync.contact').catch(() => {})
+      }
     }
     contactCount = contacts.length
   }
@@ -119,6 +142,11 @@ export async function handleHistorySync(
       if (!c.id) continue
       const jid = String(c.id)
       const raw = c as any
+
+      // If the chat object carries a linked accountLid, register the mapping immediately
+      if (raw.accountLid && jid && !jid.endsWith('@lid') && jid.includes('@s.whatsapp.net')) {
+        await contactService.linkLidAndPn(String(raw.accountLid), jid, 'history.sync.chat.accountLid').catch(() => {})
+      }
       const hasCommunityData = raw.isCommunity !== undefined || 
                                raw.isParentGroup !== undefined || 
                                raw.isAnnounce !== undefined || 
@@ -193,6 +221,17 @@ export async function handleHistorySync(
           name: raw.name
         }
       })
+
+      // Extract PN <-> LID mapping from participants in history sync
+      if (raw.participant && Array.isArray(raw.participant)) {
+        for (const p of raw.participant) {
+          const lid = p.userJid || p.id || p.lid
+          const pn = p.phoneNumberJid || p.phoneNumber
+          if (lid && pn && String(lid).includes('@lid') && String(pn).includes('@s.whatsapp.net')) {
+            await contactService.linkLidAndPn(String(lid), String(pn), 'history.sync.participant').catch(() => {})
+          }
+        }
+      }
     }
     chatCount = chats.length
   }

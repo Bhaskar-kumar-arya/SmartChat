@@ -49,7 +49,30 @@ export class ContactService {
         const finalName = ident.displayName || ident.verifiedName || ident.pushName || ident.phoneNumber?.split('@')[0] || jid.split('@')[0]
         nameMap.set(jid, finalName)
       } else {
-        nameMap.set(jid, jid.split('@')[0])
+        // Tier 3: Runtime Cache Query
+        let resolvedFromCache = false;
+        if (jid.includes('@lid') && sock?.signalRepository?.lidMapping?.getPNForLID) {
+          const pn = sock.signalRepository.lidMapping.getPNForLID(jid);
+          if (pn) {
+            resolvedFromCache = true;
+            // Async fire-and-forget to link them
+            this.linkLidAndPn(jid, pn, 'runtime.cache').catch(() => {});
+            
+            // Re-check aliases just in case PN is known
+            const pnAlias = aliases.find(a => a.jid === pn || a.jid === pn.split(':')[0]);
+            if (pnAlias && pnAlias.identity) {
+              const ident = pnAlias.identity;
+              const finalName = ident.displayName || ident.verifiedName || ident.pushName || ident.phoneNumber?.split('@')[0] || pn.split('@')[0]
+              nameMap.set(jid, finalName);
+            } else {
+              nameMap.set(jid, pn.split('@')[0]);
+            }
+          }
+        }
+        
+        if (!resolvedFromCache) {
+          nameMap.set(jid, jid.split('@')[0])
+        }
       }
     }
 
@@ -102,6 +125,16 @@ export class ContactService {
     if (!identityId) {
       const existingByAlias = await prisma.identityAlias.findUnique({ where: { jid: id } })
       if (existingByAlias) identityId = existingByAlias.identityId
+    }
+
+    // 4. Check LidMap: if this is a PN JID, a LID stub may already exist for this number.
+    //    Reuse that stub instead of creating a duplicate PN identity.
+    if (!identityId && phoneNumber) {
+      const lidMapEntry = await prisma.lidMap.findFirst({ where: { pn: phoneNumber } })
+      if (lidMapEntry) {
+        const lidAlias = await prisma.identityAlias.findUnique({ where: { jid: lidMapEntry.lid } })
+        if (lidAlias) identityId = lidAlias.identityId
+      }
     }
 
     // Create the Identity if it doesn't exist
@@ -162,9 +195,17 @@ export class ContactService {
   /**
    * Links a LID to a PN explicitly (e.g., from lid-mapping.update events).
    */
-  async linkLidAndPn(lid: string, pn: string): Promise<void> {
+  async linkLidAndPn(lid: string, pn: string, source: string = 'unknown'): Promise<void> {
     if (!lid || !pn) return
 
+    // 1. High-Performance Mapping Ledger
+    await prisma.lidMap.upsert({
+      where: { lid },
+      update: { pn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
+      create: { lid, pn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
+    }).catch(() => {})
+
+    // 2. Relational Identity Sync
     // Find identities for both
     const lidAlias = await prisma.identityAlias.findUnique({ where: { jid: lid } })
     let pnIdentity = await prisma.identity.findUnique({ where: { phoneNumber: pn } })
@@ -181,13 +222,27 @@ export class ContactService {
 
     if (pnIdentity) {
       identityId = pnIdentity.id
-      // If LID was attached to a different identity, merge them (ideally) or just re-point the alias
-      // For simplicity, we just re-point the alias to the PN's identity
+      const orphanId = lidAlias && lidAlias.identityId !== identityId ? lidAlias.identityId : null
+
+      // Re-point the LID alias to the canonical PN identity
       await prisma.identityAlias.upsert({
         where: { jid: lid },
         update: { identityId },
         create: { jid: lid, type: 'LID', identityId }
       })
+
+      // Delete the old LID-only stub if nothing else references it
+      if (orphanId) {
+        const [aliasCount, msgCount, memberCount, reactionCount] = await Promise.all([
+          prisma.identityAlias.count({ where: { identityId: orphanId } }),
+          prisma.message.count({ where: { senderId: orphanId } }),
+          prisma.chatMember.count({ where: { identityId: orphanId } }),
+          prisma.reaction.count({ where: { senderId: orphanId } })
+        ])
+        if (aliasCount === 0 && msgCount === 0 && memberCount === 0 && reactionCount === 0) {
+          await prisma.identity.delete({ where: { id: orphanId } }).catch(() => {})
+        }
+      }
     } else if (lidAlias) {
       identityId = lidAlias.identityId
       // Update the identity to have the phone number
@@ -209,6 +264,32 @@ export class ContactService {
       await prisma.identityAlias.create({ data: { jid: pn, type: 'PN', identityId } })
       await prisma.identityAlias.create({ data: { jid: lid, type: 'LID', identityId } })
     }
+  }
+
+  /**
+   * Resolves many JIDs to their Identity IDs in a single batched query.
+   * Does NOT create missing identities — unknown JIDs are simply absent from the result map.
+   * Safe to call with large arrays; chunked to stay within SQLite's variable limit.
+   */
+  async batchGetIdentityIds(jids: string[]): Promise<Map<string, number>> {
+    const unique = Array.from(new Set(jids.filter(Boolean)))
+    if (unique.length === 0) return new Map()
+
+    const CHUNK = 500
+    const result = new Map<string, number>()
+
+    for (let i = 0; i < unique.length; i += CHUNK) {
+      const chunk = unique.slice(i, i + CHUNK)
+      const aliases = await prisma.identityAlias.findMany({
+        where: { jid: { in: chunk } },
+        select: { jid: true, identityId: true }
+      })
+      for (const alias of aliases) {
+        result.set(alias.jid, alias.identityId)
+      }
+    }
+
+    return result
   }
 
   /**
@@ -297,6 +378,119 @@ export class ContactService {
     } catch (e) {
       return null
     }
+  }
+
+  /**
+   * Post-sync garbage collector: merges LID-only stubs into their PN counterpart
+   * using pushName as the matching heuristic. Only merges when there is exactly
+   * one unambiguous PN identity with the same pushName.
+   * Safe to call multiple times — fully idempotent.
+   */
+  async deduplicateIdentities(): Promise<{ merged: number; skipped: number }> {
+    let merged = 0
+    let skipped = 0
+
+    // Find all LID-only stubs: no phoneNumber, at least one LID alias, non-trivial pushName
+    const stubs = await prisma.identity.findMany({
+      where: {
+        phoneNumber: null,
+        pushName: { not: null },
+        aliases: { some: { type: 'LID' } }
+      },
+      include: { aliases: true }
+    })
+
+    for (const stub of stubs) {
+      const pushName = stub.pushName?.trim()
+      if (!pushName || pushName.length < 2) { skipped++; continue }
+
+      // Find PN identities with the same pushName
+      const candidates = await prisma.identity.findMany({
+        where: {
+          phoneNumber: { not: null },
+          pushName: pushName,
+          id: { not: stub.id }
+        }
+      })
+
+      // Only merge on unambiguous 1:1 match — if 2+ candidates, we can't be sure which is right
+      if (candidates.length !== 1) { skipped++; continue }
+
+      const keep = candidates[0]
+      const keepId = keep.id
+      const stubId = stub.id
+
+      try {
+        // 1. Re-point all LID aliases from stub → keep
+        await prisma.identityAlias.updateMany({
+          where: { identityId: stubId },
+          data: { identityId: keepId }
+        })
+
+        // 2. Re-point messages
+        await prisma.message.updateMany({
+          where: { senderId: stubId },
+          data: { senderId: keepId }
+        })
+
+        // 3. Merge ChatMember rows — handle composite PK conflicts
+        const stubMemberships = await prisma.chatMember.findMany({ where: { identityId: stubId } })
+        for (const m of stubMemberships) {
+          const conflict = await prisma.chatMember.findUnique({
+            where: { chatJid_identityId: { chatJid: m.chatJid, identityId: keepId } }
+          })
+          if (conflict) {
+            await prisma.chatMember.delete({
+              where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } }
+            })
+          } else {
+            await prisma.chatMember.update({
+              where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } },
+              data: { identityId: keepId }
+            })
+          }
+        }
+
+        // 4. Merge Reactions — handle composite PK conflicts
+        const stubReactions = await prisma.reaction.findMany({ where: { senderId: stubId } })
+        for (const r of stubReactions) {
+          const conflict = await prisma.reaction.findUnique({
+            where: { messageId_senderId: { messageId: r.messageId, senderId: keepId } }
+          })
+          if (conflict) {
+            await prisma.reaction.delete({
+              where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } }
+            })
+          } else {
+            await prisma.reaction.update({
+              where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } },
+              data: { senderId: keepId }
+            })
+          }
+        }
+
+        // 5. Enrich the survivor with any unique data the stub held
+        const enrichUpdate: any = {}
+        if (!keep.displayName && stub.displayName) enrichUpdate.displayName = stub.displayName
+        if (!keep.verifiedName && stub.verifiedName) enrichUpdate.verifiedName = stub.verifiedName
+        if (!keep.profilePictureUrl && stub.profilePictureUrl) enrichUpdate.profilePictureUrl = stub.profilePictureUrl
+        if (Object.keys(enrichUpdate).length > 0) {
+          await prisma.identity.update({ where: { id: keepId }, data: enrichUpdate }).catch(() => {})
+        }
+
+        // 6. Delete the now-empty stub
+        await prisma.identity.delete({ where: { id: stubId } })
+
+        merged++
+        console.log(`[deduplicateIdentities] Merged stub id=${stubId} ("${pushName}") → id=${keepId} (${keep.phoneNumber})`)
+      } catch (err) {
+        console.warn(`[deduplicateIdentities] Failed to merge stub id=${stubId}:`, err)
+        skipped++
+      }
+    }
+
+    console.log(`[deduplicateIdentities] Complete — merged: ${merged}, skipped: ${skipped} (ambiguous/no-match)`)
+    return { merged, skipped }
   }
 }
 

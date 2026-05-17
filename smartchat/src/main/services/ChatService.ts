@@ -62,6 +62,16 @@ export class ChatService {
       // Determine the root community JID if applicable
       const rootJid = isComm ? jid : (parent || null)
       let communityId: number | null = null
+      
+      const { contactService } = await import('./ContactService')
+
+      // Link owner LIDs to Phone Numbers if provided in metadata
+      if (update.owner && update.ownerPn && update.owner.includes('@lid') && update.ownerPn.includes('@s.whatsapp.net')) {
+        await contactService.linkLidAndPn(update.owner, update.ownerPn, 'group.metadata.owner').catch(() => {})
+      }
+      if (update.descOwner && update.descOwnerPn && update.descOwner.includes('@lid') && update.descOwnerPn.includes('@s.whatsapp.net')) {
+        await contactService.linkLidAndPn(update.descOwner, update.descOwnerPn, 'group.metadata.descOwner').catch(() => {})
+      }
 
       if (rootJid) {
         const updateData: any = {}
@@ -142,22 +152,52 @@ export class ChatService {
   }
   /**
    * Syncs group participants into the ChatMember table.
+   *
+   * Participant objects from groupFetchAllParticipating / groups.update carry:
+   *   { id: "<LID>@lid", phoneNumber: "<phone>@s.whatsapp.net", admin: "admin"|null }
+   *
+   * We use phoneNumber (when present) as the primary lookup key so we land on an
+   * existing identity rather than creating a new LID-only stub. Then we call
+   * linkLidAndPn to permanently wire the LID alias to the PN identity, eliminating
+   * ghost records.
    */
   async syncGroupMembers(chatJid: string, participants: any[]): Promise<void> {
     const { contactService } = await import('./ContactService')
     let count = 0
     for (const p of participants) {
-      if (++count % 20 === 0) await new Promise(r => setImmediate(r)) // Yield to event loop to prevent freezing UI
-      if (!p.id) continue;
-      
-      let identityId = await contactService.getIdentityIdByJid(p.id);
+      if (++count % 20 === 0) await new Promise(r => setImmediate(r))
+      if (!p.id) continue
+
+      const lid = p.id.endsWith('@lid') ? p.id : (p.lid ?? null)
+      const pn  = p.phoneNumber ?? null   // e.g. "919606910020@s.whatsapp.net"
+
+      // 1. If we have both LID and phone number, link them first.
+      //    This resolves the identity properly and prevents ghost stubs.
+      if (lid && pn) {
+        await contactService.linkLidAndPn(lid, pn, 'group.participant').catch(() => {})
+      }
+
+      // 2. Look up identity — prefer PN (more likely to already exist in DB),
+      //    fall back to LID.
+      let identityId = pn
+        ? await contactService.getIdentityIdByJid(pn)
+        : null
+      if (!identityId && lid) {
+        identityId = await contactService.getIdentityIdByJid(lid)
+      }
+
+      // 3. Still not found — create a minimal contact.
+      //    Use PN as id if available (avoids creating bare LID ghost).
       if (!identityId) {
-        await contactService.upsertContact({ id: p.id }).catch(() => {});
-        identityId = await contactService.getIdentityIdByJid(p.id);
+        const contactId = pn ?? lid ?? p.id
+        await contactService.upsertContact({ id: contactId, ...(lid && pn ? { lid } : {}) }).catch(() => {})
+        identityId = pn
+          ? await contactService.getIdentityIdByJid(pn)
+          : await contactService.getIdentityIdByJid(p.id)
       }
 
       if (identityId) {
-        const role = p.admin === 'superadmin' ? 'SUPERADMIN' : (p.admin === 'admin' ? 'ADMIN' : 'MEMBER');
+        const role = p.admin === 'superadmin' ? 'SUPERADMIN' : (p.admin === 'admin' ? 'ADMIN' : 'MEMBER')
         await prisma.chatMember.upsert({
           where: { chatJid_identityId: { chatJid, identityId } },
           update: { role },

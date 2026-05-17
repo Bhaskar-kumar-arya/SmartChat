@@ -2,6 +2,22 @@ import { prisma } from '../auth'
 import { contactService } from './ContactService'
 import { embeddingService } from './EmbeddingService'
 
+/**
+ * Plain data object produced by parseMessageSync().
+ * Contains everything needed for DB persistence, with zero side-effects during construction.
+ */
+export interface ParsedMessage {
+  id: string
+  chatJid: string
+  fromMe: boolean
+  participantString: string | null
+  timestamp: bigint
+  messageType: string
+  rawMessage: any
+  textContent: string | null
+  pushName: string | null
+}
+
 export class MessageService {
   /**
    * Unwraps special message containers (ephemeral, view-once, document-with-caption).
@@ -97,12 +113,25 @@ export class MessageService {
       await contactService.upsertContact({ id: participantString, name: msg.pushName, notify: msg.pushName }, { overwriteName: false }).catch(() => {})
     }
 
+    // Opportunistic Identity Extraction (AddressingMode Aware)
+    // We check all possible sender-related identifiers for any LID-PN pairs.
+    const senderPrimary = participantString || remoteJid;
     const altJid = (key as any).participantAlt || (key as any).remoteJidAlt;
-    if (altJid && typeof altJid === 'string' && altJid.includes('@s.whatsapp.net')) {
-      const currentLid = participantString?.includes('@lid') ? participantString : (remoteJid?.includes('@lid') ? remoteJid : null);
-      if (currentLid) {
-        await contactService.linkLidAndPn(currentLid, altJid).catch(() => {})
+    const senderPn = (key as any).senderPn;
+
+    const potentialIds = [senderPrimary, altJid, senderPn].filter(Boolean) as string[];
+    let discoveredLid: string | null = null;
+    let discoveredPn: string | null = null;
+
+    for (const id of potentialIds) {
+      if (typeof id === 'string') {
+        if (id.includes('@lid')) discoveredLid = id;
+        if (id.includes('@s.whatsapp.net')) discoveredPn = id;
       }
+    }
+
+    if (discoveredLid && discoveredPn) {
+      await contactService.linkLidAndPn(discoveredLid, discoveredPn, 'message.upsert').catch(() => {});
     }
 
     // 6. Resolve Identity ID
@@ -218,6 +247,159 @@ export class MessageService {
         textContent,
         content: JSON.stringify(rawMessage || {})
     }
+  }
+
+  /**
+   * Synchronously parses a raw Baileys message into a plain data object (ParsedMessage).
+   * Zero DB calls, zero side-effects — safe to call on large batches.
+   * Returns null for messages that cannot or should not be bulk-persisted
+   * (missing key, protocol/reaction messages which need per-message handling).
+   */
+  parseMessageSync(msg: any): ParsedMessage | null {
+    const key = msg.key
+    if (!key?.id) return null
+
+    let rawMessage: any = null
+    if (msg.message) {
+      try {
+        rawMessage = JSON.parse(JSON.stringify(msg.message))
+      } catch {
+        rawMessage = null
+      }
+    }
+
+    const remoteJid = key.remoteJid || ''
+    const participantString = key.participant || (remoteJid.endsWith('@g.us') ? null : remoteJid) || null
+
+    // Determine message type
+    const unwrapped = rawMessage ? this.unwrapMessage(rawMessage) : null
+    let messageType = 'unknown'
+    if (unwrapped) {
+      const typeKeys = [
+        'conversation', 'extendedTextMessage', 'imageMessage',
+        'videoMessage', 'audioMessage', 'documentMessage',
+        'stickerMessage', 'contactMessage', 'locationMessage',
+        'reactionMessage', 'protocolMessage'
+      ]
+      for (const k of typeKeys) {
+        if (unwrapped[k] !== undefined && unwrapped[k] !== null) {
+          messageType = k
+          break
+        }
+      }
+    }
+
+    // Protocol and reaction messages need special per-message handling — skip in bulk
+    if (messageType === 'protocolMessage' || messageType === 'reactionMessage') return null
+
+    // Extract text content
+    let textContent: string | null = null
+    if (unwrapped) {
+      if (typeof unwrapped.conversation === 'string') {
+        textContent = unwrapped.conversation
+      } else if (unwrapped.extendedTextMessage?.text) {
+        textContent = unwrapped.extendedTextMessage.text
+      } else {
+        const mediaMsg = unwrapped.imageMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
+        if (mediaMsg && typeof mediaMsg.caption === 'string') {
+          textContent = mediaMsg.caption
+        }
+      }
+    }
+
+    // Parse timestamp
+    const ts = msg.messageTimestamp ?? 0
+    const timestamp = BigInt(
+      typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
+        ? ((ts as Record<string, unknown>).low as number)
+        : (ts as number)
+    )
+
+    return {
+      id: key.id,
+      chatJid: remoteJid,
+      fromMe: key.fromMe === true,
+      participantString,
+      timestamp,
+      messageType,
+      rawMessage,
+      textContent,
+      pushName: msg.pushName ?? null
+    }
+  }
+
+  /**
+   * Bulk-persists a batch of historical (append) messages efficiently.
+   *
+   * Complexity: O(5 DB queries) regardless of batch size, vs O(N × 6) in the real-time path.
+   * Trade-offs vs processMessage():
+   *   - No pushName contact ingestion (not critical for already-seen history)
+   *   - Missing sender IDs are left null (identity may not exist yet)
+   *   - No embedding indexing (handled by background embedding job)
+   *   - No UI IPC or unread count updates (not needed for backlog)
+   *
+   * Note: SQLite + Prisma does not support createMany({ skipDuplicates: true }).
+   * We manually pre-filter existing records to avoid unique-constraint errors.
+   */
+  async bulkPersistMessages(msgs: any[]): Promise<void> {
+    if (msgs.length === 0) return
+
+    // 1. Parse all (pure CPU — no DB)
+    const parsed = msgs
+      .map(m => this.parseMessageSync(m))
+      .filter((p): p is ParsedMessage => p !== null)
+
+    if (parsed.length === 0) return
+
+    // 2. Ensure all referenced chats exist.
+    //    Pre-fetch existing jids, insert only genuinely new ones.
+    const uniqueJids = Array.from(new Set(parsed.map(p => p.chatJid)))
+    const existingChats = await prisma.chat.findMany({
+      where: { jid: { in: uniqueJids } },
+      select: { jid: true }
+    })
+    const existingChatJids = new Set(existingChats.map(c => c.jid))
+    const newChats = uniqueJids
+      .filter(jid => !existingChatJids.has(jid))
+      .map(jid => ({ jid, type: jid.endsWith('@g.us') ? 'GROUP' : 'DM' }))
+    if (newChats.length > 0) {
+      await prisma.chat.createMany({ data: newChats }).catch(() => {})
+    }
+
+    // 3. Batch-resolve sender identity IDs (1 query for all unique participant JIDs)
+    const participantJids = Array.from(
+      new Set(parsed.filter(p => !p.fromMe && p.participantString).map(p => p.participantString!))
+    )
+    const identityMap = await contactService.batchGetIdentityIds(participantJids)
+
+    // 4. Build all candidate rows
+    const allRows = parsed.map(p => ({
+      id: p.id,
+      chatJid: p.chatJid,
+      fromMe: p.fromMe,
+      senderId: p.fromMe ? null : (identityMap.get(p.participantString!) ?? null),
+      participant: p.participantString,
+      timestamp: p.timestamp,
+      messageType: p.messageType,
+      content: JSON.stringify(p.rawMessage || {}),
+      textContent: p.textContent
+    }))
+
+    // 5. Pre-fetch existing message IDs so we only insert genuinely new rows.
+    //    (SQLite/Prisma does not support createMany skipDuplicates)
+    const allIds = allRows.map(r => r.id)
+    const existingMsgs = await prisma.message.findMany({
+      where: { id: { in: allIds } },
+      select: { id: true }
+    })
+    const existingMsgIds = new Set(existingMsgs.map(m => m.id))
+    const newRows = allRows.filter(r => !existingMsgIds.has(r.id))
+
+    if (newRows.length > 0) {
+      await prisma.message.createMany({ data: newRows })
+    }
+
+    console.log(`[MessageService] bulkPersistMessages: persisted ${newRows.length}/${allRows.length} messages (${allRows.length - newRows.length} already existed)`)
   }
 
   /**

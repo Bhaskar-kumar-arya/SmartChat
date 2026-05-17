@@ -9,4 +9,7 @@ out
 /debug
 venv/
 /src/main/models
-/prisma
+/prisma/dev.db 
+/prisma/dev.db-journal
+/scripts/node_modules
+/wiki

@@ -9,6 +9,7 @@ import { contactService } from './ContactService'
 import { messageService } from './MessageService'
 import { chatService } from './ChatService'
 import { embeddingService } from './EmbeddingService'
+import { waEventLogger } from './WAEventLogger'
 
 export class WhatsAppConnectionManager {
   private currentSock: ReturnType<typeof makeWASocket> | null = null
@@ -18,7 +19,7 @@ export class WhatsAppConnectionManager {
   private mainWindow: BrowserWindow | null = null
   private currentFinishSync: (() => void) | null = null
 
-  constructor() {}
+  constructor() { }
 
   public setWindow(window: BrowserWindow) {
     this.mainWindow = window
@@ -73,9 +74,9 @@ export class WhatsAppConnectionManager {
     const { state, saveCreds } = await usePrismaAuthState()
     const { version, isLatest } = await fetchLatestBaileysVersion()
     console.log(`using WA v${version.join('.')}, isLatest: ${isLatest}`)
-    
+
     const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
-    
+
     const sock = makeWASocket({
       version,
       auth: state,
@@ -101,80 +102,10 @@ export class WhatsAppConnectionManager {
 
     this.currentSock = sock
 
-    // Watch for auth state changes
+    // creds.update must stay as a direct listener (saveCreds is a plain callback)
     sock.ev.on('creds.update', saveCreds)
 
-    // Watch for connection updates
-    sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr } = update
-
-      if (qr) {
-        console.log('Got QR string:', qr)
-        this.isFreshLogin = true
-        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-          this.mainWindow.webContents.send('wa-qr', qr)
-        }
-      }
-
-      if (connection === 'close') {
-        const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
-        const errorData = (lastDisconnect?.error as any)?.data
-        const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
-        const isRestartRequired = statusCode === DisconnectReason.restartRequired
-        const shouldReconnect = (statusCode !== DisconnectReason.loggedOut && !isConflict) || isRestartRequired
-
-        console.log(`[Connection] Closed | statusCode=${statusCode} | isRestart=${isRestartRequired} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect} | error=`, lastDisconnect?.error)
-
-        if (shouldReconnect) {
-          const delay = isRestartRequired ? 500 : 3000
-          console.log(`[Connection] Scheduling reconnect in ${delay}ms...`)
-          this.reconnectTimeout = setTimeout(() => this.connect(), delay)
-        } else if (isConflict) {
-          console.warn('[Connection] Replaced by another session (440 conflict). Standing down.')
-        } else {
-          console.log('Logged out — wiping all data for fresh QR...')
-          try {
-            await prisma.reaction.deleteMany()
-            await prisma.messageVector.deleteMany()
-            await prisma.message.deleteMany()
-            await prisma.chatMember.deleteMany()
-            await prisma.chat.deleteMany()
-            await prisma.community.deleteMany()
-            await prisma.identityAlias.deleteMany()
-            await prisma.identity.deleteMany()
-            await prisma.authState.deleteMany()
-          } catch (err) {
-            console.error('Error wiping data:', err)
-          }
-          this.isFreshLogin = true
-          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-            this.mainWindow.webContents.send('wa-logged-out')
-          }
-          this.connect()
-        }
-      } else if (connection === 'open') {
-        console.log('Connected to WhatsApp!')
-        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-          if (!this.isFreshLogin) {
-            const chatCount = await prisma.chat.count()
-            if (chatCount > 0) {
-              console.log(`[Connection] Reconnect: found ${chatCount} existing chats, skipping sync`)
-              embeddingService.setPaused(false)
-              this.mainWindow.webContents.send('wa-sync-progress', 100)
-              this.mainWindow.webContents.send('wa-sync-complete')
-            } else {
-              this.mainWindow.webContents.send('wa-connected')
-            }
-          } else {
-            console.log('[Connection] Fresh login detected, showing sync screen')
-            this.isFreshLogin = false
-            this.mainWindow.webContents.send('wa-connected')
-          }
-        }
-      }
-    })
-
-    // History Sync
+    // ── History Sync state — declared here so ev.process() can close over them ──
     let syncChunkCount = 0
     let maxProgress = 0
     let syncComplete = false
@@ -187,8 +118,8 @@ export class WhatsAppConnectionManager {
       if (this.currentSock) {
         try {
           const groups = await this.currentSock.groupFetchAllParticipating()
-          
-          // Persist the freshly fetched metadata to the DB
+          // Log the full group metadata shape for inspection
+          // waEventLogger.log('groupFetchAllParticipating:result', Object.values(groups), { totalGroups: Object.keys(groups).length })
           const groupKeys = Object.keys(groups)
           const totalGroups = groupKeys.length
           let groupCount = 0
@@ -198,18 +129,11 @@ export class WhatsAppConnectionManager {
 
           for (const jid of groupKeys) {
             if (++groupCount % 5 === 0) {
-              await new Promise(r => setImmediate(r)) // Yield
+              await new Promise(r => setImmediate(r))
               this.mainWindow?.webContents.send('wa-sync-status', `Syncing group members... (${groupCount} / ${totalGroups})`)
             }
             const raw = groups[jid] as any
-            const isComm = raw.isCommunity || raw.isParentGroup
-            const isAnn = raw.isAnnounce || raw.isCommunityAnnounce || raw.isDefaultSubgroup
-            const parent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
-
-            // Ensure the Chat exists (for both regular groups and communities)
-            await chatService.upsertChat(jid, raw).catch(() => {})
-
-            // Sync all members
+            await chatService.upsertChat(jid, raw).catch(() => { })
             if (raw.participants && raw.participants.length > 0) {
               await chatService.syncGroupMembers(jid, raw.participants).catch((err) => {
                 console.error(`Failed to sync members for ${jid}:`, err)
@@ -221,6 +145,12 @@ export class WhatsAppConnectionManager {
         }
       }
 
+      // Heal any LID-stub / PN-identity splits that formed during the sync
+      console.log('[finishSync] Running post-sync identity deduplication...')
+      await contactService.deduplicateIdentities().catch((err) => {
+        console.warn('[finishSync] deduplicateIdentities error:', err)
+      })
+
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         this.mainWindow.webContents.send('wa-sync-progress', 100)
         this.mainWindow.webContents.send('wa-sync-complete')
@@ -228,272 +158,386 @@ export class WhatsAppConnectionManager {
     }
     this.currentFinishSync = finishSync
 
-    sock.ev.on('messaging-history.set', async (data) => {
-      try {
-        embeddingService.setPaused(true)
-        syncChunkCount++
-        const rawData = data as Record<string, unknown>
-        const reportedProgress = typeof rawData.progress === 'number' ? rawData.progress : undefined
-        
-        if (this.syncTimeout) clearTimeout(this.syncTimeout)
-        this.syncTimeout = setTimeout(finishSync, 180_000)
+    // All other events go through ev.process() — events fired in the same JS tick
+    // are batched and processed sequentially, preventing race conditions between
+    // e.g. messages.upsert and chats.update hitting the same row simultaneously.
+    sock.ev.process(async (events) => {
 
-        await handleHistorySync(
-          data as unknown as Parameters<typeof handleHistorySync>[0],
-          prisma
-        )
+      // ── Log every event batch to JSONL (logs/wa_events_<date>.jsonl) ─────
+      // waEventLogger.logBatch(events as Record<string, unknown>)
+      // ──────────────────────────────────────────────────────────────────────
 
-        if (this.mainWindow && !this.mainWindow.isDestroyed() && !syncComplete) {
-          const estimated = reportedProgress ?? Math.min(syncChunkCount * 15, 95)
-          maxProgress = Math.max(maxProgress, estimated)
-          this.mainWindow.webContents.send('wa-sync-progress', maxProgress)
-        }
-      } catch (err) {
-        console.error('[HistorySync] Error processing sync payload:', err)
-      }
-    })
+      // ── Connection ────────────────────────────────────────────────────────
+      if (events['connection.update']) {
+        const update = events['connection.update']
+        const { connection, lastDisconnect, qr } = update
 
-    // Real-Time Messages
-    sock.ev.on('messages.upsert', async (upsert) => {
-      const { messages, type } = upsert
-
-      for (const msg of messages) {
-        try {
-          const processed = await messageService.processMessage(msg, sock)
-          if (!processed) continue
-
-          // Handle protocol message updates (Revoke/Edit) that don't result in new messages
-          if (processed.type === 'protocol') {
-            if (processed.subType === 'revoke') {
-              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-                this.mainWindow.webContents.send('message-deleted', { 
-                  id: processed.targetId, 
-                  remoteJid: processed.key.remoteJid,
-                  fromMe: processed.key.fromMe 
-                })
-              }
-            } else if (processed.subType === 'edit') {
-              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-                const dbMsg = await prisma.message.findUnique({ where: { id: processed.targetId } })
-                if (dbMsg) {
-                  const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.chatJid], sock)
-                  const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
-                  this.mainWindow.webContents.send('message-edited', enriched)
-                }
-              }
-            }
-            continue
+        if (qr) {
+          console.log('Got QR string:', qr)
+          this.isFreshLogin = true
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            this.mainWindow.webContents.send('wa-qr', qr)
           }
+        }
 
-          const { remoteJid, timestamp, messageType, participant } = processed
+        if (connection === 'close') {
+          const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
+          const errorData = (lastDisconnect?.error as any)?.data
+          const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
+          const isRestartRequired = statusCode === DisconnectReason.restartRequired
+          const shouldReconnect = (statusCode !== DisconnectReason.loggedOut && !isConflict) || isRestartRequired
 
-          if (type === 'notify') {
-            if (!processed.fromMe) {
-              if (messageType !== 'reactionMessage') {
-                await chatService.incrementUnread(remoteJid, timestamp)
-              }
-            } else if (messageType !== 'reactionMessage') {
-              await chatService.updateTimestamp(remoteJid, timestamp)
-            }
+          console.log(`[Connection] Closed | statusCode=${statusCode} | isRestart=${isRestartRequired} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect} | error=`, lastDisconnect?.error)
 
-            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-              const jids = new Set<string>([participant || remoteJid])
-              const nameMap = await contactService.batchResolveNames(Array.from(jids), sock)
-              const enriched = await messageService.enrichMessage(processed, sock, nameMap)
-              this.mainWindow.webContents.send('new-message', enriched)
-            }
+          if (shouldReconnect) {
+            const delay = isRestartRequired ? 500 : 3000
+            console.log(`[Connection] Scheduling reconnect in ${delay}ms...`)
+            this.reconnectTimeout = setTimeout(() => this.connect(), delay)
+          } else if (isConflict) {
+            console.warn('[Connection] Replaced by another session (440 conflict). Standing down.')
           } else {
-            await chatService.updateTimestamp(remoteJid, timestamp)
+            console.log('Logged out — wiping all data for fresh QR...')
+            try {
+              await prisma.reaction.deleteMany()
+              await prisma.messageVector.deleteMany()
+              await prisma.message.deleteMany()
+              await prisma.chatMember.deleteMany()
+              await prisma.chat.deleteMany()
+              await prisma.community.deleteMany()
+              await prisma.identityAlias.deleteMany()
+              await prisma.identity.deleteMany()
+              await prisma.authState.deleteMany()
+            } catch (err) {
+              console.error('Error wiping data:', err)
+            }
+            this.isFreshLogin = true
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+              this.mainWindow.webContents.send('wa-logged-out')
+            }
+            this.connect()
+          }
+        } else if (connection === 'open') {
+          console.log('Connected to WhatsApp!')
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            if (!this.isFreshLogin) {
+              const chatCount = await prisma.chat.count()
+              if (chatCount > 0) {
+                console.log(`[Connection] Reconnect: found ${chatCount} existing chats, skipping sync`)
+                embeddingService.setPaused(false)
+                this.mainWindow.webContents.send('wa-sync-progress', 100)
+                this.mainWindow.webContents.send('wa-sync-complete')
+              } else {
+                this.mainWindow.webContents.send('wa-connected')
+              }
+            } else {
+              console.log('[Connection] Fresh login detected, showing sync screen')
+              this.isFreshLogin = false
+              this.mainWindow.webContents.send('wa-connected')
+            }
+          }
+        }
+      }
+
+      // ── History Sync ──────────────────────────────────────────────────────
+      if (events['messaging-history.set']) {
+        const data = events['messaging-history.set']
+        try {
+          embeddingService.setPaused(true)
+          syncChunkCount++
+          const rawData = data as Record<string, unknown>
+          const reportedProgress = typeof rawData.progress === 'number' ? rawData.progress : undefined
+
+          if (this.syncTimeout) clearTimeout(this.syncTimeout)
+          this.syncTimeout = setTimeout(finishSync, 180_000)
+
+          await handleHistorySync(
+            data as unknown as Parameters<typeof handleHistorySync>[0],
+            prisma
+          )
+
+          if (this.mainWindow && !this.mainWindow.isDestroyed() && !syncComplete) {
+            const estimated = reportedProgress ?? Math.min(syncChunkCount * 15, 95)
+            maxProgress = Math.max(maxProgress, estimated)
+            this.mainWindow.webContents.send('wa-sync-progress', maxProgress)
           }
         } catch (err) {
-          console.error('[messages.upsert] Error processing message:', err)
+          console.error('[HistorySync] Error processing sync payload:', err)
         }
       }
-    })
 
-    // Handle Message Edits and Revokes
-    sock.ev.on('messages.update', async (updates) => {
-      for (const update of updates) {
-        const protocol = update.update?.protocolMessage
-        if (!protocol) continue
+      // ── Messages Upsert ───────────────────────────────────────────────────
+      if (events['messages.upsert']) {
+        const { messages, type } = events['messages.upsert']
 
-        const key = protocol.key
-        if (!key?.id) continue
+        // 'append' = backlog catch-up after reconnect. Fast bulk path.
+        if (type === 'append') {
+          try {
+            await messageService.bulkPersistMessages(messages)
+          } catch (err) {
+            console.error('[messages.upsert:append] Bulk persist error:', err)
+          }
+        } else {
+          // 'notify' = real-time new message. Full enrichment pipeline.
+          for (const msg of messages) {
+            try {
+              const processed = await messageService.processMessage(msg, sock)
+              if (!processed) continue
 
-        try {
-          switch (protocol.type) {
-            case 0: // REVOKE
-              console.log('[messages.update] Message revoked:', key.id)
-              await prisma.message.update({
-                where: { id: key.id },
-                data: { isDeleted: true }
-              }).catch(() => {})
-              
-              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-                this.mainWindow.webContents.send('message-deleted', { 
-                  id: key.id, 
-                  remoteJid: key.remoteJid,
-                  fromMe: key.fromMe 
-                })
+              if (processed.type === 'protocol') {
+                if (processed.subType === 'revoke') {
+                  if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                    this.mainWindow.webContents.send('message-deleted', {
+                      id: processed.targetId,
+                      remoteJid: processed.key.remoteJid,
+                      fromMe: processed.key.fromMe
+                    })
+                  }
+                } else if (processed.subType === 'edit') {
+                  if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                    const dbMsg = await prisma.message.findUnique({ where: { id: processed.targetId } })
+                    if (dbMsg) {
+                      const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.chatJid], sock)
+                      const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
+                      this.mainWindow.webContents.send('message-edited', enriched)
+                    }
+                  }
+                }
+                continue
               }
-              break
 
-            case 14: // MESSAGE_EDIT
-              console.log('[messages.update] Message edited:', key.id)
-              const editedMsg = protocol.editedMessage
-              if (editedMsg) {
-                const textContent = editedMsg.conversation || editedMsg.extendedTextMessage?.text || (editedMsg.imageMessage?.caption) || (editedMsg.videoMessage?.caption) || null
-                
+              const { remoteJid, timestamp, messageType, participant } = processed
+
+              if (!processed.fromMe) {
+                if (messageType !== 'reactionMessage') {
+                  await chatService.incrementUnread(remoteJid, timestamp)
+                }
+              } else if (messageType !== 'reactionMessage') {
+                await chatService.updateTimestamp(remoteJid, timestamp)
+              }
+
+              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                const jids = new Set<string>([participant || remoteJid])
+                const nameMap = await contactService.batchResolveNames(Array.from(jids), sock)
+                const enriched = await messageService.enrichMessage(processed, sock, nameMap)
+                this.mainWindow.webContents.send('new-message', enriched)
+              }
+            } catch (err) {
+              console.error('[messages.upsert:notify] Error processing message:', err)
+            }
+          }
+        }
+      }
+
+      // ── Message Updates (revoke/edit via messages.update) ─────────────────
+      if (events['messages.update']) {
+        for (const update of events['messages.update']) {
+          const protocol = update.update?.protocolMessage
+          if (!protocol) continue
+          const key = protocol.key
+          if (!key?.id) continue
+
+          try {
+            switch (protocol.type) {
+              case 0: // REVOKE
+                console.log('[messages.update] Message revoked:', key.id)
                 await prisma.message.update({
                   where: { id: key.id },
-                  data: { 
-                    content: JSON.stringify(editedMsg), 
-                    textContent,
-                    isEdited: true 
-                  }
-                }).catch(() => {})
-
+                  data: { isDeleted: true }
+                }).catch(() => { })
                 if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-                  const dbMsg = await prisma.message.findUnique({ where: { id: key.id } })
-                  if (dbMsg) {
-                    const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.chatJid], sock)
-                    const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
-                    this.mainWindow.webContents.send('message-edited', enriched)
+                  this.mainWindow.webContents.send('message-deleted', {
+                    id: key.id,
+                    remoteJid: key.remoteJid,
+                    fromMe: key.fromMe
+                  })
+                }
+                break
+
+              case 14: { // MESSAGE_EDIT
+                console.log('[messages.update] Message edited:', key.id)
+                const editedMsg = protocol.editedMessage
+                if (editedMsg) {
+                  const textContent = editedMsg.conversation || editedMsg.extendedTextMessage?.text
+                    || editedMsg.imageMessage?.caption || editedMsg.videoMessage?.caption || null
+                  await prisma.message.update({
+                    where: { id: key.id },
+                    data: { content: JSON.stringify(editedMsg), textContent, isEdited: true }
+                  }).catch(() => { })
+                  if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                    const dbMsg = await prisma.message.findUnique({ where: { id: key.id } })
+                    if (dbMsg) {
+                      const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.chatJid], sock)
+                      const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
+                      this.mainWindow.webContents.send('message-edited', enriched)
+                    }
                   }
                 }
+                break
               }
-              break
-          }
-        } catch (err) {
-          console.error('[messages.update] Error processing update:', err)
-        }
-      }
-    })
-
-    // Contacts Events
-    sock.ev.on('contacts.upsert', async (contacts) => {
-      for (const contact of contacts) {
-        await contactService.upsertContact(contact).catch(() => {})
-      }
-    })
-
-    sock.ev.on('contacts.update', async (updates) => {
-      for (const contact of updates) {
-        await contactService.upsertContact(contact, { overwriteName: true }).catch(() => {})
-      }
-    })
-
-    sock.ev.on('lid-mapping.update', async (mappings) => {
-      for (const mapping of mappings) {
-        const { lid, pn } = mapping
-        if (lid && pn) await contactService.linkLidAndPn(lid, pn).catch(() => {})
-      }
-    })
-
-    // Chats Events
-    sock.ev.on('chats.update', async (updates) => {
-      for (const update of updates) {
-        const jid = update.id
-        if (jid) {
-          await chatService.upsertChat(jid, update).catch(() => {})
-          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-            const formatted: any = {}
-            for (const [key, val] of Object.entries(update)) {
-              formatted[key] = typeof val === 'bigint' ? val.toString() : val
             }
-            this.mainWindow.webContents.send('chat-updated', { jid, ...formatted })
+          } catch (err) {
+            console.error('[messages.update] Error processing update:', err)
           }
         }
       }
-    })
 
-    sock.ev.on('chats.upsert', async (newChats) => {
-      for (const chat of newChats) {
-        const jid = chat.id
-        if (jid) {
-          // Flatten metadata for consistent detection
-          // @ts-ignore
-          const raw = { ...chat, ...(chat.metadata || {}) }
-
-          // Use the flattened raw object to ensure upsertChat catches all fields
-          await chatService.upsertChat(jid, raw).catch(() => {})
+      // ── Contacts ──────────────────────────────────────────────────────────
+      if (events['contacts.upsert']) {
+        for (const contact of events['contacts.upsert']) {
+          await contactService.upsertContact(contact).catch(() => { })
+          // contacts.upsert frequently carries both id (PN) and lid on the same object
+          // e.g. { id: "91xxx@s.whatsapp.net", name: "...", lid: "12345@lid" }
+          const raw = contact as any
+          if (raw.lid && raw.id && !String(raw.id).endsWith('@lid') && String(raw.id).includes('@s.whatsapp.net')) {
+            await contactService.linkLidAndPn(String(raw.lid), String(raw.id), 'contacts.upsert').catch(() => { })
+          }
         }
       }
-    })
 
-
-    // Persist Group Updates (Real-time membership/links)
-    sock.ev.on('groups.update', async (updates) => {
-      for (const update of updates) {
-        const raw = update as any
-        const isComm = raw.isCommunity || raw.isParentGroup
-        const isAnnounce = raw.isCommunityAnnounce || raw.isDefaultSubgroup
-        const parent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
-
-        if (isComm || isAnnounce || parent) {
-          // Persist this change to the database!
-          await chatService.upsertChat(update.id!, raw).catch(() => {})
+      if (events['contacts.update']) {
+        for (const contact of events['contacts.update']) {
+          await contactService.upsertContact(contact, { overwriteName: true }).catch(() => { })
         }
       }
-    })
 
-
-    // Group Participants Update (real-time add/remove/promote)
-    sock.ev.on('group-participants.update', async (update) => {
-      const { id, participants, action } = update
-      if (!id || !participants) return
-
-      for (const jid of participants) {
-        let identityId = await contactService.getIdentityIdByJid(jid)
-        if (!identityId) {
-           await contactService.upsertContact({ id: jid }).catch(() => {})
-           identityId = await contactService.getIdentityIdByJid(jid)
-        }
-
-        if (identityId) {
-           if (action === 'add' || action === 'promote' || action === 'demote') {
-              const role = action === 'promote' ? 'ADMIN' : 'MEMBER' // Baileys doesn't easily expose superadmin on promote
-              await prisma.chatMember.upsert({
-                where: { chatJid_identityId: { chatJid: id, identityId } },
-                update: { role },
-                create: { chatJid: id, identityId, role }
-              }).catch(() => {})
-           } else if (action === 'remove') {
-              await prisma.chatMember.delete({
-                where: { chatJid_identityId: { chatJid: id, identityId } }
-              }).catch(() => {})
-           }
+      if (events['lid-mapping.update']) {
+        for (const mapping of events['lid-mapping.update']) {
+          const { lid, pn } = mapping
+          if (lid && pn) await contactService.linkLidAndPn(lid, pn, 'lid-mapping.update').catch(() => { })
         }
       }
-    })
 
-    // Presence Update
-    sock.ev.on('presence.update', async (update) => {
-      const { id, presences } = update
-      
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        const jids = Object.keys(presences)
-        const nameMap = await contactService.batchResolveNames(jids, sock)
-        
-        const enrichedPresences = Object.entries(presences).map(([participantJid, status]) => {
-          const s = status as any
-          return [
-            participantJid,
-            {
-              ...s,
-              name: nameMap.get(participantJid) || participantJid.replace(/@.*$/, ''),
-              lastSeen: s.lastSeen ? s.lastSeen.toString() : undefined,
-              timestamp: Date.now()
+      // ── Chats ─────────────────────────────────────────────────────────────
+      if (events['chats.update']) {
+        for (const update of events['chats.update']) {
+          const jid = update.id
+          if (jid) {
+            await chatService.upsertChat(jid, update).catch(() => { })
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+              const formatted: any = {}
+              for (const [key, val] of Object.entries(update)) {
+                formatted[key] = typeof val === 'bigint' ? val.toString() : val
+              }
+              this.mainWindow.webContents.send('chat-updated', { jid, ...formatted })
             }
-          ]
-        })
-
-        this.mainWindow.webContents.send('presence-update', {
-          remoteJid: id,
-          presences: Object.fromEntries(enrichedPresences)
-        })
+          }
+        }
       }
-    })
+
+      if (events['chats.upsert']) {
+        for (const chat of events['chats.upsert']) {
+          const jid = chat.id
+          if (jid) {
+            // @ts-ignore
+            const raw = { ...chat, ...(chat.metadata || {}) }
+            await chatService.upsertChat(jid, raw).catch(() => { })
+          }
+        }
+      }
+
+      // ── Groups ────────────────────────────────────────────────────────────
+      if (events['groups.update']) {
+        for (const update of events['groups.update']) {
+          const raw = update as any
+          if (!raw.id) continue
+
+          // Always upsert the chat — groups.update carries subject, desc, owner,
+          // ephemeralDuration, etc. that we want to store regardless of group type.
+          await chatService.upsertChat(raw.id, raw).catch(() => { })
+
+          // Sync participants when the event includes them (it often does on first
+          // group metadata push). This is where phoneNumber → LID linking happens
+          // for groups that weren't caught by groupFetchAllParticipating yet.
+          if (raw.participants && raw.participants.length > 0) {
+            await chatService.syncGroupMembers(raw.id, raw.participants).catch((err) => {
+              console.error(`[groups.update] Failed to sync members for ${raw.id}:`, err)
+            })
+          }
+        }
+      }
+
+      if (events['group-participants.update']) {
+        const { id, participants, action } = events['group-participants.update']
+        if (id && participants) {
+          for (const jid of participants) {
+            let identityId = await contactService.getIdentityIdByJid(jid)
+            if (!identityId) {
+              await contactService.upsertContact({ id: jid }).catch(() => { })
+              identityId = await contactService.getIdentityIdByJid(jid)
+            }
+            if (identityId) {
+              if (action === 'add' || action === 'promote' || action === 'demote') {
+                const role = action === 'promote' ? 'ADMIN' : 'MEMBER'
+                await prisma.chatMember.upsert({
+                  where: { chatJid_identityId: { chatJid: id, identityId } },
+                  update: { role },
+                  create: { chatJid: id, identityId, role }
+                }).catch(() => { })
+              } else if (action === 'remove') {
+                await prisma.chatMember.delete({
+                  where: { chatJid_identityId: { chatJid: id, identityId } }
+                }).catch(() => { })
+              }
+            }
+          }
+        }
+      }
+
+      // ── Presence ──────────────────────────────────────────────────────────
+      if (events['presence.update']) {
+        const { id, presences } = events['presence.update']
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          const jids = Object.keys(presences)
+          const nameMap = await contactService.batchResolveNames(jids, sock)
+          const enrichedPresences = Object.entries(presences).map(([participantJid, status]) => {
+            const s = status as any
+            return [
+              participantJid,
+              {
+                ...s,
+                name: nameMap.get(participantJid) || participantJid.replace(/@.*$/, ''),
+                lastSeen: s.lastSeen ? s.lastSeen.toString() : undefined,
+                timestamp: Date.now()
+              }
+            ]
+          })
+          this.mainWindow.webContents.send('presence-update', {
+            remoteJid: id,
+            presences: Object.fromEntries(enrichedPresences)
+          })
+        }
+      }
+
+      // ── Call Events ───────────────────────────────────────────────────────
+      if (events['call']) {
+        for (const call of events['call']) {
+          try {
+            const rawCall = call as any
+            const fromJid = rawCall.from
+            const altPn = rawCall.callerPn || rawCall.content?.attrs?.['caller_pn'] || rawCall.attrs?.['caller_pn']
+            const altLid = rawCall.content?.attrs?.['caller_lid'] || rawCall.attrs?.['caller_lid']
+            
+            const ids = [fromJid, altPn, altLid].filter(Boolean) as string[];
+            let callLid: string | null = null;
+            let callPn: string | null = null;
+            
+            for (const id of ids) {
+               if (typeof id === 'string') {
+                 if (id.includes('@lid')) callLid = id;
+                 if (id.includes('@s.whatsapp.net')) callPn = id;
+               }
+            }
+
+            if (callLid && callPn) {
+              await contactService.linkLidAndPn(callLid, callPn, 'call.event').catch(() => {})
+            }
+          } catch (err) {
+            console.error('[WhatsAppConnectionManager] Error processing call event:', err)
+          }
+        }
+      }
+
+    }) // end sock.ev.process
   }
 
   public skipSync() {

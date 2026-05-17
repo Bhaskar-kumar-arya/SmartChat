@@ -41,8 +41,12 @@ model Identity {
 /// JID per person AND PRIORITIZE LID, you MUST 
 /// use this SQL pattern:
 /// SELECT jid FROM IdentityAlias WHERE type IN ('LID', 'PN') GROUP BY identityId HAVING type = MIN(type)
+/// Note: Mentions in group chats often use the LID variant (e.g. 12345XXXXXXXXXX) 
+/// rather than the phone number. Comprehensive mention scanning involves 
+/// checking all jid aliases (PN and LID) associated with an identity.
 model IdentityAlias {
-  /// The raw WhatsApp JID string (e.g. 919XXXXXXXXX@s.whatsapp.net, @lid, @bot).
+  /// The raw WhatsApp JID string (e.g. 919XXXXXXXXX@s.whatsapp.net, 12345XXXXXXXXXX@lid, 12345XXXXX@bot).
+  /// Note: For DM chats, this jid matches the Chat.jid.
   jid        String    @id
   /// JID type: "LID" (Linked ID - CANONICAL), "PN" (Phone Number), "BOT".
   type       String
@@ -80,6 +84,8 @@ model Chat {
   /// URL to the group/chat profile picture.
   profilePictureUrl String?
   /// Display name of the chat as shown in the contact/group list.
+  /// Note: This is NULL for DMs. To get a DM's name, join with Identity 
+  /// (either via IdentityAlias using the jid, or via ChatMember).
   name             String?
 
   community        Community? @relation("CommunityChats", fields: [communityId], references: [id])
@@ -144,11 +150,13 @@ model Message {
   /// Unix timestamp in SECONDS when the message was sent.
   /// [AI RULE]: To compare timestamps, convert ISO date/time strings to seconds: timestamp >= CAST(strftime('%s', 'YYYY-MM-DD HH:MM:SS') AS INT)
   timestamp   BigInt
-  /// WhatsApp message type: "text", "image", "video", "audio", "document", "sticker", "poll", etc.
+  /// WhatsApp message type: "conversation", "extendedTextMessage", "imageMessage", "videoMessage", "audioMessage", "stickerMessage", "documentMessage", etc.
   messageType String
   /// Full serialised message content (JSON). Use textContent for plain readable text.
   content     String
-  /// Extracted plain-text body of the message (null for media-only messages with no caption).
+  /// [AI RULE]: For media messages (document, image, etc.), textContent ONLY contains the caption. 
+  /// The actual FILENAME (for documents) or media metadata is stored inside the JSON 'content' column.
+  /// To find a file by name (e.g. PDF), you MUST query: WHERE m.content LIKE '%.pdf%'
   textContent String?
   /// True if the message was deleted/revoked by the sender.
   isDeleted   Boolean   @default(false)
@@ -238,4 +246,19 @@ model AIChatMessage {
   orderIndex Int
 
   @@index([sessionId, orderIndex])
+}
+
+// ── 12. LID MAPPING LEDGER ───────────────────────────────────────────────
+/// High-performance ledger for tracking LID to Phone Number correlations.
+model LidMap {
+  /// The @lid string (e.g., 123456789@lid).
+  lid              String   @id
+  /// The corresponding @s.whatsapp.net string.
+  pn               String
+  /// The event that triggered the discovery (e.g., message.upsert, history.sync).
+  source           String
+  /// Unix timestamp (seconds) of when this mapping was last observed.
+  lastSeenDateTime BigInt
+
+  @@index([pn])
 }

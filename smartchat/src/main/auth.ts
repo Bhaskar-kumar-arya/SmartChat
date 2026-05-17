@@ -162,20 +162,36 @@ export const usePrismaAuthState = async (): Promise<{
       return data as any;
     },
     set: async (data) => {
-      // It's better to run these concurrently rather than strictly sequentially
-      const tasks: Promise<void>[] = [];
+      // Aggregate ALL key mutations into a single prisma.$transaction() call.
+      // This replaces N individual SQLite lock/write/unlock cycles with ONE,
+      // which is the primary fix for the slow 1-5 message trickle on reconnect.
+      const ops: any[] = [];
       for (const category in data) {
         for (const id in data[category as keyof typeof data]) {
           const value = data[category as keyof typeof data]?.[id];
           const key = `${category}-${id}`;
           if (value) {
-            tasks.push(writeData(value, key));
+            const serialized = JSON.stringify(value, BufferJSON.replacer);
+            ops.push(
+              prisma.authState.upsert({
+                where: { id: key },
+                update: { data: serialized },
+                create: { id: key, data: serialized },
+              })
+            );
           } else {
-            tasks.push(removeData(key));
+            // deleteMany won't throw if the row doesn't exist
+            ops.push(prisma.authState.deleteMany({ where: { id: key } }));
           }
         }
       }
-      await Promise.all(tasks);
+      if (ops.length > 0) {
+        try {
+          await prisma.$transaction(ops);
+        } catch (err) {
+          console.error('[AuthState] Batch keystore transaction failed:', err);
+        }
+      }
     },
   };
   return {
