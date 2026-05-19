@@ -146,7 +146,7 @@
   border-radius: 12px;
   width: 90%;
   max-width: 400px;
-  max-height: 80%;
+  max-height: 90%;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--wa-border);
@@ -373,4 +373,64 @@
 .ai-settings-save-btn:hover {
   opacity: 0.9;
 }
+
+/* AI Preferences Scroll & Input Polish */
+.ai-settings-scroll-content {
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 8px;
+  margin-right: -8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-settings-key-container {
+  margin: 0 0 12px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.ai-settings-key-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ai-settings-key-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--wa-primary, #008069);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  transition: opacity 0.15s ease;
+}
+
+.ai-settings-key-toggle-btn:hover {
+  opacity: 0.8;
+}
+
+.ai-settings-key-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--wa-border, rgba(0,0,0,0.15));
+  background-color: var(--wa-bg-secondary, #f0f2f5);
+  color: var(--wa-text-primary, #000);
+  outline: none;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.ai-settings-key-caption {
+  font-size: 10px;
+  color: var(--wa-text-secondary, #666);
+  opacity: 0.8;
+}
+
 

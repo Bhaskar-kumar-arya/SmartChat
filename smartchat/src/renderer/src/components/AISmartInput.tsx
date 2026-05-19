@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, KeyboardEvent, useImperativeHandle, forwardRef } from 'react'
-import { ChatItem } from '../types'
+import { ChatItem, ModelInfo } from '../types'
 
 interface SelectedContext {
   jid: string
@@ -13,6 +13,8 @@ interface AISmartInputProps {
   onAbort?: () => void
   externalValue?: { prompt: string, contexts: SelectedContext[], mentions: SelectedContext[] } | null
   onCancel?: () => void
+  aiOptions?: { model: string; useThinkMode: boolean }
+  availableModels?: ModelInfo[]
 }
 
 export interface AISmartInputRef {
@@ -25,7 +27,9 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
   disabled, 
   onAbort, 
   externalValue, 
-  onCancel
+  onCancel,
+  aiOptions,
+  availableModels
 }, ref) => {
   const [inputValue, setInputValue] = useState('')
   const [showMentionMenu, setShowMentionMenu] = useState(false)
@@ -285,6 +289,17 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
     });
   };
 
+  const getFriendlyModelName = (id: string) => {
+    if (id === 'gemma-4-31b-it') return 'Gemma 4 31B';
+    if (id === 'mistral-large-latest') return 'Mistral Large';
+    if (id === 'gpt-oss-120b') return 'Llama 3.3 120B';
+    if (id === 'deepseek-v4-pro') return 'DeepSeek V4';
+    if (id === 'deepseek-reasoner') return 'DeepSeek R1';
+    return id;
+  };
+  const activeModel = availableModels?.find(m => m.id === aiOptions?.model);
+  const activeModelName = activeModel ? activeModel.name : getFriendlyModelName(aiOptions?.model || 'Gemma 4 31B');
+
   return (
     <div ref={containerRef} className="ai-input-wrapper">
       <div className="ai-context-list-container">
@@ -335,31 +350,54 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
         </div>
       )}
 
-      <div className="ai-input-box">
-        <div className="ai-input-inner">
-          <div 
-            ref={highlightRef}
-            className="ai-input-highlight"
-          >
-            {renderHighlightedText()}
+      <div className="ai-input-box" style={{ padding: '8px 12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '6px', minWidth: 0 }}>
+          <div className="ai-input-inner">
+            <div 
+              ref={highlightRef}
+              className="ai-input-highlight"
+            >
+              {renderHighlightedText()}
+            </div>
+            <textarea 
+              ref={inputRef}
+              placeholder="Ask AI... (/ history, @ mention)" 
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onScroll={handleInputScroll}
+              disabled={disabled}
+              className="ai-input-field"
+              rows={1}
+            />
           </div>
-          <textarea 
-            ref={inputRef}
-            placeholder="Ask AI... (/ history, @ mention)" 
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            onScroll={handleInputScroll}
-            disabled={disabled}
-            className="ai-input-field"
-            rows={1}
-          />
+          
+          {/* Bottom status row */}
+          {aiOptions && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '6px 4px 0 4px', fontSize: '11px', color: 'var(--wa-text-secondary, #8696a0)', userSelect: 'none', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <span style={{ cursor: 'default', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 500, color: 'var(--wa-text-primary, #fff)' }}>
+                {activeModelName}
+              </span>
+              {aiOptions.useThinkMode && (
+                <span style={{ cursor: 'default', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--wa-primary, #00a884)', fontWeight: 600 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .5 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+                    <path d="M9 18h6" />
+                    <path d="M10 22h4" />
+                  </svg>
+                  <span>Thinking</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
+
         {disabled && onAbort ? (
           <button 
             className="ai-send-btn abort" 
             onClick={onAbort} 
             title="Stop Generation"
+            style={{ alignSelf: 'flex-end', marginBottom: '2px' }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
               <rect x="6" y="6" width="12" height="12"></rect>
@@ -378,6 +416,7 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
               }
             }} 
             disabled={disabled || (!inputValue.trim() && contexts.length === 0)}
+            style={{ alignSelf: 'flex-end', marginBottom: '2px' }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="22" y1="2" x2="11" y2="13"></line>

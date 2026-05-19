@@ -10,9 +10,18 @@ interface AISettingsModalProps {
 }
 
 export default function AISettingsModal({ isOpen, onClose, options, onOptionsChange, availableModels }: AISettingsModalProps) {
-  const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'lmstudio' | 'groq' | 'mistral'>('gemini');
+  const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'lmstudio' | 'groq' | 'mistral' | 'deepseek'>('gemini');
   const [searchQuery, setSearchQuery] = useState('');
   const [isOpenDropdown, setIsOpenDropdown] = useState(false);
+  const [providerKeys, setProviderKeys] = useState<Record<string, string>>({ gemini: '', groq: '', mistral: '', deepseek: '' });
+  const [showKey, setShowKey] = useState(false);
+
+  // Load persisted keys when settings modal opens
+  useEffect(() => {
+    if (isOpen) {
+      window.api.getProviderKeys().then(setProviderKeys).catch(console.error);
+    }
+  }, [isOpen]);
 
   // Keep selected provider in sync with active model option
   useEffect(() => {
@@ -23,6 +32,8 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
       setSelectedProvider('groq');
     } else if (options.model.startsWith('mistral:')) {
       setSelectedProvider('mistral');
+    } else if (options.model.startsWith('deepseek:')) {
+      setSelectedProvider('deepseek');
     }
   }, [options.model, availableModels]);
 
@@ -41,7 +52,7 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
 
   if (!isOpen) return null;
 
-  const handleProviderChange = (newProvider: 'gemini' | 'lmstudio' | 'groq' | 'mistral') => {
+  const handleProviderChange = (newProvider: 'gemini' | 'lmstudio' | 'groq' | 'mistral' | 'deepseek') => {
     setSelectedProvider(newProvider);
     setSearchQuery('');
     setIsOpenDropdown(false);
@@ -66,7 +77,8 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
           <h3>AI Preferences</h3>
         </div>
         
-        <div className="ai-settings-row">
+        <div className="ai-settings-scroll-content">
+          <div className="ai-settings-row">
           <span className="ai-settings-label">Thinking Mode (ReAct)</span>
           <input 
             type="checkbox" 
@@ -87,9 +99,41 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
             <option value="gemini">☁️ Google Gemini (Cloud)</option>
             <option value="groq">⚡ Groq Cloud (High-speed Llama & Mixtral)</option>
             <option value="mistral">🌀 Mistral AI (Codestral & Large)</option>
+            <option value="deepseek">🐳 DeepSeek AI (V4 & Reasoner)</option>
             <option value="lmstudio">🖥️ LM Studio (Local & Offline)</option>
           </select>
         </div>
+
+        {selectedProvider !== 'lmstudio' && (
+          <div className="ai-settings-key-container">
+            <div className="ai-settings-key-header">
+              <span className="ai-settings-label" style={{ textTransform: 'capitalize' }}>
+                🔑 {selectedProvider} API Key
+              </span>
+              <button 
+                type="button"
+                className="ai-settings-key-toggle-btn"
+                onClick={() => setShowKey(!showKey)}
+              >
+                {showKey ? 'Hide Key' : 'Show Key'}
+              </button>
+            </div>
+            <input 
+              type={showKey ? 'text' : 'password'}
+              className="ai-settings-key-input"
+              placeholder={`Enter custom ${selectedProvider} API key...`}
+              value={providerKeys[selectedProvider] || ''}
+              onChange={async (e) => {
+                const val = e.target.value;
+                setProviderKeys(prev => ({ ...prev, [selectedProvider]: val }));
+                await window.api.setProviderKey(selectedProvider, val);
+              }}
+            />
+            <span className="ai-settings-key-caption">
+              Auto-saves on change. Uses built-in fallbacks if left empty.
+            </span>
+          </div>
+        )}
 
         <div className="ai-settings-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px', margin: '0 0 15px 0' }}>
           <span className="ai-settings-label">Model Selection</span>
@@ -212,25 +256,27 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
           )}
         </div>
 
-        <div className="ai-settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span className="ai-settings-label">Context Size</span>
-            <span style={{ color: 'var(--wa-primary)', fontSize: '12px', fontWeight: '600' }}>{options.contextLength} tokens</span>
+        {selectedProvider === 'lmstudio' && (
+          <div className="ai-settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="ai-settings-label">Context Size</span>
+              <span style={{ color: 'var(--wa-primary)', fontSize: '12px', fontWeight: '600' }}>{options.contextLength} tokens</span>
+            </div>
+            <input 
+              type="range" 
+              min="2048" 
+              max="128000" 
+              step="2048"
+              value={options.contextLength} 
+              onChange={(e) => onOptionsChange({ ...options, contextLength: parseInt(e.target.value) })}
+              style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--wa-primary)' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--wa-text-secondary)' }}>
+              <span>2K</span>
+              <span>128K</span>
+            </div>
           </div>
-          <input 
-            type="range" 
-            min="2048" 
-            max="128000" 
-            step="2048"
-            value={options.contextLength} 
-            onChange={(e) => onOptionsChange({ ...options, contextLength: parseInt(e.target.value) })}
-            style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--wa-primary)' }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--wa-text-secondary)' }}>
-            <span>2K</span>
-            <span>128K</span>
-          </div>
-        </div>
+        )}
 
         <div className="ai-settings-row">
           <span className="ai-settings-label">Store Chat History</span>
@@ -244,6 +290,7 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
               window.api.setAiAutoSave(checked);
             }}
           />
+        </div>
         </div>
 
         <button className="ai-settings-save-btn" onClick={onClose}>
