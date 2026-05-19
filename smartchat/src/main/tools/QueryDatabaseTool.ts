@@ -122,7 +122,23 @@ Note: Timestamp columns may be returned as strings due to BigInt serialization.
 
 CONSTRAINTS:
 - Results are capped at ${MAX_ROWS} rows automatically
-- Read-only — INSERT, UPDATE, DELETE, DROP and similar mutations are rejected`;
+- Read-only — INSERT, UPDATE, DELETE, DROP and similar mutations are rejected
+
+EXAMPLES(YOU MUST ADHERE TO THESE PATTERNS):
+User: "find chats i haven't replied to"
+
+<thought>
+The user wants to find chats where the last message was received (fromMe = 0). I will write a query that finds the latest message for each chat, joins with Chat and Identity to get the names, and retrieves the message details. To avoid pulling massive base64 thumbnails, I will use json_extract for the filename.
+</thought>
+<tool_call>
+{
+  "tool": "queryDatabase",
+  "arguments": {
+    "sql": "WITH LastMsg AS (SELECT chatJid, MAX(timestamp) as last_ts FROM Message GROUP BY chatJid) SELECT c.name as groupName, i.displayName as contactName, m.messageType, m.textContent, json_extract(m.content, '$.documentMessage.fileName') as fileName, m.timestamp, c.jid FROM LastMsg lm JOIN Message m ON lm.chatJid = m.chatJid AND lm.last_ts = m.timestamp JOIN Chat c ON m.chatJid = c.jid LEFT JOIN Identity i ON m.senderId = i.id WHERE m.fromMe = 0 ORDER BY m.timestamp DESC",
+    "explanation": "Finding all chats where the last message was received, including message details and sender identities."
+  }
+}
+</tool_call>`;
 
 
 export class QueryDatabaseTool implements AITool {

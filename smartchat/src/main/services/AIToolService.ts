@@ -35,6 +35,10 @@ export class ToolRegistry {
     const tools = this.getToolDefinitions();
     if (tools.length === 0) return '';
 
+    const formattedTools = tools.map(t => 
+      `### Tool: ${t.name}\n**Description:**\n${t.description}\n\n**Parameters:**\n\`\`\`json\n${JSON.stringify(t.parameters, null, 2)}\n\`\`\``
+    ).join('\n\n');
+
     const reactProtocol = `
 # RESPONSE PROTOCOL
 You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request.
@@ -91,7 +95,7 @@ CRITICAL TOOL RULES:
 7. [CRITICAL] Never use the SQL syntax 'CAST(... AS INT)' or 'strftime(...)' as a Javascript expression. They will cause a syntax error. Always use numeric timestamps in JS (e.g. 1714089600), and keep SQL syntax strictly inside the 'sql' string of a queryDatabase call.
 8. [IDENTITY] Always filter with 'isMe = 0' when searching for other people/contacts and 'isMe = 1' when searching for your own data. This prevents your own aliases or secondary devices from polluting results.
 9. You are not supposed to apply limits on fetching data unless and until implied by the user's request. if the data is too large to fetch , it will be auto handled by the tools provided to you.
-
+10. Dont refer to chats or people by their id unless asked , always go with names or phone number if name isnt available.
 When executing a tool, output ONLY the tool call XML — no other text.
 <tool_call>
 {
@@ -167,7 +171,9 @@ Every message in this conversation is prefixed to indicate its origin. Understan
 
 # YOUR TOOLS
 You have access to a set of registered tools. Each tool's description tells you exactly when, how, and why to use it. Only use tools that are listed.
-${JSON.stringify(tools, null, 2)}
+
+${formattedTools}
+
 ${useThinkMode ? reactProtocol : standardProtocol}`;
   }
 }

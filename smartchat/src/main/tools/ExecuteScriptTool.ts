@@ -37,19 +37,22 @@ WHAT YOU RECEIVE BACK:
 }
 If success is false, read 'error' and 'logs' to diagnose — then retry with a corrected script.
 
-EXAMPLE — mark all unread chats as read:
-\`\`\`js
-const result = await queryDatabase({
-  sql: "SELECT jid FROM Chat WHERE unreadCount > 0",
-  explanation: "Find all unread chats"
-});
-let count = 0;
-for (const { jid } of result.rows) {
-  await whatsAppAction({ action: 'markRead', jid });
-  count++;
+EXAMPLES(YOU MUST ADHERE TO THESE PATTERNS):
+
+User: "find me the syllabus for CN endsem"
+
+<thought>
+The user is looking for specific information. A simple search might return isolated messages without enough context to verify if it's the right one. I will write a script to first find the matching messages, and then fetch a window of surrounding messages for each match to provide better context. To prevent redundant data, I'll ensure deduplication of the contextual messages. If this initial context isn't enough, I can fetch a larger window in the next turn.
+</thought>
+<tool_call>
+{
+  "tool": "executeScript",
+  "arguments": {
+    "script": "const matches = await queryDatabase({\\n  sql: \\"SELECT id, chatJid, timestamp FROM Message WHERE (textContent LIKE '%syllabus%' OR content LIKE '%syllabus%') AND (textContent LIKE '%CN%' OR textContent LIKE '%Computer Network%' OR content LIKE '%CN%' OR content LIKE '%Computer Network%') ORDER BY timestamp DESC\\",\\n  explanation: \\"Find messages matching CN syllabus\\"\\n});\\n\\nconst contextMessages = [];\\nconst seenIds = new Set();\\n\\nfor (const match of matches.rows) {\\n  const window = await queryDatabase({\\n    sql: \\"SELECT m.id, m.textContent, json_extract(m.content, '$.documentMessage.fileName') as fileName, m.timestamp, c.name as chatName FROM Message m JOIN Chat c ON m.chatJid = c.jid WHERE m.chatJid = ? AND m.timestamp >= ? - 86400 AND m.timestamp <= ? + 86400 ORDER BY m.timestamp ASC LIMIT 20\\",\\n    params: [match.chatJid, match.timestamp, match.timestamp],\\n    explanation: \\"Fetch context window around match\\"\\n  });\\n  \\n  for (const msg of window.rows) {\\n    if (!seenIds.has(msg.id)) {\\n      seenIds.add(msg.id);\\n      contextMessages.push(msg);\\n    }\\n  }\\n}\\n\\nreturn contextMessages;\",
+    "explanation": "Search for CN syllabus and fetch surrounding messages for context, ensuring deduplication."
+  }
 }
-return \`Marked \${count} chats as read.\`;
-\`\`\`
+</tool_call>
 
 AVAILABLE TOOLS (injected as globals):
 `;
@@ -84,16 +87,14 @@ export class ExecuteScriptTool implements AITool {
     const injectedTools = toolRegistry
       .getAllTools()
       .filter(t => t.name !== this.name) // no recursive script execution
-      .map(t => {
-        return `\n--- TOOL: ${t.name}(args) ---\n${t.description}\n`;
-      })
-      .join('\n');
+      .map(t => t.name)
+      .join(', ');
 
     this.description = DESCRIPTION_BASE + injectedTools;
 
     console.log(
       '[ExecuteScriptTool] Initialized. Injected tools:',
-      toolRegistry.getAllTools().filter(t => t.name !== this.name).map(t => t.name)
+      injectedTools
     );
   }
 
