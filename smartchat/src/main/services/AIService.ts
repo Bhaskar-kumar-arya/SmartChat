@@ -1,15 +1,25 @@
 import { GeminiProvider } from './ai/GeminiProvider'
 import { LMStudioProvider } from './ai/LMStudioProvider'
+import { GroqProvider } from './ai/GroqProvider'
+import { MistralProvider } from './ai/MistralProvider'
 import { AIProvider, ModelInfo } from './ai/Provider'
 
 export class AIService {
   private providers: Record<string, AIProvider> = {}
+  private providerOrder: string[] = []
   private currentModelId: string = 'gemma-4-31b-it' // Default
   private activeRequests: Map<string, AbortController> = new Map()
 
   constructor() {
-    this.providers['gemini'] = new GeminiProvider();
-    this.providers['lmstudio'] = new LMStudioProvider();
+    this.registerProvider('gemini', new GeminiProvider());
+    this.registerProvider('groq', new GroqProvider());
+    this.registerProvider('mistral', new MistralProvider());
+    this.registerProvider('lmstudio', new LMStudioProvider()); // Fallback / local
+  }
+
+  registerProvider(key: string, provider: AIProvider): void {
+    this.providers[key] = provider;
+    this.providerOrder.push(key);
   }
 
   async cleanup(): Promise<void> {
@@ -20,19 +30,12 @@ export class AIService {
   }
 
   private getProviderForModel(modelId: string): AIProvider {
-    // If it's a known Gemini model, use Gemini
-    if ([
-      'gemma-4-31b-it', 
-      'gemini-3.1-flash-lite-preview', 
-      'gemma-3-27b-it', 
-      'gemini-3-flash-preview', 
-      'gemini-2.5-flash-lite',
-    ].includes(modelId)) {
-      return this.providers['gemini'];
+    for (const key of this.providerOrder) {
+      if (this.providers[key].canHandleModel(modelId)) {
+        return this.providers[key];
+      }
     }
-    // Default to LM Studio for everything else (assuming user knows what they are doing)
-    // or we can detect by prefix if we add one.
-    // For now, let's assume if it's not in the Gemini list, it's LM Studio.
+    // Default fallback to lmstudio if nothing matches
     return this.providers['lmstudio'];
   }
 
@@ -89,9 +92,17 @@ export class AIService {
   }
 
   async getAvailableModels(): Promise<ModelInfo[]> {
-    const geminiModels = await this.providers['gemini'].getAvailableModels();
-    const lmsModels = await this.providers['lmstudio'].getAvailableModels();
-    return [...geminiModels, ...lmsModels];
+    const allModelsLists = await Promise.all(
+      this.providerOrder.map(async (key) => {
+        try {
+          return await this.providers[key].getAvailableModels();
+        } catch (e) {
+          console.error(`[AIService] Failed to get available models for ${key}:`, e);
+          return [];
+        }
+      })
+    );
+    return allModelsLists.flat();
   }
 
   async generateResponse(

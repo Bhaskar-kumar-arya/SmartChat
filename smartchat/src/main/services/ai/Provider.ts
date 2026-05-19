@@ -1,12 +1,17 @@
 export interface ModelInfo {
   id: string;
   name: string;
-  provider: 'gemini' | 'lmstudio';
+  provider: 'gemini' | 'lmstudio' | 'groq' | 'mistral';
   description?: string;
   isLocal: boolean;
 }
 
 export interface AIProvider {
+  /**
+   * Determines if this provider can handle the given model ID.
+   */
+  canHandleModel(modelId: string): boolean;
+
   /**
    * Returns the system prompt for this provider.
    */

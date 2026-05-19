@@ -63,7 +63,7 @@ export interface SearchResults {
 export interface ModelInfo {
   id: string
   name: string
-  provider: 'gemini' | 'lmstudio'
+  provider: 'gemini' | 'lmstudio' | 'groq' | 'mistral'
   description?: string
   isLocal: boolean
 }

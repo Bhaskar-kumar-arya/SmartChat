@@ -4,10 +4,25 @@ import { toolRegistry } from '../AIToolService'
 
 export class GeminiProvider implements AIProvider {
   private ai: any;
+  private fetchedModelIds = new Set<string>();
+  private static readonly KNOWN_MODELS = new Set([
+    'gemma-4-31b-it',
+    'gemini-3.1-flash-lite-preview',
+    'gemma-3-27b-it',
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash-lite'
+  ]);
 
   constructor() {
     // Hardcoded key as per original AIService.ts
-    this.ai = new GoogleGenAI({ apiKey: 'AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0' });
+    this.ai = new GoogleGenAI({ apiKey: 'AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0' }); 
+  }
+
+  canHandleModel(modelId: string): boolean {
+    return this.fetchedModelIds.has(modelId) || 
+           GeminiProvider.KNOWN_MODELS.has(modelId) ||
+           modelId.startsWith('gemini-') ||
+           modelId.startsWith('gemma-');
   }
 
   private wrapWithRole(content: string, isSystem: boolean, role: 'user' | 'model'): string {
@@ -35,7 +50,7 @@ export class GeminiProvider implements AIProvider {
     // Gemini handles cleanup on its end
   }
 
-  async generateResponse(prompt: string, history: any[], options: any): Promise<string> {
+  async generateResponse(prompt: string, history: any[], options: any, signal?: AbortSignal): Promise<string> {
     const formattedHistory = this.formatHistory(history);
     const isPromptSystem = options?.isSystem === true;
     const finalPrompt = this.wrapWithRole(prompt, isPromptSystem, 'user');
@@ -46,11 +61,12 @@ export class GeminiProvider implements AIProvider {
     // Prepare contents including history and current prompt
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
     
+    const actualSignal = options?.signal || signal;
     const response = await this.ai.models.generateContent({
       model: options?.model || "gemma-4-31b-it",
       contents,
       config: systemInstructions ? { systemInstruction: systemInstructions } : undefined,
-      signal: options?.signal
+      signal: actualSignal
     });
 
     return response.text || '';
@@ -90,12 +106,41 @@ export class GeminiProvider implements AIProvider {
   }
 
   async getAvailableModels(): Promise<ModelInfo[]> {
-    return [
-      { id: 'gemma-4-31b-it', name: 'Gemma 4 31B IT', provider: 'gemini', isLocal: false },
-      { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite', provider: 'gemini', isLocal: false },
-      { id: 'gemma-3-27b-it', name: 'Gemma 3 27B IT', provider: 'gemini', isLocal: false },
-      { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview', provider: 'gemini', isLocal: false },
-      { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'gemini', isLocal: false },
-    ];
+    try {
+      const list = await this.ai.models.list();
+      const models: ModelInfo[] = [];
+      for await (const m of list) {
+        if (m.supportedActions && m.supportedActions.includes('generateContent')) {
+          const strippedId = m.name.replace(/^models\//, '');
+          this.fetchedModelIds.add(strippedId);
+          models.push({
+            id: strippedId,
+            name: m.displayName || strippedId,
+            provider: 'gemini' as const,
+            description: m.description,
+            isLocal: false
+          });
+        }
+      }
+      models.sort((a, b) => {
+        if (a.id === 'gemma-4-31b-it') return -1;
+        if (b.id === 'gemma-4-31b-it') return 1;
+        return 0;
+      });
+      return models;
+    } catch (error) {
+      console.warn('[GeminiProvider] Could not fetch models from Gemini API, using fallbacks:', error);
+      const fallbacks = [
+        { id: 'gemma-4-31b-it', name: 'Gemma 4 31B IT', provider: 'gemini' as const, isLocal: false },
+        { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite', provider: 'gemini' as const, isLocal: false },
+        { id: 'gemma-3-27b-it', name: 'Gemma 3 27B IT', provider: 'gemini' as const, isLocal: false },
+        { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview', provider: 'gemini' as const, isLocal: false },
+        { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'gemini' as const, isLocal: false },
+      ];
+      for (const f of fallbacks) {
+        this.fetchedModelIds.add(f.id);
+      }
+      return fallbacks;
+    }
   }
 }

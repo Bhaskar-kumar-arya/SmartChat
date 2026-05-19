@@ -1,53 +1,23 @@
-import { Chat, LMStudioClient } from '@lmstudio/sdk'
-import { AIProvider, ModelInfo } from './Provider'
-import { toolRegistry } from '../AIToolService'
+import Groq from 'groq-sdk';
+import { AIProvider, ModelInfo } from './Provider';
+import { toolRegistry } from '../AIToolService';
 
-export class LMStudioProvider implements AIProvider {
-  private client: LMStudioClient;
-  private loadedModels: Map<string, { model: any, contextLength: number }> = new Map();
+export class GroqProvider implements AIProvider {
+  private client: Groq;
 
   constructor() {
-    this.client = new LMStudioClient();
+    // Priority: Env variable > Temporary hardcoded key
+    const apiKey = process.env.GROQ_API_KEY || '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';
+    this.client = new Groq({ apiKey });
   }
 
-  canHandleModel(_modelId: string): boolean {
-    // Fallback provider — handles any model not claimed by others (Gemini/Groq)
-    return true;
-  }
-
-  private async getOrLoadModel(modelKey: string, contextLength?: number) {
-    const requestedLength = contextLength || 1024 * 24;
-    const existing = this.loadedModels.get(modelKey);
-
-    if (existing) {
-      if (existing.contextLength === requestedLength) {
-        return existing.model;
-      }
-      
-      // Context length mismatch - unload existing and reload
-      console.log(`[LMStudioProvider] Context length mismatch for ${modelKey} (Existing: ${existing.contextLength}, Requested: ${requestedLength}). Reloading...`);
-      try {
-        await this.client.llm.unload(modelKey);
-      } catch (e) {
-        console.warn(`[LMStudioProvider] Failed to unload model during context switch:`, e);
-      }
-      this.loadedModels.delete(modelKey);
-    }
-
-    try {
-      const model = await this.client.llm.load(modelKey, { 
-        config: { contextLength: requestedLength, flashAttention : true, gpu: { ratio: "max" } }, 
-        ttl: 600 // 10 mins TTL
-      });
-      this.loadedModels.set(modelKey, { model, contextLength: requestedLength });
-      return model;
-    } catch (error) {
-      console.error(`[LMStudioProvider] Failed to load model ${modelKey}:`, error);
-      throw error;
-    }
+  canHandleModel(modelId: string): boolean {
+    // Unambiguous routing via prefix
+    return modelId.startsWith('groq:');
   }
 
   getSystemPrompt(useThinkMode: boolean): string {
+    // Use the same robust system prompt instructions as LM Studio
     const thinkProtocol = `
 # RESPONSE PROTOCOL
 You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request.
@@ -57,7 +27,7 @@ CRITICAL TOOL RULES:
 2. You may make multiple sequential tool calls across multiple turns (tool -> result -> tool -> result).
 3. The "CAN BE USED FOR" guidelines in tool descriptions are just examples. Use tools open-endedly and creatively for any task where their core capabilities apply.
 4. Tool results are processed entirely in the background. The user only sees a brief execution status, not the raw data. Do not restrict data gathering out of concern for visual overwhelm.
-5. Tool calls MUST be valid JSON. Multi-line strings (like scripts or SQL) MUST use escaped newlines (\n) — literal newlines are strictly forbidden inside JSON string values.
+5. Tool calls MUST be valid JSON. Multi-line strings (like scripts or SQL) MUST use escaped newlines (\\n) — literal newlines are strictly forbidden inside JSON string values.
 6. When using "executeScript", remember that you are writing JAVASCRIPT, not SQL. Do not use SQL functions (like CAST, strftime, datetime) as native JS expressions. SQL functions can ONLY exist inside the SQL strings you pass to queryDatabase().
 7. [CRITICAL] Never use the SQL syntax 'CAST(... AS INT)' or 'strftime(...)' as a Javascript expression. They will cause a syntax error. Always use numeric timestamps in JS (e.g. 1714089600), and keep SQL syntax strictly inside the 'sql' string of a queryDatabase call.
 8. [IDENTITY] Always filter with 'isMe = 0' when searching for other people/contacts and 'isMe = 1' when searching for your own data. This prevents your own aliases or secondary devices from polluting results.
@@ -79,7 +49,7 @@ Format:
 [Your final conversational response or tool call]
 `;
 
-    return `
+    const baseInstructions = `
 # ROLE
 You are an AI assistant embedded inside SmartChat, a desktop WhatsApp client. You have access to the user's WhatsApp data and can act on their behalf.
 
@@ -142,95 +112,85 @@ You have access to a set of registered tools. Each tool's description tells you 
 Do NOT use the sendMessage tool to reply to the user in this chatbar — respond conversationally for that. The sendMessage tool is only for sending real WhatsApp messages on the user's behalf.
 WhatsApp messages are generally very small, so don't hesitate from fetching large amounts of messages as on average each message is small.
 - A user doesnt understand ids of objects such as jid. try to refer by human format(like chat name).
-
-${useThinkMode ? thinkProtocol : `<|think|># RESPONSE PROTOCOL
-You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request.
-
-CRITICAL TOOL RULES:
-1. You can only emit ONE tool call per response. 
-2. You may make multiple sequential tool calls across multiple turns (tool -> result -> tool -> result).
-3. The "CAN BE USED FOR" guidelines in tool descriptions are just examples. Use tools open-endedly and creatively for any task where their core capabilities apply.
-4. Tool results are processed entirely in the background. The user only sees a brief execution status, not the raw data. Do not restrict data gathering out of concern for visual overwhelm.
-5. Tool calls MUST be valid JSON. Multi-line strings (like scripts or SQL) MUST use escaped newlines (\n) — literal newlines are strictly forbidden inside JSON string values.`}
 `;
-  }
 
+    return baseInstructions + (useThinkMode ? thinkProtocol : '');
+  }
 
   async cleanup(): Promise<void> {
-    console.log(`[LMStudioProvider] Cleaning up... Unloading ${this.loadedModels.size} models.`);
-    for (const modelKey of this.loadedModels.keys()) {
-      try {
-        await this.client.llm.unload(modelKey);
-      } catch (e) {
-        console.warn(`[LMStudioProvider] Failed to unload ${modelKey} during cleanup:`, e);
-      }
-    }
-    this.loadedModels.clear();
+    // No local resources to unload
   }
 
-  private getRawToolsInfo() {
-    return {
-      type: "toolArray",
-      tools: toolRegistry.getAllTools().map(t => ({
-        type: "function",
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: t.parametersSchema
-        }
-      }))
-    };
-  }
-
-  async generateResponse(prompt: string, history: any[], options: any, signal?: AbortSignal): Promise<string> {
-    const modelKey = options?.model;
-    if (!modelKey) throw new Error('No model specified for LM Studio');
-
-    const model = await this.getOrLoadModel(modelKey, options?.contextLength);
-    const chat = Chat.empty();
-    
-    const useThinkMode = options?.useThinkMode !== false;
-    const systemInstructions = this.getSystemPrompt(useThinkMode);
-    if (systemInstructions) {
-      chat.append('system', systemInstructions);
+  private formatMessages(prompt: string, history: any[], systemPrompt: string): any[] {
+    const messages: any[] = [];
+    if (systemPrompt) {
+      messages.push({ role: 'system', content: systemPrompt });
     }
 
     for (const msg of history || []) {
-       // LM Studio's chat.append requires strings or specific chat elements.
-       chat.append(msg.role === 'user' ? 'user' : 'assistant', msg.content);
+      const role = msg.role === 'model' || msg.role === 'assistant' ? 'assistant' : 'user';
+      messages.push({ role, content: msg.content });
     }
 
-    chat.append('user', prompt);
+    messages.push({ role: 'user', content: prompt });
+    return messages;
+  }
 
-    let finalResponse = '';
+  private getToolsForGroq() {
+    return toolRegistry.getAllTools().map(t => ({
+      type: 'function' as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parametersSchema as Record<string, unknown>
+      }
+    }));
+  }
 
-    
-    const prediction = model.respond(chat, {
-      reasoning : {
-        effort : 'high'
-      },
-      temperature : 0.0,
-      rawTools: this.getRawToolsInfo() as any,
-      signal: options?.signal || signal,
-      onPredictionFragment: (fragment) => {
-         if (fragment.content) {
-            finalResponse += fragment.content;
-         }
-      },
-      onToolCallRequestEnd: (_callId, info) => {
-         const req = info.toolCallRequest as any;
-         let argsObj = req.arguments || {};
-         try {
-             if (typeof argsObj === 'string') {
-                 argsObj = JSON.parse(argsObj);
-             }
-         } catch (e) {}
-         const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
-         finalResponse += xml;
-      },
-    });
+  private stripPrefix(modelId: string): string {
+    return modelId.replace(/^groq:/, '');
+  }
 
-    await prediction;
+  async generateResponse(
+    prompt: string,
+    history: any[],
+    options: any,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const rawModel = this.stripPrefix(options?.model || 'openai/gpt-oss-120b');
+    const useThinkMode = options?.useThinkMode !== false;
+    const systemPrompt = this.getSystemPrompt(useThinkMode);
+    const messages = this.formatMessages(prompt, history, systemPrompt);
+    const tools = this.getToolsForGroq();
+
+    const actualSignal = options?.signal || signal;
+
+    const response = await this.client.chat.completions.create({
+      model: rawModel,
+      messages,
+      tools: tools.length > 0 ? tools : undefined,
+      temperature: 0.0,
+    }, { signal: actualSignal });
+
+    const message = response.choices[0]?.message;
+    let finalResponse = message?.content || '';
+
+    // Convert native tool calls to XML format if present
+    if (message?.tool_calls && message.tool_calls.length > 0) {
+      for (const tc of message.tool_calls) {
+        if (tc.type === 'function' && tc.function.name) {
+          let argsObj = {};
+          try {
+            argsObj = JSON.parse(tc.function.arguments);
+          } catch (e) {
+            console.warn('Failed to parse Groq tool call arguments:', tc.function.arguments);
+          }
+          const xml = `\n<tool_call>\n{\n  "tool": "${tc.function.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
+          finalResponse += xml;
+        }
+      }
+    }
+
     return finalResponse;
   }
 
@@ -241,68 +201,101 @@ CRITICAL TOOL RULES:
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void> {
-    const modelKey = options?.model;
-    if (!modelKey) throw new Error('No model specified for LM Studio');
-
-    const model = await this.getOrLoadModel(modelKey, options?.contextLength);
-    const chat = Chat.empty();
-
+    const rawModel = this.stripPrefix(options?.model || 'openai/gpt-oss-120b');
     const useThinkMode = options?.useThinkMode !== false;
-    const systemInstructions = this.getSystemPrompt(useThinkMode);
-    if (systemInstructions) {
-      chat.append('system', systemInstructions);
-    }
+    const systemPrompt = this.getSystemPrompt(useThinkMode);
+    const messages = this.formatMessages(prompt, history, systemPrompt);
+    const tools = this.getToolsForGroq();
 
-    for (const msg of history || []) {
-       chat.append(msg.role === 'user' ? 'user' : 'assistant', msg.content);
-    }
+    const actualSignal = options?.signal || signal;
 
-    chat.append('user', prompt);
+    const stream = await this.client.chat.completions.create({
+      model: rawModel,
+      messages,
+      tools: tools.length > 0 ? tools : undefined,
+      temperature: 0.0,
+      stream: true
+    }, { signal: actualSignal });
 
-    const prediction = model.respond(chat, {
-      reasoning : {
-        effort : 'high'
-      },
-      temperature : 0.0,
-      rawTools: this.getRawToolsInfo() as any,
-      signal: options?.signal || signal,
-      onPredictionFragment: (fragment) => {
-         if (fragment.content) {
-            onChunk(fragment.content);
-         }
-      },
-      onToolCallRequestEnd: (_callId, info) => {
-         const req = info.toolCallRequest as any;
-         let argsObj = req.arguments || {};
-         try {
-             if (typeof argsObj === 'string') {
-                 argsObj = JSON.parse(argsObj);
-             }
-         } catch (e) {}
-         const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
-         onChunk(xml);
+    const toolCalls: any[] = [];
+
+    for await (const chunk of stream) {
+      if (actualSignal?.aborted) break;
+
+      const delta = chunk.choices[0]?.delta;
+      if (delta?.content) {
+        onChunk(delta.content);
       }
-    });
 
-    await prediction;
+      if (delta?.tool_calls) {
+        for (const toolCallDelta of delta.tool_calls) {
+          const idx = toolCallDelta.index;
+          if (!toolCalls[idx]) {
+            toolCalls[idx] = {
+              id: toolCallDelta.id || '',
+              type: 'function',
+              function: { name: '', arguments: '' }
+            };
+          }
+          if (toolCallDelta.id) {
+            toolCalls[idx].id = toolCallDelta.id;
+          }
+          if (toolCallDelta.function?.name) {
+            toolCalls[idx].function.name += toolCallDelta.function.name;
+          }
+          if (toolCallDelta.function?.arguments) {
+            toolCalls[idx].function.arguments += toolCallDelta.function.arguments;
+          }
+        }
+      }
+    }
+
+    // After stream completes, emit accumulated tool calls as XML chunks
+    for (const tc of toolCalls) {
+      if (tc && tc.function.name) {
+        let argsObj = {};
+        try {
+          argsObj = JSON.parse(tc.function.arguments);
+        } catch (e) {
+          console.warn('Failed to parse Groq streamed tool call arguments:', tc.function.arguments);
+        }
+        const xml = `\n<tool_call>\n{\n  "tool": "${tc.function.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
+        onChunk(xml);
+      }
+    }
   }
 
   async getAvailableModels(): Promise<ModelInfo[]> {
     try {
-      const models = await this.client.system.listDownloadedModels();
-      return models
-        .filter(m => m.type === 'llm')
+      const list = await this.client.models.list();
+      const models = list.data
+        .filter(m => {
+          const id = m.id.toLowerCase();
+          return !id.includes('whisper') && !id.includes('embed') && !id.includes('audio');
+        })
         .map(m => ({
-          id: m.modelKey,
-          name: m.displayName || m.modelKey,
-          provider: 'lmstudio' as const,
-          description: `Architecture: ${m.architecture}, Params: ${m.paramsString}`,
-          isLocal: true,
-          quota: 'Infinite (Local Execution)'
+          id: `groq:${m.id}`,
+          name: m.id,
+          provider: 'groq' as const,
+          description: `Owned by: ${m.owned_by}`,
+          isLocal: false
         }));
+
+      models.sort((a, b) => {
+        if (a.id === 'groq:openai/gpt-oss-120b') return -1;
+        if (b.id === 'groq:openai/gpt-oss-120b') return 1;
+        return 0;
+      });
+      return models;
     } catch (error) {
-      console.warn('[LMStudioProvider] Could not fetch models from LM Studio:', error);
-      return [];
+      console.warn('[GroqProvider] Could not fetch models from Groq:', error);
+      // Solid fallback models in case of network/key issues on startup
+      return [
+        { id: 'groq:openai/gpt-oss-120b', name: 'openai/gpt-oss-120b', provider: 'groq', isLocal: false },
+        { id: 'groq:llama-3.3-70b-versatile', name: 'llama-3.3-70b-versatile', provider: 'groq', isLocal: false },
+        { id: 'groq:llama-3.1-8b-instant', name: 'llama-3.1-8b-instant', provider: 'groq', isLocal: false },
+        { id: 'groq:mixtral-8x7b-32768', name: 'mixtral-8x7b-32768', provider: 'groq', isLocal: false }
+      ];
     }
   }
 }
