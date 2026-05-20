@@ -521,6 +521,98 @@ export class MessageService {
   }
 
   /**
+   * Processes a real-time messages.reaction event update.
+   * Performs identity reconciliation, database persistence, and pushes real-time IPC updates.
+   */
+  async processReaction(reactionUpdate: any, sock: any, mainWindow: any): Promise<void> {
+    const targetId = reactionUpdate.key?.id
+    const reactionKey = reactionUpdate.reaction?.key
+    const text = reactionUpdate.reaction?.text
+    const ts = reactionUpdate.reaction?.senderTimestampMs
+
+    if (!targetId || !reactionKey) return
+
+    // 1. Reconcile Linked ID (LID) and Phone Number (PN)
+    const lid = reactionKey.participant || reactionKey.participantAlt
+    const pn = reactionKey.participantAlt || reactionKey.participant
+
+    let callLid: string | null = null
+    let callPn: string | null = null
+    const ids = [lid, pn].filter(Boolean) as string[]
+    for (const id of ids) {
+      if (typeof id === 'string') {
+        if (id.includes('@lid')) callLid = id
+        if (id.includes('@s.whatsapp.net')) callPn = id
+      }
+    }
+    if (callLid && callPn) {
+      await contactService.linkLidAndPn(callLid, callPn, 'messages.reaction').catch(() => {})
+    }
+
+    // 2. Parse reaction timestamp
+    const timestamp = BigInt(
+      typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
+        ? ((ts as Record<string, unknown>).low as number)
+        : (ts as number || Math.floor(Date.now() / 1000))
+    )
+
+    // 3. Resolve reactor JID and Identity ID
+    const reactorJid = reactionKey.participant || (reactionKey.remoteJid?.endsWith('@g.us') ? null : reactionKey.remoteJid)
+    let reactorId: number | null = null
+
+    if (reactionKey.fromMe) {
+      const meIdent = await prisma.identity.findFirst({ where: { isMe: true } })
+      if (meIdent) reactorId = meIdent.id
+    } else if (reactorJid) {
+      reactorId = await contactService.getIdentityIdByJid(reactorJid)
+      if (!reactorId) {
+        await contactService.upsertContact({ id: reactorJid }).catch(() => {})
+        reactorId = await contactService.getIdentityIdByJid(reactorJid)
+      }
+    }
+
+    // 4. Update the DB reaction record
+    if (reactorId) {
+      if (!text) {
+        await (prisma as any).reaction.deleteMany({
+          where: { messageId: targetId, senderId: reactorId }
+        }).catch(() => {})
+      } else {
+        await (prisma as any).reaction.upsert({
+          where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
+          update: { text, timestamp },
+          create: { messageId: targetId, senderId: reactorId, text, timestamp }
+        }).catch(() => {})
+      }
+    }
+
+    // 5. Notify the frontend to update UI reactively
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const reactorJidString = reactorJid || (reactionKey.remoteJid || '')
+      const nameMap = await contactService.batchResolveNames([reactorJidString], sock)
+      const reactorName = nameMap.get(reactorJidString) || reactorJidString.replace(/@.*$/, '')
+
+      const mockMsg = {
+        id: reactionKey.id || targetId,
+        remoteJid: reactionKey.remoteJid || '',
+        fromMe: reactionKey.fromMe === true,
+        senderId: reactorId,
+        participant: reactorJidString,
+        participantName: reactorName,
+        timestamp: timestamp.toString(),
+        messageType: 'reactionMessage',
+        content: JSON.stringify({
+          reactionMessage: {
+            key: { id: targetId },
+            text: text || ''
+          }
+        })
+      }
+      mainWindow.webContents.send('new-message', mockMsg)
+    }
+  }
+
+  /**
    * Generates a safe and descriptive filename for a media/document message.
    */
   getSafeMediaFileName(msgId: string, mediaType: string, mediaMsg: any): string {

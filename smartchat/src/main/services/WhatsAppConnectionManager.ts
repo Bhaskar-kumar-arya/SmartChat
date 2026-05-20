@@ -483,6 +483,15 @@ export class WhatsAppConnectionManager {
         }
       }
 
+      // ── Message Reactions (messages.reaction) ─────────────────────────────
+      if (events['messages.reaction']) {
+        for (const reactionUpdate of events['messages.reaction']) {
+          await messageService.processReaction(reactionUpdate, sock, this.mainWindow).catch((err) => {
+            console.error('[WhatsAppConnectionManager] Error processing messages.reaction:', err)
+          })
+        }
+      }
+
       // ── Presence ──────────────────────────────────────────────────────────
       if (events['presence.update']) {
         const { id, presences } = events['presence.update']
