@@ -1,7 +1,7 @@
 export interface ModelInfo {
   id: string;
   name: string;
-  provider: 'gemini' | 'lmstudio' | 'groq' | 'mistral';
+  provider: 'gemini' | 'lmstudio' | 'groq' | 'mistral' | 'deepseek';
   description?: string;
   isLocal: boolean;
 }
@@ -47,4 +47,9 @@ export interface AIProvider {
    * Returns a list of available models for this provider.
    */
   getAvailableModels(): Promise<ModelInfo[]>;
+
+  /**
+   * Dynamically re-initializes client SDK when user changes settings keys.
+   */
+  updateApiKey?(apiKey: string): void;
 }
