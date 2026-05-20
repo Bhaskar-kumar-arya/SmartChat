@@ -1,13 +1,17 @@
 import Groq from 'groq-sdk';
 import { AIProvider, ModelInfo } from './Provider';
 import { toolRegistry } from '../AIToolService';
+import { aiKeyService } from '../AIKeyService';
 
 export class GroqProvider implements AIProvider {
   private client: Groq;
 
   constructor() {
-    // Priority: Env variable > Temporary hardcoded key
-    const apiKey = process.env.GROQ_API_KEY || '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';
+    const apiKey = aiKeyService.getKey('groq');
+    this.client = new Groq({ apiKey });
+  }
+
+  updateApiKey(apiKey: string): void {
     this.client = new Groq({ apiKey });
   }
 

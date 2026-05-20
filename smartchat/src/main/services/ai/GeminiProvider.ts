@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai'
 import { AIProvider, ModelInfo } from './Provider'
 import { toolRegistry } from '../AIToolService'
+import { aiKeyService } from '../AIKeyService'
 
 export class GeminiProvider implements AIProvider {
   private ai: any;
@@ -14,8 +15,12 @@ export class GeminiProvider implements AIProvider {
   ]);
 
   constructor() {
-    // Hardcoded key as per original AIService.ts
-    this.ai = new GoogleGenAI({ apiKey: 'AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0' }); 
+    const key = aiKeyService.getKey('gemini');
+    this.ai = new GoogleGenAI({ apiKey: key }); 
+  }
+
+  updateApiKey(apiKey: string): void {
+    this.ai = new GoogleGenAI({ apiKey });
   }
 
   canHandleModel(modelId: string): boolean {

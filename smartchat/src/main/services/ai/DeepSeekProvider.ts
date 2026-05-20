@@ -1,13 +1,18 @@
 import OpenAI from 'openai';
 import { AIProvider, ModelInfo } from './Provider';
 import { toolRegistry } from '../AIToolService';
+import { aiKeyService } from '../AIKeyService';
 
 export class DeepSeekProvider implements AIProvider {
   private client: OpenAI;
 
   constructor() {
-    // Priority: Env variable > Fallback key
-    const apiKey = process.env.DEEPSEEK_API_KEY || 'sk-a96018659be1476485d5043356483922';
+    const apiKey = aiKeyService.getKey('deepseek');
+    const baseURL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+    this.client = new OpenAI({ apiKey, baseURL });
+  }
+
+  updateApiKey(apiKey: string): void {
     const baseURL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
     this.client = new OpenAI({ apiKey, baseURL });
   }

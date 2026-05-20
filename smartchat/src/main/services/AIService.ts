@@ -2,7 +2,9 @@ import { GeminiProvider } from './ai/GeminiProvider'
 import { LMStudioProvider } from './ai/LMStudioProvider'
 import { GroqProvider } from './ai/GroqProvider'
 import { MistralProvider } from './ai/MistralProvider'
+import { DeepSeekProvider } from './ai/DeepSeekProvider'
 import { AIProvider, ModelInfo } from './ai/Provider'
+import { aiKeyService } from './AIKeyService'
 
 export class AIService {
   private providers: Record<string, AIProvider> = {}
@@ -14,12 +16,29 @@ export class AIService {
     this.registerProvider('gemini', new GeminiProvider());
     this.registerProvider('groq', new GroqProvider());
     this.registerProvider('mistral', new MistralProvider());
+    this.registerProvider('deepseek', new DeepSeekProvider());
     this.registerProvider('lmstudio', new LMStudioProvider()); // Fallback / local
   }
 
   registerProvider(key: string, provider: AIProvider): void {
     this.providers[key] = provider;
     this.providerOrder.push(key);
+  }
+
+  getProviderKeys(): Record<string, string> {
+    return aiKeyService.getKeys() as any;
+  }
+
+  setProviderKey(provider: string, key: string): boolean {
+    if (provider in this.providers) {
+      aiKeyService.saveKey(provider as any, key);
+      const updateMethod = this.providers[provider].updateApiKey;
+      if (updateMethod) {
+        updateMethod.call(this.providers[provider], key);
+      }
+      return true;
+    }
+    return false;
   }
 
   async cleanup(): Promise<void> {
