@@ -13,6 +13,7 @@ import { toolRegistry } from './services/AIToolService'
 import { AIToolInitializer } from './services/AIToolInitializer'
 import { audioTranscoderService } from './services/AudioTranscoderService'
 import { aiChatSessionService } from './services/AIChatSessionService'
+import { aiChatExportService } from './services/AIChatExportService'
 
 export function registerIpcHandlers(
   prisma: PrismaClient,
@@ -184,6 +185,8 @@ export function registerIpcHandlers(
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
 
+    const targetJid = await contactService.resolveLidFromJid(jid)
+
     let quoted: any = undefined
     if (quotedMsgId) {
       const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
@@ -197,13 +200,13 @@ export function registerIpcHandlers(
     const messageContent: any = { text }
     if (mentions && mentions.length > 0) messageContent.mentions = mentions
 
-    const sentMsg = await sock.sendMessage(jid, messageContent, { quoted } as any)
+    const sentMsg = await sock.sendMessage(targetJid, messageContent, { quoted } as any)
     if (!sentMsg) throw new Error('Failed to send message')
 
     const processed = await messageService.processMessage(sentMsg, sock)
-    await chatService.updateTimestamp(jid, processed.timestamp)
+    await chatService.updateTimestamp(targetJid, processed.timestamp)
 
-    const nameMap = await contactService.batchResolveNames([processed.participant || jid, ...(mentions || [])], sock)
+    const nameMap = await contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
     return messageService.enrichMessage(processed, sock, nameMap)
   })
 
@@ -211,6 +214,8 @@ export function registerIpcHandlers(
   ipcMain.handle('edit-message', async (_event, jid: string, messageId: string, newText: string) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
+
+    const targetJid = await contactService.resolveLidFromJid(jid)
 
     const dbMsg = await prisma.message.findUnique({ where: { id: messageId }, include: { sender: true } })
     if (!dbMsg) throw new Error('Message not found')
@@ -222,7 +227,7 @@ export function registerIpcHandlers(
       participant: dbMsg.participant || undefined
     }
 
-    const result = await sock.sendMessage(jid, {
+    const result = await sock.sendMessage(targetJid, {
       text: newText,
       edit: msgKey
     })
@@ -235,7 +240,7 @@ export function registerIpcHandlers(
       include: { sender: true }
     })
 
-    const nameMap = await contactService.batchResolveNames([updated.participant || updated.chatJid], sock)
+    const nameMap = await contactService.batchResolveNames([updated.participant || targetJid], sock)
     return messageService.enrichMessage(updated, sock, nameMap)
   })
 
@@ -243,6 +248,8 @@ export function registerIpcHandlers(
   ipcMain.handle('delete-message', async (_event, jid: string, messageId: string) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
+
+    const targetJid = await contactService.resolveLidFromJid(jid)
 
     const dbMsg = await prisma.message.findUnique({ where: { id: messageId } })
     if (!dbMsg) throw new Error('Message not found')
@@ -254,7 +261,7 @@ export function registerIpcHandlers(
       participant: dbMsg.participant || undefined
     }
 
-    await sock.sendMessage(jid, { delete: msgKey })
+    await sock.sendMessage(targetJid, { delete: msgKey })
 
     await prisma.message.update({
       where: { id: messageId },
@@ -268,6 +275,8 @@ export function registerIpcHandlers(
   ipcMain.handle('send-media-message', async (_event, jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
+
+    const targetJid = await contactService.resolveLidFromJid(jid)
 
     let quoted: any = undefined
     if (quotedMsgId) {
@@ -283,13 +292,13 @@ export function registerIpcHandlers(
     const sendOptions = messageService.getMediaSendOptions(filePath, buffer, caption)
     if (mentions && mentions.length > 0) sendOptions.mentions = mentions
 
-    const sentMsg = await sock.sendMessage(jid, sendOptions, { quoted } as any)
+    const sentMsg = await sock.sendMessage(targetJid, sendOptions, { quoted } as any)
     if (!sentMsg) throw new Error('Failed to send media message')
 
     const processed = await messageService.processMessage(sentMsg, sock)
-    await chatService.updateTimestamp(jid, processed.timestamp)
+    await chatService.updateTimestamp(targetJid, processed.timestamp)
     
-    const nameMap = await contactService.batchResolveNames([processed.participant || jid, ...(mentions || [])], sock)
+    const nameMap = await contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
     return messageService.enrichMessage(processed, sock, nameMap)
   })
 
@@ -411,15 +420,19 @@ export function registerIpcHandlers(
   ipcMain.handle('logout', async () => {
     const sock = getSock()
     if (sock) await sock.logout().catch(() => {})
-    await prisma.message.deleteMany()
-    await prisma.chatMember.deleteMany()
-    await prisma.chat.deleteMany()
+    // Delete in FK-safe order: children before parents
+    await prisma.reaction.deleteMany()       // FK → message, identity
+    await prisma.messageVector.deleteMany()  // FK → message
+    await prisma.message.deleteMany()        // FK → chat, identity
+    await prisma.chatMember.deleteMany()     // FK → chat, identity
+    await prisma.chat.deleteMany()           // FK → community
     await prisma.community.deleteMany()
-    await prisma.identityAlias.deleteMany()
+    await prisma.identityAlias.deleteMany()  // FK → identity
     await prisma.identity.deleteMany()
     await prisma.authState.deleteMany()
     return true
   })
+
 
   // ── Get Profile Picture ─────────────────────────────────────────────
   ipcMain.handle('get-profile-picture', async (_event, jid: string, type: 'preview' | 'image' = 'preview', forceRefresh: boolean = false) => {
@@ -508,6 +521,14 @@ export function registerIpcHandlers(
     return await aiService.getAvailableModels();
   })
 
+  ipcMain.handle('get-provider-keys', async () => {
+    return aiService.getProviderKeys();
+  })
+
+  ipcMain.handle('set-provider-key', async (_event, provider: string, key: string) => {
+    return aiService.setProviderKey(provider, key);
+  })
+
   ipcMain.on('ai-chat-stream', async (event, args) => {
     const { channelId, prompt, contextChats, history, mentions, options } = args;
     try {
@@ -530,8 +551,9 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle('get-chat-context', async (_event, jid: string) => {
+    const targetJid = await contactService.resolveLidFromJid(jid)
     const messages = await prisma.message.findMany({
-      where: { chatJid: jid },
+      where: { chatJid: targetJid },
       orderBy: { timestamp: 'desc' },
       take: 100,
       include: { sender: true }
@@ -568,6 +590,10 @@ export function registerIpcHandlers(
     return await aiChatSessionService.deleteSession(id);
   });
 
+  ipcMain.handle('ai-session-clone', async (_event, id: string) => {
+    return await aiChatSessionService.cloneSession(id);
+  });
+
   ipcMain.handle('ai-session-save-messages', async (_event, sessionId: string, messages: any[]) => {
     return await aiChatSessionService.saveMessages(sessionId, messages);
   });
@@ -579,6 +605,26 @@ export function registerIpcHandlers(
   ipcMain.handle('ai-session-set-autosave', async (_event, enabled: boolean) => {
     return await aiChatSessionService.setAutoSavePreference(enabled);
   });
+
+  ipcMain.handle('get-ai-options', async () => {
+    return await aiChatSessionService.getAIOptions();
+  });
+
+  ipcMain.handle('set-ai-options', async (_event, options: any) => {
+    return await aiChatSessionService.setAIOptions(options);
+  });
+
+  ipcMain.handle('export-ai-chat', async (_event, session: any, messages: any[]) => {
+    return await aiChatExportService.exportChat(session, messages)
+  })
+
+  ipcMain.handle('delete-exported-ai-chat', async (_event, sessionId: string) => {
+    return await aiChatExportService.deleteExportedChat(sessionId)
+  })
+
+  ipcMain.handle('duplicate-exported-ai-chat', async (_event, sessionId: string) => {
+    return await aiChatExportService.duplicateExportedChat(sessionId)
+  })
 }
 
 // Exporting helpers for index.ts
