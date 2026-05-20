@@ -224,7 +224,7 @@ export function registerIpcHandlers(
       remoteJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe,
       id: messageId,
-      participant: dbMsg.participant || undefined
+      participant: dbMsg.chatJid.endsWith('@g.us') ? (dbMsg.participant || undefined) : undefined
     }
 
     const result = await sock.sendMessage(targetJid, {
@@ -258,7 +258,7 @@ export function registerIpcHandlers(
       remoteJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe,
       id: messageId,
-      participant: dbMsg.participant || undefined
+      participant: dbMsg.chatJid.endsWith('@g.us') ? (dbMsg.participant || undefined) : undefined
     }
 
     await sock.sendMessage(targetJid, { delete: msgKey })
@@ -369,7 +369,15 @@ export function registerIpcHandlers(
             fs.writeFileSync(filePath, buffer)
         } catch (err: any) {
             if (err?.data === 410 || err?.output?.statusCode === 410) {
-                const updatedMsg = await sock.updateMediaMessage({ key: { id: dbMsg.id, remoteJid: dbMsg.chatJid, fromMe: dbMsg.fromMe, participant: dbMsg.participant }, message: rawMessage } as any)
+                const updatedMsg = await sock.updateMediaMessage({
+                  key: {
+                    id: dbMsg.id,
+                    remoteJid: dbMsg.chatJid,
+                    fromMe: dbMsg.fromMe,
+                    participant: dbMsg.chatJid.endsWith('@g.us') ? (dbMsg.participant || undefined) : undefined
+                  },
+                  message: rawMessage
+                } as any)
                 const updatedMedia = messageService.unwrapMessage(updatedMsg.message)
                 const target = updatedMedia.imageMessage || updatedMedia.stickerMessage || updatedMedia.videoMessage || updatedMedia.audioMessage
                 if (target) {

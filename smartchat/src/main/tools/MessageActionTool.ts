@@ -1,6 +1,13 @@
 import { AITool } from '../services/AIToolService';
 import { prisma } from '../auth';
 import { contactService } from '../services/ContactService';
+import { messageService } from '../services/MessageService';
+import { BrowserWindow } from 'electron';
+
+/** Returns the first non-destroyed BrowserWindow, or null. */
+function getMainWindow(): BrowserWindow | null {
+  return BrowserWindow.getAllWindows().find(w => !w.isDestroyed()) ?? null;
+}
 
 export class MessageActionTool implements AITool {
   name = 'messageAction';
@@ -26,7 +33,7 @@ If the action fails, the tool throws — check the [SYSTEM] result for the reaso
 
 CONSTRAINTS:
 - Use carefully as deletes are permanent.`;
-  
+
   requiresPermission = true;
   parametersSchema = {
     type: 'object',
@@ -67,7 +74,7 @@ CONSTRAINTS:
     const msg = await prisma.message.findUnique({ where: { id: messageId } });
     if (!msg) throw new Error(`Message with ID ${messageId} not found in database.`);
 
-    // Build the key
+    // Build the Baileys message key (participant only set for group chats)
     const msgKey: any = {
       remoteJid: msg.chatJid,
       fromMe: msg.fromMe,
@@ -77,39 +84,105 @@ CONSTRAINTS:
       msgKey.participant = msg.participant;
     }
 
+    const win = getMainWindow();
+
     switch (action) {
-      case 'react':
+      case 'react': {
         if (!reactEmoji) throw new Error("Missing required argument 'reactEmoji' for action 'react'");
         await sock.sendMessage(targetJid, { react: { text: reactEmoji, key: msgKey } });
+
+        // Persist reaction locally so it survives page reload
+        const meIdent = await prisma.identity.findFirst({ where: { isMe: true } });
+        if (meIdent) {
+          const nowTs = BigInt(Math.floor(Date.now() / 1000));
+          await (prisma as any).reaction.upsert({
+            where: { messageId_senderId: { messageId, senderId: meIdent.id } },
+            update: { text: reactEmoji, timestamp: nowTs },
+            create: { messageId, senderId: meIdent.id, text: reactEmoji, timestamp: nowTs }
+          }).catch(() => {});
+        }
+
+        // Push real-time update to the UI (mirrors the processReaction mock message shape)
+        if (win) {
+          const myJid = sock.user?.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : '';
+          win.webContents.send('new-message', {
+            id: `${messageId}_react_${Date.now()}`,
+            remoteJid: msg.chatJid,
+            fromMe: true,
+            senderId: null,
+            participant: myJid,
+            participantName: sock.user?.name || 'Me',
+            timestamp: Date.now().toString(),
+            messageType: 'reactionMessage',
+            content: JSON.stringify({
+              reactionMessage: {
+                key: { id: messageId },
+                text: reactEmoji
+              }
+            })
+          });
+        }
+
         return { success: true, detail: `Successfully reacted to message ${messageId} with ${reactEmoji}` };
+      }
 
-      case 'delete':
+      case 'delete': {
         await sock.sendMessage(targetJid, { delete: msgKey });
-        return { success: true, detail: `Successfully deleted message ${messageId}` };
 
-      case 'forward':
+        // Persist locally
+        await prisma.message.update({
+          where: { id: messageId },
+          data: { isDeleted: true }
+        }).catch(() => {});
+
+        // Push real-time update to UI (mirrors WhatsAppConnectionManager's message-deleted event)
+        if (win) {
+          win.webContents.send('message-deleted', {
+            id: messageId,
+            remoteJid: msg.chatJid,
+            fromMe: msg.fromMe
+          });
+        }
+
+        return { success: true, detail: `Successfully deleted message ${messageId}` };
+      }
+
+      case 'forward': {
         if (!targetForwardJid) throw new Error("Missing required argument 'forwardJid' for action 'forward'");
-        
+
         let msgContent: any;
         try {
           msgContent = JSON.parse(msg.content);
         } catch (e) {
           throw new Error(`Failed to parse message content for ${messageId}`);
         }
-        
+
         // Baileys forward syntax
         await sock.sendMessage(targetForwardJid, { forward: { key: msgKey, message: msgContent } });
         return { success: true, detail: `Successfully forwarded message ${messageId} to ${targetForwardJid}` };
+      }
 
-      case 'edit':
+      case 'edit': {
         if (!editText) throw new Error("Missing required argument 'editText' for action 'edit'");
         if (!msg.fromMe) throw new Error("Cannot edit a message that was not sent by the user.");
         await sock.sendMessage(targetJid, { text: editText, edit: msgKey });
-        await prisma.message.update({
+
+        // Persist locally
+        const updated = await prisma.message.update({
           where: { id: messageId },
-          data: { textContent: editText, isEdited: true }
+          data: { textContent: editText, isEdited: true },
+          include: { sender: true }
         });
+
+        // Push real-time update to UI (mirrors WhatsAppConnectionManager's message-edited event)
+        if (win) {
+          const nameMap = await contactService.batchResolveNames([updated.participant || msg.chatJid], sock);
+          const enriched = await messageService.enrichMessage(updated, sock, nameMap);
+          win.webContents.send('message-edited', enriched);
+        }
+
         return { success: true, detail: `Successfully edited message ${messageId} to "${editText}"` };
+      }
 
       default:
         throw new Error(`Unsupported action ${action}`);
