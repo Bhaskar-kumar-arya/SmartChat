@@ -34,6 +34,38 @@ export class MessageService {
   }
 
   /**
+   * Helper to dynamically determine the message type, with priority fallback.
+   */
+  getMessageType(unwrapped: any): string {
+    if (!unwrapped) return 'unknown'
+
+    // 1. Try our high-priority standard message types first
+    const priorityKeys = [
+      'conversation', 'extendedTextMessage', 'imageMessage',
+      'videoMessage', 'audioMessage', 'documentMessage',
+      'stickerMessage', 'contactMessage', 'locationMessage',
+      'reactionMessage', 'protocolMessage', 'pollCreationMessage',
+      'pollUpdateMessage', 'liveLocationMessage'
+    ]
+
+    for (const k of priorityKeys) {
+      if (unwrapped[k] !== undefined && unwrapped[k] !== null) {
+        return k
+      }
+    }
+
+    // 2. Dynamic fallback: scan all keys, excluding metadata/technical keys
+    const ignoredKeys = new Set(['contextInfo', 'messageContextInfo'])
+    for (const k of Object.keys(unwrapped)) {
+      if (!ignoredKeys.has(k) && unwrapped[k] !== undefined && unwrapped[k] !== null) {
+        return k
+      }
+    }
+
+    return 'unknown'
+  }
+
+  /**
    * Parses a raw Baileys message object and prepares it for persistence.
    */
   async processMessage(msg: any, _sock: any): Promise<any> {
@@ -83,22 +115,7 @@ export class MessageService {
     }
 
     // 3. Determine message type
-    let messageType = 'unknown'
-    if (rawMessage) {
-      const typeKeys = [
-        'conversation', 'extendedTextMessage', 'imageMessage',
-        'videoMessage', 'audioMessage', 'documentMessage',
-        'stickerMessage', 'contactMessage', 'locationMessage',
-        'reactionMessage', 'protocolMessage'
-      ]
-      for (const k of typeKeys) {
-        const unwrapped = this.unwrapMessage(rawMessage)
-        if (unwrapped[k] !== undefined && unwrapped[k] !== null) {
-          messageType = k
-          break
-        }
-      }
-    }
+    const messageType = unwrapped ? this.getMessageType(unwrapped) : 'unknown'
 
     // 4. Parse Timestamp
     const ts = msg.messageTimestamp ?? 0
@@ -273,21 +290,7 @@ export class MessageService {
 
     // Determine message type
     const unwrapped = rawMessage ? this.unwrapMessage(rawMessage) : null
-    let messageType = 'unknown'
-    if (unwrapped) {
-      const typeKeys = [
-        'conversation', 'extendedTextMessage', 'imageMessage',
-        'videoMessage', 'audioMessage', 'documentMessage',
-        'stickerMessage', 'contactMessage', 'locationMessage',
-        'reactionMessage', 'protocolMessage'
-      ]
-      for (const k of typeKeys) {
-        if (unwrapped[k] !== undefined && unwrapped[k] !== null) {
-          messageType = k
-          break
-        }
-      }
-    }
+    const messageType = unwrapped ? this.getMessageType(unwrapped) : 'unknown'
 
     // Protocol and reaction messages need special per-message handling — skip in bulk
     if (messageType === 'protocolMessage' || messageType === 'reactionMessage') return null

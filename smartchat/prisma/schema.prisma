@@ -150,9 +150,19 @@ model Message {
   /// Unix timestamp in SECONDS when the message was sent.
   /// [AI RULE]: To compare timestamps, convert ISO date/time strings to seconds: timestamp >= CAST(strftime('%s', 'YYYY-MM-DD HH:MM:SS') AS INT)
   timestamp   BigInt
-  /// WhatsApp message type: "conversation", "extendedTextMessage", "imageMessage", "videoMessage", "audioMessage", "stickerMessage", "documentMessage", etc.
+  /// WhatsApp message types include:
+  ///   -STANDARD: "conversation" (plain text), "extendedTextMessage" (formatted/link preview), "imageMessage", "videoMessage", "ptvMessage" (video notes), "audioMessage" (voice notes), "documentMessage", "documentWithCaptionMessage", "stickerMessage", "locationMessage", "liveLocationMessage", "contactMessage", "contactsArrayMessage", "reactionMessage"/"encReactionMessage" (reactions), "groupInviteMessage", "pollCreationMessage" (group polls), "pollUpdateMessage" (poll votes), "protocolMessage" (deletes/edits), "editedMessage" (edit updates).
+  ///   - INTERACTIVE/BOT/BUSINESS: "interactiveMessage", "interactiveResponseMessage", "buttonsMessage", "buttonsResponseMessage", "listMessage", "listResponseMessage", "templateMessage", "templateButtonReplyMessage", "orderMessage", "invoiceMessage", "sendPaymentMessage", "requestPaymentMessage", "callLogMesssage" (call logs).
+  ///   - TECHNICAL/IRRELEVANT: Cryptographic key swaps (e.g. "senderKeyDistributionMessage", "secretEncryptedMessage"), sync notices (e.g. "messageHistoryBundle"), or device syncs. These are irrelevant to standard chat context and fall back to "unknown" if unrecognized.
+  /// [AI RULE]: When fetching message context (e.g. textContent), you MUST also select 'messageType' to correctly identify if the text represents a media caption rather than a standard text message.
   messageType String
-  /// Full serialised message content (JSON). Use textContent for plain readable text.
+  /// Full serialised message JSON.
+  /// [CRITICAL AI RULE]: NEVER SELECT this raw column directly (causes context window blowup due to large base64 thumbnails). Use json_extract(content, '$.path') instead.
+  ///   - Structure: Nesting matches messageType (e.g. 'conversation', 'imageMessage', 'pollCreationMessage').
+  ///   - Media/Links: json_extract(content, '$.documentMessage.fileName'), json_extract(content, '$.audioMessage.seconds'), json_extract(content, '$.extendedTextMessage.canonicalUrl') / '.title'
+  ///   - Quotes/Mentions: contextInfo is nested inside the active messageType object.
+  ///     Use COALESCE(json_extract(content, '$.<type>Message.contextInfo.stanzaId'), ...) across [extendedTextMessage, imageMessage, videoMessage, documentMessage, audioMessage, stickerMessage, contextInfo] to find quotedMsgId (stanzaId).
+  ///     Do the same COALESCE for '.mentionedJid' to extract tagged JID arrays.
   content     String
   /// [AI RULE]: For media messages (document, image, etc.), textContent ONLY contains the caption. 
   /// The actual FILENAME (for documents) or media metadata is stored inside the JSON 'content' column.
