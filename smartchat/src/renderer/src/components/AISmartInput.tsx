@@ -290,12 +290,13 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
   };
 
   const getFriendlyModelName = (id: string) => {
-    if (id === 'gemma-4-31b-it') return 'Gemma 4 31B';
-    if (id === 'mistral-large-latest') return 'Mistral Large';
-    if (id === 'gpt-oss-120b') return 'Llama 3.3 120B';
-    if (id === 'deepseek-v4-pro') return 'DeepSeek V4';
-    if (id === 'deepseek-reasoner') return 'DeepSeek R1';
-    return id;
+    const cleanId = id.replace(/^(gemini|lmstudio|groq|mistral|deepseek):/, '');
+    if (cleanId === 'gemma-4-31b-it') return 'Gemma 4 31B';
+    if (cleanId === 'mistral-large-latest') return 'Mistral Large';
+    if (cleanId === 'gpt-oss-120b' || cleanId === 'openai/gpt-oss-120b') return 'Llama 3.3 120B';
+    if (cleanId === 'deepseek-v4-pro') return 'DeepSeek V4';
+    if (cleanId === 'deepseek-reasoner') return 'DeepSeek R1';
+    return cleanId;
   };
   const activeModel = availableModels?.find(m => m.id === aiOptions?.model);
   const activeModelName = activeModel ? activeModel.name : getFriendlyModelName(aiOptions?.model || 'Gemma 4 31B');

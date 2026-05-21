@@ -10,9 +10,8 @@ export class LMStudioProvider implements AIProvider {
     this.client = new LMStudioClient();
   }
 
-  canHandleModel(_modelId: string): boolean {
-    // Fallback provider — handles any model not claimed by others (Gemini/Groq)
-    return true;
+  canHandleModel(modelId: string): boolean {
+    return modelId.startsWith('lmstudio:');
   }
 
   private async getOrLoadModel(modelKey: string, contextLength?: number) {
@@ -186,7 +185,8 @@ CRITICAL TOOL RULES:
     const modelKey = options?.model;
     if (!modelKey) throw new Error('No model specified for LM Studio');
 
-    const model = await this.getOrLoadModel(modelKey, options?.contextLength);
+    const cleanModelKey = modelKey.replace(/^lmstudio:/, '');
+    const model = await this.getOrLoadModel(cleanModelKey, options?.contextLength);
     const chat = Chat.empty();
     
     const useThinkMode = options?.useThinkMode !== false;
@@ -244,7 +244,8 @@ CRITICAL TOOL RULES:
     const modelKey = options?.model;
     if (!modelKey) throw new Error('No model specified for LM Studio');
 
-    const model = await this.getOrLoadModel(modelKey, options?.contextLength);
+    const cleanModelKey = modelKey.replace(/^lmstudio:/, '');
+    const model = await this.getOrLoadModel(cleanModelKey, options?.contextLength);
     const chat = Chat.empty();
 
     const useThinkMode = options?.useThinkMode !== false;
@@ -293,7 +294,7 @@ CRITICAL TOOL RULES:
       return models
         .filter(m => m.type === 'llm')
         .map(m => ({
-          id: m.modelKey,
+          id: `lmstudio:${m.modelKey}`,
           name: m.displayName || m.modelKey,
           provider: 'lmstudio' as const,
           description: `Architecture: ${m.architecture}, Params: ${m.paramsString}`,

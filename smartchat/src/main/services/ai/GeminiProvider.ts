@@ -6,14 +6,6 @@ import { aiKeyService } from '../AIKeyService'
 export class GeminiProvider implements AIProvider {
   private ai: any;
   private fetchedModelIds = new Set<string>();
-  private static readonly KNOWN_MODELS = new Set([
-    'gemma-4-31b-it',
-    'gemini-3.1-flash-lite-preview',
-    'gemma-3-27b-it',
-    'gemini-3-flash-preview',
-    'gemini-2.5-flash-lite'
-  ]);
-
   constructor() {
     const key = aiKeyService.getKey('gemini');
     this.ai = new GoogleGenAI({ apiKey: key }); 
@@ -24,10 +16,7 @@ export class GeminiProvider implements AIProvider {
   }
 
   canHandleModel(modelId: string): boolean {
-    return this.fetchedModelIds.has(modelId) || 
-           GeminiProvider.KNOWN_MODELS.has(modelId) ||
-           modelId.startsWith('gemini-') ||
-           modelId.startsWith('gemma-');
+    return modelId.startsWith('gemini:');
   }
 
   private wrapWithRole(content: string, isSystem: boolean, role: 'user' | 'model'): string {
@@ -67,8 +56,9 @@ export class GeminiProvider implements AIProvider {
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
     
     const actualSignal = options?.signal || signal;
+    const rawModel = (options?.model || "gemini:gemma-4-31b-it").replace(/^gemini:/, '');
     const response = await this.ai.models.generateContent({
-      model: options?.model || "gemma-4-31b-it",
+      model: rawModel,
       contents,
       config: systemInstructions ? { systemInstruction: systemInstructions } : undefined,
       signal: actualSignal
@@ -95,8 +85,9 @@ export class GeminiProvider implements AIProvider {
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
     
     const actualSignal = options?.signal || signal;
+    const rawModel = (options?.model || "gemini:gemma-4-31b-it").replace(/^gemini:/, '');
     const responseStream = await this.ai.models.generateContentStream({
-      model: options?.model || "gemma-4-31b-it",
+      model: rawModel,
       contents,
       config: systemInstructions ? { systemInstruction: systemInstructions } : undefined,
       signal: actualSignal
@@ -117,9 +108,10 @@ export class GeminiProvider implements AIProvider {
       for await (const m of list) {
         if (m.supportedActions && m.supportedActions.includes('generateContent')) {
           const strippedId = m.name.replace(/^models\//, '');
-          this.fetchedModelIds.add(strippedId);
+          const prefixedId = `gemini:${strippedId}`;
+          this.fetchedModelIds.add(prefixedId);
           models.push({
-            id: strippedId,
+            id: prefixedId,
             name: m.displayName || strippedId,
             provider: 'gemini' as const,
             description: m.description,
@@ -128,19 +120,19 @@ export class GeminiProvider implements AIProvider {
         }
       }
       models.sort((a, b) => {
-        if (a.id === 'gemma-4-31b-it') return -1;
-        if (b.id === 'gemma-4-31b-it') return 1;
+        if (a.id === 'gemini:gemma-4-31b-it') return -1;
+        if (b.id === 'gemini:gemma-4-31b-it') return 1;
         return 0;
       });
       return models;
     } catch (error) {
       console.warn('[GeminiProvider] Could not fetch models from Gemini API, using fallbacks:', error);
       const fallbacks = [
-        { id: 'gemma-4-31b-it', name: 'Gemma 4 31B IT', provider: 'gemini' as const, isLocal: false },
-        { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite', provider: 'gemini' as const, isLocal: false },
-        { id: 'gemma-3-27b-it', name: 'Gemma 3 27B IT', provider: 'gemini' as const, isLocal: false },
-        { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview', provider: 'gemini' as const, isLocal: false },
-        { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'gemini' as const, isLocal: false },
+        { id: 'gemini:gemma-4-31b-it', name: 'Gemma 4 31B IT', provider: 'gemini' as const, isLocal: false },
+        { id: 'gemini:gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite', provider: 'gemini' as const, isLocal: false },
+        { id: 'gemini:gemma-3-27b-it', name: 'Gemma 3 27B IT', provider: 'gemini' as const, isLocal: false },
+        { id: 'gemini:gemini-3-flash-preview', name: 'Gemini 3 Flash Preview', provider: 'gemini' as const, isLocal: false },
+        { id: 'gemini:gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'gemini' as const, isLocal: false },
       ];
       for (const f of fallbacks) {
         this.fetchedModelIds.add(f.id);

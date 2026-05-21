@@ -9,7 +9,7 @@ import { aiKeyService } from './AIKeyService'
 export class AIService {
   private providers: Record<string, AIProvider> = {}
   private providerOrder: string[] = []
-  private currentModelId: string = 'gemma-4-31b-it' // Default
+  private currentModelId: string = 'gemini:gemma-4-31b-it' // Default
   private activeRequests: Map<string, AbortController> = new Map()
 
   constructor() {
@@ -48,9 +48,30 @@ export class AIService {
     }
   }
 
+  private normalizeModelId(modelId: string): string {
+    if (!modelId) return 'gemini:gemma-4-31b-it';
+    if (modelId.includes(':')) {
+      return modelId;
+    }
+    if (modelId.startsWith('gemini-') || modelId.startsWith('gemma-')) {
+      return `gemini:${modelId}`;
+    }
+    if (modelId.startsWith('groq-') || modelId.startsWith('llama-') || modelId === 'openai/gpt-oss-120b') {
+      return `groq:${modelId}`;
+    }
+    if (modelId.startsWith('mistral-') || modelId.startsWith('codestral-') || modelId.startsWith('pixtral-')) {
+      return `mistral:${modelId}`;
+    }
+    if (modelId.startsWith('deepseek-')) {
+      return `deepseek:${modelId}`;
+    }
+    return `lmstudio:${modelId}`;
+  }
+
   private getProviderForModel(modelId: string): AIProvider {
+    const normalized = this.normalizeModelId(modelId);
     for (const key of this.providerOrder) {
-      if (this.providers[key].canHandleModel(modelId)) {
+      if (this.providers[key].canHandleModel(normalized)) {
         return this.providers[key];
       }
     }
@@ -132,7 +153,7 @@ export class AIService {
     options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string }
   ): Promise<string> {
     try {
-      const modelId = options?.model || this.currentModelId;
+      const modelId = this.normalizeModelId(options?.model || this.currentModelId);
       const provider = this.getProviderForModel(modelId);
       
       const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
@@ -176,7 +197,7 @@ export class AIService {
     onChunk: (chunk: string) => void = () => {}
   ): Promise<void> {
     try {
-      const modelId = options?.model || this.currentModelId;
+      const modelId = this.normalizeModelId(options?.model || this.currentModelId);
       const provider = this.getProviderForModel(modelId);
 
       const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);

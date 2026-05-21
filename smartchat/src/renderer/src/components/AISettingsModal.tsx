@@ -34,6 +34,8 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
       setSelectedProvider('mistral');
     } else if (options.model.startsWith('deepseek:')) {
       setSelectedProvider('deepseek');
+    } else if (options.model.startsWith('lmstudio:')) {
+      setSelectedProvider('lmstudio');
     }
   }, [options.model, availableModels]);
 
