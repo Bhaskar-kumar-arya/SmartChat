@@ -14,6 +14,7 @@ import { AIToolInitializer } from './services/AIToolInitializer'
 import { audioTranscoderService } from './services/AudioTranscoderService'
 import { aiChatSessionService } from './services/AIChatSessionService'
 import { aiChatExportService } from './services/AIChatExportService'
+import { messageActionService } from './services/MessageActionService'
 
 export function registerIpcHandlers(
   prisma: PrismaClient,
@@ -169,6 +170,7 @@ export function registerIpcHandlers(
             ...enriched,
             reactions: msgReactions.map((r) => ({ 
               ...r, 
+              senderId: r.sender.phoneNumber || '',
               timestamp: r.timestamp.toString(),
               senderName: r.sender.displayName || r.sender.pushName || r.sender.phoneNumber?.split('@')[0] || 'Unknown'
             }))
@@ -214,61 +216,22 @@ export function registerIpcHandlers(
   ipcMain.handle('edit-message', async (_event, jid: string, messageId: string, newText: string) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
-
-    const targetJid = await contactService.resolveLidFromJid(jid)
-
-    const dbMsg = await prisma.message.findUnique({ where: { id: messageId }, include: { sender: true } })
-    if (!dbMsg) throw new Error('Message not found')
-
-    const msgKey = {
-      remoteJid: dbMsg.chatJid,
-      fromMe: dbMsg.fromMe,
-      id: messageId,
-      participant: dbMsg.chatJid.endsWith('@g.us') ? (dbMsg.participant || undefined) : undefined
-    }
-
-    const result = await sock.sendMessage(targetJid, {
-      text: newText,
-      edit: msgKey
-    })
-
-    if (!result) throw new Error('Failed to edit message')
-
-    const updated = await prisma.message.update({
-      where: { id: messageId },
-      data: { textContent: newText, isEdited: true },
-      include: { sender: true }
-    })
-
-    const nameMap = await contactService.batchResolveNames([updated.participant || targetJid], sock)
-    return messageService.enrichMessage(updated, sock, nameMap)
+    return await messageActionService.editMessage(sock, messageId, newText, jid)
   })
 
   // ── Delete Message ───────────────────────────────────────────────────
   ipcMain.handle('delete-message', async (_event, jid: string, messageId: string) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
-
-    const targetJid = await contactService.resolveLidFromJid(jid)
-
-    const dbMsg = await prisma.message.findUnique({ where: { id: messageId } })
-    if (!dbMsg) throw new Error('Message not found')
-
-    const msgKey = {
-      remoteJid: dbMsg.chatJid,
-      fromMe: dbMsg.fromMe,
-      id: messageId,
-      participant: dbMsg.chatJid.endsWith('@g.us') ? (dbMsg.participant || undefined) : undefined
-    }
-
-    await sock.sendMessage(targetJid, { delete: msgKey })
-
-    await prisma.message.update({
-      where: { id: messageId },
-      data: { isDeleted: true }
-    })
-
+    await messageActionService.deleteMessage(sock, messageId, jid)
     return true
+  })
+
+  // ── React Message ────────────────────────────────────────────────────
+  ipcMain.handle('react-message', async (_event, jid: string, messageId: string, reaction: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('WhatsApp socket is not connected')
+    return await messageActionService.reactToMessage(sock, messageId, reaction, jid)
   })
 
   // ── Send Media Message ───────────────────────────────────────────────
@@ -632,6 +595,25 @@ export function registerIpcHandlers(
 
   ipcMain.handle('duplicate-exported-ai-chat', async (_event, sessionId: string) => {
     return await aiChatExportService.duplicateExportedChat(sessionId)
+  })
+
+  ipcMain.handle('get-message-receipts', async (_event, messageId: string) => {
+    const receipts = await (prisma as any).messageReceipt.findMany({
+      where: { messageId },
+      orderBy: { timestamp: 'desc' }
+    })
+    const sock = getSock()
+    const result: any[] = []
+    for (const receipt of receipts) {
+      const name = await contactService.resolveName(receipt.userJid, null, sock)
+      result.push({
+        userJid: receipt.userJid,
+        name,
+        status: receipt.status,
+        timestamp: receipt.timestamp.toString()
+      })
+    }
+    return result
   })
 }
 

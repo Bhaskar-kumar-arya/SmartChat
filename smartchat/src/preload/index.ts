@@ -54,6 +54,9 @@ const api = {
   deleteMessage: (jid: string, messageId: string) => {
     return ipcRenderer.invoke('delete-message', jid, messageId)
   },
+  reactMessage: (jid: string, messageId: string, reaction: string) => {
+    return ipcRenderer.invoke('react-message', jid, messageId, reaction)
+  },
   sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => {
     return ipcRenderer.invoke('send-media-message', jid, filePath, caption, quotedMsgId, mentions)
   },
