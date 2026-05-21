@@ -218,6 +218,11 @@ export class WhatsAppConnectionManager {
           }
         } else if (connection === 'open') {
           console.log('Connected to WhatsApp!')
+          if (sock.user) {
+            await contactService.registerMe(sock.user).catch((err) => {
+              console.error('[Connection] Failed to register logged-in user identity:', err)
+            })
+          }
           if (this.mainWindow && !this.mainWindow.isDestroyed()) {
             if (!this.isFreshLogin) {
               const chatCount = await prisma.chat.count()
@@ -514,6 +519,22 @@ export class WhatsAppConnectionManager {
             remoteJid: id,
             presences: Object.fromEntries(enrichedPresences)
           })
+        }
+      }
+
+      // ── Message Receipts (read/delivered ticks) ───────────────────────────
+      if (events['message-receipt.update']) {
+        for (const update of events['message-receipt.update']) {
+          const { key, receipt } = update as any
+          const type = receipt?.readTimestamp
+            ? 'read'
+            : receipt?.deliveredTimestamp
+            ? 'delivered'
+            : 'unknown'
+          console.log(
+            `[message-receipt.update] ${type} | msgId=${key?.id} | chat=${key?.remoteJid} | by=${receipt?.userJid} | ts=${receipt?.readTimestamp ?? receipt?.deliveredTimestamp}`
+          )
+          // TODO: persist tick status (Message.readBy / deliveredAt) and push to renderer
         }
       }
 

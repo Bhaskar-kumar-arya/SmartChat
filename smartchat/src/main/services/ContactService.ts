@@ -492,6 +492,114 @@ export class ContactService {
     console.log(`[deduplicateIdentities] Complete — merged: ${merged}, skipped: ${skipped} (ambiguous/no-match)`)
     return { merged, skipped }
   }
+
+  /**
+   * Resolves the Linked JID (@lid) for a given JID if it is a phone JID and has a mapped LID.
+   * Falls back to the original JID if no mapping is found.
+   */
+  async resolveLidFromJid(jid: string): Promise<string> {
+    if (!jid || !jid.endsWith('@s.whatsapp.net')) return jid;
+    const cleanJid = jid.split(':')[0] + '@s.whatsapp.net';
+
+    try {
+      // Find matching identity alias
+      const alias = await prisma.identityAlias.findUnique({
+        where: { jid: cleanJid },
+        select: { identityId: true }
+      });
+
+      if (alias) {
+        // Find the LID alias for this identity
+        const lidAlias = await prisma.identityAlias.findFirst({
+          where: { identityId: alias.identityId, type: 'LID' },
+          select: { jid: true }
+        });
+        if (lidAlias) {
+          return lidAlias.jid;
+        }
+      }
+    } catch (err) {
+      console.warn(`[ContactService] Failed to resolve LID for JID ${jid}:`, err);
+    }
+    return jid;
+  }
+
+  /**
+   * Registers/updates the logged-in user's identity as `isMe: true`.
+   */
+  async registerMe(user: { id: string; name?: string; lid?: string }): Promise<void> {
+    const rawJid = user.id;
+    if (!rawJid) return;
+
+    const cleanJid = rawJid.split(':')[0].split('@')[0];
+    const myJid = `${cleanJid}@s.whatsapp.net`;
+
+    let myLid: string | null = null;
+    if (user.lid) {
+      const cleanLid = user.lid.split(':')[0].split('@')[0];
+      myLid = `${cleanLid}@lid`;
+    }
+
+    const name = user.name || 'Me';
+
+    console.log(`[ContactService] Registering logged-in user: jid=${myJid}, lid=${myLid}, name=${name}`);
+
+    let identityId: number | null = null;
+
+    // 1. Try to find existing identity alias
+    const existingJidAlias = await prisma.identityAlias.findUnique({ where: { jid: myJid } });
+    if (existingJidAlias) {
+      identityId = existingJidAlias.identityId;
+    }
+
+    if (!identityId && myLid) {
+      const existingLidAlias = await prisma.identityAlias.findUnique({ where: { jid: myLid } });
+      if (existingLidAlias) {
+        identityId = existingLidAlias.identityId;
+      }
+    }
+
+    // 2. Upsert the Identity row with isMe = true
+    if (!identityId) {
+      const newIdentity = await prisma.identity.create({
+        data: {
+          phoneNumber: myJid,
+          displayName: name,
+          isMe: true
+        }
+      });
+      identityId = newIdentity.id;
+    } else {
+      await prisma.identity.update({
+        where: { id: identityId },
+        data: {
+          phoneNumber: myJid,
+          isMe: true
+        }
+      });
+    }
+
+    // 3. Ensure aliases are pointing to the isMe identity
+    await prisma.identityAlias.upsert({
+      where: { jid: myJid },
+      update: { identityId, type: 'PN' },
+      create: { jid: myJid, type: 'PN', identityId }
+    });
+
+    if (myLid) {
+      await prisma.identityAlias.upsert({
+        where: { jid: myLid },
+        update: { identityId, type: 'LID' },
+        create: { jid: myLid, type: 'LID', identityId }
+      });
+
+      await prisma.lidMap.upsert({
+        where: { lid: myLid },
+        update: { pn: myJid, source: 'registerMe', lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
+        create: { lid: myLid, pn: myJid, source: 'registerMe', lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
+      }).catch(() => {});
+    }
+  }
 }
 
 export const contactService = new ContactService()
