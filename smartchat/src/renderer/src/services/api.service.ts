@@ -1,4 +1,4 @@
-import { ChatItem, MessageItem, SearchFilters, SearchResults } from '../types'
+import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo } from '../types'
 
 // This service wraps the window.api (Electron bridge) to provide a clean abstraction.
 // It allows us to mock the API in tests and decouple from the global window object.
@@ -101,4 +101,10 @@ export const api = {
 
   saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string): Promise<string> =>
     window.api.saveTempFile(buffer, fileName),
+
+  onMessageStatusUpdated: (callback: (update: { id: string, remoteJid: string, status: string }) => void) =>
+    window.api.onMessageStatusUpdated(callback),
+
+  getMessageReceipts: (messageId: string): Promise<MessageReceiptInfo[]> =>
+    window.api.getMessageReceipts(messageId),
 }

@@ -1,6 +1,7 @@
 import { prisma } from '../auth'
 import { contactService } from './ContactService'
 import { embeddingService } from './EmbeddingService'
+import { mapBaileysStatus } from './ReceiptService'
 
 /**
  * Plain data object produced by parseMessageSync().
@@ -16,6 +17,7 @@ export interface ParsedMessage {
   rawMessage: any
   textContent: string | null
   pushName: string | null
+  status?: string
 }
 
 export class MessageService {
@@ -229,9 +231,10 @@ export class MessageService {
             }
         }
     } else {
+        const status = mapBaileysStatus(msg.status)
         await prisma.message.upsert({
             where: { id: key.id },
-            update: { textContent, messageType, content: JSON.stringify(rawMessage || {}), timestamp, senderId, participant: participantString },
+            update: { textContent, messageType, content: JSON.stringify(rawMessage || {}), timestamp, senderId, participant: participantString, status },
             create: { 
               id: key.id, 
               chatJid: remoteJid, 
@@ -241,7 +244,8 @@ export class MessageService {
               timestamp, 
               messageType, 
               content: JSON.stringify(rawMessage || {}), 
-              textContent 
+              textContent,
+              status
             }
         })
 
@@ -318,6 +322,7 @@ export class MessageService {
         : (ts as number)
     )
 
+    const status = mapBaileysStatus(msg.status)
     return {
       id: key.id,
       chatJid: remoteJid,
@@ -327,7 +332,8 @@ export class MessageService {
       messageType,
       rawMessage,
       textContent,
-      pushName: msg.pushName ?? null
+      pushName: msg.pushName ?? null,
+      status
     }
   }
 
@@ -385,7 +391,8 @@ export class MessageService {
       timestamp: p.timestamp,
       messageType: p.messageType,
       content: JSON.stringify(p.rawMessage || {}),
-      textContent: p.textContent
+      textContent: p.textContent,
+      status: p.status || 'SENT'
     }))
 
     // 5. Pre-fetch existing message IDs so we only insert genuinely new rows.
@@ -561,8 +568,21 @@ export class MessageService {
     let reactorId: number | null = null
 
     if (reactionKey.fromMe) {
+      // Prefer isMe flag; fall back to resolving by own JID (isMe may not be set on all installs)
       const meIdent = await prisma.identity.findFirst({ where: { isMe: true } })
-      if (meIdent) reactorId = meIdent.id
+      if (meIdent) {
+        reactorId = meIdent.id
+      } else {
+        const myRawJid = sock?.user?.id
+        const myJidClean = myRawJid ? myRawJid.split(':')[0] : null
+        if (myJidClean) {
+          reactorId = await contactService.getIdentityIdByJid(myJidClean)
+          if (!reactorId) {
+            const myLid = (sock?.user as any)?.lid?.split(':')[0]
+            if (myLid) reactorId = await contactService.getIdentityIdByJid(myLid)
+          }
+        }
+      }
     } else if (reactorJid) {
       reactorId = await contactService.getIdentityIdByJid(reactorJid)
       if (!reactorId) {

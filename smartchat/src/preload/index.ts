@@ -87,6 +87,14 @@ const api = {
   markRead: (jid: string) => {
     return ipcRenderer.invoke('mark-read', jid)
   },
+  onMessageStatusUpdated: (callback: (update: { id: string, remoteJid: string, status: string }) => void) => {
+    const listener = (_event: any, update: any) => callback(update)
+    ipcRenderer.on('message-status-updated', listener)
+    return () => { ipcRenderer.removeListener('message-status-updated', listener) }
+  },
+  getMessageReceipts: (messageId: string) => {
+    return ipcRenderer.invoke('get-message-receipts', messageId)
+  },
   onChatUpdated: (callback: (chat: Record<string, unknown>) => void) => {
     const listener = (_event: any, chat: any) => callback(chat)
     ipcRenderer.on('chat-updated', listener)
@@ -170,6 +178,12 @@ const api = {
   getAiModels: () => {
     return ipcRenderer.invoke('get-ai-models')
   },
+  getProviderKeys: () => {
+    return ipcRenderer.invoke('get-provider-keys')
+  },
+  setProviderKey: (provider: string, key: string) => {
+    return ipcRenderer.invoke('set-provider-key', provider, key)
+  },
   
   // ── AI Session Methods ──────────────────────────────────────────────
   createAiSession: (title: string, modelId?: string) => {
@@ -187,6 +201,9 @@ const api = {
   deleteAiSession: (id: string) => {
     return ipcRenderer.invoke('ai-session-delete', id)
   },
+  cloneAiSession: (id: string) => {
+    return ipcRenderer.invoke('ai-session-clone', id)
+  },
   saveAiSessionMessages: (sessionId: string, messages: any[]) => {
     return ipcRenderer.invoke('ai-session-save-messages', sessionId, messages)
   },
@@ -195,6 +212,21 @@ const api = {
   },
   setAiAutoSave: (enabled: boolean) => {
     return ipcRenderer.invoke('ai-session-set-autosave', enabled)
+  },
+  getAiOptions: () => {
+    return ipcRenderer.invoke('get-ai-options')
+  },
+  setAiOptions: (options: any) => {
+    return ipcRenderer.invoke('set-ai-options', options)
+  },
+  exportAiChat: (session: any, messages: any[]) => {
+    return ipcRenderer.invoke('export-ai-chat', session, messages)
+  },
+  deleteExportedAiChat: (sessionId: string) => {
+    return ipcRenderer.invoke('delete-exported-ai-chat', sessionId)
+  },
+  duplicateExportedAiChat: (sessionId: string) => {
+    return ipcRenderer.invoke('duplicate-exported-ai-chat', sessionId)
   }
 }
 

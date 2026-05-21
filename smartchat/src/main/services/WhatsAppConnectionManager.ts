@@ -9,7 +9,7 @@ import { contactService } from './ContactService'
 import { messageService } from './MessageService'
 import { chatService } from './ChatService'
 import { embeddingService } from './EmbeddingService'
-import { waEventLogger } from './WAEventLogger'
+import { receiptService } from './ReceiptService'
 
 export class WhatsAppConnectionManager {
   private currentSock: ReturnType<typeof makeWASocket> | null = null
@@ -333,15 +333,24 @@ export class WhatsAppConnectionManager {
         }
       }
 
-      // ── Message Updates (revoke/edit via messages.update) ─────────────────
+      // ── Message Updates (revoke/edit/status via messages.update) ──────────
       if (events['messages.update']) {
         for (const update of events['messages.update']) {
-          const protocol = update.update?.protocolMessage
-          if (!protocol) continue
-          const key = protocol.key
-          if (!key?.id) continue
-
           try {
+            // Process status updates (e.g. server ack)
+            if (update.update?.status !== undefined && update.key?.id) {
+              await receiptService.processMessageStatusUpdate(
+                update.key,
+                update.update.status,
+                this.mainWindow
+              ).catch(() => {})
+            }
+
+            const protocol = update.update?.protocolMessage
+            if (!protocol) continue
+            const key = protocol.key
+            if (!key?.id) continue
+
             switch (protocol.type) {
               case 0: // REVOKE
                 console.log('[messages.update] Message revoked:', key.id)
@@ -534,7 +543,7 @@ export class WhatsAppConnectionManager {
           console.log(
             `[message-receipt.update] ${type} | msgId=${key?.id} | chat=${key?.remoteJid} | by=${receipt?.userJid} | ts=${receipt?.readTimestamp ?? receipt?.deliveredTimestamp}`
           )
-          // TODO: persist tick status (Message.readBy / deliveredAt) and push to renderer
+          await receiptService.processMessageReceipt(update, sock, this.mainWindow).catch(() => {})
         }
       }
 

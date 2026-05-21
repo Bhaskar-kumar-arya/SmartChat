@@ -22,6 +22,7 @@ interface MessageItem {
   textContent: string | null
   isDeleted?: boolean
   isEdited?: boolean
+  status?: string
 }
 
 interface SearchResultItem {
@@ -49,6 +50,7 @@ declare global {
       onWaConnected: (callback: () => void) => () => void
       onWaLoggedOut: (callback: () => void) => () => void
       onWaSyncProgress: (callback: (progress: number) => void) => () => void
+      onWaSyncStatus: (callback: (status: string) => void) => () => void
       onWaSyncComplete: (callback: () => void) => () => void
       skipSync: () => void
       // Phase 3 & 4
@@ -65,6 +67,8 @@ declare global {
       onMessageEdited: (callback: (msg: MessageItem) => void) => () => void
       onMessageDeleted: (callback: (update: { id: string, remoteJid: string, fromMe: boolean }) => void) => () => void
       markRead: (jid: string) => Promise<boolean>
+      onMessageStatusUpdated: (callback: (update: { id: string, remoteJid: string, status: string }) => void) => () => void
+      getMessageReceipts: (messageId: string) => Promise<{ userJid: string, name: string, status: string, timestamp: string }[]>
       onChatUpdated: (callback: (chat: Partial<ChatItem> & { jid: string }) => void) => () => void
       logout: () => Promise<boolean>
       onPresenceUpdate: (callback: (update: { remoteJid: string; presences: Record<string, any> }) => void) => () => void
@@ -84,6 +88,8 @@ declare global {
       executeTool: (toolName: string, args: any) => Promise<any>
       getAiTools: () => Promise<any[]>
       getAiModels: () => Promise<any[]>
+      getProviderKeys: () => Promise<Record<string, string>>
+      setProviderKey: (provider: string, key: string) => Promise<boolean>
   
       // ── AI Session Methods ──────────────────────────────────────────────
       createAiSession: (title: string, modelId?: string) => Promise<any>
@@ -91,9 +97,15 @@ declare global {
       getAiSession: (id: string) => Promise<any>
       renameAiSession: (id: string, title: string) => Promise<any>
       deleteAiSession: (id: string) => Promise<void>
+      cloneAiSession: (id: string) => Promise<any>
       saveAiSessionMessages: (sessionId: string, messages: any[]) => Promise<void>
       getAiAutoSave: () => Promise<boolean>
       setAiAutoSave: (enabled: boolean) => Promise<void>
+      getAiOptions: () => Promise<any>
+      setAiOptions: (options: any) => Promise<void>
+      exportAiChat: (session: any, messages: any[]) => Promise<void>
+      deleteExportedAiChat: (sessionId: string) => Promise<void>
+      duplicateExportedAiChat: (sessionId: string) => Promise<void>
     }
   }
 }

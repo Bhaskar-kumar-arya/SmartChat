@@ -102,10 +102,19 @@ export const useMessages = (activeJid: string | null) => {
       }
     })
 
+    const unSubStatus = api.onMessageStatusUpdated((update: { id: string, remoteJid: string, status: string }) => {
+      if (update.remoteJid === activeJid) {
+        setMessages((prev) => 
+          prev.map((m) => (m.id === update.id ? { ...m, status: update.status } : m))
+        )
+      }
+    })
+
     return () => {
       unSub()
       unSubEdit()
       unSubDelete()
+      unSubStatus()
     }
   }, [activeJid])
 
@@ -116,21 +125,31 @@ export const useMessages = (activeJid: string | null) => {
       if (reaction && reaction.key && reaction.key.id) {
         const targetId = reaction.key.id
         const emoji = reaction.text
-        const senderId = msg.participant || msg.remoteJid
+        // Use participant as the dedup key — this is a JID string in both
+        // the IPC path (fromMe reactions sent by tool) and regular reaction events.
+        const participantKey = msg.participant || msg.remoteJid
 
         setMessages((prev) => 
           prev.map((m) => {
             if (m.id === targetId) {
               const reactions = m.reactions || []
-              const filtered = reactions.filter((r) => r.senderId !== senderId)
+              // Filter out any existing reaction from this participant.
+              // Existing reactions from DB load may have numeric senderId; IPC ones use JID strings.
+              // We match on participant (JID) — which is always present on incoming reaction msgs.
+              const filtered = reactions.filter((r) => {
+                // If the stored reaction also has a participant field, compare that
+                if ((r as any).participant) return (r as any).participant !== participantKey
+                // Otherwise fall back to senderId comparison (both string and number)
+                return String(r.senderId) !== String(participantKey)
+              })
               if (emoji) {
                 return {
                   ...m,
-                  reactions: [...filtered, { 
-                    senderId, 
-                    senderName: msg.participantName, 
-                    text: emoji, 
-                    timestamp: msg.timestamp 
+                  reactions: [...filtered, {
+                    senderId: participantKey,
+                    senderName: msg.participantName,
+                    text: emoji,
+                    timestamp: msg.timestamp
                   }]
                 }
               }
@@ -144,6 +163,7 @@ export const useMessages = (activeJid: string | null) => {
       console.error('Failed to parse reaction message:', e)
     }
   }
+
 
   const sendMessage = async (text: string, replyId?: string, mentions?: string[]) => {
     if (!activeJid || !text.trim()) return

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { contactService } from './services/ContactService'
+import { mapBaileysStatus } from './services/ReceiptService'
 
 /**
  * Determines the high-level message type from a Baileys proto.IMessage object.
@@ -297,7 +298,8 @@ export async function handleHistorySync(
           timestamp,
           messageType: getMessageType(message),
           content: JSON.stringify(message ?? {}),
-          textContent: extractTextContent(message)
+          textContent: extractTextContent(message),
+          status: mapBaileysStatus(m.status as number | null | undefined)
         })
       }
 
@@ -345,6 +347,7 @@ export async function handleHistorySync(
             if (msg.messageType !== 'unknown') update.messageType = msg.messageType
             if (msg.content !== '{}') update.content = msg.content
             if (msg.textContent !== null) update.textContent = msg.textContent
+            // Do not update status on existing messages to prevent downgrading statuses updated by real-time events
             update.fromMe = msg.fromMe
 
             msgOps.push(

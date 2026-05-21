@@ -34,6 +34,14 @@ export interface MessageItem {
   reactions?: ReactionItem[]
   isDeleted?: boolean
   isEdited?: boolean
+  status?: string
+}
+
+export interface MessageReceiptInfo {
+  userJid: string
+  name: string
+  status: string
+  timestamp: string
 }
 
 export interface SearchResultItem {
@@ -63,7 +71,7 @@ export interface SearchResults {
 export interface ModelInfo {
   id: string
   name: string
-  provider: 'gemini' | 'lmstudio' | 'groq' | 'mistral'
+  provider: 'gemini' | 'lmstudio' | 'groq' | 'mistral' | 'deepseek'
   description?: string
   isLocal: boolean
 }
