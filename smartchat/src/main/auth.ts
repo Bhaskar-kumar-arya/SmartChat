@@ -170,7 +170,7 @@ export const usePrismaAuthState = async (): Promise<{
         for (const id in data[category as keyof typeof data]) {
           const value = data[category as keyof typeof data]?.[id];
           const key = `${category}-${id}`;
-          if (value) {
+          if (value !== null && value !== undefined) {
             const serialized = JSON.stringify(value, BufferJSON.replacer);
             ops.push(
               prisma.authState.upsert({

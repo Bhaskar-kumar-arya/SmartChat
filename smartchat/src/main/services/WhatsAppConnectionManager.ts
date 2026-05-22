@@ -16,6 +16,7 @@ export class WhatsAppConnectionManager {
   private reconnectTimeout: NodeJS.Timeout | null = null
   private syncTimeout: NodeJS.Timeout | null = null
   private isFreshLogin = false
+  private isInitialSyncInProgress = false
   private mainWindow: BrowserWindow | null = null
   private currentFinishSync: (() => void) | null = null
 
@@ -57,6 +58,11 @@ export class WhatsAppConnectionManager {
     // Clean up orphan data if not logged in
     const existingCreds = await prisma.authState.findUnique({ where: { id: 'creds' } })
     if (!existingCreds) {
+      this.isFreshLogin = true
+      await prisma.authState.deleteMany({
+        where: { id: 'history_sync_completed' }
+      }).catch(() => {})
+
       const orphanChats = await prisma.chat.count()
       if (orphanChats > 0) {
         console.log(`[Cleanup] No auth creds but found ${orphanChats} orphan chats — wiping stale data`)
@@ -75,6 +81,20 @@ export class WhatsAppConnectionManager {
     const { version, isLatest } = await fetchLatestBaileysVersion()
     console.log(`using WA v${version.join('.')}, isLatest: ${isLatest}`)
 
+    if (this.isFreshLogin) {
+      await prisma.authState.deleteMany({
+        where: { id: 'history_sync_completed' }
+      }).catch(() => {})
+    }
+
+    const syncCompletedRow = await prisma.authState.findUnique({
+      where: { id: 'history_sync_completed' }
+    }).catch(() => null)
+    const isHistorySyncCompleted = syncCompletedRow?.data === 'true'
+
+    const shouldSyncHistory = this.isFreshLogin || this.isInitialSyncInProgress || !isHistorySyncCompleted
+    const syncFullHistory = false
+
     const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
 
     const sock = makeWASocket({
@@ -83,8 +103,8 @@ export class WhatsAppConnectionManager {
       printQRInTerminal: false,
       generateHighQualityLinkPreview: true,
       browser: Browsers.macOS('Desktop'),
-      syncFullHistory: true,
-      shouldSyncHistoryMessage: () => true,
+      syncFullHistory,
+      shouldSyncHistoryMessage: () => shouldSyncHistory,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       getMessage: async (key) => {
         if (!key.id) return undefined;
@@ -112,6 +132,11 @@ export class WhatsAppConnectionManager {
     const finishSync = async () => {
       if (syncComplete) return
       syncComplete = true
+      this.isInitialSyncInProgress = false
+      if (this.syncTimeout) {
+        clearTimeout(this.syncTimeout)
+        this.syncTimeout = null
+      }
       embeddingService.setPaused(false)
       console.log(`[HistorySync] Sync complete after ${syncChunkCount} chunks`)
 
@@ -149,6 +174,15 @@ export class WhatsAppConnectionManager {
       console.log('[finishSync] Running post-sync identity deduplication...')
       await contactService.deduplicateIdentities().catch((err) => {
         console.warn('[finishSync] deduplicateIdentities error:', err)
+      })
+
+      // Persist the completed history sync status in AuthState
+      await prisma.authState.upsert({
+        where: { id: 'history_sync_completed' },
+        update: { data: 'true' },
+        create: { id: 'history_sync_completed', data: 'true' }
+      }).catch((err) => {
+        console.error('Failed to save history sync complete status:', err)
       })
 
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -224,18 +258,24 @@ export class WhatsAppConnectionManager {
             })
           }
           if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-            if (!this.isFreshLogin) {
-              const chatCount = await prisma.chat.count()
-              if (chatCount > 0) {
-                console.log(`[Connection] Reconnect: found ${chatCount} existing chats, skipping sync`)
+            if (!this.isFreshLogin && !this.isInitialSyncInProgress) {
+              const syncCompletedRow = await prisma.authState.findUnique({
+                where: { id: 'history_sync_completed' }
+              }).catch(() => null)
+              const isHistorySyncCompleted = syncCompletedRow?.data === 'true'
+
+              if (isHistorySyncCompleted) {
+                console.log(`[Connection] Reconnect: history sync previously completed, skipping sync`)
                 embeddingService.setPaused(false)
                 this.mainWindow.webContents.send('wa-sync-progress', 100)
                 this.mainWindow.webContents.send('wa-sync-complete')
               } else {
+                console.log(`[Connection] Reconnect: history sync NOT completed, continuing sync`)
                 this.mainWindow.webContents.send('wa-connected')
               }
             } else {
-              console.log('[Connection] Fresh login detected, showing sync screen')
+              console.log('[Connection] Fresh login or active sync reconnect detected, showing/continuing sync screen')
+              this.isInitialSyncInProgress = true
               this.isFreshLogin = false
               this.mainWindow.webContents.send('wa-connected')
             }
@@ -251,6 +291,7 @@ export class WhatsAppConnectionManager {
           syncChunkCount++
           const rawData = data as Record<string, unknown>
           const reportedProgress = typeof rawData.progress === 'number' ? rawData.progress : undefined
+          const syncType = typeof rawData.syncType === 'number' ? rawData.syncType : undefined
 
           if (this.syncTimeout) clearTimeout(this.syncTimeout)
           this.syncTimeout = setTimeout(finishSync, 180_000)
@@ -261,9 +302,34 @@ export class WhatsAppConnectionManager {
           )
 
           if (this.mainWindow && !this.mainWindow.isDestroyed() && !syncComplete) {
-            const estimated = reportedProgress ?? Math.min(syncChunkCount * 15, 95)
-            maxProgress = Math.max(maxProgress, estimated)
-            this.mainWindow.webContents.send('wa-sync-progress', maxProgress)
+            let calculatedProgress: number | undefined = undefined
+
+            if (reportedProgress !== undefined) {
+              if (syncType === 0) {
+                // INITIAL_BOOTSTRAP: map to 0%
+                calculatedProgress = 0
+              } else if (syncType === 3) {
+                // RECENT sync: map 0-100% to 0-30% (if full history enabled) or 0-100% (if full history disabled)
+                const min = 0
+                const max = syncFullHistory ? 30 : 100
+                calculatedProgress = Math.round(min + (reportedProgress / 100) * (max - min))
+              } else if (syncType === 2) {
+                // FULL sync: map 0-100% to 30-100% (only if full history enabled)
+                if (syncFullHistory) {
+                  const min = 30
+                  const max = 100
+                  calculatedProgress = Math.round(min + (reportedProgress / 100) * (max - min))
+                }
+              }
+            }
+
+            if (calculatedProgress !== undefined) {
+              maxProgress = Math.max(maxProgress, calculatedProgress)
+              this.mainWindow.webContents.send('wa-sync-progress', maxProgress)
+              if (maxProgress === 100) {
+                finishSync()
+              }
+            }
           }
         } catch (err) {
           console.error('[HistorySync] Error processing sync payload:', err)
