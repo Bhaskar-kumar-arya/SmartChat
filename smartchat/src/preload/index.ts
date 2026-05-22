@@ -19,8 +19,15 @@ const api = {
     ipcRenderer.on('wa-logged-out', listener)
     return () => { ipcRenderer.removeListener('wa-logged-out', listener) }
   },
-  onWaSyncProgress: (callback: (progress: number) => void) => {
-    const listener = (_event: any, progress: number) => callback(progress)
+  onWaSyncProgress: (callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void) => {
+    const listener = (_event: any, data: any) => {
+      // Handle backward compatibility if it's sent as a plain number
+      if (typeof data === 'number') {
+        callback({ progress: data, syncType: 3, syncFullHistory: false })
+      } else {
+        callback(data)
+      }
+    }
     ipcRenderer.on('wa-sync-progress', listener)
     return () => { ipcRenderer.removeListener('wa-sync-progress', listener) }
   },
@@ -36,6 +43,12 @@ const api = {
   },
   skipSync: () => {
     ipcRenderer.send('wa-skip-sync')
+  },
+  getSyncFullHistory: () => {
+    return ipcRenderer.invoke('get-sync-full-history')
+  },
+  setSyncFullHistory: (full: boolean) => {
+    return ipcRenderer.invoke('set-sync-full-history', full)
   },
 
   // ── Phase 3 & 4: Chat Data & Messaging ────────────────────────────

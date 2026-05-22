@@ -93,7 +93,11 @@ export class WhatsAppConnectionManager {
     const isHistorySyncCompleted = syncCompletedRow?.data === 'true'
 
     const shouldSyncHistory = this.isFreshLogin || this.isInitialSyncInProgress || !isHistorySyncCompleted
-    const syncFullHistory = false
+
+    const fullHistoryRow = await prisma.authState.findUnique({
+      where: { id: 'sync_full_history' }
+    }).catch(() => null)
+    const syncFullHistory = fullHistoryRow?.data === 'true'
 
     const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
 
@@ -137,7 +141,6 @@ export class WhatsAppConnectionManager {
         clearTimeout(this.syncTimeout)
         this.syncTimeout = null
       }
-      embeddingService.setPaused(false)
       console.log(`[HistorySync] Sync complete after ${syncChunkCount} chunks`)
 
       if (this.currentSock) {
@@ -149,12 +152,23 @@ export class WhatsAppConnectionManager {
           const totalGroups = groupKeys.length
           let groupCount = 0
 
-          this.mainWindow?.webContents.send('wa-sync-progress', 99)
+          this.mainWindow?.webContents.send('wa-sync-progress', {
+            progress: 95,
+            syncType: 6, // 6 = Group Hydration phase
+            syncFullHistory
+          })
           this.mainWindow?.webContents.send('wa-sync-status', 'Fetching group metadata from WhatsApp...')
 
           for (const jid of groupKeys) {
-            if (++groupCount % 5 === 0) {
+            groupCount++
+            if (groupCount % 5 === 0) {
               await new Promise(r => setImmediate(r))
+              const groupProgress = 95 + Math.round((groupCount / totalGroups) * 4)
+              this.mainWindow?.webContents.send('wa-sync-progress', {
+                progress: groupProgress,
+                syncType: 6,
+                syncFullHistory
+              })
               this.mainWindow?.webContents.send('wa-sync-status', `Syncing group members... (${groupCount} / ${totalGroups})`)
             }
             const raw = groups[jid] as any
@@ -176,6 +190,9 @@ export class WhatsAppConnectionManager {
         console.warn('[finishSync] deduplicateIdentities error:', err)
       })
 
+      // Unpause embedding service now that all syncing and deduplication are complete
+      embeddingService.setPaused(false)
+
       // Persist the completed history sync status in AuthState
       await prisma.authState.upsert({
         where: { id: 'history_sync_completed' },
@@ -186,7 +203,11 @@ export class WhatsAppConnectionManager {
       })
 
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('wa-sync-progress', 100)
+        this.mainWindow.webContents.send('wa-sync-progress', {
+          progress: 100,
+          syncType: 6,
+          syncFullHistory
+        })
         this.mainWindow.webContents.send('wa-sync-complete')
       }
     }
@@ -257,6 +278,7 @@ export class WhatsAppConnectionManager {
               console.error('[Connection] Failed to register logged-in user identity:', err)
             })
           }
+
           if (this.mainWindow && !this.mainWindow.isDestroyed()) {
             if (!this.isFreshLogin && !this.isInitialSyncInProgress) {
               const syncCompletedRow = await prisma.authState.findUnique({
@@ -267,7 +289,11 @@ export class WhatsAppConnectionManager {
               if (isHistorySyncCompleted) {
                 console.log(`[Connection] Reconnect: history sync previously completed, skipping sync`)
                 embeddingService.setPaused(false)
-                this.mainWindow.webContents.send('wa-sync-progress', 100)
+                this.mainWindow.webContents.send('wa-sync-progress', {
+                  progress: 100,
+                  syncType: 6,
+                  syncFullHistory
+                })
                 this.mainWindow.webContents.send('wa-sync-complete')
               } else {
                 console.log(`[Connection] Reconnect: history sync NOT completed, continuing sync`)
@@ -325,8 +351,12 @@ export class WhatsAppConnectionManager {
 
             if (calculatedProgress !== undefined) {
               maxProgress = Math.max(maxProgress, calculatedProgress)
-              this.mainWindow.webContents.send('wa-sync-progress', maxProgress)
-              if (maxProgress === 100) {
+              this.mainWindow.webContents.send('wa-sync-progress', {
+                progress: maxProgress,
+                syncType,
+                syncFullHistory
+              })
+              if (maxProgress >= 95) {
                 finishSync()
               }
             }

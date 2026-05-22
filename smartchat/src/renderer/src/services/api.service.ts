@@ -66,7 +66,7 @@ export const api = {
   onWaLoggedOut: (callback: () => void) =>
     window.api.onWaLoggedOut(callback),
 
-  onWaSyncProgress: (callback: (progress: number) => void) =>
+  onWaSyncProgress: (callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void) =>
     window.api.onWaSyncProgress(callback),
 
   onWaSyncStatus: (callback: (status: string) => void) =>
@@ -77,6 +77,12 @@ export const api = {
 
   skipSync: () =>
     window.api.skipSync(),
+
+  getSyncFullHistory: (): Promise<boolean> =>
+    window.api.getSyncFullHistory(),
+
+  setSyncFullHistory: (full: boolean): Promise<boolean> =>
+    window.api.setSyncFullHistory(full),
 
   getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean): Promise<string | null> =>
     window.api.getProfilePicture(jid, type, forceRefresh),

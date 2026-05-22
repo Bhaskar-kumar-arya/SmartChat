@@ -441,6 +441,24 @@ export function registerIpcHandlers(
     return searchService.searchAll(query, mode, sock, parsedFilters)
   })
 
+  // ── Sync Mode Configuration ─────────────────────────────────────────
+  ipcMain.handle('get-sync-full-history', async () => {
+    const row = await prisma.authState.findUnique({ where: { id: 'sync_full_history' } }).catch(() => null)
+    return row?.data === 'true'
+  })
+
+  ipcMain.handle('set-sync-full-history', async (_event, full: boolean) => {
+    await prisma.authState.upsert({
+      where: { id: 'sync_full_history' },
+      update: { data: full ? 'true' : 'false' },
+      create: { id: 'sync_full_history', data: full ? 'true' : 'false' }
+    }).catch(() => {})
+
+    const { waConnectionManager } = await import('./services/WhatsAppConnectionManager')
+    waConnectionManager.connect()
+    return true
+  })
+
   // ── Index Embeddings ────────────────────────────────────────────────
   ipcMain.handle('index-embeddings', async (_event) => {
     const win = BrowserWindow.getAllWindows()[0]

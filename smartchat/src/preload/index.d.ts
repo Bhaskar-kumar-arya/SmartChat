@@ -49,10 +49,12 @@ declare global {
       onWaQr: (callback: (qr: string) => void) => () => void
       onWaConnected: (callback: () => void) => () => void
       onWaLoggedOut: (callback: () => void) => () => void
-      onWaSyncProgress: (callback: (progress: number) => void) => () => void
+      onWaSyncProgress: (callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void) => () => void
       onWaSyncStatus: (callback: (status: string) => void) => () => void
       onWaSyncComplete: (callback: () => void) => () => void
       skipSync: () => void
+      getSyncFullHistory: () => Promise<boolean>
+      setSyncFullHistory: (full: boolean) => Promise<boolean>
       // Phase 3 & 4
       getChats: (page?: number, pageSize?: number) => Promise<ChatItem[]>
       getMessages: (jid: string, page?: number, pageSize?: number) => Promise<MessageItem[]>
