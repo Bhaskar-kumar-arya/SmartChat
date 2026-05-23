@@ -152,8 +152,8 @@ export function App() {
                 <svg className="progress-circle" width="160" height="160" viewBox="0 0 160 160">
                   <defs>
                     <linearGradient id="progress-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#22c05e" />
-                      <stop offset="100%" stopColor="#00a884" />
+                      <stop offset="0%" stopColor="var(--wa-primary)" />
+                      <stop offset="100%" stopColor="var(--wa-primary-dark)" />
                     </linearGradient>
                     <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
                       <feGaussianBlur stdDeviation="6" result="blur" />
@@ -204,11 +204,11 @@ export function App() {
                   <div key={step.id} className={`step-item ${step.status}`}>
                     <div className="step-icon-wrapper">
                       {step.status === 'completed' ? (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-500 fill-emerald-500/10" />
+                        <CheckCircle2 />
                       ) : step.status === 'active' ? (
-                        <Loader2 className="w-5 h-5 text-green-500 animate-spin" />
+                        <Loader2 className="animate-spin" />
                       ) : (
-                        <Circle className="w-5 h-5 text-slate-600" />
+                        <Circle />
                       )}
                     </div>
                     <div className="step-info">
@@ -238,7 +238,7 @@ export function App() {
               <div className="qr-frame">
                 {isRegeneratingQr || !qr ? (
                   <div className="qr-loading-placeholder">
-                    <Loader2 className="w-10 h-10 text-green-500 animate-spin" />
+                    <Loader2 className="w-10 h-10 animate-spin" />
                     <p className="qr-loading-text">Generating new QR code...</p>
                   </div>
                 ) : (
