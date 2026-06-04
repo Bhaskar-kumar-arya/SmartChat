@@ -100,7 +100,7 @@ export class ReceiptService {
       // Always save detailed individual receipt (especially for groups, but also useful for DMs)
       if (userJid) {
         const ts = receipt?.readTimestamp || receipt?.receiptTimestamp || Math.floor(Date.now() / 1000)
-        await (prisma as any).messageReceipt.upsert({
+        await prisma.messageReceipt.upsert({
           where: {
             messageId_userJid: {
               messageId,
@@ -131,7 +131,7 @@ export class ReceiptService {
         })
 
         // Find how many other members have read the message
-        const readCount = await (prisma as any).messageReceipt.count({
+        const readCount = await prisma.messageReceipt.count({
           where: {
             messageId,
             status: 'READ'
@@ -158,7 +158,7 @@ export class ReceiptService {
           }
         } else {
           // Check if everyone got it delivered
-          const deliveredCount = await (prisma as any).messageReceipt.count({
+          const deliveredCount = await prisma.messageReceipt.count({
             where: {
               messageId,
               status: { in: ['DELIVERED', 'READ'] }

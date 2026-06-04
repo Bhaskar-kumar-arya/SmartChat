@@ -5,6 +5,28 @@ export class ContactService {
   private linkCache = new Set<string>()
   private identityIdCache = new Map<string, number>()
 
+  /**
+   * Formats display name from an Identity object.
+   */
+  public static getDisplayName(
+    identity: {
+      displayName?: string | null
+      verifiedName?: string | null
+      pushName?: string | null
+      phoneNumber?: string | null
+    } | null | undefined,
+    fallback: string = 'Unknown'
+  ): string {
+    if (!identity) return fallback
+    return (
+      identity.displayName ||
+      identity.verifiedName ||
+      identity.pushName ||
+      identity.phoneNumber?.split('@')[0] ||
+      fallback
+    )
+  }
+
   public clearCaches(): void {
     this.linkCache.clear()
     this.identityIdCache.clear()
@@ -57,7 +79,7 @@ export class ContactService {
       
       if (alias && alias.identity) {
         const ident = alias.identity
-        const finalName = ident.displayName || ident.verifiedName || ident.pushName || ident.phoneNumber?.split('@')[0] || jid.split('@')[0]
+        const finalName = ContactService.getDisplayName(ident, jid.split('@')[0])
         nameMap.set(jid, finalName)
       } else {
         // Tier 3: Runtime Cache Query
@@ -73,7 +95,7 @@ export class ContactService {
             const pnAlias = aliases.find(a => a.jid === pn);
             if (pnAlias && pnAlias.identity) {
               const ident = pnAlias.identity;
-              const finalName = ident.displayName || ident.verifiedName || ident.pushName || ident.phoneNumber?.split('@')[0] || pn.split('@')[0]
+              const finalName = ContactService.getDisplayName(ident, pn.split('@')[0])
               nameMap.set(jid, finalName);
             } else {
               nameMap.set(jid, pn.split('@')[0]);

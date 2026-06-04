@@ -198,7 +198,7 @@ export class EmbeddingService implements IEmbeddingService {
         const vector = await this.embed(text)
         const vectorJson = JSON.stringify(vector)
 
-        await (prisma as any).messageVector.upsert({
+        await prisma.messageVector.upsert({
           where: { messageId },
           create: { messageId, vector: vectorJson },
           update: { vector: vectorJson }
@@ -230,7 +230,7 @@ export class EmbeddingService implements IEmbeddingService {
     
     await this.ensureWorker()
 
-    const indexed = await (prisma as any).messageVector.findMany({ select: { messageId: true } })
+    const indexed = await prisma.messageVector.findMany({ select: { messageId: true } })
     const indexedSet = new Set<string>(indexed.map((v: any) => v.messageId))
 
     const messages = await prisma.message.findMany({
@@ -256,7 +256,7 @@ export class EmbeddingService implements IEmbeddingService {
           const vector = await this.embed(m.textContent!)
           const vectorJson = JSON.stringify(vector)
 
-          await (prisma as any).messageVector.upsert({
+          await prisma.messageVector.upsert({
             where: { messageId: m.id },
             create: { messageId: m.id, vector: vectorJson },
             update: { vector: vectorJson }
@@ -284,13 +284,13 @@ export class EmbeddingService implements IEmbeddingService {
   }
 
   async clearAllVectors(): Promise<void> {
-    await (prisma as any).messageVector.deleteMany({})
+    await prisma.messageVector.deleteMany({})
     await prisma.$executeRawUnsafe(`DELETE FROM vec_messages`)
     console.log('[EmbeddingService] All vectors cleared.')
   }
 
   async syncVectors(): Promise<void> {
-    const vectors = await (prisma as any).messageVector.findMany()
+    const vectors = await prisma.messageVector.findMany()
     console.log(`[EmbeddingService] Syncing ${vectors.length} vectors to virtual table...`)
     for (const v of vectors) {
       await prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, v.messageId)

@@ -616,7 +616,7 @@ export function registerIpcHandlers(
   })
 
   ipcMain.handle('get-message-receipts', async (_event, messageId: string) => {
-    const receipts = await (prisma as any).messageReceipt.findMany({
+    const receipts = await prisma.messageReceipt.findMany({
       where: { messageId },
       orderBy: { timestamp: 'desc' }
     })

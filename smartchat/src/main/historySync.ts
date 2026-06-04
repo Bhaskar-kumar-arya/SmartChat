@@ -362,7 +362,7 @@ export async function handleHistorySync(
 
                 if (emoji && reactorId) {
                   reactionOps.push(
-                    (prisma as any).reaction.upsert({
+                    prisma.reaction.upsert({
                       where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
                       update: { text: emoji, timestamp: msg.timestamp },
                       create: {
@@ -411,7 +411,7 @@ export async function handleHistorySync(
           const existingMessages = standardMessages.filter(m => existingIds.has(m.id))
 
           if (newMessages.length > 0) {
-            await (prisma.message as any).createMany({
+            await prisma.message.createMany({
               data: newMessages
             }).catch(async () => {
               // fallback to single upserts in a transaction if createMany fails

@@ -1,5 +1,5 @@
 import { prisma } from '../../auth'
-import { contactService } from '../contacts/ContactService'
+import { ContactService, contactService } from '../contacts/ContactService'
 import { embeddingService } from '../search/EmbeddingService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid } from '../../utils'
@@ -219,11 +219,11 @@ export class MessageService {
 
         if (targetId && reactorId) {
             if (!emoji) {
-                await (prisma as any).reaction.deleteMany({
+                await prisma.reaction.deleteMany({
                     where: { messageId: targetId, senderId: reactorId }
                 }).catch(() => {})
             } else {
-                await (prisma as any).reaction.upsert({
+                await prisma.reaction.upsert({
                     where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
                     update: { text: emoji, timestamp },
                     create: { messageId: targetId, senderId: reactorId, text: emoji, timestamp }
@@ -422,7 +422,7 @@ export class MessageService {
     if (msg.fromMe) {
       participantName = 'Me'
     } else if (msg.sender) {
-      participantName = msg.sender.displayName || msg.sender.pushName || msg.sender.verifiedName || msg.sender.phoneNumber?.split('@')[0] || 'Unknown'
+      participantName = ContactService.getDisplayName(msg.sender, 'Unknown')
     } else if (msg.participant) { // fallback
       participantName = nameMap.get(msg.participant) || msg.participant.replace(/@.*$/, '')
     }
@@ -594,11 +594,11 @@ export class MessageService {
     // 4. Update the DB reaction record
     if (reactorId) {
       if (!text) {
-        await (prisma as any).reaction.deleteMany({
+        await prisma.reaction.deleteMany({
           where: { messageId: targetId, senderId: reactorId }
         }).catch(() => {})
       } else {
-        await (prisma as any).reaction.upsert({
+        await prisma.reaction.upsert({
           where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
           update: { text, timestamp },
           create: { messageId: targetId, senderId: reactorId, text, timestamp }

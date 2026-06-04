@@ -50,7 +50,7 @@ const adapter = new Proxy(baseAdapter, {
   },
 });
 
-export const prisma = new PrismaClient({ adapter } as any);
+export const prisma = new PrismaClient({ adapter });
 
 /**
  * Initializes the vector database by creating the virtual table.
@@ -93,7 +93,7 @@ export const initVectorDb = async () => {
       `SELECT count(*) as count FROM vec_messages`
     );
     const vecCount = Number(vecCountRaw[0]?.count || 0);
-    const prismaCount = await (prisma as any).messageVector.count();
+    const prismaCount = await prisma.messageVector.count();
 
     if (vecCount < prismaCount) {
       console.log(`[VectorDB] Syncing missing vectors (${vecCount} vs ${prismaCount})...`);

@@ -1,5 +1,5 @@
 import { prisma } from '../../auth'
-import { contactService } from '../contacts/ContactService'
+import { ContactService, contactService } from '../contacts/ContactService'
 import { embeddingService } from './EmbeddingService'
 
 export interface SearchResultItem {
@@ -126,7 +126,7 @@ export class SearchService implements ISearchService {
     return messages.map((msg: any) => {
         let name = msg.chat?.name
         if (!name && msg.chat?.type === 'DM' && msg.sender) {
-            name = msg.sender.displayName || msg.sender.pushName || msg.sender.phoneNumber?.split('@')[0]
+            name = ContactService.getDisplayName(msg.sender, msg.chatJid.split('@')[0])
         }
         if (!name) name = msg.chatJid.split('@')[0]
 
@@ -195,7 +195,7 @@ export class SearchService implements ISearchService {
           
           let name = msg.chat?.name
           if (!name && msg.chat?.type === 'DM' && msg.sender) {
-              name = msg.sender.displayName || msg.sender.pushName || msg.sender.phoneNumber?.split('@')[0]
+              name = ContactService.getDisplayName(msg.sender, msg.chatJid.split('@')[0])
           }
           if (!name) name = msg.chatJid.split('@')[0]
 

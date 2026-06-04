@@ -20,8 +20,8 @@ interface AIChatMessageInput {
 export class AIChatSessionService {
   // ── Session CRUD ──
   
-  async createSession(title: string, modelId?: string) {
-    return await (prisma as any).aIChatSession.create({
+  async createSession(title: string, modelId?: string | null) {
+    return await prisma.aIChatSession.create({
       data: {
         title,
         modelId,
@@ -33,7 +33,7 @@ export class AIChatSessionService {
 
   async listSessions(page: number = 1, pageSize: number = 50) {
     const skip = (page - 1) * pageSize
-    const sessions = await (prisma as any).aIChatSession.findMany({
+    const sessions = await prisma.aIChatSession.findMany({
       orderBy: { updatedAt: 'desc' },
       skip,
       take: pageSize,
@@ -48,7 +48,7 @@ export class AIChatSessionService {
   }
 
   async getSession(id: string) {
-    const session = await (prisma as any).aIChatSession.findUnique({
+    const session = await prisma.aIChatSession.findUnique({
       where: { id },
       include: { 
         messages: {
@@ -72,7 +72,7 @@ export class AIChatSessionService {
   }
 
   async renameSession(id: string, title: string) {
-    const updated = await (prisma as any).aIChatSession.update({
+    const updated = await prisma.aIChatSession.update({
       where: { id },
       data: { title, updatedAt: Date.now() }
     })
@@ -85,7 +85,7 @@ export class AIChatSessionService {
   }
 
   async deleteSession(id: string) {
-    await (prisma as any).aIChatSession.delete({
+    await prisma.aIChatSession.delete({
       where: { id }
     })
   }
@@ -97,7 +97,19 @@ export class AIChatSessionService {
     const clone = await this.createSession(`${original.title} (Copy)`, original.modelId)
     
     if (original.messages && original.messages.length > 0) {
-      await this.saveMessages(clone.id, original.messages)
+      await this.saveMessages(
+        clone.id,
+        original.messages.map(m => ({
+          role: m.role as 'user' | 'ai',
+          content: m.content,
+          contexts: m.contexts,
+          mentions: m.mentions,
+          isHidden: m.isHidden,
+          isSystem: m.isSystem,
+          toolResult: m.toolResult ?? undefined,
+          hasError: m.hasError
+        }))
+      )
     }
 
     return await this.getSession(clone.id)
@@ -109,13 +121,13 @@ export class AIChatSessionService {
     // We do a full replacement of messages for the session to handle edits and truncations easily
     await prisma.$transaction(async (tx) => {
       // 1. Delete existing messages for this session
-      await (tx as any).aIChatMessage.deleteMany({
+      await tx.aIChatMessage.deleteMany({
         where: { sessionId }
       })
 
       // 2. Insert new messages
       if (messages.length > 0) {
-        await (tx as any).aIChatMessage.createMany({
+        await tx.aIChatMessage.createMany({
           data: messages.map((m, index) => ({
             sessionId,
             role: m.role,
@@ -132,7 +144,7 @@ export class AIChatSessionService {
       }
 
       // 3. Update session's updatedAt
-      await (tx as any).aIChatSession.update({
+      await tx.aIChatSession.update({
         where: { id: sessionId },
         data: { updatedAt: Date.now() }
       })
