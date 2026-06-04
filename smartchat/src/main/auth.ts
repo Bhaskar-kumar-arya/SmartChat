@@ -98,7 +98,7 @@ export const initVectorDb = async () => {
     if (vecCount < prismaCount) {
       console.log(`[VectorDB] Syncing missing vectors (${vecCount} vs ${prismaCount})...`);
       // Dynamic import to avoid circular dependency
-      const { embeddingService } = await import("./services/EmbeddingService");
+      const { embeddingService } = await import("./services/search/EmbeddingService");
       await embeddingService.syncVectors();
     }
   } catch (err) {

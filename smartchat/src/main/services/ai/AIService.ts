@@ -1,9 +1,9 @@
-import { GeminiProvider } from './ai/GeminiProvider'
-import { LMStudioProvider } from './ai/LMStudioProvider'
-import { GroqProvider } from './ai/GroqProvider'
-import { MistralProvider } from './ai/MistralProvider'
-import { DeepSeekProvider } from './ai/DeepSeekProvider'
-import { AIProvider, ModelInfo } from './ai/Provider'
+import { GeminiProvider } from './providers/GeminiProvider'
+import { LMStudioProvider } from './providers/LMStudioProvider'
+import { GroqProvider } from './providers/GroqProvider'
+import { MistralProvider } from './providers/MistralProvider'
+import { DeepSeekProvider } from './providers/DeepSeekProvider'
+import { AIProvider, ModelInfo } from './providers/Provider'
 import { aiKeyService } from './AIKeyService'
 
 export class AIService {

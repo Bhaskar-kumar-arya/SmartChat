@@ -1,5 +1,5 @@
-import { AITool } from '../services/AIToolService';
-import { messageActionService } from '../services/MessageActionService';
+import { AITool } from '../services/ai/AIToolService';
+import { messageActionService } from '../services/messages/MessageActionService';
 
 export class MessageActionTool implements AITool {
   name = 'messageAction';

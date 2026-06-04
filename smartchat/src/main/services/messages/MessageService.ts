@@ -1,8 +1,8 @@
-import { prisma } from '../auth'
-import { contactService } from './ContactService'
-import { embeddingService } from './EmbeddingService'
-import { mapBaileysStatus } from './ReceiptService'
-import { cleanJid } from '../utils'
+import { prisma } from '../../auth'
+import { contactService } from '../contacts/ContactService'
+import { embeddingService } from '../search/EmbeddingService'
+import { mapBaileysStatus } from '../whatsapp/ReceiptService'
+import { cleanJid } from '../../utils'
 
 /**
  * Plain data object produced by parseMessageSync().

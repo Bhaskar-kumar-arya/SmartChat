@@ -1,5 +1,5 @@
-import { prisma } from '../auth'
-import { cleanJid } from '../utils'
+import { prisma } from '../../auth'
+import { cleanJid } from '../../utils'
 
 export class ChatService {
   /**
@@ -67,7 +67,7 @@ export class ChatService {
       const rootJid = isComm ? cleanedJid : (parent ? cleanJid(parent) : null)
       let communityId: number | null = null
       
-      const { contactService } = await import('./ContactService')
+      const { contactService } = await import('../contacts/ContactService')
 
       // Link owner LIDs to Phone Numbers if provided in metadata
       if (update.owner && update.ownerPn) {
@@ -174,7 +174,7 @@ export class ChatService {
    */
   async syncGroupMembers(chatJid: string, participants: any[]): Promise<void> {
     const cleanedChatJid = cleanJid(chatJid)
-    const { contactService } = await import('./ContactService')
+    const { contactService } = await import('../contacts/ContactService')
     
     // Pre-parse and normalize participant JIDs
     const parsedParticipants = participants

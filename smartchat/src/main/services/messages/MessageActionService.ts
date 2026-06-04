@@ -1,7 +1,7 @@
-import { prisma } from '../auth'
-import { contactService } from './ContactService'
+import { prisma } from '../../auth'
+import { contactService } from '../contacts/ContactService'
 import { messageService } from './MessageService'
-import { chatService } from './ChatService'
+import { chatService } from '../chats/ChatService'
 import { BrowserWindow } from 'electron'
 import { proto } from '@whiskeysockets/baileys'
 

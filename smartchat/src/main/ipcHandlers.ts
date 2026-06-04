@@ -3,18 +3,18 @@ import { PrismaClient } from '@prisma/client'
 import fs from 'fs'
 import { join } from 'path'
 import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
-import { contactService } from './services/ContactService'
-import { messageService } from './services/MessageService'
-import { chatService } from './services/ChatService'
-import { searchService } from './services/SearchService'
-import { embeddingService } from './services/EmbeddingService'
-import { aiService } from './services/AIService'
-import { toolRegistry } from './services/AIToolService'
-import { AIToolInitializer } from './services/AIToolInitializer'
-import { audioTranscoderService } from './services/AudioTranscoderService'
-import { aiChatSessionService } from './services/AIChatSessionService'
-import { aiChatExportService } from './services/AIChatExportService'
-import { messageActionService } from './services/MessageActionService'
+import { contactService } from './services/contacts/ContactService'
+import { messageService } from './services/messages/MessageService'
+import { chatService } from './services/chats/ChatService'
+import { searchService } from './services/search/SearchService'
+import { embeddingService } from './services/search/EmbeddingService'
+import { aiService } from './services/ai/AIService'
+import { toolRegistry } from './services/ai/AIToolService'
+import { AIToolInitializer } from './services/ai/AIToolInitializer'
+import { audioTranscoderService } from './services/audio/AudioTranscoderService'
+import { aiChatSessionService } from './services/ai/AIChatSessionService'
+import { aiChatExportService } from './services/ai/AIChatExportService'
+import { messageActionService } from './services/messages/MessageActionService'
 
 export function registerIpcHandlers(
   prisma: PrismaClient,
@@ -454,7 +454,7 @@ export function registerIpcHandlers(
       create: { id: 'sync_full_history', data: full ? 'true' : 'false' }
     }).catch(() => {})
 
-    const { waConnectionManager } = await import('./services/WhatsAppConnectionManager')
+    const { waConnectionManager } = await import('./services/whatsapp/WhatsAppConnectionManager')
     waConnectionManager.connect()
     return true
   })

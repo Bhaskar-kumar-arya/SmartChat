@@ -1,5 +1,5 @@
-import { prisma } from '../auth'
-import { cleanJid } from '../utils'
+import { prisma } from '../../auth'
+import { cleanJid } from '../../utils'
 
 export class ContactService {
   private linkCache = new Set<string>()

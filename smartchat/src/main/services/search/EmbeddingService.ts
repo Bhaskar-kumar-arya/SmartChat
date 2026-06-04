@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import path from 'path'
 import { Worker } from 'worker_threads'
-import { prisma } from '../auth'
+import { prisma } from '../../auth'
 
 // ── SRP: this service ONLY handles embedding generation coordination, storage and retrieval ──
 

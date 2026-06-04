@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron'
-import { prisma } from '../auth'
-import { cleanJid } from '../utils'
+import { prisma } from '../../auth'
+import { cleanJid } from '../../utils'
 
 export function mapBaileysStatus(status: number | null | undefined): string {
   if (status === undefined || status === null) return 'SENT'

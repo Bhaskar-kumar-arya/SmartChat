@@ -3,14 +3,14 @@ import baileys, { DisconnectReason, fetchLatestBaileysVersion, Browsers } from '
 const makeWASocket = (baileys as any).default || baileys;
 import { Boom } from '@hapi/boom'
 import NodeCache from 'node-cache'
-import { prisma, usePrismaAuthState } from '../auth'
-import { handleHistorySync } from '../historySync'
-import { contactService } from './ContactService'
-import { messageService } from './MessageService'
-import { chatService } from './ChatService'
-import { embeddingService } from './EmbeddingService'
+import { prisma, usePrismaAuthState } from '../../auth'
+import { handleHistorySync } from '../../historySync'
+import { contactService } from '../contacts/ContactService'
+import { messageService } from '../messages/MessageService'
+import { chatService } from '../chats/ChatService'
+import { embeddingService } from '../search/EmbeddingService'
 import { receiptService } from './ReceiptService'
-import { cleanJid } from '../utils'
+import { cleanJid } from '../../utils'
 
 export class WhatsAppConnectionManager {
   private currentSock: ReturnType<typeof makeWASocket> | null = null

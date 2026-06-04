@@ -1,9 +1,9 @@
 import { toolRegistry } from './AIToolService';
-import { SendMessageTool } from '../tools/SendMessageTool';
-import { ReadChatTool } from '../tools/ReadChatTool';
-import { QueryDatabaseTool } from '../tools/QueryDatabaseTool';
-import { MessageActionTool } from '../tools/MessageActionTool';
-import { ExecuteScriptTool } from '../tools/ExecuteScriptTool';
+import { SendMessageTool } from '../../tools/SendMessageTool';
+import { ReadChatTool } from '../../tools/ReadChatTool';
+import { QueryDatabaseTool } from '../../tools/QueryDatabaseTool';
+import { MessageActionTool } from '../../tools/MessageActionTool';
+import { ExecuteScriptTool } from '../../tools/ExecuteScriptTool';
 
 export class AIToolInitializer {
   /**

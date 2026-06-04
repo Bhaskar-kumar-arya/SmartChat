@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
-import { contactService } from './services/ContactService'
-import { mapBaileysStatus } from './services/ReceiptService'
+import { contactService } from './services/contacts/ContactService'
+import { mapBaileysStatus } from './services/whatsapp/ReceiptService'
 import { cleanJid } from './utils'
 
 /**

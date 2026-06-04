@@ -1,4 +1,4 @@
-import { AITool } from '../services/AIToolService';
+import { AITool } from '../services/ai/AIToolService';
 import { prisma } from '../auth';
 
 export class ReadChatTool implements AITool {
@@ -42,10 +42,7 @@ CONSTRAINTS:
     required: ['jid']
   };
 
-  private getSock: () => any;
-
-  constructor(getSock: () => any) {
-    this.getSock = getSock;
+  constructor(_getSock: () => any) {
   }
 
   async execute(args: any) {

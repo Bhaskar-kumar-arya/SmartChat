@@ -1,5 +1,5 @@
 import vm from 'vm';
-import { AITool, toolRegistry } from '../services/AIToolService';
+import { AITool, toolRegistry } from '../services/ai/AIToolService';
 
 const MAX_EXECUTION_MS = 60_000; // 30 second wall-clock timeout
 const MAX_TOOL_CALLS = 1000;       // prevent runaway loops

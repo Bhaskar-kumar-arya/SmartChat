@@ -1,5 +1,5 @@
-import { prisma } from '../auth'
-import { contactService } from './ContactService'
+import { prisma } from '../../auth'
+import { contactService } from '../contacts/ContactService'
 import { embeddingService } from './EmbeddingService'
 
 export interface SearchResultItem {
@@ -109,7 +109,7 @@ export class SearchService implements ISearchService {
 
   private async normalSearch(
     q: string,
-    sock: any,
+    _sock: any,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
     const where = buildMessageWhereClause(filters, {
@@ -143,7 +143,7 @@ export class SearchService implements ISearchService {
 
   private async deepSearch(
     q: string,
-    sock: any,
+    _sock: any,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
     const queryVector = await embeddingService.embed(q)

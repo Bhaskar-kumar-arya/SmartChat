@@ -4,7 +4,7 @@ import { pathToFileURL } from 'url'
 import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { waConnectionManager } from './services/WhatsAppConnectionManager'
+import { waConnectionManager } from './services/whatsapp/WhatsAppConnectionManager'
 import { prisma, initVectorDb } from './auth'
 import { registerIpcHandlers } from './ipcHandlers'
 
@@ -92,7 +92,7 @@ app.whenReady().then(() => {
   })
 })
 
-import { aiService } from './services/AIService'
+import { aiService } from './services/ai/AIService'
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -1,6 +1,6 @@
-import { AITool } from '../services/AIToolService';
-import { messageService } from '../services/MessageService';
-import { chatService } from '../services/ChatService';
+import { AITool } from '../services/ai/AIToolService';
+import { messageService } from '../services/messages/MessageService';
+import { chatService } from '../services/chats/ChatService';
 
 export class SendMessageTool implements AITool {
   name = 'sendMessage';
