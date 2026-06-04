@@ -138,16 +138,6 @@ export const usePrismaAuthState = async (): Promise<{
     }
   };
 
-  const removeData = async (id: string) => {
-    try {
-      await prisma.authState.delete({
-        where: { id },
-      });
-    } catch (error) {
-      // Ignore if not found
-    }
-  };
-
   const creds: AuthenticationCreds =
     (await readData("creds")) || initAuthCreds();
   const baseKeyStore = {

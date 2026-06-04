@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { contactService } from './services/ContactService'
 import { mapBaileysStatus } from './services/ReceiptService'
+import { cleanJid } from './utils'
 
 /**
  * Determines the high-level message type from a Baileys proto.IMessage object.
@@ -96,9 +97,20 @@ export async function handleHistorySync(
   let chatCount = 0
   let messageCount = 0
 
+  // Clear in-memory JID lookup/link caches for a fresh sync chunk
+  contactService.clearCaches()
+
+  // Fetch all existing chat JIDs to avoid redundant DB queries during message upserts
+  const existingChats = await prisma.chat.findMany({ select: { jid: true } })
+  const processedChats = new Set<string>(existingChats.map(ch => ch.jid))
+
   // ── 1. Process LID <-> PN mappings FIRST ───────────────────────────
   if (lidPnMappings && lidPnMappings.length > 0) {
+    let count = 0
     for (const mapping of lidPnMappings) {
+      if (++count % 100 === 0) {
+        await new Promise(r => setImmediate(r))
+      }
       if (mapping.lid && mapping.pn) {
         await contactService.linkLidAndPn(mapping.lid, mapping.pn, 'history.sync').catch(() => {})
       }
@@ -106,7 +118,11 @@ export async function handleHistorySync(
   }
 
   if (phoneNumberToLidMappings && phoneNumberToLidMappings.length > 0) {
+    let count = 0
     for (const mapping of phoneNumberToLidMappings) {
+      if (++count % 100 === 0) {
+        await new Promise(r => setImmediate(r))
+      }
       if (mapping.lidJid && mapping.pnJid) {
         await contactService.linkLidAndPn(mapping.lidJid, mapping.pnJid, 'history.sync.ph').catch(() => {})
       }
@@ -115,38 +131,50 @@ export async function handleHistorySync(
 
   // ── 2. Contacts ────────────────────────────────────────────────────────
   if (contacts && contacts.length > 0) {
+    let count = 0
     for (const c of contacts) {
       if (!c.id) continue
+      if (++count % 50 === 0) {
+        await new Promise(r => setImmediate(r))
+      }
 
-      // Skip bare LID contacts with no name data — they are group participants
-      // whose phone number will be resolved later via syncGroupMembers /
-      // groupFetchAllParticipating. Creating them here just makes nameless ghost stubs.
-      const isBareLid = (c.id as string).endsWith('@lid')
+      const cleanedId = cleanJid(c.id)
+      // Skip bare LID contacts with no name data
+      const isBareLid = cleanedId.endsWith('@lid')
         && !c.name && !c.notify && !c.pushName && !c.verifiedName
       if (isBareLid) continue
 
-      await contactService.upsertContact(c).catch(() => {})
+      const contactToUpsert = {
+        ...c,
+        id: cleanedId,
+        lid: c.lid ? cleanJid(c.lid) : undefined,
+        phoneNumber: c.phoneNumber ? cleanJid(c.phoneNumber) : undefined
+      }
+
+      await contactService.upsertContact(contactToUpsert).catch(() => {})
 
       // If the contact carries both a PN id and a separate lid, link them now
-      // so the LID alias points to the correct identity immediately.
-      if (!(c.id as string).endsWith('@lid') && c.lid) {
-        await contactService.linkLidAndPn(c.lid as string, c.id as string, 'history.sync.contact').catch(() => {})
+      if (!cleanedId.endsWith('@lid') && c.lid) {
+        await contactService.linkLidAndPn(cleanJid(c.lid), cleanedId, 'history.sync.contact').catch(() => {})
       }
     }
     contactCount = contacts.length
   }
 
-  // ── Chats ─────────────────────────────────────────────────────────
-
+  // ── 3. Chats ─────────────────────────────────────────────────────────
   if (chats && chats.length > 0) {
+    let count = 0
     for (const c of chats) {
       if (!c.id) continue
-      const jid = String(c.id)
+      if (++count % 50 === 0) {
+        await new Promise(r => setImmediate(r))
+      }
+      const jid = cleanJid(String(c.id))
       const raw = c as any
 
       // If the chat object carries a linked accountLid, register the mapping immediately
       if (raw.accountLid && jid && !jid.endsWith('@lid') && jid.includes('@s.whatsapp.net')) {
-        await contactService.linkLidAndPn(String(raw.accountLid), jid, 'history.sync.chat.accountLid').catch(() => {})
+        await contactService.linkLidAndPn(cleanJid(raw.accountLid), jid, 'history.sync.chat.accountLid').catch(() => {})
       }
       const hasCommunityData = raw.isCommunity !== undefined || 
                                raw.isParentGroup !== undefined || 
@@ -190,7 +218,7 @@ export async function handleHistorySync(
         }
         updateData.type = type
 
-        const rootJid = isCommunity ? jid : (linkedParentJid || null)
+        const rootJid = isCommunity ? jid : (linkedParentJid ? cleanJid(linkedParentJid) : null)
         if (rootJid) {
           const comm = await prisma.community.upsert({
             where: { jid: rootJid },
@@ -223,13 +251,19 @@ export async function handleHistorySync(
         }
       })
 
+      processedChats.add(jid)
+
       // Extract PN <-> LID mapping from participants in history sync
       if (raw.participant && Array.isArray(raw.participant)) {
         for (const p of raw.participant) {
           const lid = p.userJid || p.id || p.lid
           const pn = p.phoneNumberJid || p.phoneNumber
-          if (lid && pn && String(lid).includes('@lid') && String(pn).includes('@s.whatsapp.net')) {
-            await contactService.linkLidAndPn(String(lid), String(pn), 'history.sync.participant').catch(() => {})
+          if (lid && pn) {
+            const cleanLid = cleanJid(String(lid))
+            const cleanPn = cleanJid(String(pn))
+            if (cleanLid.includes('@lid') && cleanPn.includes('@s.whatsapp.net')) {
+              await contactService.linkLidAndPn(cleanLid, cleanPn, 'history.sync.participant').catch(() => {})
+            }
           }
         }
       }
@@ -237,15 +271,16 @@ export async function handleHistorySync(
     chatCount = chats.length
   }
 
-  // ── Messages ──────────────────────────────────────────────────────
-
+  // ── 4. Messages ──────────────────────────────────────────────────────
   if (messages && messages.length > 0) {
-    // 1. Build an in-memory cache of JID -> identityId to avoid millions of awaits
+    // Build an in-memory cache of JID -> identityId to avoid millions of awaits
     const aliasRows = await prisma.identityAlias.findMany()
     const identityCache = new Map<string, number>()
-    for (const row of aliasRows) identityCache.set(row.jid, row.identityId)
+    for (const row of aliasRows) {
+      identityCache.set(row.jid, row.identityId)
+    }
 
-    const BATCH_SIZE = 500
+    const BATCH_SIZE = 200
 
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE)
@@ -263,15 +298,15 @@ export async function handleHistorySync(
             : (ts as number)
         )
 
-        const remoteJid = String(key.remoteJid ?? '')
-        const participantString = key.participant ? String(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
+        const remoteJid = cleanJid(String(key.remoteJid ?? ''))
+        const participantRaw = key.participant ? String(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
+        const participantString = participantRaw ? cleanJid(participantRaw) : null
         
         let senderId: number | null = null
         if (!key.fromMe && participantString) {
           if (identityCache.has(participantString)) {
             senderId = identityCache.get(participantString)!
           } else {
-            // Need to create it
             await contactService.upsertContact({ id: participantString }).catch(() => {})
             const newId = await contactService.getIdentityIdByJid(participantString)
             if (newId) {
@@ -281,13 +316,16 @@ export async function handleHistorySync(
           }
         }
 
-        // Ensure Chat exists
-        const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-        await prisma.chat.upsert({
-          where: { jid: remoteJid },
-          update: {},
-          create: { jid: remoteJid, type: chatType }
-        }).catch(() => {})
+        // Ensure Chat exists (skip if already seen in processedChats cache)
+        if (!processedChats.has(remoteJid)) {
+          const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
+          await prisma.chat.upsert({
+            where: { jid: remoteJid },
+            update: {},
+            create: { jid: remoteJid, type: chatType }
+          }).catch(() => {})
+          processedChats.add(remoteJid)
+        }
 
         messageData.push({
           id: String(key.id),
@@ -347,7 +385,6 @@ export async function handleHistorySync(
             if (msg.messageType !== 'unknown') update.messageType = msg.messageType
             if (msg.content !== '{}') update.content = msg.content
             if (msg.textContent !== null) update.textContent = msg.textContent
-            // Do not update status on existing messages to prevent downgrading statuses updated by real-time events
             update.fromMe = msg.fromMe
 
             msgOps.push(
@@ -360,21 +397,59 @@ export async function handleHistorySync(
           }
         }
 
-        if (msgOps.length > 0) {
-          try {
+        const standardMessages = messageData.filter(m => m.messageType !== 'reactionMessage')
+        if (standardMessages.length > 0) {
+          // Pre-check existences in database to prevent transaction locking issues
+          const batchIds = standardMessages.map(m => m.id)
+          const existingMsgs = await prisma.message.findMany({
+            where: { id: { in: batchIds } },
+            select: { id: true }
+          })
+          const existingIds = new Set(existingMsgs.map(m => m.id))
+
+          const newMessages = standardMessages.filter(m => !existingIds.has(m.id))
+          const existingMessages = standardMessages.filter(m => existingIds.has(m.id))
+
+          if (newMessages.length > 0) {
             await (prisma.message as any).createMany({
-              data: messageData.filter(m => m.messageType !== 'reactionMessage'),
-              skipDuplicates: true
+              data: newMessages
+            }).catch(async () => {
+              // fallback to single upserts in a transaction if createMany fails
+              const fallbackOps = newMessages.map(m => prisma.message.upsert({
+                where: { id: m.id },
+                update: m,
+                create: m
+              }))
+              await prisma.$transaction(fallbackOps).catch(err => console.error('[HistorySync] createMany fallback failed:', err))
             })
-          } catch (e) {
-            await prisma.$transaction(msgOps)
+          }
+
+          if (existingMessages.length > 0) {
+            const updateOps = existingMessages.map(msg => {
+              const update: Record<string, unknown> = {}
+              if (msg.chatJid) update.chatJid = msg.chatJid
+              if (msg.senderId !== undefined) update.senderId = msg.senderId
+              if (msg.participant !== undefined) update.participant = msg.participant
+              if (msg.timestamp) update.timestamp = msg.timestamp
+              if (msg.messageType !== 'unknown') update.messageType = msg.messageType
+              if (msg.content !== '{}') update.content = msg.content
+              if (msg.textContent !== null) update.textContent = msg.textContent
+              update.fromMe = msg.fromMe
+              return prisma.message.update({
+                where: { id: msg.id },
+                data: update
+              })
+            })
+            await prisma.$transaction(updateOps).catch(err => console.error('[HistorySync] Update existing messages failed:', err))
           }
         }
         
-        if (reactionOps.length > 0) await prisma.$transaction(reactionOps)
+        if (reactionOps.length > 0) {
+          await prisma.$transaction(reactionOps).catch(err => console.error('[HistorySync] Reaction transaction failed:', err))
+        }
 
         messageCount += messageData.length
-        await new Promise(resolve => setTimeout(resolve, 0))
+        await new Promise(resolve => setImmediate(resolve))
       }
     }
   }

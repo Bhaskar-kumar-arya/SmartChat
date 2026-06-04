@@ -10,6 +10,7 @@ import { messageService } from './MessageService'
 import { chatService } from './ChatService'
 import { embeddingService } from './EmbeddingService'
 import { receiptService } from './ReceiptService'
+import { cleanJid } from '../utils'
 
 export class WhatsAppConnectionManager {
   private currentSock: ReturnType<typeof makeWASocket> | null = null
@@ -389,7 +390,7 @@ export class WhatsAppConnectionManager {
                   if (this.mainWindow && !this.mainWindow.isDestroyed()) {
                     this.mainWindow.webContents.send('message-deleted', {
                       id: processed.targetId,
-                      remoteJid: processed.key.remoteJid,
+                      remoteJid: cleanJid(processed.key.remoteJid),
                       fromMe: processed.key.fromMe
                     })
                   }
@@ -397,7 +398,7 @@ export class WhatsAppConnectionManager {
                   if (this.mainWindow && !this.mainWindow.isDestroyed()) {
                     const dbMsg = await prisma.message.findUnique({ where: { id: processed.targetId } })
                     if (dbMsg) {
-                      const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.chatJid], sock)
+                      const nameMap = await contactService.batchResolveNames([cleanJid(dbMsg.participant || dbMsg.chatJid)], sock)
                       const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
                       this.mainWindow.webContents.send('message-edited', enriched)
                     }
@@ -417,7 +418,7 @@ export class WhatsAppConnectionManager {
               }
 
               if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-                const jids = new Set<string>([participant || remoteJid])
+                const jids = new Set<string>([cleanJid(participant || remoteJid)])
                 const nameMap = await contactService.batchResolveNames(Array.from(jids), sock)
                 const enriched = await messageService.enrichMessage(processed, sock, nameMap)
                 this.mainWindow.webContents.send('new-message', enriched)
@@ -457,7 +458,7 @@ export class WhatsAppConnectionManager {
                 if (this.mainWindow && !this.mainWindow.isDestroyed()) {
                   this.mainWindow.webContents.send('message-deleted', {
                     id: key.id,
-                    remoteJid: key.remoteJid,
+                    remoteJid: cleanJid(key.remoteJid),
                     fromMe: key.fromMe
                   })
                 }
@@ -476,7 +477,7 @@ export class WhatsAppConnectionManager {
                   if (this.mainWindow && !this.mainWindow.isDestroyed()) {
                     const dbMsg = await prisma.message.findUnique({ where: { id: key.id } })
                     if (dbMsg) {
-                      const nameMap = await contactService.batchResolveNames([dbMsg.participant || dbMsg.chatJid], sock)
+                      const nameMap = await contactService.batchResolveNames([cleanJid(dbMsg.participant || dbMsg.chatJid)], sock)
                       const enriched = await messageService.enrichMessage(dbMsg, sock, nameMap)
                       this.mainWindow.webContents.send('message-edited', enriched)
                     }
@@ -494,33 +495,43 @@ export class WhatsAppConnectionManager {
       // ── Contacts ──────────────────────────────────────────────────────────
       if (events['contacts.upsert']) {
         for (const contact of events['contacts.upsert']) {
-          await contactService.upsertContact(contact).catch(() => { })
-          // contacts.upsert frequently carries both id (PN) and lid on the same object
-          // e.g. { id: "91xxx@s.whatsapp.net", name: "...", lid: "12345@lid" }
+          const cleanContact = {
+            ...contact,
+            id: cleanJid(contact.id),
+            lid: contact.lid ? cleanJid(contact.lid) : undefined,
+            phoneNumber: contact.phoneNumber ? cleanJid(contact.phoneNumber) : undefined
+          }
+          await contactService.upsertContact(cleanContact).catch(() => { })
           const raw = contact as any
           if (raw.lid && raw.id && !String(raw.id).endsWith('@lid') && String(raw.id).includes('@s.whatsapp.net')) {
-            await contactService.linkLidAndPn(String(raw.lid), String(raw.id), 'contacts.upsert').catch(() => { })
+            await contactService.linkLidAndPn(cleanJid(raw.lid), cleanJid(raw.id), 'contacts.upsert').catch(() => { })
           }
         }
       }
 
       if (events['contacts.update']) {
         for (const contact of events['contacts.update']) {
-          await contactService.upsertContact(contact, { overwriteName: true }).catch(() => { })
+          const cleanContact = {
+            ...contact,
+            id: cleanJid(contact.id),
+            lid: contact.lid ? cleanJid(contact.lid) : undefined,
+            phoneNumber: contact.phoneNumber ? cleanJid(contact.phoneNumber) : undefined
+          }
+          await contactService.upsertContact(cleanContact, { overwriteName: true }).catch(() => { })
         }
       }
 
       if (events['lid-mapping.update']) {
         for (const mapping of events['lid-mapping.update']) {
           const { lid, pn } = mapping
-          if (lid && pn) await contactService.linkLidAndPn(lid, pn, 'lid-mapping.update').catch(() => { })
+          if (lid && pn) await contactService.linkLidAndPn(cleanJid(lid), cleanJid(pn), 'lid-mapping.update').catch(() => { })
         }
       }
 
       // ── Chats ─────────────────────────────────────────────────────────────
       if (events['chats.update']) {
         for (const update of events['chats.update']) {
-          const jid = update.id
+          const jid = cleanJid(update.id)
           if (jid) {
             await chatService.upsertChat(jid, update).catch(() => { })
             if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -536,7 +547,7 @@ export class WhatsAppConnectionManager {
 
       if (events['chats.upsert']) {
         for (const chat of events['chats.upsert']) {
-          const jid = chat.id
+          const jid = cleanJid(chat.id)
           if (jid) {
             // @ts-ignore
             const raw = { ...chat, ...(chat.metadata || {}) }
@@ -550,17 +561,18 @@ export class WhatsAppConnectionManager {
         for (const update of events['groups.update']) {
           const raw = update as any
           if (!raw.id) continue
+          const cleanGroupId = cleanJid(raw.id)
 
-          // Always upsert the chat — groups.update carries subject, desc, owner,
-          // ephemeralDuration, etc. that we want to store regardless of group type.
-          await chatService.upsertChat(raw.id, raw).catch(() => { })
+          // Always upsert the chat
+          await chatService.upsertChat(cleanGroupId, { ...raw, id: cleanGroupId }).catch(() => { })
 
-          // Sync participants when the event includes them (it often does on first
-          // group metadata push). This is where phoneNumber → LID linking happens
-          // for groups that weren't caught by groupFetchAllParticipating yet.
           if (raw.participants && raw.participants.length > 0) {
-            await chatService.syncGroupMembers(raw.id, raw.participants).catch((err) => {
-              console.error(`[groups.update] Failed to sync members for ${raw.id}:`, err)
+            const cleanParticipants = raw.participants.map((p: any) => ({
+              ...p,
+              id: cleanJid(p.id || p.userJid)
+            }))
+            await chatService.syncGroupMembers(cleanGroupId, cleanParticipants).catch((err) => {
+              console.error(`[groups.update] Failed to sync members for ${cleanGroupId}:`, err)
             })
           }
         }
@@ -568,24 +580,26 @@ export class WhatsAppConnectionManager {
 
       if (events['group-participants.update']) {
         const { id, participants, action } = events['group-participants.update']
-        if (id && participants) {
+        const cleanGroupId = cleanJid(id)
+        if (cleanGroupId && participants) {
           for (const jid of participants) {
-            let identityId = await contactService.getIdentityIdByJid(jid)
+            const cleanUserJid = cleanJid(jid)
+            let identityId = await contactService.getIdentityIdByJid(cleanUserJid)
             if (!identityId) {
-              await contactService.upsertContact({ id: jid }).catch(() => { })
-              identityId = await contactService.getIdentityIdByJid(jid)
+              await contactService.upsertContact({ id: cleanUserJid }).catch(() => { })
+              identityId = await contactService.getIdentityIdByJid(cleanUserJid)
             }
             if (identityId) {
               if (action === 'add' || action === 'promote' || action === 'demote') {
                 const role = action === 'promote' ? 'ADMIN' : 'MEMBER'
                 await prisma.chatMember.upsert({
-                  where: { chatJid_identityId: { chatJid: id, identityId } },
+                  where: { chatJid_identityId: { chatJid: cleanGroupId, identityId } },
                   update: { role },
-                  create: { chatJid: id, identityId, role }
+                  create: { chatJid: cleanGroupId, identityId, role }
                 }).catch(() => { })
               } else if (action === 'remove') {
                 await prisma.chatMember.delete({
-                  where: { chatJid_identityId: { chatJid: id, identityId } }
+                  where: { chatJid_identityId: { chatJid: cleanGroupId, identityId } }
                 }).catch(() => { })
               }
             }
@@ -605,23 +619,25 @@ export class WhatsAppConnectionManager {
       // ── Presence ──────────────────────────────────────────────────────────
       if (events['presence.update']) {
         const { id, presences } = events['presence.update']
+        const cleanRemoteJid = cleanJid(id)
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-          const jids = Object.keys(presences)
+          const jids = Object.keys(presences).map(j => cleanJid(j))
           const nameMap = await contactService.batchResolveNames(jids, sock)
           const enrichedPresences = Object.entries(presences).map(([participantJid, status]) => {
+            const cleanParticipantJid = cleanJid(participantJid)
             const s = status as any
             return [
-              participantJid,
+              cleanParticipantJid,
               {
                 ...s,
-                name: nameMap.get(participantJid) || participantJid.replace(/@.*$/, ''),
+                name: nameMap.get(cleanParticipantJid) || cleanParticipantJid.replace(/@.*$/, ''),
                 lastSeen: s.lastSeen ? s.lastSeen.toString() : undefined,
                 timestamp: Date.now()
               }
             ]
           })
           this.mainWindow.webContents.send('presence-update', {
-            remoteJid: id,
+            remoteJid: cleanRemoteJid,
             presences: Object.fromEntries(enrichedPresences)
           })
         }

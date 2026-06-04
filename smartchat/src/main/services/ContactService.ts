@@ -1,6 +1,16 @@
 import { prisma } from '../auth'
+import { cleanJid } from '../utils'
 
 export class ContactService {
+  private linkCache = new Set<string>()
+  private identityIdCache = new Map<string, number>()
+
+  public clearCaches(): void {
+    this.linkCache.clear()
+    this.identityIdCache.clear()
+    console.log('[ContactService] Caches cleared')
+  }
+
   /**
    * Resolves a collection of JIDs into a map of display names.
    * Efficiently handles the N+1 problem by batching DB requests.
@@ -9,7 +19,7 @@ export class ContactService {
     jids: string[],
     sock?: any
   ): Promise<Map<string, string>> {
-    const uniqueJids = Array.from(new Set(jids.filter(Boolean)))
+    const uniqueJids = Array.from(new Set(jids.filter(Boolean).map(cleanJid)))
     if (uniqueJids.length === 0) return new Map()
 
     const BATCH_SIZE = 250
@@ -30,19 +40,20 @@ export class ContactService {
     let myJid: string | null = null
     let myLid: string | null = null
     if (sock?.user) {
-        myJid = sock.user.id.split(':')[0]
-        myLid = (sock.user as any).lid?.split(':')[0]
+        myJid = cleanJid(sock.user.id)
+        myLid = (sock.user as any).lid ? cleanJid((sock.user as any).lid) : null
     }
+
 
     for (const jid of uniqueJids) {
       // 1. Is it "Me"?
-      if (myJid && (jid.includes(myJid) || (myLid && jid.includes(myLid)))) {
+      if (myJid && (jid === myJid || jid === myLid)) {
         nameMap.set(jid, sock.user.name || 'Me')
         continue
       }
 
       // 2. Find matching alias
-      const alias = aliases.find(a => a.jid === jid || a.jid === jid.split(':')[0])
+      const alias = aliases.find(a => a.jid === jid)
       
       if (alias && alias.identity) {
         const ident = alias.identity
@@ -52,14 +63,14 @@ export class ContactService {
         // Tier 3: Runtime Cache Query
         let resolvedFromCache = false;
         if (jid.includes('@lid') && sock?.signalRepository?.lidMapping?.getPNForLID) {
-          const pn = sock.signalRepository.lidMapping.getPNForLID(jid);
+          const pn = cleanJid(sock.signalRepository.lidMapping.getPNForLID(jid));
           if (pn) {
             resolvedFromCache = true;
             // Async fire-and-forget to link them
             this.linkLidAndPn(jid, pn, 'runtime.cache').catch(() => {});
             
             // Re-check aliases just in case PN is known
-            const pnAlias = aliases.find(a => a.jid === pn || a.jid === pn.split(':')[0]);
+            const pnAlias = aliases.find(a => a.jid === pn);
             if (pnAlias && pnAlias.identity) {
               const ident = pnAlias.identity;
               const finalName = ident.displayName || ident.verifiedName || ident.pushName || ident.phoneNumber?.split('@')[0] || pn.split('@')[0]
@@ -83,24 +94,25 @@ export class ContactService {
    * Resolves a single JID into a display name.
    */
   async resolveName(jid: string, chatName: string | null, sock?: any): Promise<string> {
-    const map = await this.batchResolveNames([jid], sock)
-    const resolved = map.get(jid)
+    const cleaned = cleanJid(jid)
+    const map = await this.batchResolveNames([cleaned], sock)
+    const resolved = map.get(cleaned)
     // If it's just the raw number (fallback), and we have a chatName, use the chatName
-    if (resolved === jid.split('@')[0] && chatName) {
+    if (resolved === cleaned.split('@')[0] && chatName) {
       return chatName
     }
-    return resolved || chatName || jid.split('@')[0]
+    return resolved || chatName || cleaned.split('@')[0]
   }
 
   /**
    * Handles contacts.upsert and contacts.update logic.
    */
   async upsertContact(contact: any, options: { overwriteName?: boolean } = {}): Promise<void> {
-    const id = contact.id
+    const id = cleanJid(contact.id)
     if (!id) return
 
-    const lid = contact.lid
-    const phoneNumber = contact.phoneNumber || (id.endsWith('@s.whatsapp.net') ? id : null)
+    const lid = contact.lid ? cleanJid(contact.lid) : null
+    const phoneNumber = contact.phoneNumber ? cleanJid(contact.phoneNumber) : (id.endsWith('@s.whatsapp.net') ? id : null)
     const newName = contact.name
     const newNotify = contact.notify ?? contact.pushName
     const newVerifiedName = contact.verifiedName
@@ -110,21 +122,42 @@ export class ContactService {
 
     // Look for existing identity by phone number
     if (phoneNumber) {
-      const existingById = await prisma.identity.findUnique({ where: { phoneNumber } })
-      if (existingById) identityId = existingById.id
+      if (this.identityIdCache.has(phoneNumber)) {
+        identityId = this.identityIdCache.get(phoneNumber)!
+      } else {
+        const existingById = await prisma.identity.findUnique({ where: { phoneNumber } })
+        if (existingById) {
+          identityId = existingById.id
+          this.identityIdCache.set(phoneNumber, identityId)
+        }
+      }
     }
 
     // Look for existing identity by LID alias if not found by PN
     if (!identityId && (lid || id.endsWith('@lid'))) {
       const searchLid = lid || id
-      const existingByAlias = await prisma.identityAlias.findUnique({ where: { jid: searchLid } })
-      if (existingByAlias) identityId = existingByAlias.identityId
+      if (this.identityIdCache.has(searchLid)) {
+        identityId = this.identityIdCache.get(searchLid)!
+      } else {
+        const existingByAlias = await prisma.identityAlias.findUnique({ where: { jid: searchLid } })
+        if (existingByAlias) {
+          identityId = existingByAlias.identityId
+          this.identityIdCache.set(searchLid, identityId)
+        }
+      }
     }
 
     // Still not found? Look for existing identity by the JID alias itself
     if (!identityId) {
-      const existingByAlias = await prisma.identityAlias.findUnique({ where: { jid: id } })
-      if (existingByAlias) identityId = existingByAlias.identityId
+      if (this.identityIdCache.has(id)) {
+        identityId = this.identityIdCache.get(id)!
+      } else {
+        const existingByAlias = await prisma.identityAlias.findUnique({ where: { jid: id } })
+        if (existingByAlias) {
+          identityId = existingByAlias.identityId
+          this.identityIdCache.set(id, identityId)
+        }
+      }
     }
 
     // 4. Check LidMap: if this is a PN JID, a LID stub may already exist for this number.
@@ -133,7 +166,10 @@ export class ContactService {
       const lidMapEntry = await prisma.lidMap.findFirst({ where: { pn: phoneNumber } })
       if (lidMapEntry) {
         const lidAlias = await prisma.identityAlias.findUnique({ where: { jid: lidMapEntry.lid } })
-        if (lidAlias) identityId = lidAlias.identityId
+        if (lidAlias) {
+          identityId = lidAlias.identityId
+          this.identityIdCache.set(phoneNumber, identityId)
+        }
       }
     }
 
@@ -148,6 +184,9 @@ export class ContactService {
         }
       })
       identityId = newIdentity.id
+      if (phoneNumber) this.identityIdCache.set(phoneNumber, identityId)
+      this.identityIdCache.set(id, identityId)
+      if (lid) this.identityIdCache.set(lid, identityId)
     } else {
       // Update existing identity
       const updateData: any = {}
@@ -173,6 +212,7 @@ export class ContactService {
         update: { identityId: identityId as number },
         create: { jid, type, identityId: identityId as number }
       })
+      this.identityIdCache.set(jid, identityId as number)
     }
 
     if (id.endsWith('@s.whatsapp.net')) {
@@ -196,23 +236,30 @@ export class ContactService {
    * Links a LID to a PN explicitly (e.g., from lid-mapping.update events).
    */
   async linkLidAndPn(lid: string, pn: string, source: string = 'unknown'): Promise<void> {
-    if (!lid || !pn) return
+    const cleanLid = cleanJid(lid)
+    const cleanPn = cleanJid(pn)
+    if (!cleanLid || !cleanPn) return
+
+    const cacheKey = `${cleanLid}->${cleanPn}`
+    if (this.linkCache.has(cacheKey)) {
+      return
+    }
 
     // 1. High-Performance Mapping Ledger
     await prisma.lidMap.upsert({
-      where: { lid },
-      update: { pn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
-      create: { lid, pn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
+      where: { lid: cleanLid },
+      update: { pn: cleanPn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
+      create: { lid: cleanLid, pn: cleanPn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
     }).catch(() => {})
 
     // 2. Relational Identity Sync
     // Find identities for both
-    const lidAlias = await prisma.identityAlias.findUnique({ where: { jid: lid } })
-    let pnIdentity = await prisma.identity.findUnique({ where: { phoneNumber: pn } })
+    const lidAlias = await prisma.identityAlias.findUnique({ where: { jid: cleanLid } })
+    let pnIdentity = await prisma.identity.findUnique({ where: { phoneNumber: cleanPn } })
     
     if (!pnIdentity) {
       // Look for PN alias
-      const pnAlias = await prisma.identityAlias.findUnique({ where: { jid: pn } })
+      const pnAlias = await prisma.identityAlias.findUnique({ where: { jid: cleanPn } })
       if (pnAlias) {
         pnIdentity = await prisma.identity.findUnique({ where: { id: pnAlias.identityId } })
       }
@@ -226,9 +273,9 @@ export class ContactService {
 
       // Re-point the LID alias to the canonical PN identity
       await prisma.identityAlias.upsert({
-        where: { jid: lid },
+        where: { jid: cleanLid },
         update: { identityId },
-        create: { jid: lid, type: 'LID', identityId }
+        create: { jid: cleanLid, type: 'LID', identityId }
       })
 
       // Delete the old LID-only stub if nothing else references it
@@ -248,22 +295,26 @@ export class ContactService {
       // Update the identity to have the phone number
       await prisma.identity.update({
         where: { id: identityId },
-        data: { phoneNumber: pn }
+        data: { phoneNumber: cleanPn }
       })
       await prisma.identityAlias.upsert({
-        where: { jid: pn },
+        where: { jid: cleanPn },
         update: { identityId },
-        create: { jid: pn, type: 'PN', identityId }
+        create: { jid: cleanPn, type: 'PN', identityId }
       })
     } else {
       // Neither exists, create a new identity and both aliases
       const newId = await prisma.identity.create({
-        data: { phoneNumber: pn }
+        data: { phoneNumber: cleanPn }
       })
       identityId = newId.id
-      await prisma.identityAlias.create({ data: { jid: pn, type: 'PN', identityId } })
-      await prisma.identityAlias.create({ data: { jid: lid, type: 'LID', identityId } })
+      await prisma.identityAlias.create({ data: { jid: cleanPn, type: 'PN', identityId } })
+      await prisma.identityAlias.create({ data: { jid: cleanLid, type: 'LID', identityId } })
     }
+
+    this.identityIdCache.set(cleanLid, identityId)
+    this.identityIdCache.set(cleanPn, identityId)
+    this.linkCache.add(cacheKey)
   }
 
   /**
@@ -272,20 +323,32 @@ export class ContactService {
    * Safe to call with large arrays; chunked to stay within SQLite's variable limit.
    */
   async batchGetIdentityIds(jids: string[]): Promise<Map<string, number>> {
-    const unique = Array.from(new Set(jids.filter(Boolean)))
+    const unique = Array.from(new Set(jids.filter(Boolean).map(cleanJid)))
     if (unique.length === 0) return new Map()
 
-    const CHUNK = 500
     const result = new Map<string, number>()
+    const missing: string[] = []
 
-    for (let i = 0; i < unique.length; i += CHUNK) {
-      const chunk = unique.slice(i, i + CHUNK)
-      const aliases = await prisma.identityAlias.findMany({
-        where: { jid: { in: chunk } },
-        select: { jid: true, identityId: true }
-      })
-      for (const alias of aliases) {
-        result.set(alias.jid, alias.identityId)
+    for (const jid of unique) {
+      if (this.identityIdCache.has(jid)) {
+        result.set(jid, this.identityIdCache.get(jid)!)
+      } else {
+        missing.push(jid)
+      }
+    }
+
+    if (missing.length > 0) {
+      const CHUNK = 500
+      for (let i = 0; i < missing.length; i += CHUNK) {
+        const chunk = missing.slice(i, i + CHUNK)
+        const aliases = await prisma.identityAlias.findMany({
+          where: { jid: { in: chunk } },
+          select: { jid: true, identityId: true }
+        })
+        for (const alias of aliases) {
+          result.set(alias.jid, alias.identityId)
+          this.identityIdCache.set(alias.jid, alias.identityId)
+        }
       }
     }
 
@@ -303,13 +366,24 @@ export class ContactService {
       return null
     }
 
-    const alias = await prisma.identityAlias.findUnique({ where: { jid } })
-    if (alias) return alias.identityId
+    const cleaned = cleanJid(jid)
+    if (this.identityIdCache.has(cleaned)) {
+      return this.identityIdCache.get(cleaned)!
+    }
+
+    const alias = await prisma.identityAlias.findUnique({ where: { jid: cleaned } })
+    if (alias) {
+      this.identityIdCache.set(cleaned, alias.identityId)
+      return alias.identityId
+    }
     
     // Fallback: search identity by phone number directly
-    if (jid.endsWith('@s.whatsapp.net')) {
-      const ident = await prisma.identity.findUnique({ where: { phoneNumber: jid } })
-      if (ident) return ident.id
+    if (cleaned.endsWith('@s.whatsapp.net')) {
+      const ident = await prisma.identity.findUnique({ where: { phoneNumber: cleaned } })
+      if (ident) {
+        this.identityIdCache.set(cleaned, ident.id)
+        return ident.id
+      }
     }
     
     return null
@@ -498,13 +572,14 @@ export class ContactService {
    * Falls back to the original JID if no mapping is found.
    */
   async resolveLidFromJid(jid: string): Promise<string> {
-    if (!jid || !jid.endsWith('@s.whatsapp.net')) return jid;
-    const cleanJid = jid.split(':')[0] + '@s.whatsapp.net';
+    if (!jid) return jid;
+    const cleaned = cleanJid(jid);
+    if (!cleaned.endsWith('@s.whatsapp.net')) return cleaned;
 
     try {
       // Find matching identity alias
       const alias = await prisma.identityAlias.findUnique({
-        where: { jid: cleanJid },
+        where: { jid: cleaned },
         select: { identityId: true }
       });
 
@@ -521,7 +596,7 @@ export class ContactService {
     } catch (err) {
       console.warn(`[ContactService] Failed to resolve LID for JID ${jid}:`, err);
     }
-    return jid;
+    return cleaned;
   }
 
   /**
@@ -531,15 +606,8 @@ export class ContactService {
     const rawJid = user.id;
     if (!rawJid) return;
 
-    const cleanJid = rawJid.split(':')[0].split('@')[0];
-    const myJid = `${cleanJid}@s.whatsapp.net`;
-
-    let myLid: string | null = null;
-    if (user.lid) {
-      const cleanLid = user.lid.split(':')[0].split('@')[0];
-      myLid = `${cleanLid}@lid`;
-    }
-
+    const myJid = cleanJid(rawJid);
+    const myLid = user.lid ? cleanJid(user.lid) : null;
     const name = user.name || 'Me';
 
     console.log(`[ContactService] Registering logged-in user: jid=${myJid}, lid=${myLid}, name=${name}`);

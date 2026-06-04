@@ -1,10 +1,14 @@
 import { prisma } from '../auth'
+import { cleanJid } from '../utils'
 
 export class ChatService {
   /**
    * Handles chats.upsert and chats.update.
    */
   async upsertChat(jid: string, update: any): Promise<void> {
+    const cleanedJid = cleanJid(jid)
+    if (!cleanedJid) return
+
     const data: Record<string, any> = {}
 
     if (typeof update.unreadCount === 'number') {
@@ -51,7 +55,7 @@ export class ChatService {
       const parent = update.linkedParentJid || update.linkedParent || update.parentGroupId
 
       let type = 'DM'
-      if (jid.endsWith('@g.us')) {
+      if (cleanedJid.endsWith('@g.us')) {
         if (isComm) type = 'COMMUNITY'
         else if (isAnn) type = 'ANNOUNCE'
         else if (parent) type = 'SUBGROUP'
@@ -60,17 +64,25 @@ export class ChatService {
       data.type = type
       
       // Determine the root community JID if applicable
-      const rootJid = isComm ? jid : (parent || null)
+      const rootJid = isComm ? cleanedJid : (parent ? cleanJid(parent) : null)
       let communityId: number | null = null
       
       const { contactService } = await import('./ContactService')
 
       // Link owner LIDs to Phone Numbers if provided in metadata
-      if (update.owner && update.ownerPn && update.owner.includes('@lid') && update.ownerPn.includes('@s.whatsapp.net')) {
-        await contactService.linkLidAndPn(update.owner, update.ownerPn, 'group.metadata.owner').catch(() => {})
+      if (update.owner && update.ownerPn) {
+        const cleanOwner = cleanJid(update.owner)
+        const cleanOwnerPn = cleanJid(update.ownerPn)
+        if (cleanOwner.includes('@lid') && cleanOwnerPn.includes('@s.whatsapp.net')) {
+          await contactService.linkLidAndPn(cleanOwner, cleanOwnerPn, 'group.metadata.owner').catch(() => {})
+        }
       }
-      if (update.descOwner && update.descOwnerPn && update.descOwner.includes('@lid') && update.descOwnerPn.includes('@s.whatsapp.net')) {
-        await contactService.linkLidAndPn(update.descOwner, update.descOwnerPn, 'group.metadata.descOwner').catch(() => {})
+      if (update.descOwner && update.descOwnerPn) {
+        const cleanDescOwner = cleanJid(update.descOwner)
+        const cleanDescOwnerPn = cleanJid(update.descOwnerPn)
+        if (cleanDescOwner.includes('@lid') && cleanDescOwnerPn.includes('@s.whatsapp.net')) {
+          await contactService.linkLidAndPn(cleanDescOwner, cleanDescOwnerPn, 'group.metadata.descOwner').catch(() => {})
+        }
       }
 
       if (rootJid) {
@@ -89,7 +101,7 @@ export class ChatService {
         if (isAnn && rootJid) {
           await prisma.community.update({
             where: { id: communityId },
-            data: { announceJid: jid }
+            data: { announceJid: cleanedJid }
           })
         }
       }
@@ -97,12 +109,12 @@ export class ChatService {
     }
 
     if (Object.keys(data).length > 0) {
-      const createType = data.type || (jid.endsWith('@g.us') ? 'GROUP' : 'DM')
+      const createType = data.type || (cleanedJid.endsWith('@g.us') ? 'GROUP' : 'DM')
       await prisma.chat.upsert({
-        where: { jid },
+        where: { jid: cleanedJid },
         update: data,
         create: { 
-          jid, 
+          jid: cleanedJid, 
           type: createType, 
           communityId: data.communityId || null, 
           ...data 
@@ -115,14 +127,15 @@ export class ChatService {
    * Clears the unread count for a chat.
    */
   async markRead(jid: string): Promise<boolean> {
+    const cleanedJid = cleanJid(jid)
     try {
       await prisma.chat.update({
-        where: { jid },
+        where: { jid: cleanedJid },
         data: { unreadCount: 0 }
       })
       return true
     } catch (err) {
-      console.error(`[ChatService] Failed to mark chat ${jid} as read:`, err)
+      console.error(`[ChatService] Failed to mark chat ${cleanedJid} as read:`, err)
       return false
     }
   }
@@ -131,11 +144,12 @@ export class ChatService {
    * Increments the unread count for a chat.
    */
   async incrementUnread(jid: string, timestamp: bigint): Promise<void> {
-    const type = jid.endsWith('@g.us') ? 'GROUP' : 'DM'
+    const cleanedJid = cleanJid(jid)
+    const type = cleanedJid.endsWith('@g.us') ? 'GROUP' : 'DM'
     await prisma.chat.upsert({
-      where: { jid },
+      where: { jid: cleanedJid },
       update: { unreadCount: { increment: 1 }, timestamp },
-      create: { jid, type, unreadCount: 1, timestamp }
+      create: { jid: cleanedJid, type, unreadCount: 1, timestamp }
     })
   }
 
@@ -143,65 +157,89 @@ export class ChatService {
    * Simple timestamp update.
    */
   async updateTimestamp(jid: string, timestamp: bigint): Promise<void> {
-    const type = jid.endsWith('@g.us') ? 'GROUP' : 'DM'
+    const cleanedJid = cleanJid(jid)
+    const type = cleanedJid.endsWith('@g.us') ? 'GROUP' : 'DM'
     await prisma.chat.upsert({
-      where: { jid },
+      where: { jid: cleanedJid },
       update: { timestamp },
-      create: { jid, type, unreadCount: 0, timestamp }
+      create: { jid: cleanedJid, type, unreadCount: 0, timestamp }
     })
   }
+
   /**
    * Syncs group participants into the ChatMember table.
    *
    * Participant objects from groupFetchAllParticipating / groups.update carry:
    *   { id: "<LID>@lid", phoneNumber: "<phone>@s.whatsapp.net", admin: "admin"|null }
-   *
-   * We use phoneNumber (when present) as the primary lookup key so we land on an
-   * existing identity rather than creating a new LID-only stub. Then we call
-   * linkLidAndPn to permanently wire the LID alias to the PN identity, eliminating
-   * ghost records.
    */
   async syncGroupMembers(chatJid: string, participants: any[]): Promise<void> {
+    const cleanedChatJid = cleanJid(chatJid)
     const { contactService } = await import('./ContactService')
+    
+    // Pre-parse and normalize participant JIDs
+    const parsedParticipants = participants
+      .map(p => {
+        if (!p.id) return null
+        const rawId = cleanJid(p.id)
+        const lid = rawId.endsWith('@lid') ? rawId : (p.lid ? cleanJid(p.lid) : null)
+        const pn = p.phoneNumber ? cleanJid(p.phoneNumber) : null
+        return {
+          id: rawId,
+          lid,
+          pn,
+          admin: p.admin
+        }
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null)
+
+    if (parsedParticipants.length === 0) return
+
+    // Batched pre-fetch of all identity IDs for clean JIDs
+    const allQueryJids: string[] = []
+    for (const p of parsedParticipants) {
+      if (p.pn) allQueryJids.push(p.pn)
+      if (p.lid) allQueryJids.push(p.lid)
+      allQueryJids.push(p.id)
+    }
+    await contactService.batchGetIdentityIds(allQueryJids)
+
     let count = 0
-    for (const p of participants) {
-      if (++count % 20 === 0) await new Promise(r => setImmediate(r))
-      if (!p.id) continue
-
-      const lid = p.id.endsWith('@lid') ? p.id : (p.lid ?? null)
-      const pn  = p.phoneNumber ?? null   // e.g. "919606910020@s.whatsapp.net"
-
-      // 1. If we have both LID and phone number, link them first.
-      //    This resolves the identity properly and prevents ghost stubs.
-      if (lid && pn) {
-        await contactService.linkLidAndPn(lid, pn, 'group.participant').catch(() => {})
+    for (const p of parsedParticipants) {
+      if (++count % 5 === 0) {
+        await new Promise(r => setImmediate(r))
       }
 
-      // 2. Look up identity — prefer PN (more likely to already exist in DB),
-      //    fall back to LID.
-      let identityId = pn
-        ? await contactService.getIdentityIdByJid(pn)
+      // 1. If we have both LID and phone number, link them.
+      if (p.lid && p.pn) {
+        await contactService.linkLidAndPn(p.lid, p.pn, 'group.participant').catch(() => {})
+      }
+
+      // 2. Look up identity (pre-fetched or cached)
+      let identityId = p.pn
+        ? await contactService.getIdentityIdByJid(p.pn)
         : null
-      if (!identityId && lid) {
-        identityId = await contactService.getIdentityIdByJid(lid)
+      if (!identityId && p.lid) {
+        identityId = await contactService.getIdentityIdByJid(p.lid)
+      }
+      if (!identityId) {
+        identityId = await contactService.getIdentityIdByJid(p.id)
       }
 
-      // 3. Still not found — create a minimal contact.
-      //    Use PN as id if available (avoids creating bare LID ghost).
+      // 3. Still not found — create a minimal contact
       if (!identityId) {
-        const contactId = pn ?? lid ?? p.id
-        await contactService.upsertContact({ id: contactId, ...(lid && pn ? { lid } : {}) }).catch(() => {})
-        identityId = pn
-          ? await contactService.getIdentityIdByJid(pn)
+        const contactId = p.pn ?? p.lid ?? p.id
+        await contactService.upsertContact({ id: contactId, ...(p.lid && p.pn ? { lid: p.lid } : {}) }).catch(() => {})
+        identityId = p.pn
+          ? await contactService.getIdentityIdByJid(p.pn)
           : await contactService.getIdentityIdByJid(p.id)
       }
 
       if (identityId) {
         const role = p.admin === 'superadmin' ? 'SUPERADMIN' : (p.admin === 'admin' ? 'ADMIN' : 'MEMBER')
         await prisma.chatMember.upsert({
-          where: { chatJid_identityId: { chatJid, identityId } },
+          where: { chatJid_identityId: { chatJid: cleanedChatJid, identityId } },
           update: { role },
-          create: { chatJid, identityId, role }
+          create: { chatJid: cleanedChatJid, identityId, role }
         }).catch(() => {})
       }
     }

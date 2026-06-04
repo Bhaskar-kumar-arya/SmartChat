@@ -2,6 +2,7 @@ import { prisma } from '../auth'
 import { contactService } from './ContactService'
 import { embeddingService } from './EmbeddingService'
 import { mapBaileysStatus } from './ReceiptService'
+import { cleanJid } from '../utils'
 
 /**
  * Plain data object produced by parseMessageSync().
@@ -56,7 +57,7 @@ export class MessageService {
       }
     }
 
-    // 2. Dynamic fallback: scan all keys, excluding metadata/technical keys
+    // 2. Dynamic fallback: scan all keys, excluding technical keys
     const ignoredKeys = new Set(['contextInfo', 'messageContextInfo'])
     for (const k of Object.keys(unwrapped)) {
       if (!ignoredKeys.has(k) && unwrapped[k] !== undefined && unwrapped[k] !== null) {
@@ -96,8 +97,8 @@ export class MessageService {
       }
     }
 
-    const remoteJid = key.remoteJid || ''
-    const participantString = key.participant || (remoteJid.endsWith('@g.us') ? null : remoteJid)
+    const remoteJid = cleanJid(key.remoteJid || '')
+    const participantString = key.participant ? cleanJid(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
 
     // 2. Extract text content & Unwrap
     let textContent: string | null = null
@@ -208,7 +209,6 @@ export class MessageService {
     if (messageType === 'reactionMessage') {
         const targetId = rawMessage.reactionMessage?.key?.id
         const emoji = rawMessage.reactionMessage?.text
-        const reactorString = participantString || remoteJid
         let reactorId = senderId
 
         if (key.fromMe) {
@@ -289,8 +289,8 @@ export class MessageService {
       }
     }
 
-    const remoteJid = key.remoteJid || ''
-    const participantString = key.participant || (remoteJid.endsWith('@g.us') ? null : remoteJid) || null
+    const remoteJid = cleanJid(key.remoteJid || '')
+    const participantString = key.participant ? cleanJid(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
 
     // Determine message type
     const unwrapped = rawMessage ? this.unwrapMessage(rawMessage) : null

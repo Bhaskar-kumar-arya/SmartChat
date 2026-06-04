@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { prisma } from '../auth'
+import { cleanJid } from '../utils'
 
 export function mapBaileysStatus(status: number | null | undefined): string {
   if (status === undefined || status === null) return 'SENT'
@@ -82,8 +83,8 @@ export class ReceiptService {
     const messageId = key?.id
     if (!messageId) return
 
-    const remoteJid = key.remoteJid || ''
-    const userJid = receipt?.userJid || remoteJid // Default to remoteJid for DMs
+    const remoteJid = cleanJid(key.remoteJid || '')
+    const userJid = cleanJid(receipt?.userJid || remoteJid) // Default to remoteJid for DMs
 
     const isRead = !!receipt?.readTimestamp
     const isDelivered = !!receipt?.receiptTimestamp && !isRead
