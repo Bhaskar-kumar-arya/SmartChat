@@ -1,11 +1,19 @@
-import { prisma } from '../../auth'
-import { contactService } from '../contacts/ContactService'
-import { messageService } from './MessageService'
-import { chatService } from '../chats/ChatService'
+import { prisma as globalPrisma } from '../../auth'
+import { PrismaClient } from '@prisma/client'
+import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
+import { MessageService, messageService as globalMessageService } from './MessageService'
+import { ChatService, chatService as globalChatService } from '../chats/ChatService'
 import { BrowserWindow } from 'electron'
 import { proto } from '@whiskeysockets/baileys'
 
 export class MessageActionService {
+  constructor(
+    private prisma: PrismaClient,
+    private contactService: ContactService,
+    private messageService: MessageService,
+    private chatService: ChatService
+  ) {}
+
   /**
    * Helper to send notification to all open BrowserWindow instances.
    */
@@ -23,7 +31,7 @@ export class MessageActionService {
    */
   async deleteMessage(sock: any, messageId: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string }> {
     let targetJid = jid;
-    const dbMsg = await prisma.message.findUnique({ where: { id: messageId } });
+    const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId } });
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
     }
@@ -31,7 +39,7 @@ export class MessageActionService {
     if (!targetJid) {
       targetJid = dbMsg.chatJid;
     }
-    const resolvedJid = await contactService.resolveLidFromJid(targetJid);
+    const resolvedJid = await this.contactService.resolveLidFromJid(targetJid);
 
     const msgKey = {
       remoteJid: dbMsg.chatJid,
@@ -42,7 +50,7 @@ export class MessageActionService {
 
     await sock.sendMessage(resolvedJid, { delete: msgKey });
 
-    await prisma.message.update({
+    await this.prisma.message.update({
       where: { id: messageId },
       data: { isDeleted: true }
     });
@@ -65,7 +73,7 @@ export class MessageActionService {
    */
   async editMessage(sock: any, messageId: string, newText: string, jid?: string): Promise<any> {
     let targetJid = jid;
-    const dbMsg = await prisma.message.findUnique({ where: { id: messageId }, include: { sender: true } });
+    const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId }, include: { sender: true } });
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
     }
@@ -73,7 +81,7 @@ export class MessageActionService {
     if (!targetJid) {
       targetJid = dbMsg.chatJid;
     }
-    const resolvedJid = await contactService.resolveLidFromJid(targetJid);
+    const resolvedJid = await this.contactService.resolveLidFromJid(targetJid);
 
     const msgKey = {
       remoteJid: dbMsg.chatJid,
@@ -104,14 +112,14 @@ export class MessageActionService {
       updatedContent.conversation = newText;
     }
 
-    const updated = await prisma.message.update({
+    const updated = await this.prisma.message.update({
       where: { id: messageId },
       data: { textContent: newText, content: JSON.stringify(updatedContent), isEdited: true },
       include: { sender: true }
     });
 
-    const nameMap = await contactService.batchResolveNames([updated.participant || resolvedJid], sock);
-    const enriched = await messageService.enrichMessage(updated, sock, nameMap);
+    const nameMap = await this.contactService.batchResolveNames([updated.participant || resolvedJid], sock);
+    const enriched = await this.messageService.enrichMessage(updated, sock, nameMap);
 
     this.notifyWindows('message-edited', enriched);
 
@@ -122,7 +130,7 @@ export class MessageActionService {
    * Forwards a message to one or more destination JIDs/LIDs.
    */
   async forwardMessage(sock: any, messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: any[] }> {
-    const dbMsg = await prisma.message.findUnique({ where: { id: messageId } });
+    const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId } });
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
     }
@@ -151,21 +159,21 @@ export class MessageActionService {
 
     const results: { jid: string; messageId: string }[] = [];
     for (const destJid of destinations) {
-      const resolvedDest = await contactService.resolveLidFromJid(destJid);
+      const resolvedDest = await this.contactService.resolveLidFromJid(destJid);
 
       const sentMsg = await sock.sendMessage(resolvedDest, { forward: waMessage });
       if (!sentMsg) {
         throw new Error(`Failed to forward message ${messageId} to ${resolvedDest}`);
       }
 
-      const processed = await messageService.processMessage(sentMsg, sock);
-      await chatService.updateTimestamp(resolvedDest, processed.timestamp);
+      const processed = await this.messageService.processMessage(sentMsg, sock);
+      await this.chatService.updateTimestamp(resolvedDest, processed.timestamp);
 
-      const nameMap = await contactService.batchResolveNames(
+      const nameMap = await this.contactService.batchResolveNames(
         [processed.participant || resolvedDest],
         sock
       );
-      const enriched = await messageService.enrichMessage(processed, sock, nameMap);
+      const enriched = await this.messageService.enrichMessage(processed, sock, nameMap);
       this.notifyWindows('new-message', enriched);
 
       results.push({
@@ -186,7 +194,7 @@ export class MessageActionService {
    */
   async reactToMessage(sock: any, messageId: string, reaction: string, jid?: string): Promise<any> {
     let targetJid = jid;
-    const dbMsg = await prisma.message.findUnique({ where: { id: messageId } });
+    const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId } });
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
     }
@@ -194,7 +202,7 @@ export class MessageActionService {
     if (!targetJid) {
       targetJid = dbMsg.chatJid;
     }
-    const resolvedJid = await contactService.resolveLidFromJid(targetJid);
+    const resolvedJid = await this.contactService.resolveLidFromJid(targetJid);
 
     const msgKey = {
       remoteJid: dbMsg.chatJid,
@@ -216,17 +224,17 @@ export class MessageActionService {
     // Update the database Reaction table
     // 1. Resolve our own identity ID
     let reactorId: number | null = null;
-    const meIdent = await prisma.identity.findFirst({ where: { isMe: true } });
+    const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } });
     if (meIdent) {
       reactorId = meIdent.id;
     } else {
       const myRawJid = sock?.user?.id;
       const myJidClean = myRawJid ? myRawJid.split(':')[0] : null;
       if (myJidClean) {
-        reactorId = await contactService.getIdentityIdByJid(myJidClean);
+        reactorId = await this.contactService.getIdentityIdByJid(myJidClean);
         if (!reactorId) {
           const myLid = (sock?.user as any)?.lid?.split(':')[0];
-          if (myLid) reactorId = await contactService.getIdentityIdByJid(myLid);
+          if (myLid) reactorId = await this.contactService.getIdentityIdByJid(myLid);
         }
       }
     }
@@ -239,12 +247,12 @@ export class MessageActionService {
 
     if (!reaction) {
       // Remove reaction
-      await prisma.reaction.deleteMany({
+      await this.prisma.reaction.deleteMany({
         where: { messageId, senderId: reactorId }
       }).catch(() => {});
     } else {
       // Upsert reaction
-      await prisma.reaction.upsert({
+      await this.prisma.reaction.upsert({
         where: { messageId_senderId: { messageId, senderId: reactorId } },
         update: { text: reaction, timestamp },
         create: { messageId, senderId: reactorId, text: reaction, timestamp }
@@ -256,7 +264,7 @@ export class MessageActionService {
     const myLid = (sock.user as any)?.lid || '';
     const reactorJidString = myLid ? myLid.split(':')[0] + '@lid' : (myJid ? myJid.split(':')[0] + '@s.whatsapp.net' : '');
 
-    const nameMap = await contactService.batchResolveNames([reactorJidString], sock);
+    const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock);
     const reactorName = nameMap.get(reactorJidString) || sock.user?.name || 'Me';
 
     const mockMsg = {
@@ -289,4 +297,4 @@ export class MessageActionService {
   }
 }
 
-export const messageActionService = new MessageActionService()
+export const messageActionService = new MessageActionService(globalPrisma, globalContactService, globalMessageService, globalChatService)

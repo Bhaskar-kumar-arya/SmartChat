@@ -1,6 +1,7 @@
-import { prisma } from '../../auth'
-import { ContactService, contactService } from '../contacts/ContactService'
-import { embeddingService } from '../search/EmbeddingService'
+import { prisma as globalPrisma } from '../../auth'
+import { PrismaClient } from '@prisma/client'
+import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
+import { EmbeddingService, embeddingService as globalEmbeddingService } from '../search/EmbeddingService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid } from '../../utils'
 
@@ -22,6 +23,12 @@ export interface ParsedMessage {
 }
 
 export class MessageService {
+  constructor(
+    private prisma: PrismaClient,
+    private contactService: ContactService,
+    private embeddingService: EmbeddingService
+  ) {}
+
   /**
    * Unwraps special message containers (ephemeral, view-once, document-with-caption).
    */
@@ -130,7 +137,7 @@ export class MessageService {
 
     // 5. Ingest metadata (PushName, AltJID)
     if (msg.pushName && participantString) {
-      await contactService.upsertContact({ id: participantString, name: msg.pushName, notify: msg.pushName }, { overwriteName: false }).catch(() => {})
+      await this.contactService.upsertContact({ id: participantString, name: msg.pushName, notify: msg.pushName }, { overwriteName: false }).catch(() => {})
     }
 
     // Opportunistic Identity Extraction (AddressingMode Aware)
@@ -151,16 +158,16 @@ export class MessageService {
     }
 
     if (discoveredLid && discoveredPn) {
-      await contactService.linkLidAndPn(discoveredLid, discoveredPn, 'message.upsert').catch(() => {});
+      await this.contactService.linkLidAndPn(discoveredLid, discoveredPn, 'message.upsert').catch(() => {});
     }
 
     // 6. Resolve Identity ID
     let senderId: number | null = null
     if (!key.fromMe && participantString) {
-      senderId = await contactService.getIdentityIdByJid(participantString)
+      senderId = await this.contactService.getIdentityIdByJid(participantString)
       if (!senderId) {
-        await contactService.upsertContact({ id: participantString })
-        senderId = await contactService.getIdentityIdByJid(participantString)
+        await this.contactService.upsertContact({ id: participantString })
+        senderId = await this.contactService.getIdentityIdByJid(participantString)
       }
     }
 
@@ -171,7 +178,7 @@ export class MessageService {
         if (targetId) {
             try {
                 if (protocol.type === 0 || protocol.type === 'REVOKE') {
-                    await prisma.message.update({
+                    await this.prisma.message.update({
                         where: { id: targetId },
                         data: { isDeleted: true }
                     }).catch(() => {})
@@ -180,7 +187,7 @@ export class MessageService {
                     const editedMsg = protocol.editedMessage
                     const editContent = editedMsg?.conversation || editedMsg?.extendedTextMessage?.text || (editedMsg?.imageMessage?.caption) || (editedMsg?.videoMessage?.caption) || null
                     
-                    await prisma.message.update({
+                    await this.prisma.message.update({
                         where: { id: targetId },
                         data: { 
                             content: JSON.stringify(editedMsg || {}), 
@@ -199,11 +206,11 @@ export class MessageService {
 
     // Ensure chat exists
     const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-    await prisma.chat.upsert({
-      where: { jid: remoteJid },
+    await this.prisma.chat.upsert({
+      where: { remoteJid },
       update: {},
       create: { jid: remoteJid, type: chatType }
-    }).catch(() => {})
+    } as any).catch(() => {})
 
     // 8. Persist to DB
     if (messageType === 'reactionMessage') {
@@ -213,17 +220,17 @@ export class MessageService {
 
         if (key.fromMe) {
           // If fromMe, we need our own identity
-          const meIdent = await prisma.identity.findFirst({ where: { isMe: true } })
+          const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
           if (meIdent) reactorId = meIdent.id
         }
 
         if (targetId && reactorId) {
             if (!emoji) {
-                await prisma.reaction.deleteMany({
+                await this.prisma.reaction.deleteMany({
                     where: { messageId: targetId, senderId: reactorId }
                 }).catch(() => {})
             } else {
-                await prisma.reaction.upsert({
+                await this.prisma.reaction.upsert({
                     where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
                     update: { text: emoji, timestamp },
                     create: { messageId: targetId, senderId: reactorId, text: emoji, timestamp }
@@ -232,7 +239,7 @@ export class MessageService {
         }
     } else {
         const status = mapBaileysStatus(msg.status)
-        await prisma.message.upsert({
+        await this.prisma.message.upsert({
             where: { id: key.id },
             update: { textContent, messageType, content: JSON.stringify(rawMessage || {}), timestamp, senderId, participant: participantString, status },
             create: { 
@@ -251,7 +258,7 @@ export class MessageService {
 
         // Auto-index new text messages for semantic search (fire-and-forget)
         if (textContent && messageType !== 'reactionMessage') {
-            embeddingService.indexMessage(key.id, textContent).catch(err => {
+            this.embeddingService.indexMessage(key.id, textContent).catch(err => {
                 console.error('[MessageService] real-time indexing failed:', err)
             })
         }
@@ -339,16 +346,6 @@ export class MessageService {
 
   /**
    * Bulk-persists a batch of historical (append) messages efficiently.
-   *
-   * Complexity: O(5 DB queries) regardless of batch size, vs O(N × 6) in the real-time path.
-   * Trade-offs vs processMessage():
-   *   - No pushName contact ingestion (not critical for already-seen history)
-   *   - Missing sender IDs are left null (identity may not exist yet)
-   *   - No embedding indexing (handled by background embedding job)
-   *   - No UI IPC or unread count updates (not needed for backlog)
-   *
-   * Note: SQLite + Prisma does not support createMany({ skipDuplicates: true }).
-   * We manually pre-filter existing records to avoid unique-constraint errors.
    */
   async bulkPersistMessages(msgs: any[]): Promise<void> {
     if (msgs.length === 0) return
@@ -361,9 +358,8 @@ export class MessageService {
     if (parsed.length === 0) return
 
     // 2. Ensure all referenced chats exist.
-    //    Pre-fetch existing jids, insert only genuinely new ones.
     const uniqueJids = Array.from(new Set(parsed.map(p => p.chatJid)))
-    const existingChats = await prisma.chat.findMany({
+    const existingChats = await this.prisma.chat.findMany({
       where: { jid: { in: uniqueJids } },
       select: { jid: true }
     })
@@ -372,14 +368,14 @@ export class MessageService {
       .filter(jid => !existingChatJids.has(jid))
       .map(jid => ({ jid, type: jid.endsWith('@g.us') ? 'GROUP' : 'DM' }))
     if (newChats.length > 0) {
-      await prisma.chat.createMany({ data: newChats }).catch(() => {})
+      await this.prisma.chat.createMany({ data: newChats }).catch(() => {})
     }
 
-    // 3. Batch-resolve sender identity IDs (1 query for all unique participant JIDs)
+    // 3. Batch-resolve sender identity IDs
     const participantJids = Array.from(
       new Set(parsed.filter(p => !p.fromMe && p.participantString).map(p => p.participantString!))
     )
-    const identityMap = await contactService.batchGetIdentityIds(participantJids)
+    const identityMap = await this.contactService.batchGetIdentityIds(participantJids)
 
     // 4. Build all candidate rows
     const allRows = parsed.map(p => ({
@@ -395,10 +391,9 @@ export class MessageService {
       status: p.status || 'SENT'
     }))
 
-    // 5. Pre-fetch existing message IDs so we only insert genuinely new rows.
-    //    (SQLite/Prisma does not support createMany skipDuplicates)
+    // 5. Pre-fetch existing message IDs
     const allIds = allRows.map(r => r.id)
-    const existingMsgs = await prisma.message.findMany({
+    const existingMsgs = await this.prisma.message.findMany({
       where: { id: { in: allIds } },
       select: { id: true }
     })
@@ -406,18 +401,16 @@ export class MessageService {
     const newRows = allRows.filter(r => !existingMsgIds.has(r.id))
 
     if (newRows.length > 0) {
-      await prisma.message.createMany({ data: newRows })
+      await this.prisma.message.createMany({ data: newRows })
     }
 
     console.log(`[MessageService] bulkPersistMessages: persisted ${newRows.length}/${allRows.length} messages (${allRows.length - newRows.length} already existed)`)
   }
 
   /**
-   * Enriches a message object with contact names and other metadata for UI display.
+   * Enrich a message object with contact names and other metadata for UI display.
    */
   async enrichMessage(msg: any, _sock: any, nameMap: Map<string, string>): Promise<any> {
-    // msg.senderId is the Integer ID. nameMap should probably be changed or we resolve it locally.
-    // If msg has `sender` populated from Prisma:
     let participantName = 'Unknown'
     if (msg.fromMe) {
       participantName = 'Me'
@@ -529,7 +522,6 @@ export class MessageService {
 
   /**
    * Processes a real-time messages.reaction event update.
-   * Performs identity reconciliation, database persistence, and pushes real-time IPC updates.
    */
   async processReaction(reactionUpdate: any, sock: any, mainWindow: any): Promise<void> {
     const targetId = reactionUpdate.key?.id
@@ -553,7 +545,7 @@ export class MessageService {
       }
     }
     if (callLid && callPn) {
-      await contactService.linkLidAndPn(callLid, callPn, 'messages.reaction').catch(() => {})
+      await this.contactService.linkLidAndPn(callLid, callPn, 'messages.reaction').catch(() => {})
     }
 
     // 2. Parse reaction timestamp
@@ -568,37 +560,36 @@ export class MessageService {
     let reactorId: number | null = null
 
     if (reactionKey.fromMe) {
-      // Prefer isMe flag; fall back to resolving by own JID (isMe may not be set on all installs)
-      const meIdent = await prisma.identity.findFirst({ where: { isMe: true } })
+      const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
       if (meIdent) {
         reactorId = meIdent.id
       } else {
         const myRawJid = sock?.user?.id
         const myJidClean = myRawJid ? myRawJid.split(':')[0] : null
         if (myJidClean) {
-          reactorId = await contactService.getIdentityIdByJid(myJidClean)
+          reactorId = await this.contactService.getIdentityIdByJid(myJidClean)
           if (!reactorId) {
             const myLid = (sock?.user as any)?.lid?.split(':')[0]
-            if (myLid) reactorId = await contactService.getIdentityIdByJid(myLid)
+            if (myLid) reactorId = await this.contactService.getIdentityIdByJid(myLid)
           }
         }
       }
     } else if (reactorJid) {
-      reactorId = await contactService.getIdentityIdByJid(reactorJid)
+      reactorId = await this.contactService.getIdentityIdByJid(reactorJid)
       if (!reactorId) {
-        await contactService.upsertContact({ id: reactorJid }).catch(() => {})
-        reactorId = await contactService.getIdentityIdByJid(reactorJid)
+        await this.contactService.upsertContact({ id: reactorJid }).catch(() => {})
+        reactorId = await this.contactService.getIdentityIdByJid(reactorJid)
       }
     }
 
     // 4. Update the DB reaction record
     if (reactorId) {
       if (!text) {
-        await prisma.reaction.deleteMany({
+        await this.prisma.reaction.deleteMany({
           where: { messageId: targetId, senderId: reactorId }
         }).catch(() => {})
       } else {
-        await prisma.reaction.upsert({
+        await this.prisma.reaction.upsert({
           where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
           update: { text, timestamp },
           create: { messageId: targetId, senderId: reactorId, text, timestamp }
@@ -609,7 +600,7 @@ export class MessageService {
     // 5. Notify the frontend to update UI reactively
     if (mainWindow && !mainWindow.isDestroyed()) {
       const reactorJidString = reactorJid || (reactionKey.remoteJid || '')
-      const nameMap = await contactService.batchResolveNames([reactorJidString], sock)
+      const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock)
       const reactorName = nameMap.get(reactorJidString) || reactorJidString.replace(/@.*$/, '')
 
       const mockMsg = {
@@ -650,4 +641,4 @@ export class MessageService {
   }
 }
 
-export const messageService = new MessageService()
+export const messageService = new MessageService(globalPrisma, globalContactService, globalEmbeddingService)

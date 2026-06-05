@@ -2,7 +2,7 @@ import fs from 'fs'
 import { join } from 'path'
 
 
-class AIChatExportService {
+export class AIChatExportService {
   private getExportPath(): string {
     return join(process.cwd(), 'ai_chats_export.json')
   }

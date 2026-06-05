@@ -1,7 +1,8 @@
 import { app } from 'electron'
 import path from 'path'
 import { Worker } from 'worker_threads'
-import { prisma } from '../../auth'
+import { prisma as globalPrisma } from '../../auth'
+import { PrismaClient } from '@prisma/client'
 
 // ── SRP: this service ONLY handles embedding generation coordination, storage and retrieval ──
 
@@ -31,7 +32,7 @@ export class EmbeddingService implements IEmbeddingService {
   private onActiveStateChange?: (isActive: boolean) => void
   private activeJobs = 0
 
-  constructor() {
+  constructor(private prisma: PrismaClient) {
     // We don't initialize the worker in constructor to avoid overhead if not used
   }
 
@@ -198,14 +199,14 @@ export class EmbeddingService implements IEmbeddingService {
         const vector = await this.embed(text)
         const vectorJson = JSON.stringify(vector)
 
-        await prisma.messageVector.upsert({
+        await this.prisma.messageVector.upsert({
           where: { messageId },
           create: { messageId, vector: vectorJson },
           update: { vector: vectorJson }
         })
 
-        await prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, messageId)
-        await prisma.$executeRawUnsafe(
+        await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, messageId)
+        await this.prisma.$executeRawUnsafe(
           `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
           messageId,
           vectorJson
@@ -230,10 +231,10 @@ export class EmbeddingService implements IEmbeddingService {
     
     await this.ensureWorker()
 
-    const indexed = await prisma.messageVector.findMany({ select: { messageId: true } })
+    const indexed = await this.prisma.messageVector.findMany({ select: { messageId: true } })
     const indexedSet = new Set<string>(indexed.map((v: any) => v.messageId))
 
-    const messages = await prisma.message.findMany({
+    const messages = await this.prisma.message.findMany({
       where: { textContent: { not: null } },
       select: { id: true, textContent: true }
     })
@@ -256,14 +257,14 @@ export class EmbeddingService implements IEmbeddingService {
           const vector = await this.embed(m.textContent!)
           const vectorJson = JSON.stringify(vector)
 
-          await prisma.messageVector.upsert({
+          await this.prisma.messageVector.upsert({
             where: { messageId: m.id },
             create: { messageId: m.id, vector: vectorJson },
             update: { vector: vectorJson }
           })
 
-          await prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, m.id)
-          await prisma.$executeRawUnsafe(
+          await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, m.id)
+          await this.prisma.$executeRawUnsafe(
             `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
             m.id,
             vectorJson
@@ -284,17 +285,17 @@ export class EmbeddingService implements IEmbeddingService {
   }
 
   async clearAllVectors(): Promise<void> {
-    await prisma.messageVector.deleteMany({})
-    await prisma.$executeRawUnsafe(`DELETE FROM vec_messages`)
+    await this.prisma.messageVector.deleteMany({})
+    await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages`)
     console.log('[EmbeddingService] All vectors cleared.')
   }
 
   async syncVectors(): Promise<void> {
-    const vectors = await prisma.messageVector.findMany()
+    const vectors = await this.prisma.messageVector.findMany()
     console.log(`[EmbeddingService] Syncing ${vectors.length} vectors to virtual table...`)
     for (const v of vectors) {
-      await prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, v.messageId)
-      await prisma.$executeRawUnsafe(
+      await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, v.messageId)
+      await this.prisma.$executeRawUnsafe(
         `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
         v.messageId,
         v.vector
@@ -304,4 +305,4 @@ export class EmbeddingService implements IEmbeddingService {
   }
 }
 
-export const embeddingService = new EmbeddingService()
+export const embeddingService = new EmbeddingService(globalPrisma)

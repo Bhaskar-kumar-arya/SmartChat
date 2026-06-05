@@ -1,4 +1,5 @@
-import { prisma } from '../../auth'
+import { prisma as globalPrisma } from '../../auth'
+import { PrismaClient } from '@prisma/client'
 import { app } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
@@ -18,10 +19,12 @@ interface AIChatMessageInput {
 }
 
 export class AIChatSessionService {
+  constructor(private prisma: PrismaClient) {}
+
   // ── Session CRUD ──
   
   async createSession(title: string, modelId?: string | null) {
-    return await prisma.aIChatSession.create({
+    return await this.prisma.aIChatSession.create({
       data: {
         title,
         modelId,
@@ -33,7 +36,7 @@ export class AIChatSessionService {
 
   async listSessions(page: number = 1, pageSize: number = 50) {
     const skip = (page - 1) * pageSize
-    const sessions = await prisma.aIChatSession.findMany({
+    const sessions = await this.prisma.aIChatSession.findMany({
       orderBy: { updatedAt: 'desc' },
       skip,
       take: pageSize,
@@ -48,7 +51,7 @@ export class AIChatSessionService {
   }
 
   async getSession(id: string) {
-    const session = await prisma.aIChatSession.findUnique({
+    const session = await this.prisma.aIChatSession.findUnique({
       where: { id },
       include: { 
         messages: {
@@ -72,7 +75,7 @@ export class AIChatSessionService {
   }
 
   async renameSession(id: string, title: string) {
-    const updated = await prisma.aIChatSession.update({
+    const updated = await this.prisma.aIChatSession.update({
       where: { id },
       data: { title, updatedAt: Date.now() }
     })
@@ -85,7 +88,7 @@ export class AIChatSessionService {
   }
 
   async deleteSession(id: string) {
-    await prisma.aIChatSession.delete({
+    await this.prisma.aIChatSession.delete({
       where: { id }
     })
   }
@@ -119,7 +122,7 @@ export class AIChatSessionService {
 
   async saveMessages(sessionId: string, messages: AIChatMessageInput[]) {
     // We do a full replacement of messages for the session to handle edits and truncations easily
-    await prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       // 1. Delete existing messages for this session
       await tx.aIChatMessage.deleteMany({
         where: { sessionId }
@@ -201,4 +204,4 @@ export class AIChatSessionService {
   }
 }
 
-export const aiChatSessionService = new AIChatSessionService()
+export const aiChatSessionService = new AIChatSessionService(globalPrisma)

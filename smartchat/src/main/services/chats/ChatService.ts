@@ -1,7 +1,15 @@
-import { prisma } from '../../auth'
+import { prisma as globalPrisma } from '../../auth'
+import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
+import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
+import { ChatListItem } from '../../types'
 
 export class ChatService {
+  constructor(
+    private prisma: PrismaClient,
+    private contactService: ContactService
+  ) {}
+
   /**
    * Handles chats.upsert and chats.update.
    */
@@ -66,22 +74,20 @@ export class ChatService {
       // Determine the root community JID if applicable
       const rootJid = isComm ? cleanedJid : (parent ? cleanJid(parent) : null)
       let communityId: number | null = null
-      
-      const { contactService } = await import('../contacts/ContactService')
 
       // Link owner LIDs to Phone Numbers if provided in metadata
       if (update.owner && update.ownerPn) {
         const cleanOwner = cleanJid(update.owner)
         const cleanOwnerPn = cleanJid(update.ownerPn)
         if (cleanOwner.includes('@lid') && cleanOwnerPn.includes('@s.whatsapp.net')) {
-          await contactService.linkLidAndPn(cleanOwner, cleanOwnerPn, 'group.metadata.owner').catch(() => {})
+          await this.contactService.linkLidAndPn(cleanOwner, cleanOwnerPn, 'group.metadata.owner').catch(() => {})
         }
       }
       if (update.descOwner && update.descOwnerPn) {
         const cleanDescOwner = cleanJid(update.descOwner)
         const cleanDescOwnerPn = cleanJid(update.descOwnerPn)
         if (cleanDescOwner.includes('@lid') && cleanDescOwnerPn.includes('@s.whatsapp.net')) {
-          await contactService.linkLidAndPn(cleanDescOwner, cleanDescOwnerPn, 'group.metadata.descOwner').catch(() => {})
+          await this.contactService.linkLidAndPn(cleanDescOwner, cleanDescOwnerPn, 'group.metadata.descOwner').catch(() => {})
         }
       }
 
@@ -90,7 +96,7 @@ export class ChatService {
         if (isComm && chatName) updateData.name = chatName
 
         // Ensure Community exists
-        const comm = await prisma.community.upsert({
+        const comm = await this.prisma.community.upsert({
           where: { jid: rootJid },
           update: updateData,
           create: { jid: rootJid, name: isComm ? chatName : null }
@@ -99,7 +105,7 @@ export class ChatService {
         
         // Update announce channel if known
         if (isAnn && rootJid) {
-          await prisma.community.update({
+          await this.prisma.community.update({
             where: { id: communityId },
             data: { announceJid: cleanedJid }
           })
@@ -110,7 +116,7 @@ export class ChatService {
 
     if (Object.keys(data).length > 0) {
       const createType = data.type || (cleanedJid.endsWith('@g.us') ? 'GROUP' : 'DM')
-      await prisma.chat.upsert({
+      await this.prisma.chat.upsert({
         where: { jid: cleanedJid },
         update: data,
         create: { 
@@ -129,7 +135,7 @@ export class ChatService {
   async markRead(jid: string): Promise<boolean> {
     const cleanedJid = cleanJid(jid)
     try {
-      await prisma.chat.update({
+      await this.prisma.chat.update({
         where: { jid: cleanedJid },
         data: { unreadCount: 0 }
       })
@@ -146,7 +152,7 @@ export class ChatService {
   async incrementUnread(jid: string, timestamp: bigint): Promise<void> {
     const cleanedJid = cleanJid(jid)
     const type = cleanedJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-    await prisma.chat.upsert({
+    await this.prisma.chat.upsert({
       where: { jid: cleanedJid },
       update: { unreadCount: { increment: 1 }, timestamp },
       create: { jid: cleanedJid, type, unreadCount: 1, timestamp }
@@ -159,7 +165,7 @@ export class ChatService {
   async updateTimestamp(jid: string, timestamp: bigint): Promise<void> {
     const cleanedJid = cleanJid(jid)
     const type = cleanedJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-    await prisma.chat.upsert({
+    await this.prisma.chat.upsert({
       where: { jid: cleanedJid },
       update: { timestamp },
       create: { jid: cleanedJid, type, unreadCount: 0, timestamp }
@@ -168,13 +174,9 @@ export class ChatService {
 
   /**
    * Syncs group participants into the ChatMember table.
-   *
-   * Participant objects from groupFetchAllParticipating / groups.update carry:
-   *   { id: "<LID>@lid", phoneNumber: "<phone>@s.whatsapp.net", admin: "admin"|null }
    */
   async syncGroupMembers(chatJid: string, participants: any[]): Promise<void> {
     const cleanedChatJid = cleanJid(chatJid)
-    const { contactService } = await import('../contacts/ContactService')
     
     // Pre-parse and normalize participant JIDs
     const parsedParticipants = participants
@@ -201,7 +203,7 @@ export class ChatService {
       if (p.lid) allQueryJids.push(p.lid)
       allQueryJids.push(p.id)
     }
-    await contactService.batchGetIdentityIds(allQueryJids)
+    await this.contactService.batchGetIdentityIds(allQueryJids)
 
     let count = 0
     for (const p of parsedParticipants) {
@@ -211,32 +213,32 @@ export class ChatService {
 
       // 1. If we have both LID and phone number, link them.
       if (p.lid && p.pn) {
-        await contactService.linkLidAndPn(p.lid, p.pn, 'group.participant').catch(() => {})
+        await this.contactService.linkLidAndPn(p.lid, p.pn, 'group.participant').catch(() => {})
       }
 
       // 2. Look up identity (pre-fetched or cached)
       let identityId = p.pn
-        ? await contactService.getIdentityIdByJid(p.pn)
+        ? await this.contactService.getIdentityIdByJid(p.pn)
         : null
       if (!identityId && p.lid) {
-        identityId = await contactService.getIdentityIdByJid(p.lid)
+        identityId = await this.contactService.getIdentityIdByJid(p.lid)
       }
       if (!identityId) {
-        identityId = await contactService.getIdentityIdByJid(p.id)
+        identityId = await this.contactService.getIdentityIdByJid(p.id)
       }
 
       // 3. Still not found — create a minimal contact
       if (!identityId) {
         const contactId = p.pn ?? p.lid ?? p.id
-        await contactService.upsertContact({ id: contactId, ...(p.lid && p.pn ? { lid: p.lid } : {}) }).catch(() => {})
+        await this.contactService.upsertContact({ id: contactId, ...(p.lid && p.pn ? { lid: p.lid } : {}) }).catch(() => {})
         identityId = p.pn
-          ? await contactService.getIdentityIdByJid(p.pn)
-          : await contactService.getIdentityIdByJid(p.id)
+          ? await this.contactService.getIdentityIdByJid(p.pn)
+          : await this.contactService.getIdentityIdByJid(p.id)
       }
 
       if (identityId) {
         const role = p.admin === 'superadmin' ? 'SUPERADMIN' : (p.admin === 'admin' ? 'ADMIN' : 'MEMBER')
-        await prisma.chatMember.upsert({
+        await this.prisma.chatMember.upsert({
           where: { chatJid_identityId: { chatJid: cleanedChatJid, identityId } },
           update: { role },
           create: { chatJid: cleanedChatJid, identityId, role }
@@ -244,6 +246,127 @@ export class ChatService {
       }
     }
   }
+
+  /**
+   * Retrieves the chat list (paginated).
+   */
+  async getChatList(page: number = 1, pageSize: number = 50): Promise<ChatListItem[]> {
+    const skip = (page - 1) * pageSize
+    const chats = await this.prisma.chat.findMany({
+      orderBy: [
+        { pinned: 'desc' },
+        { timestamp: 'desc' }
+      ],
+      select: {
+        jid: true,
+        name: true,
+        unreadCount: true,
+        timestamp: true,
+        pinned: true,
+        muteExpiration: true,
+        type: true,
+        communityId: true,
+        community: {
+          select: {
+            jid: true
+          }
+        },
+        profilePictureUrl: true
+      },
+      skip,
+      take: pageSize
+    })
+    
+    // Auto-inject missing root communities so the frontend can properly nest subgroups
+    const fetchedJids = new Set(chats.map(c => c.jid))
+    const missingCommunityJids = new Set<string>()
+    for (const chat of chats) {
+      if ((chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') && chat.community?.jid) {
+        if (!fetchedJids.has(chat.community.jid)) {
+          missingCommunityJids.add(chat.community.jid)
+        }
+      }
+    }
+
+    if (missingCommunityJids.size > 0) {
+      const missingCommunities = await this.prisma.chat.findMany({
+        where: { jid: { in: Array.from(missingCommunityJids) } },
+        select: {
+          jid: true, name: true, unreadCount: true, timestamp: true,
+          pinned: true, muteExpiration: true, type: true, communityId: true,
+          community: { select: { jid: true } }, profilePictureUrl: true
+        }
+      })
+      chats.push(...missingCommunities)
+    }
+
+    // Fallback if chat.name is missing for a DM: resolve it dynamically
+    const enriched = await Promise.all(
+      chats.map(async (chat) => {
+        let name = chat.name
+        if (!name) {
+          if (chat.type === 'DM') {
+            const identId = await this.contactService.getIdentityIdByJid(chat.jid)
+            if (identId) {
+              const ident = await this.prisma.identity.findUnique({ where: { id: identId } })
+              if (ident) name = ident.displayName || ident.pushName || ident.verifiedName || ident.phoneNumber?.split('@')[0] || null
+            }
+          }
+          if (!name) name = chat.jid.split('@')[0]
+        }
+
+        // Fetch the most recent message for preview
+        const lastMsg = await this.prisma.message.findFirst({
+          where: { chatJid: chat.jid },
+          orderBy: { timestamp: 'desc' },
+          select: { textContent: true, messageType: true, timestamp: true }
+        })
+
+        const effectiveTimestamp = lastMsg?.timestamp ?? chat.timestamp
+
+        return {
+          jid: chat.jid,
+          name,
+          unreadCount: chat.unreadCount,
+          timestamp: effectiveTimestamp.toString(),
+          lastMessage: lastMsg?.messageType === 'stickerMessage' ? 'Sticker' : 
+                       lastMsg?.messageType === 'imageMessage' ? 'Photo' : 
+                       lastMsg?.messageType === 'videoMessage' ? 'Video' :
+                       lastMsg?.messageType === 'documentMessage' ? 'Document' :
+                       (lastMsg?.textContent || (lastMsg?.messageType && lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
+          lastMessageTimestamp: effectiveTimestamp.toString(),
+          pinned: chat.pinned,
+          muteExpiration: chat.muteExpiration.toString(),
+          profilePictureUrl: chat.profilePictureUrl,
+          isCommunity: chat.type === 'COMMUNITY',
+          isAnnounce: chat.type === 'ANNOUNCE',
+          linkedParentJid: (chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') ? (chat.community?.jid ?? null) : null
+        }
+      })
+    )
+
+    return enriched
+  }
+
+  /**
+   * Fetches the participants of a group.
+   */
+  async getGroupParticipants(jid: string, sock: any): Promise<any[]> {
+    if (!sock || !jid.endsWith('@g.us')) return []
+    try {
+      const metadata = await sock.groupMetadata(jid)
+      const jids = metadata.participants.map((p: any) => p.id)
+      const nameMap = await this.contactService.batchResolveNames(jids, sock)
+      return metadata.participants.map((p: any) => ({
+        jid: p.id,
+        name: nameMap.get(p.id) || p.id.split('@')[0],
+        isAdmin: !!p.admin,
+        isMe: !!sock.user && p.id === sock.user.id
+      }))
+    } catch (err) {
+      return []
+    }
+  }
 }
 
-export const chatService = new ChatService()
+export const chatService = new ChatService(globalPrisma, globalContactService)

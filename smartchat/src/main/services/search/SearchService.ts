@@ -1,6 +1,7 @@
-import { prisma } from '../../auth'
-import { ContactService, contactService } from '../contacts/ContactService'
-import { embeddingService } from './EmbeddingService'
+import { prisma as globalPrisma } from '../../auth'
+import { PrismaClient } from '@prisma/client'
+import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
+import { EmbeddingService, embeddingService as globalEmbeddingService } from './EmbeddingService'
 
 export interface SearchResultItem {
   type: 'chat' | 'message'
@@ -49,6 +50,12 @@ function buildMessageWhereClause(filters?: SearchFilters, extraWhere: Record<str
 }
 
 export class SearchService implements ISearchService {
+  constructor(
+    private prisma: PrismaClient,
+    private contactService: ContactService,
+    private embeddingService: EmbeddingService
+  ) {}
+
   async searchAll(
     query: string,
     mode: SearchMode,
@@ -59,13 +66,13 @@ export class SearchService implements ISearchService {
     if (!q) return { chats: [], messages: [] }
 
     // ── 1. Search chats ────────────────────────────────────────────────────────
-    const allChats = await prisma.chat.findMany(
+    const allChats = await this.prisma.chat.findMany(
       filters?.jids?.length ? { where: { jid: { in: filters.jids } } } : undefined
     )
     
     // We only need to resolve names for DMs that lack a name
     const jidsToResolve = allChats.filter(c => !c.name && c.type === 'DM').map(c => c.jid)
-    const nameMap = await contactService.batchResolveNames(jidsToResolve, sock)
+    const nameMap = await this.contactService.batchResolveNames(jidsToResolve, sock)
 
     const matchingChats = allChats.filter((chat) => {
       const name = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0]
@@ -78,7 +85,7 @@ export class SearchService implements ISearchService {
     const chatResults: SearchResultItem[] = await Promise.all(
       matchingChats.map(async (chat) => {
         const name = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0]
-        const lastMsg = await prisma.message.findFirst({
+        const lastMsg = await this.prisma.message.findFirst({
           where: { chatJid: chat.jid },
           orderBy: { timestamp: 'desc' },
           select: { textContent: true, messageType: true, timestamp: true }
@@ -116,7 +123,7 @@ export class SearchService implements ISearchService {
       textContent: { contains: q }
     })
 
-    const messages = await prisma.message.findMany({
+    const messages = await this.prisma.message.findMany({
       where,
       orderBy: { timestamp: 'desc' },
       take: 30,
@@ -146,7 +153,7 @@ export class SearchService implements ISearchService {
     _sock: any,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
-    const queryVector = await embeddingService.embed(q)
+    const queryVector = await this.embeddingService.embed(q)
     const queryVectorJson = JSON.stringify(queryVector)
 
     let filterSql = ''
@@ -154,7 +161,7 @@ export class SearchService implements ISearchService {
 
     const hasFilters = !!(filters?.jids?.length || filters?.fromDate || filters?.toDate)
     if (hasFilters) {
-      const candidateMessages = await prisma.message.findMany({
+      const candidateMessages = await this.prisma.message.findMany({
         where: buildMessageWhereClause(filters),
         select: { id: true }
       })
@@ -177,11 +184,11 @@ export class SearchService implements ISearchService {
     `
 
     try {
-      const scoredResults = await prisma.$queryRawUnsafe<any[]>(sql, ...params)
+      const scoredResults = await this.prisma.$queryRawUnsafe<any[]>(sql, ...params)
       if (scoredResults.length === 0) return []
 
       const scoredIds = scoredResults.map((r) => r.messageId)
-      const messages = await prisma.message.findMany({
+      const messages = await this.prisma.message.findMany({
         where: { id: { in: scoredIds } },
         include: { chat: true, sender: true }
       })
@@ -217,4 +224,4 @@ export class SearchService implements ISearchService {
   }
 }
 
-export const searchService = new SearchService()
+export const searchService = new SearchService(globalPrisma, globalContactService, globalEmbeddingService)

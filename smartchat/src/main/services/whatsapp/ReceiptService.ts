@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
-import { prisma } from '../../auth'
+import { prisma as globalPrisma } from '../../auth'
+import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
 
 export function mapBaileysStatus(status: number | null | undefined): string {
@@ -28,6 +29,8 @@ export class ReceiptService {
     'PLAYED': 4
   }
 
+  constructor(private prisma: PrismaClient) {}
+
   /**
    * Processes messages.update event to handle status changes (e.g. pending -> sent).
    */
@@ -42,7 +45,7 @@ export class ReceiptService {
     const newStatus = mapBaileysStatus(baileysStatus)
 
     try {
-      const currentMsg = await prisma.message.findUnique({
+      const currentMsg = await this.prisma.message.findUnique({
         where: { id: msgId }
       })
 
@@ -53,7 +56,7 @@ export class ReceiptService {
       const newLevel = this.statusMap[newStatus] ?? 0
 
       if (newLevel > currentLevel) {
-        await prisma.message.update({
+        await this.prisma.message.update({
           where: { id: msgId },
           data: { status: newStatus }
         })
@@ -91,7 +94,7 @@ export class ReceiptService {
     const status = isRead ? 'READ' : (isDelivered ? 'DELIVERED' : 'SENT')
 
     try {
-      const message = await prisma.message.findUnique({
+      const message = await this.prisma.message.findUnique({
         where: { id: messageId }
       })
 
@@ -100,7 +103,7 @@ export class ReceiptService {
       // Always save detailed individual receipt (especially for groups, but also useful for DMs)
       if (userJid) {
         const ts = receipt?.readTimestamp || receipt?.receiptTimestamp || Math.floor(Date.now() / 1000)
-        await prisma.messageReceipt.upsert({
+        await this.prisma.messageReceipt.upsert({
           where: {
             messageId_userJid: {
               messageId,
@@ -126,12 +129,12 @@ export class ReceiptService {
 
       if (isGroup) {
         // Fetch total number of members in the group from database
-        const membersCount = await prisma.chatMember.count({
+        const membersCount = await this.prisma.chatMember.count({
           where: { chatJid: remoteJid }
         })
 
         // Find how many other members have read the message
-        const readCount = await prisma.messageReceipt.count({
+        const readCount = await this.prisma.messageReceipt.count({
           where: {
             messageId,
             status: 'READ'
@@ -143,7 +146,7 @@ export class ReceiptService {
           // If everyone read it
           const currentStatus = message.status || 'PENDING'
           if (currentStatus !== 'READ') {
-            await prisma.message.update({
+            await this.prisma.message.update({
               where: { id: messageId },
               data: { status: 'READ' }
             })
@@ -158,7 +161,7 @@ export class ReceiptService {
           }
         } else {
           // Check if everyone got it delivered
-          const deliveredCount = await prisma.messageReceipt.count({
+          const deliveredCount = await this.prisma.messageReceipt.count({
             where: {
               messageId,
               status: { in: ['DELIVERED', 'READ'] }
@@ -171,7 +174,7 @@ export class ReceiptService {
             const newLevel = this.statusMap['DELIVERED']
 
             if (newLevel > currentLevel) {
-              await prisma.message.update({
+              await this.prisma.message.update({
                 where: { id: messageId },
                 data: { status: 'DELIVERED' }
               })
@@ -188,7 +191,7 @@ export class ReceiptService {
             // Keep status at SENT if not delivered to all yet
             const currentStatus = message.status || 'PENDING'
             if (currentStatus === 'PENDING') {
-              await prisma.message.update({
+              await this.prisma.message.update({
                 where: { id: messageId },
                 data: { status: 'SENT' }
               })
@@ -210,7 +213,7 @@ export class ReceiptService {
         const newLevel = this.statusMap[status] ?? 0
 
         if (newLevel > currentLevel) {
-          await prisma.message.update({
+          await this.prisma.message.update({
             where: { id: messageId },
             data: { status }
           })
@@ -230,4 +233,4 @@ export class ReceiptService {
   }
 }
 
-export const receiptService = new ReceiptService()
+export const receiptService = new ReceiptService(globalPrisma)

@@ -1,9 +1,12 @@
-import { prisma } from '../../auth'
+import { prisma as globalPrisma } from '../../auth'
+import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
 
 export class ContactService {
   private linkCache = new Set<string>()
   private identityIdCache = new Map<string, number>()
+
+  constructor(private prisma: PrismaClient) {}
 
   /**
    * Formats display name from an Identity object.
@@ -49,7 +52,7 @@ export class ContactService {
     
     for (let i = 0; i < uniqueJids.length; i += BATCH_SIZE) {
       const chunk = uniqueJids.slice(i, i + BATCH_SIZE)
-      const res = await prisma.identityAlias.findMany({
+      const res = await this.prisma.identityAlias.findMany({
         where: { jid: { in: chunk } },
         include: { identity: true }
       })
@@ -65,7 +68,6 @@ export class ContactService {
         myJid = cleanJid(sock.user.id)
         myLid = (sock.user as any).lid ? cleanJid((sock.user as any).lid) : null
     }
-
 
     for (const jid of uniqueJids) {
       // 1. Is it "Me"?
@@ -147,7 +149,7 @@ export class ContactService {
       if (this.identityIdCache.has(phoneNumber)) {
         identityId = this.identityIdCache.get(phoneNumber)!
       } else {
-        const existingById = await prisma.identity.findUnique({ where: { phoneNumber } })
+        const existingById = await this.prisma.identity.findUnique({ where: { phoneNumber } })
         if (existingById) {
           identityId = existingById.id
           this.identityIdCache.set(phoneNumber, identityId)
@@ -161,7 +163,7 @@ export class ContactService {
       if (this.identityIdCache.has(searchLid)) {
         identityId = this.identityIdCache.get(searchLid)!
       } else {
-        const existingByAlias = await prisma.identityAlias.findUnique({ where: { jid: searchLid } })
+        const existingByAlias = await this.prisma.identityAlias.findUnique({ where: { jid: searchLid } })
         if (existingByAlias) {
           identityId = existingByAlias.identityId
           this.identityIdCache.set(searchLid, identityId)
@@ -174,7 +176,7 @@ export class ContactService {
       if (this.identityIdCache.has(id)) {
         identityId = this.identityIdCache.get(id)!
       } else {
-        const existingByAlias = await prisma.identityAlias.findUnique({ where: { jid: id } })
+        const existingByAlias = await this.prisma.identityAlias.findUnique({ where: { jid: id } })
         if (existingByAlias) {
           identityId = existingByAlias.identityId
           this.identityIdCache.set(id, identityId)
@@ -185,9 +187,9 @@ export class ContactService {
     // 4. Check LidMap: if this is a PN JID, a LID stub may already exist for this number.
     //    Reuse that stub instead of creating a duplicate PN identity.
     if (!identityId && phoneNumber) {
-      const lidMapEntry = await prisma.lidMap.findFirst({ where: { pn: phoneNumber } })
+      const lidMapEntry = await this.prisma.lidMap.findFirst({ where: { pn: phoneNumber } })
       if (lidMapEntry) {
-        const lidAlias = await prisma.identityAlias.findUnique({ where: { jid: lidMapEntry.lid } })
+        const lidAlias = await this.prisma.identityAlias.findUnique({ where: { jid: lidMapEntry.lid } })
         if (lidAlias) {
           identityId = lidAlias.identityId
           this.identityIdCache.set(phoneNumber, identityId)
@@ -197,7 +199,7 @@ export class ContactService {
 
     // Create the Identity if it doesn't exist
     if (!identityId) {
-      const newIdentity = await prisma.identity.create({
+      const newIdentity = await this.prisma.identity.create({
         data: {
           phoneNumber: phoneNumber,
           displayName: newName,
@@ -220,7 +222,7 @@ export class ContactService {
       }
 
       if (Object.keys(updateData).length > 0) {
-        await prisma.identity.update({
+        await this.prisma.identity.update({
           where: { id: identityId },
           data: updateData
         })
@@ -229,7 +231,7 @@ export class ContactService {
 
     // 2. Ensure Aliases are created and pointing to the correct identity
     const ensureAlias = async (jid: string, type: string) => {
-      await prisma.identityAlias.upsert({
+      await this.prisma.identityAlias.upsert({
         where: { jid },
         update: { identityId: identityId as number },
         create: { jid, type, identityId: identityId as number }
@@ -268,7 +270,7 @@ export class ContactService {
     }
 
     // 1. High-Performance Mapping Ledger
-    await prisma.lidMap.upsert({
+    await this.prisma.lidMap.upsert({
       where: { lid: cleanLid },
       update: { pn: cleanPn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
       create: { lid: cleanLid, pn: cleanPn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
@@ -276,14 +278,14 @@ export class ContactService {
 
     // 2. Relational Identity Sync
     // Find identities for both
-    const lidAlias = await prisma.identityAlias.findUnique({ where: { jid: cleanLid } })
-    let pnIdentity = await prisma.identity.findUnique({ where: { phoneNumber: cleanPn } })
+    const lidAlias = await this.prisma.identityAlias.findUnique({ where: { jid: cleanLid } })
+    let pnIdentity = await this.prisma.identity.findUnique({ where: { phoneNumber: cleanPn } })
     
     if (!pnIdentity) {
       // Look for PN alias
-      const pnAlias = await prisma.identityAlias.findUnique({ where: { jid: cleanPn } })
+      const pnAlias = await this.prisma.identityAlias.findUnique({ where: { jid: cleanPn } })
       if (pnAlias) {
-        pnIdentity = await prisma.identity.findUnique({ where: { id: pnAlias.identityId } })
+        pnIdentity = await this.prisma.identity.findUnique({ where: { id: pnAlias.identityId } })
       }
     }
 
@@ -294,7 +296,7 @@ export class ContactService {
       const orphanId = lidAlias && lidAlias.identityId !== identityId ? lidAlias.identityId : null
 
       // Re-point the LID alias to the canonical PN identity
-      await prisma.identityAlias.upsert({
+      await this.prisma.identityAlias.upsert({
         where: { jid: cleanLid },
         update: { identityId },
         create: { jid: cleanLid, type: 'LID', identityId }
@@ -303,35 +305,35 @@ export class ContactService {
       // Delete the old LID-only stub if nothing else references it
       if (orphanId) {
         const [aliasCount, msgCount, memberCount, reactionCount] = await Promise.all([
-          prisma.identityAlias.count({ where: { identityId: orphanId } }),
-          prisma.message.count({ where: { senderId: orphanId } }),
-          prisma.chatMember.count({ where: { identityId: orphanId } }),
-          prisma.reaction.count({ where: { senderId: orphanId } })
+          this.prisma.identityAlias.count({ where: { identityId: orphanId } }),
+          this.prisma.message.count({ where: { senderId: orphanId } }),
+          this.prisma.chatMember.count({ where: { identityId: orphanId } }),
+          this.prisma.reaction.count({ where: { senderId: orphanId } })
         ])
         if (aliasCount === 0 && msgCount === 0 && memberCount === 0 && reactionCount === 0) {
-          await prisma.identity.delete({ where: { id: orphanId } }).catch(() => {})
+          await this.prisma.identity.delete({ where: { id: orphanId } }).catch(() => {})
         }
       }
     } else if (lidAlias) {
       identityId = lidAlias.identityId
       // Update the identity to have the phone number
-      await prisma.identity.update({
+      await this.prisma.identity.update({
         where: { id: identityId },
         data: { phoneNumber: cleanPn }
       })
-      await prisma.identityAlias.upsert({
+      await this.prisma.identityAlias.upsert({
         where: { jid: cleanPn },
         update: { identityId },
         create: { jid: cleanPn, type: 'PN', identityId }
       })
     } else {
       // Neither exists, create a new identity and both aliases
-      const newId = await prisma.identity.create({
+      const newId = await this.prisma.identity.create({
         data: { phoneNumber: cleanPn }
       })
       identityId = newId.id
-      await prisma.identityAlias.create({ data: { jid: cleanPn, type: 'PN', identityId } })
-      await prisma.identityAlias.create({ data: { jid: cleanLid, type: 'LID', identityId } })
+      await this.prisma.identityAlias.create({ data: { jid: cleanPn, type: 'PN', identityId } })
+      await this.prisma.identityAlias.create({ data: { jid: cleanLid, type: 'LID', identityId } })
     }
 
     this.identityIdCache.set(cleanLid, identityId)
@@ -363,7 +365,7 @@ export class ContactService {
       const CHUNK = 500
       for (let i = 0; i < missing.length; i += CHUNK) {
         const chunk = missing.slice(i, i + CHUNK)
-        const aliases = await prisma.identityAlias.findMany({
+        const aliases = await this.prisma.identityAlias.findMany({
           where: { jid: { in: chunk } },
           select: { jid: true, identityId: true }
         })
@@ -393,7 +395,7 @@ export class ContactService {
       return this.identityIdCache.get(cleaned)!
     }
 
-    const alias = await prisma.identityAlias.findUnique({ where: { jid: cleaned } })
+    const alias = await this.prisma.identityAlias.findUnique({ where: { jid: cleaned } })
     if (alias) {
       this.identityIdCache.set(cleaned, alias.identityId)
       return alias.identityId
@@ -401,7 +403,7 @@ export class ContactService {
     
     // Fallback: search identity by phone number directly
     if (cleaned.endsWith('@s.whatsapp.net')) {
-      const ident = await prisma.identity.findUnique({ where: { phoneNumber: cleaned } })
+      const ident = await this.prisma.identity.findUnique({ where: { phoneNumber: cleaned } })
       if (ident) {
         this.identityIdCache.set(cleaned, ident.id)
         return ident.id
@@ -438,13 +440,13 @@ export class ContactService {
     if (!forceRefresh) {
       // Check Chat first (groups)
       if (jid.endsWith('@g.us')) {
-        const chat = await prisma.chat.findUnique({ where: { jid }, select: { profilePictureUrl: true } })
+        const chat = await this.prisma.chat.findUnique({ where: { jid }, select: { profilePictureUrl: true } })
         if (chat?.profilePictureUrl) return chat.profilePictureUrl
       } else {
         // Check Identity (contacts)
         const identityId = await this.getIdentityIdByJid(jid)
         if (identityId) {
-          const ident = await prisma.identity.findUnique({ where: { id: identityId }, select: { profilePictureUrl: true } })
+          const ident = await this.prisma.identity.findUnique({ where: { id: identityId }, select: { profilePictureUrl: true } })
           if (ident?.profilePictureUrl) return ident.profilePictureUrl
         }
       }
@@ -456,14 +458,14 @@ export class ContactService {
       const url = await sock.profilePictureUrl(jid, 'preview')
       if (url) {
         if (jid.endsWith('@g.us')) {
-          await prisma.chat.update({
+          await this.prisma.chat.update({
             where: { jid },
             data: { profilePictureUrl: url }
           }).catch(() => {})
         } else {
           const identityId = await this.getIdentityIdByJid(jid)
           if (identityId) {
-            await prisma.identity.update({
+            await this.prisma.identity.update({
               where: { id: identityId },
               data: { profilePictureUrl: url }
             }).catch(() => {})
@@ -487,7 +489,7 @@ export class ContactService {
     let skipped = 0
 
     // Find all LID-only stubs: no phoneNumber, at least one LID alias, non-trivial pushName
-    const stubs = await prisma.identity.findMany({
+    const stubs = await this.prisma.identity.findMany({
       where: {
         phoneNumber: null,
         pushName: { not: null },
@@ -501,7 +503,7 @@ export class ContactService {
       if (!pushName || pushName.length < 2) { skipped++; continue }
 
       // Find PN identities with the same pushName
-      const candidates = await prisma.identity.findMany({
+      const candidates = await this.prisma.identity.findMany({
         where: {
           phoneNumber: { not: null },
           pushName: pushName,
@@ -518,29 +520,29 @@ export class ContactService {
 
       try {
         // 1. Re-point all LID aliases from stub → keep
-        await prisma.identityAlias.updateMany({
+        await this.prisma.identityAlias.updateMany({
           where: { identityId: stubId },
           data: { identityId: keepId }
         })
 
         // 2. Re-point messages
-        await prisma.message.updateMany({
+        await this.prisma.message.updateMany({
           where: { senderId: stubId },
           data: { senderId: keepId }
         })
 
         // 3. Merge ChatMember rows — handle composite PK conflicts
-        const stubMemberships = await prisma.chatMember.findMany({ where: { identityId: stubId } })
+        const stubMemberships = await this.prisma.chatMember.findMany({ where: { identityId: stubId } })
         for (const m of stubMemberships) {
-          const conflict = await prisma.chatMember.findUnique({
+          const conflict = await this.prisma.chatMember.findUnique({
             where: { chatJid_identityId: { chatJid: m.chatJid, identityId: keepId } }
           })
           if (conflict) {
-            await prisma.chatMember.delete({
+            await this.prisma.chatMember.delete({
               where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } }
             })
           } else {
-            await prisma.chatMember.update({
+            await this.prisma.chatMember.update({
               where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } },
               data: { identityId: keepId }
             })
@@ -548,17 +550,17 @@ export class ContactService {
         }
 
         // 4. Merge Reactions — handle composite PK conflicts
-        const stubReactions = await prisma.reaction.findMany({ where: { senderId: stubId } })
+        const stubReactions = await this.prisma.reaction.findMany({ where: { senderId: stubId } })
         for (const r of stubReactions) {
-          const conflict = await prisma.reaction.findUnique({
+          const conflict = await this.prisma.reaction.findUnique({
             where: { messageId_senderId: { messageId: r.messageId, senderId: keepId } }
           })
           if (conflict) {
-            await prisma.reaction.delete({
+            await this.prisma.reaction.delete({
               where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } }
             })
           } else {
-            await prisma.reaction.update({
+            await this.prisma.reaction.update({
               where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } },
               data: { senderId: keepId }
             })
@@ -571,11 +573,11 @@ export class ContactService {
         if (!keep.verifiedName && stub.verifiedName) enrichUpdate.verifiedName = stub.verifiedName
         if (!keep.profilePictureUrl && stub.profilePictureUrl) enrichUpdate.profilePictureUrl = stub.profilePictureUrl
         if (Object.keys(enrichUpdate).length > 0) {
-          await prisma.identity.update({ where: { id: keepId }, data: enrichUpdate }).catch(() => {})
+          await this.prisma.identity.update({ where: { id: keepId }, data: enrichUpdate }).catch(() => {})
         }
 
         // 6. Delete the now-empty stub
-        await prisma.identity.delete({ where: { id: stubId } })
+        await this.prisma.identity.delete({ where: { id: stubId } })
 
         merged++
         console.log(`[deduplicateIdentities] Merged stub id=${stubId} ("${pushName}") → id=${keepId} (${keep.phoneNumber})`)
@@ -600,14 +602,14 @@ export class ContactService {
 
     try {
       // Find matching identity alias
-      const alias = await prisma.identityAlias.findUnique({
+      const alias = await this.prisma.identityAlias.findUnique({
         where: { jid: cleaned },
         select: { identityId: true }
       });
 
       if (alias) {
         // Find the LID alias for this identity
-        const lidAlias = await prisma.identityAlias.findFirst({
+        const lidAlias = await this.prisma.identityAlias.findFirst({
           where: { identityId: alias.identityId, type: 'LID' },
           select: { jid: true }
         });
@@ -637,13 +639,13 @@ export class ContactService {
     let identityId: number | null = null;
 
     // 1. Try to find existing identity alias
-    const existingJidAlias = await prisma.identityAlias.findUnique({ where: { jid: myJid } });
+    const existingJidAlias = await this.prisma.identityAlias.findUnique({ where: { jid: myJid } });
     if (existingJidAlias) {
       identityId = existingJidAlias.identityId;
     }
 
     if (!identityId && myLid) {
-      const existingLidAlias = await prisma.identityAlias.findUnique({ where: { jid: myLid } });
+      const existingLidAlias = await this.prisma.identityAlias.findUnique({ where: { jid: myLid } });
       if (existingLidAlias) {
         identityId = existingLidAlias.identityId;
       }
@@ -651,7 +653,7 @@ export class ContactService {
 
     // 2. Upsert the Identity row with isMe = true
     if (!identityId) {
-      const newIdentity = await prisma.identity.create({
+      const newIdentity = await this.prisma.identity.create({
         data: {
           phoneNumber: myJid,
           displayName: name,
@@ -660,7 +662,7 @@ export class ContactService {
       });
       identityId = newIdentity.id;
     } else {
-      await prisma.identity.update({
+      await this.prisma.identity.update({
         where: { id: identityId },
         data: {
           phoneNumber: myJid,
@@ -670,20 +672,20 @@ export class ContactService {
     }
 
     // 3. Ensure aliases are pointing to the isMe identity
-    await prisma.identityAlias.upsert({
+    await this.prisma.identityAlias.upsert({
       where: { jid: myJid },
       update: { identityId, type: 'PN' },
       create: { jid: myJid, type: 'PN', identityId }
     });
 
     if (myLid) {
-      await prisma.identityAlias.upsert({
+      await this.prisma.identityAlias.upsert({
         where: { jid: myLid },
         update: { identityId, type: 'LID' },
         create: { jid: myLid, type: 'LID', identityId }
       });
 
-      await prisma.lidMap.upsert({
+      await this.prisma.lidMap.upsert({
         where: { lid: myLid },
         update: { pn: myJid, source: 'registerMe', lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
         create: { lid: myLid, pn: myJid, source: 'registerMe', lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
@@ -692,4 +694,4 @@ export class ContactService {
   }
 }
 
-export const contactService = new ContactService()
+export const contactService = new ContactService(globalPrisma)

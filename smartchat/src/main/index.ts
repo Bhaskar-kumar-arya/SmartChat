@@ -7,6 +7,7 @@ import icon from '../../resources/icon.png?asset'
 import { waConnectionManager } from './services/whatsapp/WhatsAppConnectionManager'
 import { prisma, initVectorDb } from './auth'
 import { registerIpcHandlers } from './ipcHandlers'
+import { createServices } from './ServiceContainer'
 
 // Register 'app' protocol as privileged BEFORE app is ready
 protocol.registerSchemesAsPrivileged([
@@ -17,7 +18,7 @@ protocol.registerSchemesAsPrivileged([
 const getSock = () => waConnectionManager.getSocket()
 
 let mainWindow: BrowserWindow | null = null
-
+let services: ReturnType<typeof createServices>
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -78,7 +79,8 @@ app.whenReady().then(() => {
 
   ipcMain.on('ping', () => console.log('pong'))
 
-  registerIpcHandlers(prisma, getSock)
+  services = createServices(prisma)
+  registerIpcHandlers(prisma, services, getSock)
   initVectorDb()
 
   ipcMain.on('wa-skip-sync', () => {
@@ -92,8 +94,6 @@ app.whenReady().then(() => {
   })
 })
 
-import { aiService } from './services/ai/AIService'
-
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
@@ -104,7 +104,9 @@ app.on('will-quit', async (e) => {
   // Prevent immediate quit to allow cleanup
   e.preventDefault();
   try {
-    await aiService.cleanup();
+    if (services?.aiService) {
+      await services.aiService.cleanup();
+    }
   } catch (err) {
     console.error('[App] Error during cleanup:', err);
   } finally {
