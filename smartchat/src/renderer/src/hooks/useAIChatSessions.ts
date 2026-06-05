@@ -1,17 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
-import { AIChatSessionItem } from '../types'
-
-export interface AIChatMessage {
-  id: string
-  role: 'user' | 'ai'
-  content: string
-  contexts?: any[]
-  mentions?: any[]
-  isHidden?: boolean
-  isSystem?: boolean
-  toolResult?: string
-  hasError?: boolean
-}
+import { AIChatSessionItem, AIChatMessage } from '../types'
+import { api } from '../services/api.service'
 
 export function useAIChatSessions() {
   const [sessions, setSessions] = useState<AIChatSessionItem[]>([])
@@ -20,7 +9,7 @@ export function useAIChatSessions() {
 
   const refreshSessions = useCallback(async () => {
     try {
-      const data = await window.api.listAiSessions(1, 50)
+      const data = await api.listAiSessions(1, 50)
       setSessions(data)
     } catch (e) {
       console.error('Failed to list AI sessions:', e)
@@ -41,7 +30,7 @@ export function useAIChatSessions() {
   const createSession = async (firstPrompt: string, modelId?: string): Promise<string | null> => {
     try {
       const title = firstPrompt.length > 50 ? firstPrompt.substring(0, 50) + '...' : firstPrompt
-      const session = await window.api.createAiSession(title, modelId)
+      const session = await api.createAiSession(title, modelId)
       setActiveSessionId(session.id)
       await refreshSessions()
       return session.id
@@ -57,7 +46,7 @@ export function useAIChatSessions() {
    */
   const selectSession = async (id: string): Promise<AIChatMessage[]> => {
     try {
-      const session = await window.api.getAiSession(id)
+      const session = await api.getAiSession(id)
       if (session) {
         setActiveSessionId(session.id)
         return session.messages
@@ -71,7 +60,7 @@ export function useAIChatSessions() {
   const saveCurrentMessages = async (sessionId: string, messages: AIChatMessage[]) => {
     if (!sessionId || messages.length === 0) return
     try {
-      await window.api.saveAiSessionMessages(sessionId, messages)
+      await api.saveAiSessionMessages(sessionId, messages)
       await refreshSessions()
     } catch (e) {
       console.error('Failed to save AI session messages:', e)
@@ -80,7 +69,7 @@ export function useAIChatSessions() {
 
   const renameSession = async (id: string, title: string) => {
     try {
-      await window.api.renameAiSession(id, title)
+      await api.renameAiSession(id, title)
       await refreshSessions()
     } catch (e) {
       console.error('Failed to rename AI session:', e)
@@ -89,13 +78,24 @@ export function useAIChatSessions() {
 
   const deleteSession = async (id: string) => {
     try {
-      await window.api.deleteAiSession(id)
+      await api.deleteAiSession(id)
       if (activeSessionId === id) {
         setActiveSessionId(null)
       }
       await refreshSessions()
     } catch (e) {
       console.error('Failed to delete AI session:', e)
+    }
+  }
+
+  const cloneSession = async (id: string): Promise<any> => {
+    try {
+      const newSession = await api.cloneAiSession(id)
+      await refreshSessions()
+      return newSession
+    } catch (e) {
+      console.error('Failed to clone AI session:', e)
+      return null
     }
   }
 
@@ -114,6 +114,8 @@ export function useAIChatSessions() {
     saveCurrentMessages,
     renameSession,
     deleteSession,
+    cloneSession,
     startNewChat
   }
 }
+

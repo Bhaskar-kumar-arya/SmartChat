@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, KeyboardEvent, useImperativeHandle, forwardRef } from 'react'
 import { ChatItem, ModelInfo } from '../types'
+import { api } from '../services/api.service'
 
 interface SelectedContext {
   jid: string
@@ -89,7 +90,7 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
     let active = true
     if (mentionQuery) {
       if (menuType === 'mention') {
-        window.api.searchMentionContacts(mentionQuery)
+        api.searchMentionContacts(mentionQuery)
           .then(results => {
             if (active) setFilteredChats(results as any[])
           })
@@ -97,7 +98,7 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
             console.error('Failed to search mention contacts:', err)
           })
       } else {
-        window.api.searchMentionChats(mentionQuery)
+        api.searchMentionChats(mentionQuery)
           .then(results => {
             if (active) setFilteredChats(results as any[])
           })

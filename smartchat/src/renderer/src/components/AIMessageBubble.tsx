@@ -22,7 +22,6 @@ interface AIMessageBubbleProps {
   onApprove: (messageId: string, tool: string, args: any) => void
   onDecline: (messageId: string) => void
   onRetry: () => void
-  onEdit?: (messageId: string) => void
   onReRun?: (messageId: string) => void
   onSave?: (messageId: string, newContent: string, mentions: any[]) => void
   chatList: any[]
@@ -35,7 +34,6 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
   onApprove, 
   onDecline,
   onRetry,
-  onEdit,
   onReRun,
   onSave,
   chatList

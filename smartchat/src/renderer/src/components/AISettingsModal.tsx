@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AIChatOptions, ModelInfo } from '../types';
+import { api } from '../services/api.service';
 
 interface AISettingsModalProps {
   isOpen: boolean;
@@ -19,7 +20,7 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
   // Load persisted keys when settings modal opens
   useEffect(() => {
     if (isOpen) {
-      window.api.getProviderKeys().then(setProviderKeys).catch(console.error);
+      api.getProviderKeys().then(setProviderKeys).catch(console.error);
     }
   }, [isOpen]);
 
@@ -128,7 +129,7 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
               onChange={async (e) => {
                 const val = e.target.value;
                 setProviderKeys(prev => ({ ...prev, [selectedProvider]: val }));
-                await window.api.setProviderKey(selectedProvider, val);
+                await api.setProviderKey(selectedProvider, val);
               }}
             />
             <span className="ai-settings-key-caption">
@@ -289,7 +290,7 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
             onChange={(e) => {
               const checked = e.target.checked;
               onOptionsChange({ ...options, autoSaveChats: checked });
-              window.api.setAiAutoSave(checked);
+              api.setAiAutoSave(checked);
             }}
           />
         </div>

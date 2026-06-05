@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from './services/api.service'
 import ChatLayout from './components/ChatLayout'
@@ -14,6 +14,9 @@ export function App() {
   const [syncFullHistory, setSyncFullHistory] = useState<boolean>(false)
   const [syncType, setSyncType] = useState<number>(0)
   const [isRegeneratingQr, setIsRegeneratingQr] = useState<boolean>(false)
+
+  const appStateRef = useRef<AppState>(appState)
+  appStateRef.current = appState
 
   // 1. Initial configuration load
   useEffect(() => {
@@ -49,7 +52,7 @@ export function App() {
       setSyncProgress(data.progress)
       setSyncType(data.syncType)
       setSyncFullHistory(data.syncFullHistory)
-      if (appState !== 'syncing') {
+      if (appStateRef.current !== 'syncing') {
         setAppState('syncing')
       }
     })
@@ -71,7 +74,7 @@ export function App() {
       unSubSyncStatus()
       unSubSyncComp()
     }
-  }, [appState])
+  }, [])
 
   const handleSetSyncFullHistory = async (full: boolean) => {
     if (syncFullHistory === full) return

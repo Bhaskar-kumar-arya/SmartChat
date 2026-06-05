@@ -16,6 +16,13 @@ export interface ChatItem {
   phoneNumber?: string | null
 }
 
+export interface ExtendedChatItem extends ChatItem {
+  isChild?: boolean
+  parentName?: string
+  totalUnreadCount?: number
+  children?: ChatItem[]
+}
+
 export interface ReactionItem {
   senderId: string
   senderName?: string | null
@@ -94,11 +101,42 @@ export interface AIChatSessionItem {
   modelId?: string
 }
 
+export interface AIChatMessage {
+  id: string
+  role: 'user' | 'ai'
+  content: string
+  contexts?: any[]
+  mentions?: any[]
+  isHidden?: boolean
+  isSystem?: boolean
+  toolResult?: string
+  hasError?: boolean
+}
+
+export interface PresenceEntry {
+  lastKnownPresence: 'composing' | 'recording' | 'available' | 'unavailable' | string
+  timestamp: number
+  name?: string
+}
+
+export type PresenceMap = Record<string, PresenceEntry>
+
 export interface PresenceUpdate {
   remoteJid: string
-  presences: Record<string, {
-    lastKnownPresence: 'composing' | 'recording' | 'available' | 'unavailable' | string
-    timestamp: number
-    name?: string
-  }>
+  presences: PresenceMap
 }
+
+export interface GroupParticipant {
+  jid: string
+  name: string
+  isAdmin: boolean
+  isMe: boolean
+}
+
+export interface ToolDefinition {
+  name: string
+  description?: string
+  argumentsSchema?: any
+  requiresPermission?: boolean
+}
+

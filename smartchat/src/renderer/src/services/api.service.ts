@@ -1,4 +1,4 @@
-import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo } from '../types'
+import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo, AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionItem } from '../types'
 
 // This service wraps the window.api (Electron bridge) to provide a clean abstraction.
 // It allows us to mock the API in tests and decouple from the global window object.
@@ -113,4 +113,77 @@ export const api = {
 
   getMessageReceipts: (messageId: string): Promise<MessageReceiptInfo[]> =>
     window.api.getMessageReceipts(messageId),
+
+  // AI Chat & Session methods
+  aiChatStream: (
+    prompt: string,
+    contexts: any[],
+    history: AIChatMessage[],
+    mentions: any[],
+    options: AIChatOptions & { isSystem?: boolean },
+    onChunk: (chunk: string) => void,
+    onComplete: () => void,
+    onError: (err: any) => void
+  ): string => window.api.aiChatStream(prompt, contexts, history, mentions, options, onChunk, onComplete, onError),
+
+  abortAiChat: (channelId: string): Promise<boolean> =>
+    window.api.abortAiChat(channelId),
+
+  executeTool: (toolName: string, args: any): Promise<any> =>
+    window.api.executeTool(toolName, args),
+
+  getAiTools: (): Promise<ToolDefinition[]> =>
+    window.api.getAiTools(),
+
+  getAiModels: (): Promise<ModelInfo[]> =>
+    window.api.getAiModels(),
+
+  getAiOptions: (): Promise<AIChatOptions> =>
+    window.api.getAiOptions(),
+
+  setAiOptions: (options: AIChatOptions): Promise<void> =>
+    window.api.setAiOptions(options),
+
+  createAiSession: (title: string, modelId?: string): Promise<AIChatSessionItem> =>
+    window.api.createAiSession(title, modelId),
+
+  getAiSession: (id: string): Promise<{ id: string; title: string; messages: AIChatMessage[] } | null> =>
+    window.api.getAiSession(id),
+
+  listAiSessions: (page: number, limit: number): Promise<AIChatSessionItem[]> =>
+    window.api.listAiSessions(page, limit),
+
+  saveAiSessionMessages: (sessionId: string, messages: AIChatMessage[]): Promise<void> =>
+    window.api.saveAiSessionMessages(sessionId, messages),
+
+  renameAiSession: (id: string, title: string): Promise<void> =>
+    window.api.renameAiSession(id, title),
+
+  deleteAiSession: (id: string): Promise<void> =>
+    window.api.deleteAiSession(id),
+
+  cloneAiSession: (id: string): Promise<any> =>
+    window.api.cloneAiSession(id),
+
+  searchMentionContacts: (query: string): Promise<ChatItem[]> =>
+    window.api.searchMentionContacts(query),
+
+  searchMentionChats: (query: string): Promise<ChatItem[]> =>
+    window.api.searchMentionChats(query),
+
+  getProviderKeys: (): Promise<any> =>
+    window.api.getProviderKeys(),
+
+  setProviderKey: (provider: string, key: string): Promise<any> =>
+    window.api.setProviderKey(provider, key),
+
+  setAiAutoSave: (checked: boolean): Promise<any> =>
+    window.api.setAiAutoSave(checked),
+
+  exportAiChat: (session: any, messages: any[]): Promise<any> =>
+    window.api.exportAiChat(session, messages),
+
+  deleteExportedAiChat: (sessionId: string): Promise<any> =>
+    window.api.deleteExportedAiChat(sessionId),
 }
+

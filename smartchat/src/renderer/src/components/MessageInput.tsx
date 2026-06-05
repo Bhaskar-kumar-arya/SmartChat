@@ -3,6 +3,7 @@ import { Paperclip, X, Mic, Send, Trash2, StopCircle, Play, Pause } from 'lucide
 import { useMentions } from '../hooks/useMentions'
 import { useAudioRecorder } from '../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'
+import { api } from '../services/api.service'
 
 interface MessageItem {
   id: string
@@ -143,7 +144,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     try {
       const arrayBuffer = await audioBlob.arrayBuffer()
       const fileName = `voice_${Date.now()}.ogg`
-      const filePath = await window.api.saveTempFile(arrayBuffer, fileName)
+      const filePath = await api.saveTempFile(arrayBuffer, fileName)
       
       await onSendMedia(filePath, '', [])
       cancelRecording() // Reset state
@@ -156,7 +157,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
 
   const handleAttachClick = async () => {
     try {
-      const path = await window.api.selectFile()
+      const path = await api.selectFile()
       if (path) {
         const name = path.split(/[\\/]/).pop() || 'File'
         setSelectedFile({ path, name })

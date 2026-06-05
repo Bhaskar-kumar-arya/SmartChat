@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
+import { api } from '../services/api.service'
 
 interface AIChatExportButtonProps {
   activeSessionId: string | null
@@ -29,7 +30,7 @@ export default function AIChatExportButton({
     setExporting(true)
     try {
       const session = sessions.find(s => s.id === activeSessionId) || { id: activeSessionId, title: 'Untitled' }
-      await window.api.exportAiChat(session, messages)
+      await api.exportAiChat(session, messages)
       setExported(true)
       setTimeout(() => setExported(false), 2000)
       focusInput?.()
@@ -51,7 +52,7 @@ export default function AIChatExportButton({
     setDeleting(true)
     setShowConfirmDelete(false)
     try {
-      await window.api.deleteExportedAiChat(activeSessionId)
+      await api.deleteExportedAiChat(activeSessionId)
       focusInput?.()
     } catch (e) {
       console.error('Delete failed', e)

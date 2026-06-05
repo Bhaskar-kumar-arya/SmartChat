@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { AIChatSessionItem } from '../types'
 
 interface AIChatHistoryModalProps {
@@ -158,7 +158,7 @@ export default function AIChatHistoryModal({
                     )}
                   </div>
                   <div className="ai-history-item-meta">
-                    <span>{session.model}</span>
+                    <span>{session.modelId}</span>
                     <span>{formatDate(session.updatedAt)}</span>
                   </div>
                 </div>
