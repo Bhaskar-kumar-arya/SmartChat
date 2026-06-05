@@ -1,5 +1,6 @@
 import { AITool } from '../services/ai/AIToolService';
 import { prisma } from '../auth';
+import { WASocket } from '../types';
 
 export class ReadChatTool implements AITool {
   name = 'readChat';
@@ -42,7 +43,7 @@ CONSTRAINTS:
     required: ['jid']
   };
 
-  constructor(_getSock: () => any) {
+  constructor(_getSock: () => WASocket | null) {
   }
 
   async execute(args: any) {

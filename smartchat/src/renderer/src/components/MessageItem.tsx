@@ -158,7 +158,7 @@ export default function MessageItem({ msg, onReply, onEdit, onDelete, onDownload
         {isSticker && <StickerMessage localURI={localURI} onDownload={handleDownload} isDownloading={downloading} />}
         {isVideo && <VideoMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
         {isDocument && <DocumentMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
-        {isAudio && <AudioMessage localURI={localURI} senderJid={msg.participant || msg.remoteJid} onDownload={handleDownload} isDownloading={downloading} rawMsg={rawMsg} />}
+        {isAudio && <AudioMessage localURI={localURI} senderJid={msg.participant || msg.chatJid} onDownload={handleDownload} isDownloading={downloading} rawMsg={rawMsg} />}
         {isTextMessage && msg.textContent && <TextMessage text={msg.textContent} mentions={ctx?.mentions} />}
         {!isImage && !isSticker && !isVideo && !isDocument && !isAudio && !isTextMessage && (
           <p className="message-text message-unsupported">[{msg.messageType}]</p>

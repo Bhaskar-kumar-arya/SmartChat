@@ -2,7 +2,7 @@ import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
 import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
-import { ChatListItem } from '../../types'
+import { ChatListItem, ChatUpdatePayload, WASocket } from '../../types'
 
 export class ChatService {
   constructor(
@@ -13,7 +13,7 @@ export class ChatService {
   /**
    * Handles chats.upsert and chats.update.
    */
-  async upsertChat(jid: string, update: any): Promise<void> {
+  async upsertChat(jid: string, update: ChatUpdatePayload): Promise<void> {
     const cleanedJid = cleanJid(jid)
     if (!cleanedJid) return
 
@@ -43,7 +43,7 @@ export class ChatService {
     const ts = update.conversationTimestamp ?? update.timestamp
     if (ts) {
       data.timestamp = BigInt(
-        typeof ts === 'object' && ts !== null && 'low' in ts ? ts.low : ts
+        typeof ts === 'object' && ts !== null && 'low' in ts ? (ts as any).low : (ts as any)
       )
     }
 
@@ -175,7 +175,15 @@ export class ChatService {
   /**
    * Syncs group participants into the ChatMember table.
    */
-  async syncGroupMembers(chatJid: string, participants: any[]): Promise<void> {
+  async syncGroupMembers(
+    chatJid: string,
+    participants: Array<{
+      id: string
+      admin?: 'admin' | 'superadmin' | null
+      lid?: string | null
+      phoneNumber?: string | null
+    }>
+  ): Promise<void> {
     const cleanedChatJid = cleanJid(chatJid)
     
     // Pre-parse and normalize participant JIDs
@@ -351,7 +359,10 @@ export class ChatService {
   /**
    * Fetches the participants of a group.
    */
-  async getGroupParticipants(jid: string, sock: any): Promise<any[]> {
+  async getGroupParticipants(
+    jid: string,
+    sock: WASocket | null
+  ): Promise<Array<{ jid: string; name: string; isAdmin: boolean; isMe: boolean }>> {
     if (!sock || !jid.endsWith('@g.us')) return []
     try {
       const metadata = await sock.groupMetadata(jid)

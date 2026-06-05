@@ -9,11 +9,12 @@ import { messageService as globalMessageService } from './services/messages/Mess
 import { toolRegistry } from './services/ai/AIToolService'
 import { AIToolInitializer } from './services/ai/AIToolInitializer'
 import { audioTranscoderService } from './services/audio/AudioTranscoderService'
+import { WASocket } from './types'
 
 export function registerIpcHandlers(
   prisma: PrismaClient,
   services: ServiceContainer,
-  getSock: () => ReturnType<typeof import('@whiskeysockets/baileys').default> | null
+  getSock: () => WASocket | null
 ): void {
   // ── Get Chat List (paginated, sorted by latest timestamp) ────────────
   ipcMain.handle('get-chats', async (_event, page: number = 1, pageSize: number = 50) => {
@@ -107,6 +108,9 @@ export function registerIpcHandlers(
     if (!sentMsg) throw new Error('Failed to send message')
 
     const processed = await services.messageService.processMessage(sentMsg, sock)
+    if (!processed || 'type' in processed) {
+      throw new Error('Failed to process sent message')
+    }
     await services.chatService.updateTimestamp(targetJid, processed.timestamp)
 
     const nameMap = await services.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
@@ -156,10 +160,13 @@ export function registerIpcHandlers(
     const sendOptions = services.messageService.getMediaSendOptions(filePath, buffer, caption)
     if (mentions && mentions.length > 0) sendOptions.mentions = mentions
 
-    const sentMsg = await sock.sendMessage(targetJid, sendOptions, { quoted } as any)
+    const sentMsg = await sock.sendMessage(targetJid, sendOptions as any, { quoted } as any)
     if (!sentMsg) throw new Error('Failed to send media message')
 
     const processed = await services.messageService.processMessage(sentMsg, sock)
+    if (!processed || 'type' in processed) {
+      throw new Error('Failed to process sent message')
+    }
     await services.chatService.updateTimestamp(targetJid, processed.timestamp)
     
     const nameMap = await services.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
@@ -434,6 +441,6 @@ export function registerIpcHandlers(
 }
 
 // Exporting helpers for index.ts
-export const resolveContactName = (jid: string, chatName: string | null, sock: any) => 
+export const resolveContactName = (jid: string, chatName: string | null, sock: WASocket | null) => 
     globalContactService.resolveName(jid, chatName, sock)
-export const unwrapMessage = (msg: any) => globalMessageService.unwrapMessage(msg)
+export const unwrapMessage = (msg: Record<string, unknown> | null | undefined) => globalMessageService.unwrapMessage(msg)

@@ -4,6 +4,8 @@ import { ContactService, contactService as globalContactService } from '../conta
 import { EmbeddingService, embeddingService as globalEmbeddingService } from '../search/EmbeddingService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage as sharedUnwrapMessage } from '../../utils'
+import { BrowserWindow } from 'electron'
+import { WASocket, BaileysMessage, ProcessedMessage, ProtocolResult, DBMessageWithSender, MediaSendOptions, EnrichedMessage, BaileysReactionUpdate } from '../../types'
 
 /**
  * Plain data object produced by parseMessageSync().
@@ -48,7 +50,7 @@ export class MessageService {
   /**
    * Parses a raw Baileys message object and prepares it for persistence.
    */
-  async processMessage(msg: any, _sock: any): Promise<any> {
+  async processMessage(msg: BaileysMessage, _sock: WASocket | null): Promise<ProcessedMessage | ProtocolResult | null> {
     const key = msg.key
     if (!key?.id) return null
 
@@ -231,14 +233,17 @@ export class MessageService {
 
     return {
         id: key.id,
-        remoteJid,
+        chatJid: remoteJid,
         fromMe: key.fromMe === true,
         senderId,
         participant: participantString, // passing it up for UI/IPC enriched handling
         timestamp,
         messageType,
         textContent,
-        content: JSON.stringify(rawMessage || {})
+        content: JSON.stringify(rawMessage || {}),
+        isDeleted: false,
+        isEdited: false,
+        status: mapBaileysStatus(msg.status)
     }
   }
 
@@ -248,7 +253,7 @@ export class MessageService {
    * Returns null for messages that cannot or should not be bulk-persisted
    * (missing key, protocol/reaction messages which need per-message handling).
    */
-  parseMessageSync(msg: any): ParsedMessage | null {
+  parseMessageSync(msg: BaileysMessage): ParsedMessage | null {
     const key = msg.key
     if (!key?.id) return null
 
@@ -307,7 +312,7 @@ export class MessageService {
   /**
    * Bulk-persists a batch of historical (append) messages efficiently.
    */
-  async bulkPersistMessages(msgs: any[]): Promise<void> {
+  async bulkPersistMessages(msgs: BaileysMessage[]): Promise<void> {
     if (msgs.length === 0) return
 
     // 1. Parse all (pure CPU — no DB)
@@ -370,7 +375,7 @@ export class MessageService {
   /**
    * Enrich a message object with contact names and other metadata for UI display.
    */
-  async enrichMessage(msg: any, _sock: any, nameMap: Map<string, string>): Promise<any> {
+  async enrichMessage(msg: DBMessageWithSender, _sock: WASocket | null, nameMap: Map<string, string>): Promise<EnrichedMessage> {
     let participantName = 'Unknown'
     if (msg.fromMe) {
       participantName = 'Me'
@@ -419,7 +424,7 @@ export class MessageService {
   /**
    * Prepares send options for media or document messages based on file type.
    */
-  getMediaSendOptions(filePath: string, buffer: Buffer, caption?: string): any {
+  getMediaSendOptions(filePath: string, buffer: Buffer, caption?: string): MediaSendOptions {
     const lowerPath = filePath.toLowerCase()
     
     if (lowerPath.endsWith('.webp')) return { sticker: buffer }
@@ -483,7 +488,7 @@ export class MessageService {
   /**
    * Processes a real-time messages.reaction event update.
    */
-  async processReaction(reactionUpdate: any, sock: any, mainWindow: any): Promise<void> {
+  async processReaction(reactionUpdate: BaileysReactionUpdate, sock: WASocket | null, mainWindow: BrowserWindow | null): Promise<void> {
     const targetId = reactionUpdate.key?.id
     const reactionKey = reactionUpdate.reaction?.key
     const text = reactionUpdate.reaction?.text

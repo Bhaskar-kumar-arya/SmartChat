@@ -75,7 +75,7 @@ export const useMessages = (activeJid: string | null) => {
     if (!activeJid) return
 
     const unSub = api.onNewMessage((msg: MessageItem) => {
-      if (msg.remoteJid === activeJid) {
+      if (msg.chatJid === activeJid) {
         if (msg.messageType === 'reactionMessage') {
           handleReactionUpdate(msg)
           return
@@ -89,21 +89,21 @@ export const useMessages = (activeJid: string | null) => {
     })
 
     const unSubEdit = api.onMessageEdited((msg: MessageItem) => {
-      if (msg.remoteJid === activeJid) {
+      if (msg.chatJid === activeJid) {
         setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
       }
     })
 
-    const unSubDelete = api.onMessageDeleted((update: { id: string, remoteJid: string, fromMe: boolean }) => {
-      if (update.remoteJid === activeJid) {
+    const unSubDelete = api.onMessageDeleted((update: { id: string, chatJid: string, fromMe: boolean }) => {
+      if (update.chatJid === activeJid) {
         setMessages((prev) => 
           prev.map((m) => (m.id === update.id ? { ...m, isDeleted: true } : m))
         )
       }
     })
 
-    const unSubStatus = api.onMessageStatusUpdated((update: { id: string, remoteJid: string, status: string }) => {
-      if (update.remoteJid === activeJid) {
+    const unSubStatus = api.onMessageStatusUpdated((update: { id: string, chatJid: string, status: string }) => {
+      if (update.chatJid === activeJid) {
         setMessages((prev) => 
           prev.map((m) => (m.id === update.id ? { ...m, status: update.status } : m))
         )
@@ -127,7 +127,7 @@ export const useMessages = (activeJid: string | null) => {
         const emoji = reaction.text
         // Use participant as the dedup key — this is a JID string in both
         // the IPC path (fromMe reactions sent by tool) and regular reaction events.
-        const participantKey = msg.participant || msg.remoteJid
+        const participantKey = msg.participant || msg.chatJid
 
         setMessages((prev) => 
           prev.map((m) => {

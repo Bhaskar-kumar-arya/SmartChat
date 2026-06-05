@@ -5,11 +5,12 @@ import { Boom } from '@hapi/boom'
 import NodeCache from 'node-cache'
 import { prisma, usePrismaAuthState } from '../../auth'
 import { handleHistorySync } from '../../historySync'
-import { contactService as singletonContactService } from '../contacts/ContactService'
-import { messageService as singletonMessageService } from '../messages/MessageService'
-import { chatService as singletonChatService } from '../chats/ChatService'
-import { embeddingService as singletonEmbeddingService } from '../search/EmbeddingService'
-import { receiptService as singletonReceiptService } from './ReceiptService'
+import { ContactService, contactService as singletonContactService } from '../contacts/ContactService'
+import { MessageService, messageService as singletonMessageService } from '../messages/MessageService'
+import { ChatService, chatService as singletonChatService } from '../chats/ChatService'
+import { EmbeddingService, embeddingService as singletonEmbeddingService } from '../search/EmbeddingService'
+import { ReceiptService, receiptService as singletonReceiptService } from './ReceiptService'
+import { WASocket } from '../../types'
 import { cleanJid } from '../../utils'
 import {
   PROTOCOL_TYPE_REVOKE,
@@ -27,7 +28,7 @@ import { DataWipeService } from '../DataWipeService'
 import type { ServiceContainer } from '../../ServiceContainer'
 
 export class WhatsAppConnectionManager {
-  private currentSock: ReturnType<typeof makeWASocket> | null = null
+  private currentSock: WASocket | null = null
   private reconnectTimeout: NodeJS.Timeout | null = null
   private syncTimeout: NodeJS.Timeout | null = null
   private isFreshLogin = false
@@ -36,11 +37,11 @@ export class WhatsAppConnectionManager {
   private currentFinishSync: (() => void) | null = null
 
   // Resolved services — prefer ServiceContainer instance, fall back to singletons
-  private contactService = singletonContactService
-  private messageService = singletonMessageService
-  private chatService = singletonChatService
-  private embeddingService = singletonEmbeddingService
-  private receiptService = singletonReceiptService
+  private contactService: ContactService = singletonContactService
+  private messageService: MessageService = singletonMessageService
+  private chatService: ChatService = singletonChatService
+  private embeddingService: EmbeddingService = singletonEmbeddingService
+  private receiptService: ReceiptService = singletonReceiptService
 
   constructor() { }
 
@@ -60,7 +61,7 @@ export class WhatsAppConnectionManager {
     this.mainWindow = window
   }
 
-  public getSocket(): ReturnType<typeof makeWASocket> | null {
+  public getSocket(): WASocket | null {
     return this.currentSock
   }
 
@@ -81,7 +82,7 @@ export class WhatsAppConnectionManager {
     if (this.currentSock) {
       console.log('[Connection] Cleaning up previous socket instance before reconnecting...')
       try {
-        this.currentSock.ev.removeAllListeners()
+        (this.currentSock.ev as any).removeAllListeners()
         this.currentSock.end(new Error('Replaced by new socket instance'))
       } catch (err) {
         console.warn('[Connection] Error cleaning up old socket:', err)
@@ -406,12 +407,12 @@ export class WhatsAppConnectionManager {
               const processed = await this.messageService.processMessage(msg, sock)
               if (!processed) continue
 
-              if (processed.type === 'protocol') {
+              if ('type' in processed) {
                 if (processed.subType === 'revoke') {
                   if (this.mainWindow && !this.mainWindow.isDestroyed()) {
                     this.mainWindow.webContents.send('message-deleted', {
                       id: processed.targetId,
-                      remoteJid: cleanJid(processed.key.remoteJid),
+                      chatJid: cleanJid(processed.key.remoteJid),
                       fromMe: processed.key.fromMe
                     })
                   }
@@ -428,18 +429,18 @@ export class WhatsAppConnectionManager {
                 continue
               }
 
-              const { remoteJid, timestamp, messageType, participant } = processed
+              const { chatJid, timestamp, messageType, participant } = processed
 
               if (!processed.fromMe) {
                 if (messageType !== 'reactionMessage') {
-                  await this.chatService.incrementUnread(remoteJid, timestamp)
+                  await this.chatService.incrementUnread(chatJid, timestamp)
                 }
               } else if (messageType !== 'reactionMessage') {
-                await this.chatService.updateTimestamp(remoteJid, timestamp)
+                await this.chatService.updateTimestamp(chatJid, timestamp)
               }
 
               if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-                const jids = new Set<string>([cleanJid(participant || remoteJid)])
+                const jids = new Set<string>([cleanJid(participant || chatJid)])
                 const nameMap = await this.contactService.batchResolveNames(Array.from(jids), sock)
                 const enriched = await this.messageService.enrichMessage(processed, sock, nameMap)
                 this.mainWindow.webContents.send('new-message', enriched)
@@ -479,7 +480,7 @@ export class WhatsAppConnectionManager {
                 if (this.mainWindow && !this.mainWindow.isDestroyed()) {
                   this.mainWindow.webContents.send('message-deleted', {
                     id: key.id,
-                    remoteJid: cleanJid(key.remoteJid),
+                    chatJid: cleanJid(key.remoteJid),
                     fromMe: key.fromMe
                   })
                 }

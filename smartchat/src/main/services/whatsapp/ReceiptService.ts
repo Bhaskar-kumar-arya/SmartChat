@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
+import { WASocket, MessageReceiptUpdate, BaileysMessage } from '../../types'
 
 export function mapBaileysStatus(status: number | null | undefined): string {
   if (status === undefined || status === null) return 'SENT'
@@ -35,10 +36,10 @@ export class ReceiptService {
    * Processes messages.update event to handle status changes (e.g. pending -> sent).
    */
   public async processMessageStatusUpdate(
-    key: any,
+    key: BaileysMessage['key'] | null | undefined,
     baileysStatus: number,
     mainWindow: BrowserWindow | null
-  ) {
+  ): Promise<void> {
     const msgId = key?.id
     if (!msgId) return
 
@@ -64,7 +65,7 @@ export class ReceiptService {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('message-status-updated', {
             id: msgId,
-            remoteJid: currentMsg.chatJid,
+            chatJid: currentMsg.chatJid,
             status: newStatus
           })
         }
@@ -78,10 +79,10 @@ export class ReceiptService {
    * Processes message-receipt.update event from Baileys to update delivery/read status.
    */
   public async processMessageReceipt(
-    update: any,
-    _sock: any,
+    update: MessageReceiptUpdate,
+    _sock: WASocket | null,
     mainWindow: BrowserWindow | null
-  ) {
+  ): Promise<void> {
     const { key, receipt } = update
     const messageId = key?.id
     if (!messageId) return
@@ -154,7 +155,7 @@ export class ReceiptService {
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('message-status-updated', {
                 id: messageId,
-                remoteJid,
+                chatJid: remoteJid,
                 status: 'READ'
               })
             }
@@ -182,7 +183,7 @@ export class ReceiptService {
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('message-status-updated', {
                   id: messageId,
-                  remoteJid,
+                  chatJid: remoteJid,
                   status: 'DELIVERED'
                 })
               }
@@ -199,7 +200,7 @@ export class ReceiptService {
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('message-status-updated', {
                   id: messageId,
-                  remoteJid,
+                  chatJid: remoteJid,
                   status: 'SENT'
                 })
               }
@@ -221,7 +222,7 @@ export class ReceiptService {
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('message-status-updated', {
               id: messageId,
-              remoteJid,
+              chatJid: remoteJid,
               status
             })
           }

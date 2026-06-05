@@ -95,7 +95,7 @@ const api = {
     ipcRenderer.on('message-edited', listener)
     return () => { ipcRenderer.removeListener('message-edited', listener) }
   },
-  onMessageDeleted: (callback: (update: { id: string, remoteJid: string, fromMe: boolean }) => void) => {
+  onMessageDeleted: (callback: (update: { id: string, chatJid: string, fromMe: boolean }) => void) => {
     const listener = (_event: any, update: any) => callback(update)
     ipcRenderer.on('message-deleted', listener)
     return () => { ipcRenderer.removeListener('message-deleted', listener) }
@@ -103,7 +103,7 @@ const api = {
   markRead: (jid: string) => {
     return ipcRenderer.invoke('mark-read', jid)
   },
-  onMessageStatusUpdated: (callback: (update: { id: string, remoteJid: string, status: string }) => void) => {
+  onMessageStatusUpdated: (callback: (update: { id: string, chatJid: string, status: string }) => void) => {
     const listener = (_event: any, update: any) => callback(update)
     ipcRenderer.on('message-status-updated', listener)
     return () => { ipcRenderer.removeListener('message-status-updated', listener) }

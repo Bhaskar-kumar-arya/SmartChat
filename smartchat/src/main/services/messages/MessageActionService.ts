@@ -5,6 +5,7 @@ import { MessageService, messageService as globalMessageService } from './Messag
 import { ChatService, chatService as globalChatService } from '../chats/ChatService'
 import { BrowserWindow } from 'electron'
 import { proto } from '@whiskeysockets/baileys'
+import { WASocket, EnrichedMessage } from '../../types'
 
 export class MessageActionService {
   constructor(
@@ -29,7 +30,7 @@ export class MessageActionService {
   /**
    * Deletes (revokes) a message.
    */
-  async deleteMessage(sock: any, messageId: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string }> {
+  async deleteMessage(sock: WASocket, messageId: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string }> {
     let targetJid = jid;
     const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId } });
     if (!dbMsg) {
@@ -57,7 +58,7 @@ export class MessageActionService {
 
     this.notifyWindows('message-deleted', {
       id: messageId,
-      remoteJid: dbMsg.chatJid,
+      chatJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe
     });
 
@@ -71,7 +72,7 @@ export class MessageActionService {
   /**
    * Edits the text content of a message.
    */
-  async editMessage(sock: any, messageId: string, newText: string, jid?: string): Promise<any> {
+  async editMessage(sock: WASocket, messageId: string, newText: string, jid?: string): Promise<EnrichedMessage> {
     let targetJid = jid;
     const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId }, include: { sender: true } });
     if (!dbMsg) {
@@ -129,7 +130,7 @@ export class MessageActionService {
   /**
    * Forwards a message to one or more destination JIDs/LIDs.
    */
-  async forwardMessage(sock: any, messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: any[] }> {
+  async forwardMessage(sock: WASocket, messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }> {
     const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId } });
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
@@ -167,6 +168,9 @@ export class MessageActionService {
       }
 
       const processed = await this.messageService.processMessage(sentMsg, sock);
+      if (!processed || 'type' in processed) {
+        throw new Error('Failed to process forwarded message');
+      }
       await this.chatService.updateTimestamp(resolvedDest, processed.timestamp);
 
       const nameMap = await this.contactService.batchResolveNames(
@@ -192,7 +196,7 @@ export class MessageActionService {
   /**
    * Reacts to a message with an emoji, or removes the reaction.
    */
-  async reactToMessage(sock: any, messageId: string, reaction: string, jid?: string): Promise<any> {
+  async reactToMessage(sock: WASocket, messageId: string, reaction: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string; reaction: string }> {
     let targetJid = jid;
     const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId } });
     if (!dbMsg) {
@@ -233,7 +237,7 @@ export class MessageActionService {
       if (myJidClean) {
         reactorId = await this.contactService.getIdentityIdByJid(myJidClean);
         if (!reactorId) {
-          const myLid = (sock?.user as any)?.lid?.split(':')[0];
+          const myLid = (sock?.user as { lid?: string })?.lid?.split(':')[0];
           if (myLid) reactorId = await this.contactService.getIdentityIdByJid(myLid);
         }
       }
@@ -261,7 +265,7 @@ export class MessageActionService {
 
     // 2. Notify the frontend to update UI reactively
     const myJid = sock.user?.id || '';
-    const myLid = (sock.user as any)?.lid || '';
+    const myLid = (sock.user as { lid?: string })?.lid || '';
     const reactorJidString = myLid ? myLid.split(':')[0] + '@lid' : (myJid ? myJid.split(':')[0] + '@s.whatsapp.net' : '');
 
     const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock);
@@ -269,7 +273,7 @@ export class MessageActionService {
 
     const mockMsg = {
       id: messageId,
-      remoteJid: dbMsg.chatJid,
+      chatJid: dbMsg.chatJid,
       fromMe: true,
       senderId: reactorId,
       participant: reactorJidString,

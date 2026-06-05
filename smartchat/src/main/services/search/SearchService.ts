@@ -2,6 +2,7 @@ import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
 import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
 import { EmbeddingService, embeddingService as globalEmbeddingService } from './EmbeddingService'
+import { WASocket } from '../../types'
 
 export interface SearchResultItem {
   type: 'chat' | 'message'
@@ -28,7 +29,7 @@ export interface SearchFilters {
 export type SearchMode = 'normal' | 'deep'
 
 export interface ISearchService {
-  searchAll(query: string, mode: SearchMode, sock: any, filters?: SearchFilters): Promise<SearchResults>
+  searchAll(query: string, mode: SearchMode, sock: WASocket | null, filters?: SearchFilters): Promise<SearchResults>
 }
 
 function buildTimestampFilter(filters?: SearchFilters): { gte?: bigint; lte?: bigint } | undefined {
@@ -59,7 +60,7 @@ export class SearchService implements ISearchService {
   async searchAll(
     query: string,
     mode: SearchMode,
-    sock: any,
+    sock: WASocket | null,
     filters?: SearchFilters
   ): Promise<SearchResults> {
     const q = query.trim()
@@ -116,7 +117,7 @@ export class SearchService implements ISearchService {
 
   private async normalSearch(
     q: string,
-    _sock: any,
+    _sock: WASocket | null,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
     const where = buildMessageWhereClause(filters, {
@@ -150,7 +151,7 @@ export class SearchService implements ISearchService {
 
   private async deepSearch(
     q: string,
-    _sock: any,
+    _sock: WASocket | null,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
     const queryVector = await this.embeddingService.embed(q)

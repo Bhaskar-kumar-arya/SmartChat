@@ -14,7 +14,7 @@ interface ChatItem {
 
 interface MessageItem {
   id: string
-  remoteJid: string
+  chatJid: string
   fromMe: boolean
   participant: string | null
   timestamp: string
@@ -68,9 +68,9 @@ declare global {
       selectFile: () => Promise<string | null>
       onNewMessage: (callback: (msg: MessageItem) => void) => () => void
       onMessageEdited: (callback: (msg: MessageItem) => void) => () => void
-      onMessageDeleted: (callback: (update: { id: string, remoteJid: string, fromMe: boolean }) => void) => () => void
+      onMessageDeleted: (callback: (update: { id: string, chatJid: string, fromMe: boolean }) => void) => () => void
       markRead: (jid: string) => Promise<boolean>
-      onMessageStatusUpdated: (callback: (update: { id: string, remoteJid: string, status: string }) => void) => () => void
+      onMessageStatusUpdated: (callback: (update: { id: string, chatJid: string, status: string }) => void) => () => void
       getMessageReceipts: (messageId: string) => Promise<{ userJid: string, name: string, status: string, timestamp: string }[]>
       onChatUpdated: (callback: (chat: Partial<ChatItem> & { jid: string }) => void) => () => void
       logout: () => Promise<boolean>

@@ -19,7 +19,7 @@ export interface EnrichedMessage {
   reactions?: EnrichedReaction[]
   isDeleted?: boolean
   isEdited?: boolean
-  status?: string
+  status?: string | null
 }
 
 /** Chat list item as returned to the frontend. */
@@ -56,11 +56,11 @@ export interface ProtocolResult {
 
 /** Raw Baileys message as received from events. */
 export interface BaileysMessage {
-  key: { id: string; remoteJid?: string; fromMe?: boolean; participant?: string }
-  message?: Record<string, unknown>
-  messageTimestamp?: number | { low: number; high: number }
-  pushName?: string
-  status?: number
+  key: { id?: string | null; remoteJid?: string | null; fromMe?: boolean | null; participant?: string | null }
+  message?: any
+  messageTimestamp?: number | { low: number; high: number } | null
+  pushName?: string | null
+  status?: number | null
 }
 
 /** Database message row with sender relation included. */
@@ -97,5 +97,46 @@ export interface ChatUpdatePayload {
   isCommunityAnnounce?: boolean; isDefaultSubgroup?: boolean
   linkedParentJid?: string; linkedParent?: string; parentGroupId?: string
   owner?: string; ownerPn?: string; descOwner?: string; descOwnerPn?: string
-  participants?: any[]
+}
+
+/** Processed message returned by processMessage. */
+export interface ProcessedMessage {
+  id: string
+  chatJid: string
+  fromMe: boolean
+  senderId: number | null
+  participant: string | null
+  timestamp: bigint
+  messageType: string
+  textContent: string | null
+  content: string
+  isDeleted: boolean
+  isEdited: boolean
+  status: string | null
+}
+
+/** Payload shape for message status receipt updates. */
+export interface MessageReceiptUpdate {
+  key: { id: string; remoteJid?: string; fromMe?: boolean; participant?: string }
+  receipt: {
+    userJid?: string
+    readTimestamp?: number | bigint | null
+    receiptTimestamp?: number | bigint | null
+  }
+}
+
+/** Raw Baileys reaction update event structure. */
+export interface BaileysReactionUpdate {
+  key: { id: string }
+  reaction?: {
+    key: {
+      id?: string
+      remoteJid?: string
+      fromMe?: boolean
+      participant?: string
+      participantAlt?: string
+    }
+    text?: string | null
+    senderTimestampMs?: number | { low: number; high: number } | null
+  }
 }

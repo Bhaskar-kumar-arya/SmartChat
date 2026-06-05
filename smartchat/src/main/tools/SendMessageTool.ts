@@ -1,6 +1,7 @@
 import { AITool } from '../services/ai/AIToolService';
 import { messageService } from '../services/messages/MessageService';
 import { chatService } from '../services/chats/ChatService';
+import { WASocket } from '../types';
 
 export class SendMessageTool implements AITool {
   name = 'sendMessage';
@@ -36,9 +37,9 @@ CONSTRAINTS:
     required: ['jid', 'text']
   };
 
-  private getSock: () => any;
+  private getSock: () => WASocket | null;
 
-  constructor(getSock: () => any) {
+  constructor(getSock: () => WASocket | null) {
     this.getSock = getSock;
   }
 
@@ -59,6 +60,9 @@ CONSTRAINTS:
     
     // Persist via Service
     const processed = await messageService.processMessage(sentMsg, sock);
+    if (!processed || 'type' in processed) {
+      throw new Error('Failed to process sent message');
+    }
     await chatService.updateTimestamp(jid, processed.timestamp);
 
     return { 

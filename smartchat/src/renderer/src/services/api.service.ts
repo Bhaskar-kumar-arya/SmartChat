@@ -48,7 +48,7 @@ export const api = {
   onMessageEdited: (callback: (msg: MessageItem) => void) =>
     window.api.onMessageEdited(callback),
 
-  onMessageDeleted: (callback: (update: { id: string, remoteJid: string, fromMe: boolean }) => void) =>
+  onMessageDeleted: (callback: (update: { id: string, chatJid: string, fromMe: boolean }) => void) =>
     window.api.onMessageDeleted(callback),
 
   onChatUpdated: (callback: (update: Partial<ChatItem> & { jid: string }) => void) =>
@@ -108,7 +108,7 @@ export const api = {
   saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string): Promise<string> =>
     window.api.saveTempFile(buffer, fileName),
 
-  onMessageStatusUpdated: (callback: (update: { id: string, remoteJid: string, status: string }) => void) =>
+  onMessageStatusUpdated: (callback: (update: { id: string, chatJid: string, status: string }) => void) =>
     window.api.onMessageStatusUpdated(callback),
 
   getMessageReceipts: (messageId: string): Promise<MessageReceiptInfo[]> =>

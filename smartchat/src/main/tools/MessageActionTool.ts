@@ -1,5 +1,6 @@
 import { AITool } from '../services/ai/AIToolService';
 import { messageActionService } from '../services/messages/MessageActionService';
+import { WASocket } from '../types';
 
 export class MessageActionTool implements AITool {
   name = 'messageAction';
@@ -54,9 +55,9 @@ HOW TO USE:
     required: ['action', 'messageId']
   };
 
-  private getSock: () => any;
+  private getSock: () => WASocket | null;
 
-  constructor(getSock: () => any) {
+  constructor(getSock: () => WASocket | null) {
     this.getSock = getSock;
   }
 

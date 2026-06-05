@@ -52,16 +52,16 @@ export const useChats = (activeJid: string | null) => {
 
     const unSubNewMsg = api.onNewMessage((msg: MessageItem) => {
       setChats((prev) => {
-        const idx = prev.findIndex((c) => c.jid === msg.remoteJid)
+        const idx = prev.findIndex((c) => c.jid === msg.chatJid)
         const existing = idx >= 0 ? prev[idx] : null
         
         // Use ref value to avoid stale closures
-        const isCurrentChat = activeJidRef.current === msg.remoteJid
+        const isCurrentChat = activeJidRef.current === msg.chatJid
         
         const updatedChat: ChatItem = {
           ...(existing || {}),
-          jid: msg.remoteJid,
-          name: existing ? existing.name : msg.remoteJid.replace(/@.*$/, ''),
+          jid: msg.chatJid,
+          name: existing ? existing.name : msg.chatJid.replace(/@.*$/, ''),
           unreadCount: existing 
             ? (isCurrentChat ? 0 : existing.unreadCount + (msg.fromMe ? 0 : 1)) 
             : (isCurrentChat ? 0 : 1),
@@ -71,7 +71,7 @@ export const useChats = (activeJid: string | null) => {
           pinned: existing?.pinned,
           muteExpiration: existing?.muteExpiration
         }
-        const filtered = prev.filter((c) => c.jid !== msg.remoteJid)
+        const filtered = prev.filter((c) => c.jid !== msg.chatJid)
         return sortChats([updatedChat, ...filtered])
       })
     })

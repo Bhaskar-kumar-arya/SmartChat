@@ -22,7 +22,7 @@ export interface ReactionItem {
 
 export interface MessageItem {
   id: string
-  remoteJid: string
+  chatJid: string
   fromMe: boolean
   participant: string | null
   participantName?: string | null

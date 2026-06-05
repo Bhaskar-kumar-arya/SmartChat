@@ -98,7 +98,7 @@ export class AIService {
         let contextSection = `\n<chat_history id="${chat.jid}" name="${chat.name || 'Unknown'}">\n`;
         const participantMap: Record<string, string> = {};
         chat.messages.forEach((msg: any) => {
-           const senderId = msg.participant || (msg.fromMe ? 'me' : msg.remoteJid);
+           const senderId = msg.participant || (msg.fromMe ? 'me' : msg.chatJid);
            const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0]);
            if (senderId && !msg.fromMe && senderId !== 'me') {
              participantMap[senderId] = senderName;
@@ -111,7 +111,7 @@ export class AIService {
         
         contextSection += `<messages>\n`;
         chat.messages.forEach((msg: any) => {
-           const senderId = msg.participant || (msg.fromMe ? 'me' : msg.remoteJid);
+           const senderId = msg.participant || (msg.fromMe ? 'me' : msg.chatJid);
            const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0]);
            const content = msg.textContent || '[Non-text message]';
            contextSection += `[${new Date(Number(msg.timestamp) * 1000).toLocaleString()}] ${senderName} (${senderId}): ${content}\n`;

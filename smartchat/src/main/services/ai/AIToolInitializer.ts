@@ -4,6 +4,7 @@ import { ReadChatTool } from '../../tools/ReadChatTool';
 import { QueryDatabaseTool } from '../../tools/QueryDatabaseTool';
 import { MessageActionTool } from '../../tools/MessageActionTool';
 import { ExecuteScriptTool } from '../../tools/ExecuteScriptTool';
+import { WASocket } from '../../types';
 
 export class AIToolInitializer {
   /**
@@ -12,7 +13,7 @@ export class AIToolInitializer {
    * 
    * @param getSock - Function that returns the current Baileys socket.
    */
-  static initializeAll(getSock: () => ReturnType<typeof import('@whiskeysockets/baileys').default> | null) {
+  static initializeAll(getSock: () => WASocket | null) {
     // 1. Instantiate tools
     const sendMessageTool = new SendMessageTool(getSock);
     const readChatTool = new ReadChatTool(getSock);

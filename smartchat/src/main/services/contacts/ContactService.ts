@@ -1,6 +1,7 @@
 import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
+import { WASocket } from '../../types'
 
 export class ContactService {
   private linkCache = new Set<string>()
@@ -42,7 +43,7 @@ export class ContactService {
    */
   async batchResolveNames(
     jids: string[],
-    sock?: any
+    sock?: WASocket | null
   ): Promise<Map<string, string>> {
     const uniqueJids = Array.from(new Set(jids.filter(Boolean).map(cleanJid)))
     if (uniqueJids.length === 0) return new Map()
@@ -66,13 +67,13 @@ export class ContactService {
     let myLid: string | null = null
     if (sock?.user) {
         myJid = cleanJid(sock.user.id)
-        myLid = (sock.user as any).lid ? cleanJid((sock.user as any).lid) : null
+        myLid = (sock.user as { lid?: string }).lid ? cleanJid((sock.user as { lid?: string }).lid) : null
     }
 
     for (const jid of uniqueJids) {
       // 1. Is it "Me"?
       if (myJid && (jid === myJid || jid === myLid)) {
-        nameMap.set(jid, sock.user.name || 'Me')
+        nameMap.set(jid, sock?.user?.name || 'Me')
         continue
       }
 
@@ -86,8 +87,8 @@ export class ContactService {
       } else {
         // Tier 3: Runtime Cache Query
         let resolvedFromCache = false;
-        if (jid.includes('@lid') && sock?.signalRepository?.lidMapping?.getPNForLID) {
-          const pn = cleanJid(sock.signalRepository.lidMapping.getPNForLID(jid));
+        if (jid.includes('@lid') && (sock as any)?.signalRepository?.lidMapping?.getPNForLID) {
+          const pn = cleanJid((sock as any).signalRepository.lidMapping.getPNForLID(jid));
           if (pn) {
             resolvedFromCache = true;
             // Async fire-and-forget to link them
@@ -117,7 +118,7 @@ export class ContactService {
   /**
    * Resolves a single JID into a display name.
    */
-  async resolveName(jid: string, chatName: string | null, sock?: any): Promise<string> {
+  async resolveName(jid: string, chatName: string | null, sock?: WASocket | null): Promise<string> {
     const cleaned = cleanJid(jid)
     const map = await this.batchResolveNames([cleaned], sock)
     const resolved = map.get(cleaned)
@@ -131,7 +132,18 @@ export class ContactService {
   /**
    * Handles contacts.upsert and contacts.update logic.
    */
-  async upsertContact(contact: any, options: { overwriteName?: boolean } = {}): Promise<void> {
+  async upsertContact(
+    contact: {
+      id: string
+      lid?: string | null
+      phoneNumber?: string | null
+      name?: string | null
+      notify?: string | null
+      pushName?: string | null
+      verifiedName?: string | null
+    },
+    options: { overwriteName?: boolean } = {}
+  ): Promise<void> {
     const id = cleanJid(contact.id)
     if (!id) return
 
@@ -213,7 +225,12 @@ export class ContactService {
       if (lid) this.identityIdCache.set(lid, identityId)
     } else {
       // Update existing identity
-      const updateData: any = {}
+      const updateData: {
+        phoneNumber?: string
+        pushName?: string | null
+        verifiedName?: string | null
+        displayName?: string | null
+      } = {}
       if (phoneNumber) updateData.phoneNumber = phoneNumber // Ensure PN is attached if we just discovered it
       if (newNotify !== undefined) updateData.pushName = newNotify
       if (newVerifiedName !== undefined) updateData.verifiedName = newVerifiedName
@@ -382,15 +399,17 @@ export class ContactService {
   /**
    * Internal helper to find an Identity ID by a JID (alias).
    */
-  async getIdentityIdByJid(jid: string | any): Promise<number | null> {
+  async getIdentityIdByJid(jid: string | { id: string } | null | undefined): Promise<number | null> {
     if (!jid) return null
-    if (typeof jid === 'object' && jid.id) {
-      jid = jid.id
-    } else if (typeof jid !== 'string') {
-      return null
+    let targetJid: string
+    if (typeof jid === 'object') {
+      if (!jid.id) return null
+      targetJid = jid.id
+    } else {
+      targetJid = jid
     }
 
-    const cleaned = cleanJid(jid)
+    const cleaned = cleanJid(targetJid)
     if (this.identityIdCache.has(cleaned)) {
       return this.identityIdCache.get(cleaned)!
     }
@@ -421,7 +440,7 @@ export class ContactService {
   async getProfilePicture(
     jid: string,
     type: 'preview' | 'image' = 'preview',
-    sock?: any,
+    sock?: WASocket | null,
     forceRefresh: boolean = false
   ): Promise<string | null> {
     if (type === 'image') {
@@ -431,7 +450,7 @@ export class ContactService {
       try {
         const url = await sock.profilePictureUrl(jid, 'image')
         if (url) this.imageCache.set(jid, url)
-        return url
+        return url || null
       } catch (e) {
         return null
       }
@@ -472,7 +491,7 @@ export class ContactService {
           }
         }
       }
-      return url
+      return url || null
     } catch (e) {
       return null
     }
@@ -568,7 +587,11 @@ export class ContactService {
         }
 
         // 5. Enrich the survivor with any unique data the stub held
-        const enrichUpdate: any = {}
+        const enrichUpdate: {
+          displayName?: string | null
+          verifiedName?: string | null
+          profilePictureUrl?: string | null
+        } = {}
         if (!keep.displayName && stub.displayName) enrichUpdate.displayName = stub.displayName
         if (!keep.verifiedName && stub.verifiedName) enrichUpdate.verifiedName = stub.verifiedName
         if (!keep.profilePictureUrl && stub.profilePictureUrl) enrichUpdate.profilePictureUrl = stub.profilePictureUrl
