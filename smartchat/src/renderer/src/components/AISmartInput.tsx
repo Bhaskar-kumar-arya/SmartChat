@@ -368,8 +368,8 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
         </div>
       )}
 
-      <div className="ai-input-box" style={{ padding: '8px 12px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '6px', minWidth: 0 }}>
+      <div className="ai-input-box">
+        <div className="ai-input-content">
           <div className="ai-input-inner">
             <div 
               ref={highlightRef}
@@ -392,12 +392,12 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
           
           {/* Bottom status row */}
           {aiOptions && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '6px 4px 0 4px', fontSize: '11px', color: 'var(--wa-text-secondary, #8696a0)', userSelect: 'none', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-              <span style={{ cursor: 'default', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 500, color: 'var(--wa-text-primary, #fff)' }}>
+            <div className="ai-status-bar">
+              <span className="ai-model-label">
                 {activeModelName}
               </span>
               {aiOptions.useThinkMode && (
-                <span style={{ cursor: 'default', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--wa-primary, #00a884)', fontWeight: 600 }}>
+                <span className="ai-think-badge">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .5 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
                     <path d="M9 18h6" />
@@ -415,7 +415,6 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
             className="ai-send-btn abort" 
             onClick={onAbort} 
             title="Stop Generation"
-            style={{ alignSelf: 'flex-end', marginBottom: '2px' }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
               <rect x="6" y="6" width="12" height="12"></rect>
@@ -433,7 +432,6 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
               }
             }} 
             disabled={disabled || !inputValue.trim()}
-            style={{ alignSelf: 'flex-end', marginBottom: '2px' }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="22" y1="2" x2="11" y2="13"></line>

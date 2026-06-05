@@ -12,10 +12,9 @@ import { api } from '../services/api.service'
 interface AIChatSidebarProps {
   isOpen: boolean
   onClose: () => void
-  width: number
 }
 
-export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarProps) {
+export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
   const [chatList, setChatList] = useState<ChatItem[]>([])
   const [availableTools, setAvailableTools] = useState<ToolDefinition[]>([])
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
@@ -178,7 +177,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   if (!isOpen) return null
 
   return (
-    <div className="ai-sidebar" style={{ width: `${width}px`, position: 'relative' }}>
+    <div className="ai-sidebar">
       <AIChatHistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => {

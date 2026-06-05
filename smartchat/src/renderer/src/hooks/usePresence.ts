@@ -1,15 +1,16 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '../services/api.service'
+import { PresenceMap, PresenceUpdate } from '../types'
 
 /**
  * Hook to manage real-time presence updates and their automatic expiration.
  * This satisfies the Single Responsibility Principle.
  */
 export const usePresence = () => {
-  const [presences, setPresences] = useState<Record<string, any>>({})
+  const [presences, setPresences] = useState<Record<string, PresenceMap>>({})
 
   useEffect(() => {
-    const unSub = api.onPresenceUpdate((update) => {
+    const unSub = api.onPresenceUpdate((update: PresenceUpdate) => {
       setPresences((prev) => {
         const currentRemotePresence = prev[update.remoteJid] || {}
         return {
@@ -55,7 +56,7 @@ export const usePresence = () => {
   const getActivePresence = useCallback((jid: string | null) => {
     if (!jid || !presences[jid]) return null
     const presenceMap = presences[jid]
-    const entries = Object.entries(presenceMap) as [string, any][]
+    const entries = Object.entries(presenceMap)
     
     const composing = entries.filter(([_, s]) => s.lastKnownPresence === 'composing')
     const recording = entries.filter(([_, s]) => s.lastKnownPresence === 'recording')

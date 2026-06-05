@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, memo } from 'react'
 import { MessageItem as IMessageItem, ReactionItem, MessageReceiptInfo } from '../types'
-import { formatTime } from '../utils/formatters'
+import { formatTime, formatReceiptTime, formatReceiptDate } from '../utils/formatters'
 import { TextMessage } from './messages/TextMessage'
 import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage, AudioMessage } from './messages/MediaMessages'
 import { api } from '../services/api.service'
@@ -28,7 +28,7 @@ interface MessageItemProps {
   onViewReactions: (msg: IMessageItem) => void
 }
 
-export default function MessageItem({ msg, onReply, onEdit, onDelete, onDownloadMedia, onViewReactions }: MessageItemProps) {
+const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, onDownloadMedia, onViewReactions }: MessageItemProps) {
   const [downloading, setDownloading] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -239,7 +239,7 @@ export default function MessageItem({ msg, onReply, onEdit, onDelete, onDownload
       )}
     </div>
   )
-}
+})
 
 function ReactionsDisplay({ reactions, onClick }: { reactions?: ReactionItem[], onClick: () => void }) {
   if (!reactions || reactions.length === 0) return null
@@ -299,26 +299,6 @@ interface InfoModalProps {
 }
 
 function MessageInfoModal({ receipts, onClose }: InfoModalProps) {
-  const formatReceiptTime = (timestampStr: string) => {
-    try {
-      const ts = parseInt(timestampStr, 10)
-      if (isNaN(ts)) return ''
-      return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    } catch {
-      return ''
-    }
-  }
-
-  const formatReceiptDate = (timestampStr: string) => {
-    try {
-      const ts = parseInt(timestampStr, 10)
-      if (isNaN(ts)) return ''
-      return new Date(ts * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
-    } catch {
-      return ''
-    }
-  }
-
   return (
     <div className="info-modal-backdrop" onClick={onClose}>
       <div className="info-modal-container" onClick={(e) => e.stopPropagation()}>
@@ -361,3 +341,5 @@ function MessageInfoModal({ receipts, onClose }: InfoModalProps) {
     </div>
   )
 }
+
+export default MessageItem

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { MessageItem as IMessageItem } from '../types'
 import { formatDate } from '../utils/formatters'
 import MessageItem from './MessageItem'
@@ -113,6 +113,32 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
     }
   }
 
+  const handleReply = useCallback((msg: IMessageItem) => {
+    onReply(msg)
+  }, [onReply])
+
+  const handleEdit = useCallback(async (messageId: string, newText: string) => {
+    if (onEdit) {
+      await onEdit(messageId, newText)
+    }
+  }, [onEdit])
+
+  const handleDelete = useCallback(async (messageId: string) => {
+    if (onDelete) {
+      await onDelete(messageId)
+    }
+  }, [onDelete])
+
+  const handleDownloadMedia = useCallback(async (msgId: string) => {
+    if (onDownloadMedia) {
+      await onDownloadMedia(msgId)
+    }
+  }, [onDownloadMedia])
+
+  const handleViewReactions = useCallback((m: IMessageItem) => {
+    setViewingReactions(m)
+  }, [])
+
   const dateSeparators = useMemo(() => {
     const separators = new Map<number, string>()
     let lastDate = ''
@@ -159,11 +185,11 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
             )}
             <MessageItem 
                 msg={msg} 
-                onReply={onReply} 
-                onEdit={onEdit}
-                onDelete={onDelete}
-                onDownloadMedia={onDownloadMedia} 
-                onViewReactions={(m) => setViewingReactions(m)} 
+                onReply={handleReply} 
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onDownloadMedia={handleDownloadMedia} 
+                onViewReactions={handleViewReactions} 
             />
           </div>
         ))

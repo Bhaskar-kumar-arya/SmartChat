@@ -54,33 +54,63 @@ export default function ChatLayout() {
 
   const { getActivePresence } = usePresence()
 
-  const handleSelectChat = (jid: string, name: string, profilePictureUrl?: string | null, messageId?: string | null) => {
+  const handleSelectChat = useCallback((jid: string, name: string, profilePictureUrl?: string | null, messageId?: string | null) => {
     setActiveJid(jid)
     setActiveName(name)
     setActiveProfilePic(profilePictureUrl || null)
     setReplyingTo(null)
     setTargetMessageId(messageId || null)
-  }
+  }, [])
 
-  const handleSendMessage = async (text: string, mentions?: string[]) => {
+  const handleSendMessage = useCallback(async (text: string, mentions?: string[]) => {
     await sendMessage(text, replyingTo?.id, mentions)
     setReplyingTo(null)
-  }
+  }, [sendMessage, replyingTo])
 
-  const handleSendMediaMessage = async (filePath: string, text: string, mentions?: string[]) => {
+  const handleSendMediaMessage = useCallback(async (filePath: string, text: string, mentions?: string[]) => {
     await sendMediaMessage(filePath, text, replyingTo?.id, mentions)
     setReplyingTo(null)
-  }
+  }, [sendMediaMessage, replyingTo])
 
   const activePresenceText = getActivePresence(activeJid)
 
-  const openOverlay = (jid: string, name: string) => {
+  const openOverlay = useCallback((jid: string, name: string) => {
     setOverlayJid(jid)
     setOverlayName(name)
-  }
+  }, [])
+
+  const handleReply = useCallback((msg: MessageItem) => {
+    setReplyingTo(msg)
+  }, [])
+
+  const handleTargetScrolled = useCallback(() => {
+    setTargetMessageId(null)
+  }, [])
+
+  const handleCancelReply = useCallback(() => {
+    setReplyingTo(null)
+  }, [])
+
+  const handleCloseAI = useCallback(() => {
+    setIsAIOpen(false)
+  }, [])
+
+  const handleToggleAI = useCallback(() => {
+    setIsAIOpen((prev) => !prev)
+  }, [])
+
+  const handleCloseOverlay = useCallback(() => {
+    setOverlayJid(null)
+  }, [])
+
+  const handleHeaderProfileClick = useCallback(() => {
+    if (activeJid) {
+      openOverlay(activeJid, activeName)
+    }
+  }, [activeJid, activeName, openOverlay])
 
   return (
-    <div className="chat-layout">
+    <div className="chat-layout" style={{ '--ai-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
       <ChatList
         activeJid={activeJid}
         onSelectChat={handleSelectChat}
@@ -94,7 +124,7 @@ export default function ChatLayout() {
                 jid={activeJid} 
                 initialUrl={activeProfilePic} 
                 size={40} 
-                onClick={() => openOverlay(activeJid, activeName)}
+                onClick={handleHeaderProfileClick}
               />
               <div className="chat-header-info">
                 <h2 className="chat-header-name">{activeName}</h2>
@@ -110,19 +140,19 @@ export default function ChatLayout() {
               messages={messages}
               loading={loadingMessages}
               onLoadMore={loadMore}
-              onReply={(msg) => setReplyingTo(msg)}
+              onReply={handleReply}
               onEdit={editMessage}
               onDelete={deleteMessage}
               onDownloadMedia={handleDownloadMedia}
               targetMessageId={targetMessageId}
-              onTargetScrolled={() => setTargetMessageId(null)}
+              onTargetScrolled={handleTargetScrolled}
             />
             <MessageInput
               onSend={handleSendMessage}
               onSendMedia={handleSendMediaMessage}
               activeJid={activeJid}
               replyingTo={replyingTo}
-              onCancelReply={() => setReplyingTo(null)}
+              onCancelReply={handleCancelReply}
             />
           </>
         ) : (
@@ -142,17 +172,15 @@ export default function ChatLayout() {
         <div 
           className="ai-sidebar-resizer"
           onMouseDown={startResizing}
-          style={{ right: `${sidebarWidth}px` }}
         />
       )}
 
-      <AIChatSidebar isOpen={isAIOpen} onClose={() => setIsAIOpen(false)} width={sidebarWidth} />
+      <AIChatSidebar isOpen={isAIOpen} onClose={handleCloseAI} />
 
       <button 
         className={`ai-edge-tab ${isAIOpen ? 'open' : ''}`}
-        onClick={() => setIsAIOpen(!isAIOpen)}
+        onClick={handleToggleAI}
         title={isAIOpen ? "Close AI Assistant" : "Open AI Assistant"}
-        style={isAIOpen ? { right: `${sidebarWidth}px` } : {}}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           {isAIOpen ? <polyline points="9 18 15 12 9 6"></polyline> : <polyline points="15 18 9 12 15 6"></polyline>}
@@ -163,7 +191,7 @@ export default function ChatLayout() {
         <ProfilePicOverlay 
           jid={overlayJid} 
           name={overlayName} 
-          onClose={() => setOverlayJid(null)} 
+          onClose={handleCloseOverlay} 
         />
       )}
     </div>

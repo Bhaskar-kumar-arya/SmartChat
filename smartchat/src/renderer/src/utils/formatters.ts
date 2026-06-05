@@ -45,3 +45,23 @@ export const isMuted = (expiration?: string) => {
   const expTime = Number(expiration) * 1000
   return expTime === -1000 || expTime > Date.now()
 }
+
+export const formatReceiptTime = (timestampStr: string): string => {
+  try {
+    const ts = parseInt(timestampStr, 10)
+    if (isNaN(ts)) return ''
+    return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return ''
+  }
+}
+
+export const formatReceiptDate = (timestampStr: string): string => {
+  try {
+    const ts = parseInt(timestampStr, 10)
+    if (isNaN(ts)) return ''
+    return new Date(ts * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch {
+    return ''
+  }
+}

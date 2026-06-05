@@ -4,13 +4,7 @@ import { useMentions } from '../hooks/useMentions'
 import { useAudioRecorder } from '../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'
 import { api } from '../services/api.service'
-
-interface MessageItem {
-  id: string
-  textContent: string | null
-  participantName?: string | null
-  [key: string]: any
-}
+import { MessageItem } from '../types'
 
 interface MessageInputProps {
   activeJid: string
@@ -176,7 +170,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
   }
 
   return (
-    <div className="message-input-wrapper" style={{ display: 'flex', flexDirection: 'column', width: '100%', borderTop: '1px solid var(--border, #e5e5e5)', position: 'relative' }}>
+    <div className="message-input-wrapper">
       {showMenu && (
         <MentionMenu 
           participants={participants} 
@@ -187,29 +181,30 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
       )}
 
       {replyingTo && (
-        <div className="reply-preview" style={{ padding: '8px 16px', backgroundColor: '#f0f2f5', borderLeft: '4px solid var(--primary, #00a884)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary, #00a884)' }}>
+        <div className="reply-preview">
+          <div className="reply-preview-content">
+            <span className="reply-preview-title">
               Replying to {replyingTo.participantName || 'someone'}
             </span>
-            <p style={{ margin: 0, fontSize: '0.9rem', color: '#555', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <p className="reply-preview-text">
               {replyingTo.textContent || 'Media message'}
             </p>
           </div>
-          <button onClick={onCancelReply} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888' }}>
+          <button onClick={onCancelReply} className="reply-preview-close">
             <X size={18} />
           </button>
         </div>
       )}
       
       {selectedFile && (
-        <div className="file-preview" style={{ padding: '8px 16px', backgroundColor: '#e9edef', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '0.9rem', color: '#333' }}>📎 {selectedFile.name} attached</span>
-          <button onClick={() => setSelectedFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888' }}>
+        <div className="file-preview">
+          <span className="file-preview-text">📎 {selectedFile.name} attached</span>
+          <button onClick={() => setSelectedFile(null)} className="file-preview-close">
             <X size={18} />
           </button>
         </div>
       )}
+
 
       <div className="message-input-container">
         {!isRecording && !audioBlob ? (
@@ -248,7 +243,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
               </button>
             )}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+            <div className="recording-stats">
                 {!audioBlob && <div className="recording-dot" />}
                 <span className="recording-timer">
                     {Math.floor(duration / 60)}:{(duration % 60).toString().padStart(2, '0')}
