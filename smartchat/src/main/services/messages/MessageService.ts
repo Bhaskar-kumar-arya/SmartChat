@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
 import { EmbeddingService } from '../search/EmbeddingService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
-import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage as sharedUnwrapMessage } from '../../utils'
+import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils'
 import { BrowserWindow } from 'electron'
 import { WASocket, BaileysMessage, ProcessedMessage, ProtocolResult, DBMessageWithSender, MediaSendOptions, EnrichedMessage, BaileysReactionUpdate } from '../../types'
 
@@ -30,21 +30,7 @@ export class MessageService {
     private embeddingService: EmbeddingService
   ) {}
 
-  /**
-   * Unwraps special message containers (ephemeral, view-once, document-with-caption).
-   * Delegates to the shared util — kept as an instance method for backward compatibility.
-   */
-  unwrapMessage(msg: any): any {
-    return sharedUnwrapMessage(msg)
-  }
 
-  /**
-   * Helper to dynamically determine the message type, with priority fallback.
-   * Delegates to the shared util — kept as an instance method for backward compatibility.
-   */
-  getMessageType(unwrapped: any): string {
-    return getMessageType(unwrapped)
-  }
 
   /**
    * Parses a raw Baileys message object and prepares it for persistence.
@@ -80,7 +66,7 @@ export class MessageService {
 
     // 2. Extract text content & Unwrap
     let textContent: string | null = null
-    const unwrapped = rawMessage ? this.unwrapMessage(rawMessage) : null
+    const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
     
     if (unwrapped) {
       if (typeof unwrapped.conversation === 'string') {
@@ -96,7 +82,7 @@ export class MessageService {
     }
 
     // 3. Determine message type
-    const messageType = unwrapped ? this.getMessageType(unwrapped) : 'unknown'
+    const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
 
     // 4. Parse Timestamp
     const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
@@ -269,8 +255,8 @@ export class MessageService {
     const participantString = key.participant ? cleanJid(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
 
     // Determine message type
-    const unwrapped = rawMessage ? this.unwrapMessage(rawMessage) : null
-    const messageType = unwrapped ? this.getMessageType(unwrapped) : 'unknown'
+    const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
+    const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
 
     // Protocol and reaction messages need special per-message handling — skip in bulk
     if (messageType === 'protocolMessage' || messageType === 'reactionMessage') return null
@@ -398,13 +384,13 @@ export class MessageService {
     messages.forEach(m => {
       try {
         const content = JSON.parse(m.content)
-        const unwrapped = this.unwrapMessage(content)
+        const unwrapped = unwrapMessage(content)
         const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.contextInfo
         if (ctx) {
           if (ctx.participant) additionalJids.add(ctx.participant)
           if (ctx.mentionedJid) ctx.mentionedJid.forEach((j: string) => additionalJids.add(j))
           if (ctx.quotedMessage) {
-            const q = this.unwrapMessage(ctx.quotedMessage)
+            const q = unwrapMessage(ctx.quotedMessage)
             const qCtx = q?.extendedTextMessage?.contextInfo || q?.contextInfo
             if (qCtx && qCtx.mentionedJid) qCtx.mentionedJid.forEach((j: string) => additionalJids.add(j))
           }
@@ -462,7 +448,7 @@ export class MessageService {
     let finalContent: any = {}
     try { finalContent = JSON.parse(msg.content) } catch (e) {}
 
-    const unwrapped = this.unwrapMessage(finalContent)
+    const unwrapped = unwrapMessage(finalContent)
     const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.imageMessage?.contextInfo || unwrapped?.videoMessage?.contextInfo || unwrapped?.documentMessage?.contextInfo || unwrapped?.audioMessage?.contextInfo || unwrapped?.contextInfo
 
     if (ctx) {
@@ -476,7 +462,7 @@ export class MessageService {
             }
         }
         if (ctx.quotedMessage) {
-            const q = this.unwrapMessage(ctx.quotedMessage)
+            const q = unwrapMessage(ctx.quotedMessage)
             const qCtx = q?.extendedTextMessage?.contextInfo || q?.imageMessage?.contextInfo || q?.videoMessage?.contextInfo || q?.documentMessage?.contextInfo || q?.audioMessage?.contextInfo || q?.contextInfo
             if (qCtx && qCtx.mentionedJid && Array.isArray(qCtx.mentionedJid)) {
                 qCtx.mentions = {}

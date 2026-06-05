@@ -6,6 +6,8 @@ import fs from 'fs'
 import { MessageService } from './MessageService'
 import { ContactService } from '../contacts/ContactService'
 import { EnrichedMessage, WASocket } from '../../types'
+import { unwrapMessage } from '../../utils'
+
 
 export class MediaService {
   constructor(
@@ -21,7 +23,7 @@ export class MediaService {
     if (!dbMsg || !dbMsg.content) throw new Error('Message not found')
 
     const rawMessage = JSON.parse(dbMsg.content)
-    const unwrapped = this.messageService.unwrapMessage(rawMessage)
+    const unwrapped = unwrapMessage(rawMessage)
     
     let mediaType: 'image' | 'sticker' | 'video' | 'document' | 'audio' | null = null
     if (unwrapped.imageMessage) mediaType = 'image'
@@ -57,7 +59,7 @@ export class MediaService {
             },
             message: rawMessage
           } as any)
-          const updatedMedia = this.messageService.unwrapMessage(updatedMsg.message)
+          const updatedMedia = unwrapMessage(updatedMsg.message)
           const target = updatedMedia.imageMessage || updatedMedia.stickerMessage || updatedMedia.videoMessage || updatedMedia.audioMessage
           if (target) {
             const stream = await downloadContentFromMessage(target, mediaType as any)
