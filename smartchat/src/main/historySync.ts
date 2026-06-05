@@ -1,71 +1,9 @@
 import { PrismaClient } from '@prisma/client'
-import { contactService } from './services/contacts/ContactService'
+import { ContactService } from './services/contacts/ContactService'
 import { mapBaileysStatus } from './services/whatsapp/ReceiptService'
-import { cleanJid } from './utils'
+import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent } from './utils'
 
-/**
- * Determines the high-level message type from a Baileys proto.IMessage object.
- */
-function getMessageType(message: Record<string, unknown> | null | undefined): string {
-  if (!message) return 'unknown'
 
-  const typeKeys = [
-    'conversation',
-    'extendedTextMessage',
-    'imageMessage',
-    'videoMessage',
-    'audioMessage',
-    'documentMessage',
-    'stickerMessage',
-    'contactMessage',
-    'locationMessage',
-    'liveLocationMessage',
-    'reactionMessage',
-    'pollCreationMessage',
-    'pollUpdateMessage',
-    'protocolMessage',
-    'senderKeyDistributionMessage'
-  ]
-
-  for (const key of typeKeys) {
-    if (message[key] !== undefined && message[key] !== null) {
-      return key
-    }
-  }
-
-  for (const key of Object.keys(message)) {
-    if (message[key] !== undefined && message[key] !== null) {
-      return key
-    }
-  }
-
-  return 'unknown'
-}
-
-/**
- * Extracts plain text content from a Baileys message for fast SQL searching.
- */
-function extractTextContent(message: Record<string, unknown> | null | undefined): string | null {
-  if (!message) return null
-
-  if (typeof message.conversation === 'string') {
-    return message.conversation
-  }
-
-  const extText = message.extendedTextMessage as Record<string, unknown> | undefined
-  if (extText && typeof extText.text === 'string') {
-    return extText.text
-  }
-
-  for (const key of ['imageMessage', 'videoMessage', 'documentMessage']) {
-    const media = message[key] as Record<string, unknown> | undefined
-    if (media && typeof media.caption === 'string') {
-      return media.caption
-    }
-  }
-
-  return null
-}
 
 export interface HistorySyncData {
   chats: Array<Record<string, unknown>>
@@ -88,7 +26,8 @@ export interface HistorySyncResult {
 
 export async function handleHistorySync(
   data: HistorySyncData,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  contactService: ContactService
 ): Promise<HistorySyncResult> {
 
   const { chats, contacts, messages, lidPnMappings, phoneNumberToLidMappings, progress, isLatest } = data
@@ -186,14 +125,7 @@ export async function handleHistorySync(
                                raw.parentGroupId !== undefined;
 
       const ts = c.conversationTimestamp ?? c.timestamp
-      let timestamp = BigInt(0)
-      if (ts !== undefined && ts !== null) {
-        timestamp = BigInt(
-          typeof ts === 'object' && 'low' in (ts as Record<string, unknown>)
-            ? (ts as Record<string, unknown>).low as number
-            : (ts as number)
-        )
-      }
+      const timestamp = (ts !== undefined && ts !== null) ? parseBaileysTimestamp(ts) : BigInt(0)
 
       const isArchived = ('archived' in c || 'isArchived' in c) ? (c.archived === true || c.isArchived === true) : false
 
@@ -291,12 +223,7 @@ export async function handleHistorySync(
         if (!key || !key.id) continue
 
         const message = m.message as Record<string, unknown> | null | undefined
-        const ts = m.messageTimestamp ?? 0
-        const timestamp = BigInt(
-          typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
-            ? (ts as Record<string, unknown>).low as number
-            : (ts as number)
-        )
+        const timestamp = parseBaileysTimestamp(m.messageTimestamp ?? 0)
 
         const remoteJid = cleanJid(String(key.remoteJid ?? ''))
         const participantRaw = key.participant ? String(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)

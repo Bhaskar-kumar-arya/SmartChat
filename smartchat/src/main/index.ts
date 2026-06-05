@@ -80,6 +80,7 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
 
   services = createServices(prisma)
+  waConnectionManager.setServices(services)
   registerIpcHandlers(prisma, services, getSock)
   initVectorDb()
 

@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client'
 import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
 import { EmbeddingService, embeddingService as globalEmbeddingService } from '../search/EmbeddingService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
-import { cleanJid } from '../../utils'
+import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage as sharedUnwrapMessage } from '../../utils'
 
 /**
  * Plain data object produced by parseMessageSync().
@@ -31,48 +31,18 @@ export class MessageService {
 
   /**
    * Unwraps special message containers (ephemeral, view-once, document-with-caption).
+   * Delegates to the shared util — kept as an instance method for backward compatibility.
    */
   unwrapMessage(msg: any): any {
-    if (!msg) return {}
-    let unwrapped = msg
-    if (unwrapped.ephemeralMessage) unwrapped = unwrapped.ephemeralMessage.message || unwrapped.ephemeralMessage
-    if (unwrapped.viewOnceMessage) unwrapped = unwrapped.viewOnceMessage.message || unwrapped.viewOnceMessage
-    if (unwrapped.viewOnceMessageV2) unwrapped = unwrapped.viewOnceMessageV2.message || unwrapped.viewOnceMessageV2
-    if (unwrapped.viewOnceMessageV2Extension) unwrapped = unwrapped.viewOnceMessageV2Extension.message || unwrapped.viewOnceMessageV2Extension
-    if (unwrapped.documentWithCaptionMessage) unwrapped = unwrapped.documentWithCaptionMessage.message || unwrapped.documentWithCaptionMessage
-    return unwrapped
+    return sharedUnwrapMessage(msg)
   }
 
   /**
    * Helper to dynamically determine the message type, with priority fallback.
+   * Delegates to the shared util — kept as an instance method for backward compatibility.
    */
   getMessageType(unwrapped: any): string {
-    if (!unwrapped) return 'unknown'
-
-    // 1. Try our high-priority standard message types first
-    const priorityKeys = [
-      'conversation', 'extendedTextMessage', 'imageMessage',
-      'videoMessage', 'audioMessage', 'documentMessage',
-      'stickerMessage', 'contactMessage', 'locationMessage',
-      'reactionMessage', 'protocolMessage', 'pollCreationMessage',
-      'pollUpdateMessage', 'liveLocationMessage'
-    ]
-
-    for (const k of priorityKeys) {
-      if (unwrapped[k] !== undefined && unwrapped[k] !== null) {
-        return k
-      }
-    }
-
-    // 2. Dynamic fallback: scan all keys, excluding technical keys
-    const ignoredKeys = new Set(['contextInfo', 'messageContextInfo'])
-    for (const k of Object.keys(unwrapped)) {
-      if (!ignoredKeys.has(k) && unwrapped[k] !== undefined && unwrapped[k] !== null) {
-        return k
-      }
-    }
-
-    return 'unknown'
+    return getMessageType(unwrapped)
   }
 
   /**
@@ -128,12 +98,7 @@ export class MessageService {
     const messageType = unwrapped ? this.getMessageType(unwrapped) : 'unknown'
 
     // 4. Parse Timestamp
-    const ts = msg.messageTimestamp ?? 0
-    const timestamp = BigInt(
-      typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
-        ? ((ts as Record<string, unknown>).low as number)
-        : (ts as number)
-    )
+    const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
 
     // 5. Ingest metadata (PushName, AltJID)
     if (msg.pushName && participantString) {
@@ -322,12 +287,7 @@ export class MessageService {
     }
 
     // Parse timestamp
-    const ts = msg.messageTimestamp ?? 0
-    const timestamp = BigInt(
-      typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
-        ? ((ts as Record<string, unknown>).low as number)
-        : (ts as number)
-    )
+    const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
 
     const status = mapBaileysStatus(msg.status)
     return {
@@ -549,10 +509,10 @@ export class MessageService {
     }
 
     // 2. Parse reaction timestamp
-    const timestamp = BigInt(
+    const timestamp = parseBaileysTimestamp(
       typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
-        ? ((ts as Record<string, unknown>).low as number)
-        : (ts as number || Math.floor(Date.now() / 1000))
+        ? ts
+        : (ts || Math.floor(Date.now() / 1000))
     )
 
     // 3. Resolve reactor JID and Identity ID
