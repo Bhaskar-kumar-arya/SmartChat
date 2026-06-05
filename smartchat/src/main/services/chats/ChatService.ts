@@ -1,7 +1,6 @@
-import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
-import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
+import { ContactService } from '../contacts/ContactService'
 import { ChatListItem, ChatUpdatePayload, WASocket } from '../../types'
 
 export class ChatService {
@@ -379,5 +378,3 @@ export class ChatService {
     }
   }
 }
-
-export const chatService = new ChatService(globalPrisma, globalContactService)

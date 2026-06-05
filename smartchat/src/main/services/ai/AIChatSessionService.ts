@@ -1,4 +1,3 @@
-import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
 import { app } from 'electron'
 import { join } from 'path'
@@ -203,5 +202,3 @@ export class AIChatSessionService {
     this.writePreferences(prefs)
   }
 }
-
-export const aiChatSessionService = new AIChatSessionService(globalPrisma)

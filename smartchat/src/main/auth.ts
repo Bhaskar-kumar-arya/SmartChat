@@ -11,6 +11,7 @@ import { join } from "path";
 import { app } from "electron";
 import { is } from "@electron-toolkit/utils";
 import * as sqliteVec from "sqlite-vec";
+import type { EmbeddingService } from "./services/search";
 
 // In dev, use the local db. In prod, use the userData dir
 const dbPath = is.dev 
@@ -56,7 +57,7 @@ export const prisma = new PrismaClient({ adapter });
  * Initializes the vector database by creating the virtual table.
  * Should be called once at application startup.
  */
-export const initVectorDb = async () => {
+export const initVectorDb = async (embeddingService?: EmbeddingService) => {
   try {
     // 1. Create the virtual table with the correct 768 dimensions for Bhasha model
     await prisma.$executeRawUnsafe(`
@@ -97,9 +98,9 @@ export const initVectorDb = async () => {
 
     if (vecCount < prismaCount) {
       console.log(`[VectorDB] Syncing missing vectors (${vecCount} vs ${prismaCount})...`);
-      // Dynamic import to avoid circular dependency
-      const { embeddingService } = await import("./services/search/EmbeddingService");
-      await embeddingService.syncVectors();
+      if (embeddingService) {
+        await embeddingService.syncVectors();
+      }
     }
   } catch (err) {
     console.error("[VectorDB] Failed to initialize vector table:", err);

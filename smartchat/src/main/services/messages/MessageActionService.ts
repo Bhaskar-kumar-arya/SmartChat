@@ -1,8 +1,7 @@
-import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
-import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
-import { MessageService, messageService as globalMessageService } from './MessageService'
-import { ChatService, chatService as globalChatService } from '../chats/ChatService'
+import { ContactService } from '../contacts/ContactService'
+import { MessageService } from './MessageService'
+import { ChatService } from '../chats/ChatService'
 import { BrowserWindow } from 'electron'
 import { proto } from '@whiskeysockets/baileys'
 import { WASocket, EnrichedMessage } from '../../types'
@@ -300,5 +299,3 @@ export class MessageActionService {
     };
   }
 }
-
-export const messageActionService = new MessageActionService(globalPrisma, globalContactService, globalMessageService, globalChatService)

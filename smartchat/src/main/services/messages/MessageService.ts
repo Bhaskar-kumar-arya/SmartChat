@@ -1,7 +1,6 @@
-import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
-import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
-import { EmbeddingService, embeddingService as globalEmbeddingService } from '../search/EmbeddingService'
+import { ContactService } from '../contacts/ContactService'
+import { EmbeddingService } from '../search/EmbeddingService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage as sharedUnwrapMessage } from '../../utils'
 import { BrowserWindow } from 'electron'
@@ -570,6 +569,7 @@ export class MessageService {
 
       const mockMsg = {
         id: reactionKey.id || targetId,
+        chatJid: cleanJid(reactionKey.remoteJid || ''),
         remoteJid: reactionKey.remoteJid || '',
         fromMe: reactionKey.fromMe === true,
         senderId: reactorId,
@@ -605,5 +605,3 @@ export class MessageService {
     return `${msgId}.${ext}`
   }
 }
-
-export const messageService = new MessageService(globalPrisma, globalContactService, globalEmbeddingService)

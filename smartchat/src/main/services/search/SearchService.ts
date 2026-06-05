@@ -1,7 +1,6 @@
-import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
-import { ContactService, contactService as globalContactService } from '../contacts/ContactService'
-import { EmbeddingService, embeddingService as globalEmbeddingService } from './EmbeddingService'
+import { ContactService } from '../contacts/ContactService'
+import { EmbeddingService } from './EmbeddingService'
 import { WASocket } from '../../types'
 
 export interface SearchResultItem {
@@ -224,5 +223,3 @@ export class SearchService implements ISearchService {
     }
   }
 }
-
-export const searchService = new SearchService(globalPrisma, globalContactService, globalEmbeddingService)

@@ -1,5 +1,4 @@
 import { BrowserWindow } from 'electron'
-import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
 import { WASocket, MessageReceiptUpdate, BaileysMessage } from '../../types'
@@ -233,5 +232,3 @@ export class ReceiptService {
     }
   }
 }
-
-export const receiptService = new ReceiptService(globalPrisma)

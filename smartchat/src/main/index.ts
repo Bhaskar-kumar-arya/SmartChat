@@ -4,7 +4,7 @@ import { pathToFileURL } from 'url'
 import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { waConnectionManager } from './services/whatsapp/WhatsAppConnectionManager'
+import { WhatsAppConnectionManager } from './services/whatsapp'
 import { prisma, initVectorDb } from './auth'
 import { registerIpcHandlers } from './ipcHandlers'
 import { createServices } from './ServiceContainer'
@@ -14,11 +14,11 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
 ])
 
-// Module-level socket reference so IPC handlers can access it
-const getSock = () => waConnectionManager.getSocket()
-
 let mainWindow: BrowserWindow | null = null
 let services: ReturnType<typeof createServices>
+let waConnectionManager: WhatsAppConnectionManager
+
+const getSock = () => waConnectionManager?.getSocket() || null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -80,9 +80,9 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
 
   services = createServices(prisma)
-  waConnectionManager.setServices(services)
-  registerIpcHandlers(prisma, services, getSock)
-  initVectorDb()
+  waConnectionManager = new WhatsAppConnectionManager(services, prisma)
+  registerIpcHandlers(prisma, services, getSock, waConnectionManager)
+  initVectorDb(services.embeddingService)
 
   ipcMain.on('wa-skip-sync', () => {
     waConnectionManager.skipSync()

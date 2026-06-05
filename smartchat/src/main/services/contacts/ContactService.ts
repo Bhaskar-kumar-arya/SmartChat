@@ -1,4 +1,3 @@
-import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
 import { WASocket } from '../../types'
@@ -716,5 +715,3 @@ export class ContactService {
     }
   }
 }
-
-export const contactService = new ContactService(globalPrisma)

@@ -4,17 +4,17 @@ import fs from 'fs'
 import { join } from 'path'
 import { proto } from '@whiskeysockets/baileys'
 import { ServiceContainer } from './ServiceContainer'
-import { contactService as globalContactService } from './services/contacts/ContactService'
-import { messageService as globalMessageService } from './services/messages/MessageService'
 import { toolRegistry } from './services/ai/AIToolService'
 import { AIToolInitializer } from './services/ai/AIToolInitializer'
 import { audioTranscoderService } from './services/audio/AudioTranscoderService'
 import { WASocket } from './types'
+import { WhatsAppConnectionManager } from './services/whatsapp'
 
 export function registerIpcHandlers(
   prisma: PrismaClient,
   services: ServiceContainer,
-  getSock: () => WASocket | null
+  getSock: () => WASocket | null,
+  waConnectionManager: WhatsAppConnectionManager
 ): void {
   // ── Get Chat List (paginated, sorted by latest timestamp) ────────────
   ipcMain.handle('get-chats', async (_event, page: number = 1, pageSize: number = 50) => {
@@ -259,7 +259,6 @@ export function registerIpcHandlers(
       create: { id: 'sync_full_history', data: full ? 'true' : 'false' }
     }).catch(() => {})
 
-    const { waConnectionManager } = await import('./services/whatsapp/WhatsAppConnectionManager')
     waConnectionManager.connect()
     return true
   })
@@ -285,7 +284,7 @@ export function registerIpcHandlers(
 
   // ── AI Handlers ───────────────────────────────────────────────────────
   
-  AIToolInitializer.initializeAll(getSock);
+  AIToolInitializer.initializeAll(getSock, services);
   
   services.embeddingService.setOnActiveStateSync((isActive) => {
     BrowserWindow.getAllWindows().forEach(win => {
@@ -439,8 +438,3 @@ export function registerIpcHandlers(
     return result
   })
 }
-
-// Exporting helpers for index.ts
-export const resolveContactName = (jid: string, chatName: string | null, sock: WASocket | null) => 
-    globalContactService.resolveName(jid, chatName, sock)
-export const unwrapMessage = (msg: Record<string, unknown> | null | undefined) => globalMessageService.unwrapMessage(msg)

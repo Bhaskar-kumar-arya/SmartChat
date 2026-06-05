@@ -80,5 +80,3 @@ export class AIChatExportService {
     }
   }
 }
-
-export const aiChatExportService = new AIChatExportService()

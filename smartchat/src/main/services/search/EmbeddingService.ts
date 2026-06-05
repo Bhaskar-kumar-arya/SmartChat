@@ -1,7 +1,6 @@
 import { app } from 'electron'
 import path from 'path'
 import { Worker } from 'worker_threads'
-import { prisma as globalPrisma } from '../../auth'
 import { PrismaClient } from '@prisma/client'
 
 // ── SRP: this service ONLY handles embedding generation coordination, storage and retrieval ──
@@ -304,5 +303,3 @@ export class EmbeddingService implements IEmbeddingService {
     console.log('[EmbeddingService] Sync complete.')
   }
 }
-
-export const embeddingService = new EmbeddingService(globalPrisma)

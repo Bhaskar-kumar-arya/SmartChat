@@ -1,5 +1,5 @@
 import { AITool } from '../services/ai/AIToolService';
-import { messageActionService } from '../services/messages/MessageActionService';
+import { MessageActionService } from '../services/messages/MessageActionService';
 import { WASocket } from '../types';
 
 export class MessageActionTool implements AITool {
@@ -55,11 +55,10 @@ HOW TO USE:
     required: ['action', 'messageId']
   };
 
-  private getSock: () => WASocket | null;
-
-  constructor(getSock: () => WASocket | null) {
-    this.getSock = getSock;
-  }
+  constructor(
+    private getSock: () => WASocket | null,
+    private messageActionService: MessageActionService
+  ) {}
 
   async execute(args: any) {
     const { action, messageId, jid, newText, targetJids, reaction } = args;
@@ -71,19 +70,19 @@ HOW TO USE:
     if (!sock) throw new Error('WhatsApp socket is not connected');
 
     if (action === 'delete') {
-      return await messageActionService.deleteMessage(sock, messageId, jid);
+      return await this.messageActionService.deleteMessage(sock, messageId, jid);
     } else if (action === 'edit') {
       if (!newText) {
         throw new Error('Missing required argument: newText is required for editing a message');
       }
-      return await messageActionService.editMessage(sock, messageId, newText, jid);
+      return await this.messageActionService.editMessage(sock, messageId, newText, jid);
     } else if (action === 'forward') {
-      return await messageActionService.forwardMessage(sock, messageId, targetJids || [], jid);
+      return await this.messageActionService.forwardMessage(sock, messageId, targetJids || [], jid);
     } else if (action === 'react') {
       if (reaction === undefined) {
         throw new Error('Missing required argument: reaction is required for reacting to a message');
       }
-      return await messageActionService.reactToMessage(sock, messageId, reaction, jid);
+      return await this.messageActionService.reactToMessage(sock, messageId, reaction, jid);
     } else {
       throw new Error(`Unknown action: ${action}`);
     }
