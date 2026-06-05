@@ -133,6 +133,12 @@ const api = {
   searchAll: (query: string, mode: 'normal' | 'deep' = 'normal', filters?: any) => {
     return ipcRenderer.invoke('search-all', query, mode, filters)
   },
+  searchMentionContacts: (query: string) => {
+    return ipcRenderer.invoke('search-mention-contacts', query)
+  },
+  searchMentionChats: (query: string) => {
+    return ipcRenderer.invoke('search-mention-chats', query)
+  },
   indexEmbeddings: () => {
     return ipcRenderer.invoke('index-embeddings')
   },

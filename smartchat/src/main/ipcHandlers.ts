@@ -137,6 +137,14 @@ export function registerIpcHandlers(
     return services.searchService.searchAll(query, mode, sock, parsedFilters)
   })
 
+  ipcMain.handle('search-mention-contacts', async (_event, query: string) => {
+    return services.searchService.searchMentionContacts(query)
+  })
+
+  ipcMain.handle('search-mention-chats', async (_event, query: string) => {
+    return services.searchService.searchMentionChats(query)
+  })
+
   // ── Sync Mode Configuration ─────────────────────────────────────────
   ipcMain.handle('get-sync-full-history', async () => {
     const row = await prisma.authState.findUnique({ where: { id: 'sync_full_history' } }).catch(() => null)

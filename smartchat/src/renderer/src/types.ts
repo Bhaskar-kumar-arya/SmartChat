@@ -11,6 +11,9 @@ export interface ChatItem {
   isCommunity?: boolean
   isAnnounce?: boolean
   linkedParentJid?: string | null
+  pushName?: string | null
+  verifiedName?: string | null
+  phoneNumber?: string | null
 }
 
 export interface ReactionItem {

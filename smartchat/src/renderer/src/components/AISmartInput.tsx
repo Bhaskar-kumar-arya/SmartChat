@@ -8,10 +8,10 @@ interface SelectedContext {
 
 interface AISmartInputProps {
   chatList: ChatItem[]
-  onSend: (prompt: string, contexts: SelectedContext[], mentions: SelectedContext[]) => void
+  onSend: (prompt: string, mentions: SelectedContext[]) => void
   disabled?: boolean
   onAbort?: () => void
-  externalValue?: { prompt: string, contexts: SelectedContext[], mentions: SelectedContext[] } | null
+  externalValue?: { prompt: string, mentions: SelectedContext[] } | null
   onCancel?: () => void
   aiOptions?: { model: string; useThinkMode: boolean }
   availableModels?: ModelInfo[]
@@ -34,11 +34,11 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
   const [inputValue, setInputValue] = useState('')
   const [showMentionMenu, setShowMentionMenu] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
-  const [menuType, setMenuType] = useState<'context' | 'mention'>('context')
+  const [menuType, setMenuType] = useState<'context' | 'mention'>('mention')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [filteredChats, setFilteredChats] = useState<ChatItem[]>([])
   
-  const [contexts, setContexts] = useState<SelectedContext[]>([])
+  const contexts: SelectedContext[] = []
   const [mentions, setMentions] = useState<SelectedContext[]>([])
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -64,7 +64,6 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
   useEffect(() => {
     if (externalValue) {
       setInputValue(externalValue.prompt);
-      setContexts(externalValue.contexts);
       setMentions(externalValue.mentions);
       
       setTimeout(() => {
@@ -84,22 +83,36 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
 
   useEffect(() => {
     setMentions(prev => prev.filter(m => inputValue.includes(`@${m.name}`)));
-    setContexts(prev => prev.filter(c => inputValue.includes(`/${c.name}`)));
   }, [inputValue]);
 
   useEffect(() => {
+    let active = true
     if (mentionQuery) {
-      setFilteredChats(
-        chatList.filter(c => {
-          const dn = c.name || c.jid.split('@')[0] || '';
-          return dn.toLowerCase().includes(mentionQuery.toLowerCase());
-        })
-      )
+      if (menuType === 'mention') {
+        window.api.searchMentionContacts(mentionQuery)
+          .then(results => {
+            if (active) setFilteredChats(results as any[])
+          })
+          .catch(err => {
+            console.error('Failed to search mention contacts:', err)
+          })
+      } else {
+        window.api.searchMentionChats(mentionQuery)
+          .then(results => {
+            if (active) setFilteredChats(results as any[])
+          })
+          .catch(err => {
+            console.error('Failed to search mention chats:', err)
+          })
+      }
     } else {
       setFilteredChats(chatList.slice(0, 10))
     }
     setSelectedIndex(0)
-  }, [mentionQuery, chatList])
+    return () => {
+      active = false
+    }
+  }, [mentionQuery, menuType, chatList])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value
@@ -109,17 +122,6 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
       inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
-    }
-
-    const lastSlashPos = val.lastIndexOf('/')
-    if (lastSlashPos !== -1) {
-      const textAfterSlash = val.slice(lastSlashPos + 1)
-      if (!textAfterSlash.includes(' ')) {
-        setShowMentionMenu(true)
-        setMenuType('context')
-        setMentionQuery(textAfterSlash)
-        return
-      }
     }
 
     const lastAtPos = val.lastIndexOf('@')
@@ -164,33 +166,21 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
       if (cursorStart === cursorEnd) {
         const textBefore = inputValue.slice(0, cursorStart);
         let matchToDelete: SelectedContext | null = null;
-        let matchType = '';
         let isSpace = false;
         
         for (const m of mentions) {
-          if (textBefore.endsWith(`@${m.name} `)) { matchToDelete = m; matchType = 'mention'; isSpace = true; break; }
-          if (textBefore.endsWith(`@${m.name}`)) { matchToDelete = m; matchType = 'mention'; break; }
-        }
-        
-        if (!matchToDelete) {
-          for (const c of contexts) {
-            if (textBefore.endsWith(`/${c.name} `)) { matchToDelete = c; matchType = 'context'; isSpace = true; break; }
-            if (textBefore.endsWith(`/${c.name}`)) { matchToDelete = c; matchType = 'context'; break; }
-          }
+          if (textBefore.endsWith(`@${m.name} `)) { matchToDelete = m; isSpace = true; break; }
+          if (textBefore.endsWith(`@${m.name}`)) { matchToDelete = m; break; }
         }
 
         if (matchToDelete) {
           e.preventDefault();
-          const prefix = matchType === 'mention' ? '@' : '/';
+          const prefix = '@';
           const lenToDel = prefix.length + matchToDelete.name.length + (isSpace ? 1 : 0);
           const newText = inputValue.slice(0, cursorStart - lenToDel) + inputValue.slice(cursorStart);
           setInputValue(newText);
           
-          if (matchType === 'mention') {
-            setMentions(mentions.filter(m => m.jid !== matchToDelete!.jid));
-          } else {
-            setContexts(contexts.filter(c => c.jid !== matchToDelete!.jid));
-          }
+          setMentions(mentions.filter(m => m.jid !== matchToDelete!.jid));
           
           setTimeout(() => {
             if (inputRef.current) {
@@ -212,10 +202,9 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
       if (!e.shiftKey) {
         e.preventDefault(); // Prevent newline
         const prompt = inputValue.trim()
-        if (prompt || contexts.length > 0) {
-          onSend(prompt, contexts, mentions)
+        if (prompt) {
+          onSend(prompt, mentions)
           setInputValue('')
-          setContexts([])
           setMentions([])
           if (inputRef.current) inputRef.current.style.height = 'auto';
         }
@@ -227,22 +216,12 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
 
   const selectItem = (chat: ChatItem) => {
     const displayName = (chat.name || chat.jid.split('@')[0] || '??').trim();
-    if (menuType === 'context') {
-      if (!contexts.find(c => c.jid === chat.jid)) {
-        setContexts([...contexts, { jid: chat.jid, name: displayName }])
-      }
-      const lastSlashPos = inputValue.lastIndexOf('/')
-      if (lastSlashPos !== -1) {
-        setInputValue(inputValue.slice(0, lastSlashPos) + `/${displayName} `)
-      }
-    } else {
-      if (!mentions.find(m => m.jid === chat.jid)) {
-        setMentions([...mentions, { jid: chat.jid, name: displayName }])
-      }
-      const lastAtPos = inputValue.lastIndexOf('@')
-      if (lastAtPos !== -1) {
-        setInputValue(inputValue.slice(0, lastAtPos) + `@${displayName} `)
-      }
+    if (!mentions.find(m => m.jid === chat.jid)) {
+      setMentions([...mentions, { jid: chat.jid, name: displayName }])
+    }
+    const lastAtPos = inputValue.lastIndexOf('@')
+    if (lastAtPos !== -1) {
+      setInputValue(inputValue.slice(0, lastAtPos) + `@${displayName} `)
     }
     setShowMentionMenu(false)
     setTimeout(() => {
@@ -304,16 +283,6 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
   return (
     <div ref={containerRef} className="ai-input-wrapper">
       <div className="ai-context-list-container">
-        {contexts.length > 0 && (
-          <div className="ai-context-list">
-            {contexts.map(c => (
-              <div key={c.jid} className="ai-context-chip history">
-                <span>/{c.name}</span>
-                <button onClick={() => setContexts(contexts.filter(x => x.jid !== c.jid))}>x</button>
-              </div>
-            ))}
-          </div>
-        )}
         {mentions.length > 0 && (
           <div className="ai-context-list">
             {mentions.map(m => (
@@ -330,6 +299,46 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
         <div className="ai-mention-menu">
           {filteredChats.map((chat, idx) => {
             const displayName = chat.name || chat.jid.split('@')[0] || '??';
+            const extraName = chat.pushName || chat.verifiedName;
+            
+            const secondaryParts: string[] = [];
+            
+            // 1. Phone number
+            if (chat.phoneNumber) {
+              const num = chat.phoneNumber.split('@')[0];
+              if (/^\d+$/.test(num)) {
+                secondaryParts.push(`+${num}`);
+              } else {
+                secondaryParts.push(num);
+              }
+            } else if (!chat.jid.includes('@g.us') && !chat.jid.includes('@newsletter')) {
+              const num = chat.jid.split('@')[0];
+              if (/^\d+$/.test(num)) {
+                secondaryParts.push(`+${num}`);
+              }
+            }
+
+            // 2. Chat type / JID identifier
+            if (chat.jid.includes('@g.us')) {
+              secondaryParts.push('Group');
+            } else if (chat.jid.includes('@newsletter')) {
+              secondaryParts.push('Channel');
+            } else {
+              const username = chat.jid.split('@')[0];
+              if (!chat.phoneNumber && !/^\d+$/.test(username)) {
+                secondaryParts.push(`@${username}`);
+              }
+            }
+
+            // 3. LID identifier
+            if (chat.jid.endsWith('@lid')) {
+              secondaryParts.push(`LID: ${chat.jid.split('@')[0]}`);
+            }
+
+            const secondaryText = secondaryParts.join(' • ');
+
+            const hasExtraName = extraName && extraName.trim() !== '' && extraName.trim().toLowerCase() !== displayName.trim().toLowerCase();
+
             return (
               <div 
                 key={chat.jid} 
@@ -342,8 +351,15 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
                   <div className="ai-mention-pic-placeholder">{displayName.charAt(0).toUpperCase()}</div>
                 )}
                 <div className="ai-mention-info">
-                  <span className="ai-mention-name">{displayName}</span>
-                  <span className="ai-mention-jid">@{chat.jid.split('@')[0]}</span>
+                  <span className="ai-mention-name">
+                    {displayName}
+                    {hasExtraName && (
+                      <span className="ai-mention-pushname"> ~{extraName!.trim()}</span>
+                    )}
+                  </span>
+                  {secondaryText && (
+                    <span className="ai-mention-subtext">{secondaryText}</span>
+                  )}
                 </div>
               </div>
             )
@@ -362,7 +378,7 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
             </div>
             <textarea 
               ref={inputRef}
-              placeholder="Ask AI... (/ history, @ mention)" 
+              placeholder="Ask AI... (@ mention)" 
               value={inputValue}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
@@ -409,14 +425,13 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
             className="ai-send-btn" 
             onClick={() => {
               const prompt = inputValue.trim()
-              if (prompt || contexts.length > 0) {
-                onSend(prompt, contexts, mentions)
+              if (prompt) {
+                onSend(prompt, mentions)
                 setInputValue('')
-                setContexts([])
                 setMentions([])
               }
             }} 
-            disabled={disabled || (!inputValue.trim() && contexts.length === 0)}
+            disabled={disabled || !inputValue.trim()}
             style={{ alignSelf: 'flex-end', marginBottom: '2px' }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

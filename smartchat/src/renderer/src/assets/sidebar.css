@@ -1253,12 +1253,21 @@
   text-overflow: ellipsis;
 }
 
-.ai-mention-jid {
+.ai-mention-pushname {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--wa-text-secondary);
+  margin-left: 6px;
+}
+
+.ai-mention-jid,
+.ai-mention-subtext {
   font-size: 11px;
   color: var(--wa-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-top: 1px;
 }
 
 

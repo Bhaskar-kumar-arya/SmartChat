@@ -29,6 +29,8 @@ export type SearchMode = 'normal' | 'deep'
 
 export interface ISearchService {
   searchAll(query: string, mode: SearchMode, sock: WASocket | null, filters?: SearchFilters): Promise<SearchResults>
+  searchMentionContacts(query: string): Promise<any[]>
+  searchMentionChats(query: string): Promise<any[]>
 }
 
 function buildTimestampFilter(filters?: SearchFilters): { gte?: bigint; lte?: bigint } | undefined {
@@ -221,5 +223,113 @@ export class SearchService implements ISearchService {
       console.error('[SearchService] Native vector search failed:', err)
       return []
     }
+  }
+
+  async searchMentionContacts(query: string): Promise<any[]> {
+    const q = query.trim()
+    if (!q) return []
+
+    // 1. Search Identities (contacts/people)
+    const identities = await this.prisma.identity.findMany({
+      where: {
+        OR: [
+          { displayName: { contains: q } },
+          { pushName: { contains: q } },
+          { verifiedName: { contains: q } },
+          { phoneNumber: { contains: q } }
+        ]
+      },
+      include: {
+        aliases: true
+      },
+      take: 20
+    })
+
+    // 2. Search Chats (group chats, DMs, communities, subgroups)
+    const chats = await this.prisma.chat.findMany({
+      where: {
+        OR: [
+          { name: { contains: q } },
+          { jid: { contains: q } }
+        ]
+      },
+      select: {
+        jid: true,
+        name: true,
+        type: true,
+        profilePictureUrl: true
+      },
+      take: 20
+    })
+
+    const seenJids = new Set<string>()
+    const results: any[] = []
+
+    // Process Identities first
+    for (const ident of identities) {
+      const lidAlias = ident.aliases.find((a) => a.type === 'LID')
+      const pnAlias = ident.aliases.find((a) => a.type === 'PN')
+      const bestJid = lidAlias?.jid || pnAlias?.jid || ident.phoneNumber || ident.aliases[0]?.jid
+
+      if (!bestJid) continue
+
+      const displayName = ContactService.getDisplayName(ident, bestJid.split('@')[0])
+      seenJids.add(bestJid)
+
+      results.push({
+        jid: bestJid,
+        name: displayName,
+        pushName: ident.pushName,
+        verifiedName: ident.verifiedName,
+        phoneNumber: ident.phoneNumber,
+        profilePictureUrl: ident.profilePictureUrl
+      })
+    }
+
+    // Process Chats
+    for (const chat of chats) {
+      // Resolve LID JID for DM chats to keep it consistent and deduplicated
+      let resolvedJid = chat.jid
+      if (chat.type === 'DM') {
+        resolvedJid = await this.contactService.resolveLidFromJid(chat.jid)
+      }
+
+      if (seenJids.has(resolvedJid)) continue
+      seenJids.add(resolvedJid)
+
+      let pushName: string | null = null
+      let verifiedName: string | null = null
+      let phoneNumber: string | null = null
+      let name = chat.name
+
+      if (chat.type === 'DM') {
+        const identId = await this.contactService.getIdentityIdByJid(chat.jid)
+        if (identId) {
+          const ident = await this.prisma.identity.findUnique({ where: { id: identId } })
+          if (ident) {
+            if (!name) name = ContactService.getDisplayName(ident, chat.jid.split('@')[0])
+            pushName = ident.pushName
+            verifiedName = ident.verifiedName
+            phoneNumber = ident.phoneNumber
+          }
+        }
+      }
+      if (!name) name = chat.jid.split('@')[0]
+
+      results.push({
+        jid: resolvedJid,
+        name,
+        pushName,
+        verifiedName,
+        phoneNumber,
+        profilePictureUrl: chat.profilePictureUrl
+      })
+    }
+
+    return results.slice(0, 20)
+  }
+
+  async searchMentionChats(query: string): Promise<any[]> {
+    return this.searchMentionContacts(query)
   }
 }

@@ -79,6 +79,8 @@ declare global {
       getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean) => Promise<string | null>
       saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string) => Promise<string>
       searchAll: (query: string, mode?: 'normal' | 'deep', filters?: any) => Promise<SearchResults>
+      searchMentionContacts: (query: string) => Promise<any[]>
+      searchMentionChats: (query: string) => Promise<any[]>
       indexEmbeddings: () => Promise<void>
       onEmbeddingProgress: (callback: (pct: number) => void) => () => void
       onEmbeddingState: (callback: (isActive: boolean) => void) => () => void

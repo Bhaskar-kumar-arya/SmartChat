@@ -24,7 +24,7 @@ interface AIMessageBubbleProps {
   onRetry: () => void
   onEdit?: (messageId: string) => void
   onReRun?: (messageId: string) => void
-  onSave?: (messageId: string, newContent: string, contexts: any[], mentions: any[]) => void
+  onSave?: (messageId: string, newContent: string, mentions: any[]) => void
   chatList: any[]
 }
 
@@ -42,7 +42,6 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
 }) => {
   const [thoughtExpanded, setThoughtExpanded] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
-  const [editContent, setEditContent] = useState(message.content)
 
   if (message.isHidden) return null
 
@@ -137,14 +136,13 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
           <div className="ai-message-edit-container">
             <AISmartInput
               chatList={chatList}
-              onSend={(newContent, contexts, mentions) => {
-                onSave?.(message.id, newContent, contexts, mentions);
+              onSend={(newContent, mentions) => {
+                onSave?.(message.id, newContent, mentions);
                 setIsEditing(false);
               }}
               onCancel={() => setIsEditing(false)}
               externalValue={{
                 prompt: message.content,
-                contexts: message.contexts || [],
                 mentions: message.mentions || []
               }}
             />

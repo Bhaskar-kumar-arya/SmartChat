@@ -33,7 +33,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
   const [chatList, setChatList] = useState<ChatItem[]>([])
   const [availableTools, setAvailableTools] = useState<any[]>([])
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
-  const [editValue, setEditValue] = useState<{ prompt: string, contexts: any[], mentions: any[] } | null>(null)
+  const [editValue, setEditValue] = useState<{ prompt: string, mentions: any[] } | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -247,7 +247,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     });
     
     // Restart stream
-    startAIStream(triggerMsg.content, history, messageId, triggerMsg.contexts || [], triggerMsg.mentions || [], triggerMsg.isSystem);
+    startAIStream(triggerMsg.content, history, messageId, [], triggerMsg.mentions || [], triggerMsg.isSystem);
   }
 
   const executeToolCall = async (messageId: string, toolName: string, args: any) => {
@@ -291,7 +291,7 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     startAIStream(prompt, updated, aiMsgId, [], [], true);
   }
 
-  const handleSend = async (prompt: string, currentContexts: any[], currentMentions: any[], overrideHistory?: AIChatMessage[]) => {
+  const handleSend = async (prompt: string, currentMentions: any[], overrideHistory?: AIChatMessage[]) => {
     let baseHistory = overrideHistory || messages;
     
     if (editingMessageId && !overrideHistory) {
@@ -304,18 +304,13 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
       setEditingMessageId(null);
     }
 
-    if (!prompt && currentContexts.length === 0) return
+    if (!prompt) return
 
       setLoading(true)
 
 
       try {
-        // Resolve contexts
         const resolvedContexts: any[] = []
-        for (const ctx of currentContexts) {
-          const msgs = await window.api.getChatContext(ctx.jid)
-          resolvedContexts.push({ jid: ctx.jid, name: ctx.name, messages: msgs })
-        }
 
         // Generate unique IDs synchronously
         const userMessageId = crypto.randomUUID();
@@ -369,7 +364,6 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     // Set for editing
     setEditValue({
       prompt: msg.content,
-      contexts: msg.contexts || [],
       mentions: msg.mentions || []
     });
     setEditingMessageId(messageId);
@@ -389,20 +383,19 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
     // Note: No need to setMessages here if we pass truncatedHistory to handleSend
     // handleSend will update messages state itself
     
-    // Re-trigger handleSend with the same prompt and contexts
-    handleSend(msg.content, msg.contexts || [], msg.mentions || [], truncatedHistory);
+    // Re-trigger handleSend
+    handleSend(msg.content, msg.mentions || [], truncatedHistory);
   }
 
-  const handleSaveMessage = (messageId: string, newContent: string, contexts: any[], mentions: any[]) => {
+  const handleSaveMessage = (messageId: string, newContent: string, mentions: any[]) => {
     const msgIndex = messages.findIndex(m => m.id === messageId);
     if (msgIndex === -1) return;
-    const msg = messages[msgIndex];
     
     // Truncate messages from this point onwards
     const truncatedHistory = messages.slice(0, msgIndex);
     
     // Re-trigger handleSend with the new content
-    handleSend(newContent, contexts || [], mentions || [], truncatedHistory);
+    handleSend(newContent, mentions || [], truncatedHistory);
   }
 
   const handleAbort = async () => {
@@ -562,7 +555,6 @@ export default function AIChatSidebar({ isOpen, onClose, width }: AIChatSidebarP
         {messages.length === 0 ? (
           <div className="ai-empty-state">
             <p>How can I help you today?</p>
-            <span>Type / to attach chat history.</span>
             <span>Type @ to mention a contact.</span>
           </div>
         ) : (
