@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
+import fs from 'fs'
 import { MessageService } from './MessageService'
 import { ChatService } from '../chats/ChatService'
 import { BrowserWindow } from 'electron'
@@ -297,5 +298,83 @@ export class MessageActionService {
       messageId,
       reaction
     };
+  }
+
+  /**
+   * Orchestrates the complete text message sending workflow, including quoted keys, database logs, and UI notifications.
+   */
+  async sendMessageWorkflow(
+    sock: WASocket,
+    jid: string,
+    text: string,
+    quotedMsgId?: string,
+    mentions?: string[]
+  ): Promise<EnrichedMessage> {
+    const targetJid = await this.contactService.resolveLidFromJid(jid)
+
+    let quoted: any = undefined
+    if (quotedMsgId) {
+      const qm = await this.prisma.message.findUnique({ where: { id: quotedMsgId } })
+      if (qm && qm.content) {
+        try { 
+          quoted = { key: { id: quotedMsgId, remoteJid: qm.chatJid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
+        } catch (e) {}
+      }
+    }
+
+    const messageContent: any = { text }
+    if (mentions && mentions.length > 0) messageContent.mentions = mentions
+
+    const sentMsg = await sock.sendMessage(targetJid, messageContent, { quoted } as any)
+    if (!sentMsg) throw new Error('Failed to send message')
+
+    const processed = await this.messageService.processMessage(sentMsg, sock)
+    if (!processed || 'type' in processed) {
+      throw new Error('Failed to process sent message')
+    }
+    await this.chatService.updateTimestamp(targetJid, processed.timestamp)
+
+    const nameMap = await this.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
+    return this.messageService.enrichMessage(processed, sock, nameMap)
+  }
+
+  /**
+   * Orchestrates the complete media message sending workflow, including loading files, options extraction, sending, database logs, and UI updates.
+   */
+  async sendMediaMessageWorkflow(
+    sock: WASocket,
+    jid: string,
+    filePath: string,
+    caption?: string,
+    quotedMsgId?: string,
+    mentions?: string[]
+  ): Promise<EnrichedMessage> {
+    const targetJid = await this.contactService.resolveLidFromJid(jid)
+
+    let quoted: any = undefined
+    if (quotedMsgId) {
+        const qm = await this.prisma.message.findUnique({ where: { id: quotedMsgId } })
+        if (qm && qm.content) {
+          try { 
+            quoted = { key: { id: quotedMsgId, remoteJid: qm.chatJid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
+          } catch (e) {}
+        }
+    }
+
+    const buffer = fs.readFileSync(filePath)
+    const sendOptions = this.messageService.getMediaSendOptions(filePath, buffer, caption)
+    if (mentions && mentions.length > 0) sendOptions.mentions = mentions
+
+    const sentMsg = await sock.sendMessage(targetJid, sendOptions as any, { quoted } as any)
+    if (!sentMsg) throw new Error('Failed to send media message')
+
+    const processed = await this.messageService.processMessage(sentMsg, sock)
+    if (!processed || 'type' in processed) {
+      throw new Error('Failed to process sent message')
+    }
+    await this.chatService.updateTimestamp(targetJid, processed.timestamp)
+    
+    const nameMap = await this.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
+    return this.messageService.enrichMessage(processed, sock, nameMap)
   }
 }

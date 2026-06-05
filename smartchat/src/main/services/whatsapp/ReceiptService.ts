@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
 import { WASocket, MessageReceiptUpdate, BaileysMessage } from '../../types'
+import { ContactService } from '../contacts/ContactService'
 
 export function mapBaileysStatus(status: number | null | undefined): string {
   if (status === undefined || status === null) return 'SENT'
@@ -29,7 +30,10 @@ export class ReceiptService {
     'PLAYED': 4
   }
 
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private contactService: ContactService
+  ) {}
 
   /**
    * Processes messages.update event to handle status changes (e.g. pending -> sent).
@@ -230,5 +234,26 @@ export class ReceiptService {
     } catch (err) {
       console.error('[ReceiptService] Error processing message receipt:', err)
     }
+  }
+
+  /**
+   * Retrieves message delivery/read receipts with resolved contact names.
+   */
+  public async getMessageReceipts(messageId: string, sock: WASocket | null): Promise<any[]> {
+    const receipts = await this.prisma.messageReceipt.findMany({
+      where: { messageId },
+      orderBy: { timestamp: 'desc' }
+    })
+    const result: any[] = []
+    for (const receipt of receipts) {
+      const name = await this.contactService.resolveName(receipt.userJid, null, sock)
+      result.push({
+        userJid: receipt.userJid,
+        name,
+        status: receipt.status,
+        timestamp: receipt.timestamp.toString()
+      })
+    }
+    return result
   }
 }

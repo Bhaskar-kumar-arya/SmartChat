@@ -2,7 +2,6 @@ import { ipcMain, app, dialog, BrowserWindow } from 'electron'
 import { PrismaClient } from '@prisma/client'
 import fs from 'fs'
 import { join } from 'path'
-import { proto } from '@whiskeysockets/baileys'
 import { ServiceContainer } from './ServiceContainer'
 import { toolRegistry } from './services/ai/AIToolService'
 import { AIToolInitializer } from './services/ai/AIToolInitializer'
@@ -25,62 +24,7 @@ export function registerIpcHandlers(
   ipcMain.handle(
     'get-messages',
     async (_event, jid: string, page: number = 1, pageSize: number = 50) => {
-      const skip = (page - 1) * pageSize
-      const sock = getSock()
-
-      const messages = await prisma.message.findMany({
-        where: { chatJid: jid },
-        orderBy: { timestamp: 'desc' },
-        skip,
-        take: pageSize,
-        include: { sender: true }
-      })
-
-      // We still need to parse contextInfo for mentions
-      const additionalJids = new Set<string>()
-      messages.forEach(m => {
-          try {
-              const content = JSON.parse(m.content)
-              const unwrapped = services.messageService.unwrapMessage(content)
-              const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.contextInfo
-              if (ctx) {
-                  if (ctx.participant) additionalJids.add(ctx.participant)
-                  if (ctx.mentionedJid) ctx.mentionedJid.forEach((j: string) => additionalJids.add(j))
-                  if (ctx.quotedMessage) {
-                      const q = services.messageService.unwrapMessage(ctx.quotedMessage)
-                      const qCtx = q?.extendedTextMessage?.contextInfo || q?.contextInfo
-                      if (qCtx && qCtx.mentionedJid) qCtx.mentionedJid.forEach((j: string) => additionalJids.add(j))
-                  }
-              }
-          } catch(e) {}
-      })
-
-      const nameMap = await services.contactService.batchResolveNames(Array.from(additionalJids), sock)
-
-      const messageIds = messages.map((m) => m.id)
-      const allReactions = await prisma.reaction.findMany({
-        where: { messageId: { in: messageIds } },
-        include: { sender: true }
-      })
-
-      const messagesWithNames = await Promise.all(
-        messages.map(async (m) => {
-          const enriched = await services.messageService.enrichMessage(m, sock, nameMap)
-          const msgReactions = allReactions.filter((r) => r.messageId === m.id)
-          
-          return {
-            ...enriched,
-            reactions: msgReactions.map((r) => ({ 
-              ...r, 
-              senderId: r.sender.phoneNumber || '',
-              timestamp: r.timestamp.toString(),
-              senderName: r.sender.displayName || r.sender.pushName || r.sender.phoneNumber?.split('@')[0] || 'Unknown'
-            }))
-          }
-        })
-      )
-
-      return messagesWithNames.reverse()
+      return services.messageService.getChatMessages(jid, page, pageSize, getSock())
     }
   )
 
@@ -88,33 +32,7 @@ export function registerIpcHandlers(
   ipcMain.handle('send-message', async (_event, jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
-
-    const targetJid = await services.contactService.resolveLidFromJid(jid)
-
-    let quoted: any = undefined
-    if (quotedMsgId) {
-      const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
-      if (qm && qm.content) {
-        try { 
-          quoted = { key: { id: quotedMsgId, remoteJid: qm.chatJid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
-        } catch (e) {}
-      }
-    }
-
-    const messageContent: any = { text }
-    if (mentions && mentions.length > 0) messageContent.mentions = mentions
-
-    const sentMsg = await sock.sendMessage(targetJid, messageContent, { quoted } as any)
-    if (!sentMsg) throw new Error('Failed to send message')
-
-    const processed = await services.messageService.processMessage(sentMsg, sock)
-    if (!processed || 'type' in processed) {
-      throw new Error('Failed to process sent message')
-    }
-    await services.chatService.updateTimestamp(targetJid, processed.timestamp)
-
-    const nameMap = await services.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
-    return services.messageService.enrichMessage(processed, sock, nameMap)
+    return services.messageActionService.sendMessageWorkflow(sock, jid, text, quotedMsgId, mentions)
   })
 
   // ── Edit Message ─────────────────────────────────────────────────────
@@ -143,34 +61,7 @@ export function registerIpcHandlers(
   ipcMain.handle('send-media-message', async (_event, jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()
     if (!sock) throw new Error('WhatsApp socket is not connected')
-
-    const targetJid = await services.contactService.resolveLidFromJid(jid)
-
-    let quoted: any = undefined
-    if (quotedMsgId) {
-        const qm = await prisma.message.findUnique({ where: { id: quotedMsgId } })
-        if (qm && qm.content) {
-          try { 
-            quoted = { key: { id: quotedMsgId, remoteJid: qm.chatJid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
-          } catch (e) {}
-        }
-    }
-
-    const buffer = fs.readFileSync(filePath)
-    const sendOptions = services.messageService.getMediaSendOptions(filePath, buffer, caption)
-    if (mentions && mentions.length > 0) sendOptions.mentions = mentions
-
-    const sentMsg = await sock.sendMessage(targetJid, sendOptions as any, { quoted } as any)
-    if (!sentMsg) throw new Error('Failed to send media message')
-
-    const processed = await services.messageService.processMessage(sentMsg, sock)
-    if (!processed || 'type' in processed) {
-      throw new Error('Failed to process sent message')
-    }
-    await services.chatService.updateTimestamp(targetJid, processed.timestamp)
-    
-    const nameMap = await services.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
-    return services.messageService.enrichMessage(processed, sock, nameMap)
+    return services.messageActionService.sendMediaMessageWorkflow(sock, jid, filePath, caption, quotedMsgId, mentions)
   })
 
   // ── Save Temp File ───────────────────────────────────────────────────
@@ -344,22 +235,7 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle('get-chat-context', async (_event, jid: string) => {
-    const targetJid = await services.contactService.resolveLidFromJid(jid)
-    const messages = await prisma.message.findMany({
-      where: { chatJid: targetJid },
-      orderBy: { timestamp: 'desc' },
-      take: 100,
-      include: { sender: true }
-    });
-    
-    const sock = getSock();
-    const nameMap = new Map<string, string>() // fallback map, usually resolved via sender
-
-    const enriched = await Promise.all(
-      messages.map(async (m) => await services.messageService.enrichMessage(m, sock, nameMap))
-    );
-    
-    return enriched.reverse();
+    return services.messageService.getChatMessages(jid, 1, 100, getSock(), true, false)
   })
 
   // ── AI Chat Session Handlers ─────────────────────────────────────────
@@ -420,21 +296,6 @@ export function registerIpcHandlers(
   })
 
   ipcMain.handle('get-message-receipts', async (_event, messageId: string) => {
-    const receipts = await prisma.messageReceipt.findMany({
-      where: { messageId },
-      orderBy: { timestamp: 'desc' }
-    })
-    const sock = getSock()
-    const result: any[] = []
-    for (const receipt of receipts) {
-      const name = await services.contactService.resolveName(receipt.userJid, null, sock)
-      result.push({
-        userJid: receipt.userJid,
-        name,
-        status: receipt.status,
-        timestamp: receipt.timestamp.toString()
-      })
-    }
-    return result
+    return services.receiptService.getMessageReceipts(messageId, getSock())
   })
 }

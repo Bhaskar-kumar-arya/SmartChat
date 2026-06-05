@@ -17,7 +17,7 @@ export function createServices(prisma: PrismaClient) {
   const contactService = new ContactService(prisma)
   const embeddingService = new EmbeddingService(prisma)
   const dataWipeService = new DataWipeService(prisma)
-  const receiptService = new ReceiptService(prisma)
+  const receiptService = new ReceiptService(prisma, contactService)
 
   // 2. Services with service dependencies
   const chatService = new ChatService(prisma, contactService)

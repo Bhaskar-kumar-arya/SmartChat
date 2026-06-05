@@ -372,6 +372,81 @@ export class MessageService {
   }
 
   /**
+   * Retrieves messages for a chat, resolves mentions and reactions, and returns enriched records.
+   */
+  async getChatMessages(
+    jid: string,
+    page: number = 1,
+    pageSize: number = 50,
+    sock: WASocket | null,
+    resolveLid: boolean = false,
+    includeReactions: boolean = true
+  ): Promise<EnrichedMessage[]> {
+    const targetJid = resolveLid ? await this.contactService.resolveLidFromJid(jid) : jid
+    const skip = (page - 1) * pageSize
+
+    const messages = await this.prisma.message.findMany({
+      where: { chatJid: targetJid },
+      orderBy: { timestamp: 'desc' },
+      skip,
+      take: pageSize,
+      include: { sender: true }
+    })
+
+    // We still need to parse contextInfo for mentions
+    const additionalJids = new Set<string>()
+    messages.forEach(m => {
+      try {
+        const content = JSON.parse(m.content)
+        const unwrapped = this.unwrapMessage(content)
+        const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.contextInfo
+        if (ctx) {
+          if (ctx.participant) additionalJids.add(ctx.participant)
+          if (ctx.mentionedJid) ctx.mentionedJid.forEach((j: string) => additionalJids.add(j))
+          if (ctx.quotedMessage) {
+            const q = this.unwrapMessage(ctx.quotedMessage)
+            const qCtx = q?.extendedTextMessage?.contextInfo || q?.contextInfo
+            if (qCtx && qCtx.mentionedJid) qCtx.mentionedJid.forEach((j: string) => additionalJids.add(j))
+          }
+        }
+      } catch (e) {}
+    })
+
+    const nameMap = await this.contactService.batchResolveNames(Array.from(additionalJids), sock)
+
+    let allReactions: any[] = []
+    if (includeReactions && messages.length > 0) {
+      const messageIds = messages.map((m) => m.id)
+      allReactions = await this.prisma.reaction.findMany({
+        where: { messageId: { in: messageIds } },
+        include: { sender: true }
+      })
+    }
+
+    const messagesWithNames = await Promise.all(
+      messages.map(async (m) => {
+        const enriched = await this.enrichMessage(m, sock, nameMap)
+        if (!includeReactions) {
+          return enriched
+        }
+        const msgReactions = allReactions.filter((r) => r.messageId === m.id)
+        
+        return {
+          ...enriched,
+          reactions: msgReactions.map((r) => ({ 
+            ...r, 
+            senderId: r.sender.phoneNumber || '',
+            timestamp: r.timestamp.toString(),
+            senderName: r.sender.displayName || r.sender.pushName || r.sender.phoneNumber?.split('@')[0] || 'Unknown'
+          }))
+        }
+      })
+    )
+
+    return messagesWithNames.reverse()
+  }
+
+  /**
    * Enrich a message object with contact names and other metadata for UI display.
    */
   async enrichMessage(msg: DBMessageWithSender, _sock: WASocket | null, nameMap: Map<string, string>): Promise<EnrichedMessage> {
