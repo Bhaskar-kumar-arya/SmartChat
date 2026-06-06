@@ -1,5 +1,33 @@
 import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+
+// ── Mention highlighter for rendered bubbles ──────────────────────────────────
+function escapeRe(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function renderWithMentions(content: string, mentions: any[]): React.ReactNode {
+  if (!mentions || mentions.length === 0) {
+    return <ReactMarkdown>{content}</ReactMarkdown>
+  }
+  const sorted = [...mentions].sort((a, b) => (b.name?.length ?? 0) - (a.name?.length ?? 0))
+  const pattern = sorted.map((m: any) => escapeRe(`@${m.name}`)).join('|')
+  const regex = new RegExp(`(${pattern})`, 'g')
+  const parts = content.split(regex)
+  // If no splits happened, just use markdown
+  if (parts.length === 1) return <ReactMarkdown>{content}</ReactMarkdown>
+
+  return (
+    <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      {parts.map((part, i) => {
+        const hit = mentions.find((m: any) => `@${m.name}` === part)
+        return hit
+          ? <span key={i} className="ai-bubble-mention">{part}</span>
+          : <span key={i}>{part}</span>
+      })}
+    </span>
+  )
+}
 import remarkGfm from 'remark-gfm'
 import AIToolCard from './AIToolCard'
 import AISmartInput from './AISmartInput'
@@ -157,7 +185,9 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
         ) : (
           <>
             {displayContent && (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
+              message.role === 'user' && message.mentions && message.mentions.length > 0
+                ? renderWithMentions(displayContent, message.mentions)
+                : <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
             )}
 
             {message.role === 'user' && (

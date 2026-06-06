@@ -1,365 +1,303 @@
-import React, { useState, useRef, useEffect, KeyboardEvent, useImperativeHandle, forwardRef } from 'react'
-import { ChatItem, ModelInfo } from '../types'
+import React, {
+  useState, useRef, useEffect, useCallback,
+  KeyboardEvent, useImperativeHandle, forwardRef
+} from 'react'
+import { ChatItem, ModelInfo, SelectedContext } from '../types'
 import { api } from '../services/api.service'
+import { useMentionSession } from '../hooks/useMentionSession'
 
-interface SelectedContext {
-  jid: string
-  name: string
-}
+// ── Types & Component Props ───────────────────────────────────────────────────
 
 interface AISmartInputProps {
   chatList: ChatItem[]
   onSend: (prompt: string, mentions: SelectedContext[]) => void
   disabled?: boolean
   onAbort?: () => void
-  externalValue?: { prompt: string, mentions: SelectedContext[] } | null
+  externalValue?: { prompt: string; mentions: SelectedContext[] } | null
   onCancel?: () => void
   aiOptions?: { model: string; useThinkMode: boolean }
   availableModels?: ModelInfo[]
+  // Dependency Inversion: Accept custom search handler
+  searchContacts?: (query: string) => Promise<ChatItem[]>
 }
 
 export interface AISmartInputRef {
-  focus: () => void;
+  focus: () => void
 }
 
-const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({ 
-  chatList, 
-  onSend, 
-  disabled, 
-  onAbort, 
-  externalValue, 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function autoGrow(el: HTMLTextAreaElement) {
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
+  chatList,
+  onSend,
+  disabled,
+  onAbort,
+  externalValue,
   onCancel,
   aiOptions,
-  availableModels
+  availableModels,
+  searchContacts = api.searchMentionContacts // Satisfies dependency inversion
 }, ref) => {
-  const [inputValue, setInputValue] = useState('')
-  const [showMentionMenu, setShowMentionMenu] = useState(false)
-  const [mentionQuery, setMentionQuery] = useState('')
-  const [menuType, setMenuType] = useState<'context' | 'mention'>('mention')
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const [filteredChats, setFilteredChats] = useState<ChatItem[]>([])
-  
-  const contexts: SelectedContext[] = []
-  const [mentions, setMentions] = useState<SelectedContext[]>([])
 
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [inputValue, setInputValue] = useState('')
+  const [mentions, setMentions]     = useState<SelectedContext[]>([])
+
+  // ── Refs ───────────────────────────────────────────────────────────────────
   const containerRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const inputRef     = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
 
-  useImperativeHandle(ref, () => ({
-    focus: () => {
-      inputRef.current?.focus()
-    }
-  }))
+  // ── Mention Hook Integration (SRP/SOLID) ──────────────────────────────────
+  const {
+    mentionAnchor,
+    setMentionAnchor,
+    menuItems,
+    selectedIndex,
+    setSelectedIndex,
+    searching,
+    onInputChange,
+    selectItem,
+    removeChip,
+    handleBackspace
+  } = useMentionSession({
+    chatList,
+    searchContacts,
+    inputValue,
+    setInputValue,
+    mentions,
+    setMentions,
+    inputRef,
+    autoGrow
+  })
 
+  useImperativeHandle(ref, () => ({ focus: () => inputRef.current?.focus() }))
+
+  // ── Click outside → close menu ────────────────────────────────────────────
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setShowMentionMenu(false);
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setMentionAnchor(null)
       }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (externalValue) {
-      setInputValue(externalValue.prompt);
-      setMentions(externalValue.mentions);
-      
-      setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.focus();
-          // Move cursor to end
-          const length = inputRef.current.value.length;
-          inputRef.current.setSelectionRange(length, length);
-          
-          // Recalculate height
-          inputRef.current.style.height = 'auto';
-          inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
-        }
-      }, 0);
     }
-  }, [externalValue]);
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [setMentionAnchor])
 
+  // ── External value injection (edit-message mode) ──────────────────────────
   useEffect(() => {
-    setMentions(prev => prev.filter(m => inputValue.includes(`@${m.name}`)));
-  }, [inputValue]);
+    if (!externalValue) return
+    setInputValue(externalValue.prompt)
+    setMentions(externalValue.mentions)
+    setMentionAnchor(null)
+    setTimeout(() => {
+      if (!inputRef.current) return
+      inputRef.current.focus()
+      const len = inputRef.current.value.length
+      inputRef.current.setSelectionRange(len, len)
+      autoGrow(inputRef.current)
+    }, 0)
+  }, [externalValue, setInputValue, setMentions, setMentionAnchor])
 
-  useEffect(() => {
-    let active = true
-    if (mentionQuery) {
-      if (menuType === 'mention') {
-        api.searchMentionContacts(mentionQuery)
-          .then(results => {
-            if (active) setFilteredChats(results as any[])
-          })
-          .catch(err => {
-            console.error('Failed to search mention contacts:', err)
-          })
-      } else {
-        api.searchMentionChats(mentionQuery)
-          .then(results => {
-            if (active) setFilteredChats(results as any[])
-          })
-          .catch(err => {
-            console.error('Failed to search mention chats:', err)
-          })
+  // ── Keyboard handler ──────────────────────────────────────────────────────
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const menuOpen = mentionAnchor !== null && menuItems.length > 0
+
+    // 1. Mention menu keyboard navigation
+    if (menuOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedIndex(i => (i + 1) % menuItems.length)
+        return
       }
-    } else {
-      setFilteredChats(chatList.slice(0, 10))
-    }
-    setSelectedIndex(0)
-    return () => {
-      active = false
-    }
-  }, [mentionQuery, menuType, chatList])
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value
-    setInputValue(val)
-    
-    // Auto-grow height
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto';
-      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
-    }
-
-    const lastAtPos = val.lastIndexOf('@')
-    if (lastAtPos !== -1) {
-      const textAfterAt = val.slice(lastAtPos + 1)
-      if (!textAfterAt.includes(' ')) {
-        setShowMentionMenu(true)
-        setMenuType('mention')
-        setMentionQuery(textAfterAt)
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedIndex(i => (i - 1 + menuItems.length) % menuItems.length)
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (menuItems[selectedIndex]) selectItem(menuItems[selectedIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        setMentionAnchor(null)
         return
       }
     }
 
-    setShowMentionMenu(false)
-  }
+    // 2. Backspace trigger inside mentions hook
+    if (e.key === 'Backspace') {
+      const handled = handleBackspace(e)
+      if (handled) return
+    }
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showMentionMenu) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setSelectedIndex(prev => (prev + 1) % filteredChats.length)
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setSelectedIndex(prev => (prev - 1 + filteredChats.length) % filteredChats.length)
-      } else if (e.key === 'Enter') {
-        e.preventDefault()
-        if (filteredChats[selectedIndex]) {
-          selectItem(filteredChats[selectedIndex])
-        }
-      } else if (e.key === 'Escape') {
-        e.preventDefault()
-        e.stopPropagation()
-        setShowMentionMenu(false)
-      }
+    // 3. Escape on closed menu cancels edit mode
+    if (e.key === 'Escape' && !menuOpen) {
+      onCancel?.()
       return
     }
 
-    if (e.key === 'Backspace' && inputRef.current) {
-      const cursorStart = inputRef.current.selectionStart || 0;
-      const cursorEnd = inputRef.current.selectionEnd || 0;
-      
-      if (cursorStart === cursorEnd) {
-        const textBefore = inputValue.slice(0, cursorStart);
-        let matchToDelete: SelectedContext | null = null;
-        let isSpace = false;
-        
-        for (const m of mentions) {
-          if (textBefore.endsWith(`@${m.name} `)) { matchToDelete = m; isSpace = true; break; }
-          if (textBefore.endsWith(`@${m.name}`)) { matchToDelete = m; break; }
-        }
-
-        if (matchToDelete) {
-          e.preventDefault();
-          const prefix = '@';
-          const lenToDel = prefix.length + matchToDelete.name.length + (isSpace ? 1 : 0);
-          const newText = inputValue.slice(0, cursorStart - lenToDel) + inputValue.slice(cursorStart);
-          setInputValue(newText);
-          
-          setMentions(mentions.filter(m => m.jid !== matchToDelete!.jid));
-          
-          setTimeout(() => {
-            if (inputRef.current) {
-              const newPos = cursorStart - lenToDel;
-              inputRef.current.setSelectionRange(newPos, newPos);
-            }
-          }, 0);
-          return;
-        }
+    // 4. Enter to submit message
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      const prompt = inputValue.trim()
+      if (prompt && !disabled) {
+        onSend(prompt, mentions)
+        setInputValue('')
+        setMentions([])
+        setMentionAnchor(null)
+        if (inputRef.current) inputRef.current.style.height = 'auto'
       }
     }
+  }, [
+    mentionAnchor,
+    menuItems,
+    selectedIndex,
+    inputValue,
+    mentions,
+    disabled,
+    onSend,
+    onCancel,
+    setMentionAnchor,
+    setSelectedIndex,
+    selectItem,
+    handleBackspace,
+    setInputValue,
+    setMentions
+  ])
 
-    if (e.key === 'Escape') {
-      onCancel?.();
-      return;
-    }
-
-    if (e.key === 'Enter') {
-      if (!e.shiftKey) {
-        e.preventDefault(); // Prevent newline
-        const prompt = inputValue.trim()
-        if (prompt) {
-          onSend(prompt, mentions)
-          setInputValue('')
-          setMentions([])
-          if (inputRef.current) inputRef.current.style.height = 'auto';
-        }
-      } else {
-        // Shift+Enter: Allow default behavior (newline)
-      }
-    }
-  }
-
-  const selectItem = (chat: ChatItem) => {
-    const displayName = (chat.name || chat.jid.split('@')[0] || '??').trim();
-    if (!mentions.find(m => m.jid === chat.jid)) {
-      setMentions([...mentions, { jid: chat.jid, name: displayName }])
-    }
-    const lastAtPos = inputValue.lastIndexOf('@')
-    if (lastAtPos !== -1) {
-      setInputValue(inputValue.slice(0, lastAtPos) + `@${displayName} `)
-    }
-    setShowMentionMenu(false)
-    setTimeout(() => {
-      if (inputRef.current) {
-        inputRef.current.focus();
-        const length = inputRef.current.value.length;
-        inputRef.current.setSelectionRange(length, length);
-        inputRef.current.style.height = 'auto';
-        inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
-      }
-    }, 0);
-  }
-
-  const handleInputScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
+  // ── Scroll sync ───────────────────────────────────────────────────────────
+  const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
     if (highlightRef.current) {
-      highlightRef.current.scrollTop = e.currentTarget.scrollTop;
-      highlightRef.current.scrollLeft = e.currentTarget.scrollLeft;
+      highlightRef.current.scrollTop  = e.currentTarget.scrollTop
+      highlightRef.current.scrollLeft = e.currentTarget.scrollLeft
     }
-  };
+  }
 
-  const renderHighlightedText = () => {
-    if (!inputValue) return null;
-    const activeItems = [
-      ...contexts.map(c => ({ text: `/${c.name}`, type: 'history' })),
-      ...mentions.map(m => ({ text: `@${m.name}`, type: 'mention' }))
-    ].sort((a, b) => b.text.length - a.text.length);
+  // ── Highlight renderer ────────────────────────────────────────────────────
+  const renderHighlight = () => {
+    if (!inputValue) return null
+    if (mentions.length === 0) return <span>{inputValue}</span>
 
-    if (activeItems.length === 0) return <span>{inputValue}</span>;
+    const sorted = [...mentions].sort((a, b) => b.name.length - a.name.length)
+    const pattern = sorted.map(m => escapeRegExp(`@${m.name}`)).join('|')
+    const regex   = new RegExp(`(${pattern})`, 'g')
+    const parts   = inputValue.split(regex)
 
-    const escapeRegExp = (string: string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${activeItems.map(item => escapeRegExp(item.text)).join('|')})`, 'g');
-    const parts = inputValue.split(regex);
-    
-    return parts.map((part, i) => {
-      const matchedItem = activeItems.find(item => item.text === part);
-      if (matchedItem) {
-        return (
-          <span key={i} className="ai-input-match">
-            {part}
-          </span>
-        );
-      }
-      return <span key={i}>{part}</span>;
-    });
-  };
+    return (
+      <>
+        {parts.map((part, i) => {
+          const hit = mentions.find(m => `@${m.name}` === part)
+          return hit
+            ? <span key={i} className="ai-input-match">{part}</span>
+            : <span key={i}>{part}</span>
+        })}
+      </>
+    )
+  }
 
+  // ── Model name formatter ──────────────────────────────────────────────────
   const getFriendlyModelName = (id: string) => {
-    const cleanId = id.replace(/^(gemini|lmstudio|groq|mistral|deepseek):/, '');
-    if (cleanId === 'gemma-4-31b-it') return 'Gemma 4 31B';
-    if (cleanId === 'mistral-large-latest') return 'Mistral Large';
-    if (cleanId === 'gpt-oss-120b' || cleanId === 'openai/gpt-oss-120b') return 'Llama 3.3 120B';
-    if (cleanId === 'deepseek-v4-pro') return 'DeepSeek V4';
-    if (cleanId === 'deepseek-reasoner') return 'DeepSeek R1';
-    return cleanId;
-  };
-  const activeModel = availableModels?.find(m => m.id === aiOptions?.model);
-  const activeModelName = activeModel ? activeModel.name : getFriendlyModelName(aiOptions?.model || 'Gemma 4 31B');
+    const c = id.replace(/^(gemini|lmstudio|groq|mistral|deepseek):/, '')
+    if (c === 'gemma-4-31b-it') return 'Gemma 4 31B'
+    if (c === 'mistral-large-latest') return 'Mistral Large'
+    if (c === 'gpt-oss-120b' || c === 'openai/gpt-oss-120b') return 'Llama 3.3 120B'
+    if (c === 'deepseek-v4-pro') return 'DeepSeek V4'
+    if (c === 'deepseek-reasoner') return 'DeepSeek R1'
+    return c
+  }
 
+  const activeModel     = availableModels?.find(m => m.id === aiOptions?.model)
+  const activeModelName = activeModel
+    ? activeModel.name
+    : getFriendlyModelName(aiOptions?.model || 'Gemma 4 31B')
+
+  const showMenu = mentionAnchor !== null && menuItems.length > 0
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div ref={containerRef} className="ai-input-wrapper">
-      <div className="ai-context-list-container">
-        {mentions.length > 0 && (
-          <div className="ai-context-list">
-            {mentions.map(m => (
-              <div key={m.jid} className="ai-context-chip mention">
-                <span>@{m.name}</span>
-                <button onClick={() => setMentions(mentions.filter(x => x.jid !== m.jid))}>x</button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
-      {showMentionMenu && filteredChats.length > 0 && (
+      {/* ── Chips row ── */}
+      {mentions.length > 0 && (
+        <div className="ai-context-list">
+          {mentions.map(m => (
+            <div key={m.jid} className="ai-context-chip mention">
+              <span>@{m.name}</span>
+              <button onClick={() => removeChip(m)} title="Remove mention">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6"  y2="18"/>
+                  <line x1="6"  y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Mention dropdown ── */}
+      {showMenu && (
         <div className="ai-mention-menu">
-          {filteredChats.map((chat, idx) => {
-            const displayName = chat.name || chat.jid.split('@')[0] || '??';
-            const extraName = chat.pushName || chat.verifiedName;
-            
-            const secondaryParts: string[] = [];
-            
-            // 1. Phone number
+          {searching && (
+            <div className="ai-mention-searching">
+              <span/><span/><span/>
+            </div>
+          )}
+          {menuItems.map((chat, idx) => {
+            const displayName = chat.name || chat.jid.split('@')[0] || '??'
+            const extraName   = chat.pushName || chat.verifiedName
+            const hasExtra    = !!extraName &&
+              extraName.trim().toLowerCase() !== displayName.trim().toLowerCase()
+
+            const parts: string[] = []
             if (chat.phoneNumber) {
-              const num = chat.phoneNumber.split('@')[0];
-              if (/^\d+$/.test(num)) {
-                secondaryParts.push(`+${num}`);
-              } else {
-                secondaryParts.push(num);
-              }
+              const n = chat.phoneNumber.split('@')[0]
+              parts.push(/^\d+$/.test(n) ? `+${n}` : n)
             } else if (!chat.jid.includes('@g.us') && !chat.jid.includes('@newsletter')) {
-              const num = chat.jid.split('@')[0];
-              if (/^\d+$/.test(num)) {
-                secondaryParts.push(`+${num}`);
-              }
+              const n = chat.jid.split('@')[0]
+              if (/^\d+$/.test(n)) parts.push(`+${n}`)
             }
-
-            // 2. Chat type / JID identifier
-            if (chat.jid.includes('@g.us')) {
-              secondaryParts.push('Group');
-            } else if (chat.jid.includes('@newsletter')) {
-              secondaryParts.push('Channel');
-            } else {
-              const username = chat.jid.split('@')[0];
-              if (!chat.phoneNumber && !/^\d+$/.test(username)) {
-                secondaryParts.push(`@${username}`);
-              }
-            }
-
-            // 3. LID identifier
-            if (chat.jid.endsWith('@lid')) {
-              secondaryParts.push(`LID: ${chat.jid.split('@')[0]}`);
-            }
-
-            const secondaryText = secondaryParts.join(' • ');
-
-            const hasExtraName = extraName && extraName.trim() !== '' && extraName.trim().toLowerCase() !== displayName.trim().toLowerCase();
+            if (chat.jid.includes('@g.us'))         parts.push('Group')
+            else if (chat.jid.includes('@newsletter')) parts.push('Channel')
 
             return (
-              <div 
-                key={chat.jid} 
-                className={`ai-mention-item ${idx === selectedIndex ? 'active' : ''}`} 
-                onClick={() => selectItem({ ...chat, name: displayName })}
+              <div
+                key={chat.jid}
+                className={`ai-mention-item${idx === selectedIndex ? ' active' : ''}`}
+                // onMouseDown prevents textarea blur before click finishes
+                onMouseDown={e => { e.preventDefault(); selectItem({ ...chat, name: displayName }) }}
+                onMouseEnter={() => setSelectedIndex(idx)}
               >
-                {chat.profilePictureUrl ? (
-                  <img src={chat.profilePictureUrl} alt="" className="ai-mention-pic" />
-                ) : (
-                  <div className="ai-mention-pic-placeholder">{displayName.charAt(0).toUpperCase()}</div>
-                )}
+                {chat.profilePictureUrl
+                  ? <img src={chat.profilePictureUrl} alt="" className="ai-mention-pic"/>
+                  : <div className="ai-mention-pic-placeholder">
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                }
                 <div className="ai-mention-info">
                   <span className="ai-mention-name">
                     {displayName}
-                    {hasExtraName && (
+                    {hasExtra && (
                       <span className="ai-mention-pushname"> ~{extraName!.trim()}</span>
                     )}
                   </span>
-                  {secondaryText && (
-                    <span className="ai-mention-subtext">{secondaryText}</span>
+                  {parts.length > 0 && (
+                    <span className="ai-mention-subtext">{parts.join(' • ')}</span>
                   )}
                 </div>
               </div>
@@ -368,40 +306,48 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
         </div>
       )}
 
+      {/* ── Input box ── */}
       <div className="ai-input-box">
         <div className="ai-input-content">
           <div className="ai-input-inner">
-            <div 
+
+            {/* Highlight layer */}
+            <div
               ref={highlightRef}
               className="ai-input-highlight"
+              aria-hidden="true"
             >
-              {renderHighlightedText()}
+              {renderHighlight()}
+              {/* Phantom trailing newline keeps height identical to textarea */}
+              {'\n'}
             </div>
-            <textarea 
+
+            <textarea
               ref={inputRef}
-              placeholder="Ask AI... (@ mention)" 
               value={inputValue}
-              onChange={handleInputChange}
+              onChange={onInputChange}
               onKeyDown={handleKeyDown}
-              onScroll={handleInputScroll}
+              onScroll={handleScroll}
               disabled={disabled}
               className="ai-input-field"
+              placeholder="Ask AI… (@ to mention)"
               rows={1}
+              spellCheck={false}
+              autoComplete="off"
             />
           </div>
-          
-          {/* Bottom status row */}
+
+          {/* Status bar */}
           {aiOptions && (
             <div className="ai-status-bar">
-              <span className="ai-model-label">
-                {activeModelName}
-              </span>
+              <span className="ai-model-label">{activeModelName}</span>
               {aiOptions.useThinkMode && (
                 <span className="ai-think-badge">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .5 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
-                    <path d="M9 18h6" />
-                    <path d="M10 22h4" />
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2.5"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .5 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
+                    <path d="M9 18h6"/><path d="M10 22h4"/>
                   </svg>
                   <span>Thinking</span>
                 </span>
@@ -410,32 +356,32 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
           )}
         </div>
 
+        {/* Send / Abort button */}
         {disabled && onAbort ? (
-          <button 
-            className="ai-send-btn abort" 
-            onClick={onAbort} 
-            title="Stop Generation"
-          >
+          <button className="ai-send-btn abort" onClick={onAbort} title="Stop Generation">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12"></rect>
+              <rect x="6" y="6" width="12" height="12"/>
             </svg>
           </button>
         ) : (
-          <button 
-            className="ai-send-btn" 
+          <button
+            className="ai-send-btn"
             onClick={() => {
               const prompt = inputValue.trim()
-              if (prompt) {
+              if (prompt && !disabled) {
                 onSend(prompt, mentions)
                 setInputValue('')
                 setMentions([])
+                setMentionAnchor(null)
+                if (inputRef.current) inputRef.current.style.height = 'auto'
               }
-            }} 
+            }}
             disabled={disabled || !inputValue.trim()}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
             </svg>
           </button>
         )}

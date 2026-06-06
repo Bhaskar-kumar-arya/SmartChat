@@ -16,6 +16,12 @@ export interface ChatItem {
   phoneNumber?: string | null
 }
 
+export interface SelectedContext {
+  jid: string
+  name: string
+}
+
+
 export interface ExtendedChatItem extends ChatItem {
   isChild?: boolean
   parentName?: string
