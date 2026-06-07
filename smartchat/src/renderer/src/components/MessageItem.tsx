@@ -154,8 +154,8 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
           </div>
         )}
         
-        {isImage && <ImageMessage localURI={localURI} textContent={msg.textContent} onDownload={handleDownload} isDownloading={downloading} />}
-        {isSticker && <StickerMessage localURI={localURI} onDownload={handleDownload} isDownloading={downloading} />}
+        {isImage && <ImageMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
+        {isSticker && <StickerMessage localURI={localURI} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
         {isVideo && <VideoMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
         {isDocument && <DocumentMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
         {isAudio && <AudioMessage localURI={localURI} senderJid={msg.participant || msg.chatJid} onDownload={handleDownload} isDownloading={downloading} rawMsg={rawMsg} />}
@@ -167,9 +167,14 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     )
   }
 
+  const hasCaption = !!msg.textContent
+  const mediaBubbleClass = (isImage || isVideo) 
+    ? (hasCaption ? 'bubble-media-caption' : 'bubble-media') 
+    : ''
+
   return (
     <div className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
-      <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
+      <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
         {!msg.fromMe && msg.participantName && (
           <span className="message-sender-name">
             {msg.participantName}

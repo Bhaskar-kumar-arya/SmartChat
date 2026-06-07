@@ -341,6 +341,7 @@ export class ChatService {
                        lastMsg?.messageType === 'videoMessage' ? 'Video' :
                        lastMsg?.messageType === 'documentMessage' ? 'Document' :
                        (lastMsg?.textContent || (lastMsg?.messageType && lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
+          lastMessageType: lastMsg?.messageType || null,
           lastMessageTimestamp: effectiveTimestamp.toString(),
           pinned: chat.pinned,
           muteExpiration: chat.muteExpiration.toString(),

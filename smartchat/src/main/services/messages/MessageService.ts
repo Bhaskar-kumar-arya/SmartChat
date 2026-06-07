@@ -190,6 +190,29 @@ export class MessageService {
             }
         }
     } else {
+        // Try to preserve existing localURI if message already exists
+        const existing = await this.prisma.message.findUnique({
+          where: { id: key.id },
+          select: { content: true }
+        })
+        if (existing && existing.content && rawMessage) {
+          try {
+            const existingContent = JSON.parse(existing.content)
+            const existingUnwrapped = unwrapMessage(existingContent)
+            const existingMediaMsg = existingUnwrapped?.imageMessage || existingUnwrapped?.stickerMessage || existingUnwrapped?.videoMessage || existingUnwrapped?.documentMessage || existingUnwrapped?.audioMessage
+            
+            if (existingMediaMsg && existingMediaMsg.localURI) {
+              const currentUnwrapped = unwrapMessage(rawMessage)
+              const currentMediaMsg = currentUnwrapped?.imageMessage || currentUnwrapped?.stickerMessage || currentUnwrapped?.videoMessage || currentUnwrapped?.documentMessage || currentUnwrapped?.audioMessage
+              if (currentMediaMsg) {
+                currentMediaMsg.localURI = existingMediaMsg.localURI
+              }
+            }
+          } catch (e) {
+            console.error('[MessageService] Failed to preserve localURI on upsert:', e)
+          }
+        }
+
         const status = mapBaileysStatus(msg.status)
         await this.prisma.message.upsert({
             where: { id: key.id },
@@ -655,12 +678,32 @@ export class MessageService {
   getSafeMediaFileName(msgId: string, mediaType: string, mediaMsg: any): string {
     const ext = this.resolveExtension(mediaType, mediaMsg)
     
+    // Attempt to resolve fileSha256 hash for deduplication
+    let fileHash: string | null = null
+    if (mediaMsg && mediaMsg.fileSha256) {
+      const sha = mediaMsg.fileSha256
+      if (typeof sha === 'string') {
+        fileHash = sha.replace(/[/\\?%*:|"<>+]/g, '-').substring(0, 64)
+      } else if (Buffer.isBuffer(sha)) {
+        fileHash = sha.toString('hex')
+      } else if (sha && typeof sha === 'object' && sha.type === 'Buffer' && Array.isArray(sha.data)) {
+        fileHash = Buffer.from(sha.data).toString('hex')
+      } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
+        fileHash = Buffer.from(sha).toString('hex')
+      }
+    }
+
     if (mediaType === 'document' && mediaMsg.fileName) {
         const originalName = mediaMsg.fileName.includes('.') 
             ? mediaMsg.fileName.substring(0, mediaMsg.fileName.lastIndexOf('.'))
             : mediaMsg.fileName
         const safeName = originalName.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 80)
-        return `${safeName}_${msgId.substring(0, 8)}.${ext}`
+        const suffix = fileHash ? fileHash.substring(0, 12) : msgId.substring(0, 8)
+        return `${safeName}_${suffix}.${ext}`
+    }
+    
+    if (fileHash) {
+      return `hash_${fileHash}.${ext}`
     }
     
     return `${msgId}.${ext}`

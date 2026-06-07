@@ -1,11 +1,13 @@
 import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
 import fs from 'fs'
+import { join } from 'path'
 import { MessageService } from './MessageService'
 import { ChatService } from '../chats/ChatService'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, app } from 'electron'
 import { proto } from '@whiskeysockets/baileys'
 import { WASocket, EnrichedMessage } from '../../types'
+import { unwrapMessage } from '../../utils'
 
 export class MessageActionService {
   constructor(
@@ -372,6 +374,42 @@ export class MessageActionService {
     if (!processed || 'type' in processed) {
       throw new Error('Failed to process sent message')
     }
+
+    const parsedContent = JSON.parse(processed.content)
+    const unwrapped = unwrapMessage(parsedContent)
+    const mediaType = 
+      unwrapped.imageMessage ? 'image' :
+      unwrapped.stickerMessage ? 'sticker' :
+      unwrapped.videoMessage ? 'video' :
+      unwrapped.documentMessage ? 'document' :
+      unwrapped.audioMessage ? 'audio' : null
+
+    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
+
+    if (mediaType && mediaMsg) {
+      try {
+        const mediaDir = join(app.getPath('userData'), 'media')
+        if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
+
+        const fileName = this.messageService.getSafeMediaFileName(processed.id, mediaType, mediaMsg)
+        const cachedFilePath = join(mediaDir, fileName)
+
+        fs.copyFileSync(filePath, cachedFilePath)
+
+        mediaMsg.localURI = `app://media/${fileName}`
+
+        const updatedContent = JSON.stringify(parsedContent)
+        await this.prisma.message.update({
+          where: { id: processed.id },
+          data: { content: updatedContent }
+        })
+
+        processed.content = updatedContent
+      } catch (err) {
+        console.error('[MessageActionService] Failed to cache sent media file:', err)
+      }
+    }
+
     await this.chatService.updateTimestamp(targetJid, processed.timestamp)
     
     const nameMap = await this.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)

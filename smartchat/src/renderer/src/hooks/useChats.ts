@@ -58,6 +58,21 @@ export const useChats = (activeJid: string | null) => {
         // Use ref value to avoid stale closures
         const isCurrentChat = activeJidRef.current === msg.chatJid
         
+        let lastMessageText = ''
+        if (msg.messageType === 'stickerMessage') {
+          lastMessageText = 'Sticker'
+        } else if (msg.messageType === 'imageMessage') {
+          lastMessageText = msg.textContent || 'Photo'
+        } else if (msg.messageType === 'videoMessage') {
+          lastMessageText = msg.textContent || 'Video'
+        } else if (msg.messageType === 'documentMessage') {
+          lastMessageText = msg.textContent || 'Document'
+        } else if (msg.messageType === 'audioMessage') {
+          lastMessageText = 'Voice message'
+        } else {
+          lastMessageText = msg.textContent || (msg.messageType && msg.messageType !== 'unknown' ? `[${msg.messageType}]` : '')
+        }
+
         const updatedChat: ChatItem = {
           ...(existing || {}),
           jid: msg.chatJid,
@@ -66,7 +81,8 @@ export const useChats = (activeJid: string | null) => {
             ? (isCurrentChat ? 0 : existing.unreadCount + (msg.fromMe ? 0 : 1)) 
             : (isCurrentChat ? 0 : 1),
           timestamp: msg.timestamp,
-          lastMessage: msg.messageType === 'stickerMessage' ? 'Sticker' : (msg.textContent || `[${msg.messageType}]`),
+          lastMessage: lastMessageText,
+          lastMessageType: msg.messageType,
           lastMessageTimestamp: msg.timestamp,
           pinned: existing?.pinned,
           muteExpiration: existing?.muteExpiration

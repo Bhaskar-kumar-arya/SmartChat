@@ -66,6 +66,11 @@ app.whenReady().then(() => {
         if (fs.existsSync(filePath)) {
           return net.fetch(pathToFileURL(filePath).href)
         }
+      } else if (host === 'local') {
+        const filePath = decodeURIComponent(pathname.startsWith('/') ? pathname.slice(1) : pathname)
+        if (fs.existsSync(filePath)) {
+          return net.fetch(pathToFileURL(filePath).href)
+        }
       }
     } catch (err) {
       console.error('[Protocol] Error handling app:// request:', err)

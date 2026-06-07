@@ -96,17 +96,27 @@ export function extractTextContent(message: Record<string, unknown> | null | und
 }
 
 /**
- * Unwraps special message containers (ephemeral, view-once, document-with-caption).
+ * Unwraps special message containers (ephemeral, view-once, document-with-caption,
+ * associated-child, edited).  Iterates up to 5 levels so deeply nested chains are
+ * fully resolved — mirrors Baileys' own normalizeMessageContent behaviour, with the
+ * additional handling of associatedChildMessage and editedMessage that Baileys misses.
  * Returns an empty object when msg is falsy.
  */
 export function unwrapMessage(msg: any): any {
   if (!msg) return {}
   let unwrapped = msg
-  if (unwrapped.ephemeralMessage) unwrapped = unwrapped.ephemeralMessage.message || unwrapped.ephemeralMessage
-  if (unwrapped.viewOnceMessage) unwrapped = unwrapped.viewOnceMessage.message || unwrapped.viewOnceMessage
-  if (unwrapped.viewOnceMessageV2) unwrapped = unwrapped.viewOnceMessageV2.message || unwrapped.viewOnceMessageV2
-  if (unwrapped.viewOnceMessageV2Extension) unwrapped = unwrapped.viewOnceMessageV2Extension.message || unwrapped.viewOnceMessageV2Extension
-  if (unwrapped.documentWithCaptionMessage) unwrapped = unwrapped.documentWithCaptionMessage.message || unwrapped.documentWithCaptionMessage
+  for (let i = 0; i < 5; i++) {
+    const next =
+      unwrapped.ephemeralMessage?.message ||
+      unwrapped.viewOnceMessage?.message ||
+      unwrapped.viewOnceMessageV2?.message ||
+      unwrapped.viewOnceMessageV2Extension?.message ||
+      unwrapped.documentWithCaptionMessage?.message ||
+      unwrapped.associatedChildMessage?.message ||
+      unwrapped.editedMessage?.message
+    if (!next) break
+    unwrapped = next
+  }
   return unwrapped
 }
 

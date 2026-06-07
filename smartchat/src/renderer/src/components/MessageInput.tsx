@@ -196,14 +196,40 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         </div>
       )}
       
-      {selectedFile && (
-        <div className="file-preview">
-          <span className="file-preview-text">📎 {selectedFile.name} attached</span>
-          <button onClick={() => setSelectedFile(null)} className="file-preview-close">
-            <X size={18} />
-          </button>
-        </div>
-      )}
+      {selectedFile && (() => {
+        const ext = selectedFile.name.split('.').pop()?.toLowerCase() || ''
+        const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)
+        const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)
+        const localUrl = `app://local/${encodeURIComponent(selectedFile.path)}`
+
+        return (
+          <div className="draft-preview-container">
+            <div className="draft-preview-card">
+              {isImage ? (
+                <img src={localUrl} alt="Preview" className="draft-preview-media" />
+              ) : isVideo ? (
+                <video src={localUrl} className="draft-preview-media" muted playsInline autoPlay loop />
+              ) : (
+                <div className="draft-preview-doc">
+                  <svg className="draft-preview-doc-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14.5 2 14.5 7.5 20 7.5"/></svg>
+                  <span className="draft-preview-doc-ext">{ext || 'file'}</span>
+                </div>
+              )}
+            </div>
+            
+            <div className="draft-preview-meta">
+              <span className="draft-preview-title">{selectedFile.name}</span>
+              <span className="draft-preview-subtitle">
+                {isImage ? 'Image attachment' : isVideo ? 'Video attachment' : 'Document attachment'}
+              </span>
+            </div>
+
+            <button onClick={() => setSelectedFile(null)} className="draft-preview-close" title="Remove attachment">
+              <X size={16} />
+            </button>
+          </div>
+        )
+      })()}
 
 
       <div className="message-input-container">

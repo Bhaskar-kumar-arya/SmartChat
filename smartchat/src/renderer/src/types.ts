@@ -4,6 +4,7 @@ export interface ChatItem {
   unreadCount: number
   timestamp: string
   lastMessage: string
+  lastMessageType?: string | null
   lastMessageTimestamp: string
   pinned?: number
   muteExpiration?: string

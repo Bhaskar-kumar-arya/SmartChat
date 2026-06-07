@@ -8,6 +8,47 @@ import { ContactService } from '../contacts/ContactService'
 import { EnrichedMessage, WASocket } from '../../types'
 import { unwrapMessage } from '../../utils'
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+type MediaType = 'image' | 'sticker' | 'video' | 'document' | 'audio'
+
+/** Resolve the correct Baileys media type string, with HKDF override for
+ *  audio files that arrived inside a documentMessage wrapper. */
+function resolveMediaType(
+  unwrapped: Record<string, any>
+): { mediaType: MediaType; mediaMsg: Record<string, any> } | null {
+  if (unwrapped.imageMessage)    return { mediaType: 'image',    mediaMsg: unwrapped.imageMessage }
+  if (unwrapped.stickerMessage)  return { mediaType: 'sticker',  mediaMsg: unwrapped.stickerMessage }
+  if (unwrapped.videoMessage)    return { mediaType: 'video',    mediaMsg: unwrapped.videoMessage }
+  if (unwrapped.audioMessage)    return { mediaType: 'audio',    mediaMsg: unwrapped.audioMessage }
+  if (unwrapped.documentMessage) {
+    // HKDF label correction: an audio file sent as a generic document must be
+    // downloaded with type='audio' so the key-derivation uses "WhatsApp Audio Keys"
+    // instead of "WhatsApp Document Keys".
+    const doc = unwrapped.documentMessage
+    const effectiveType: MediaType =
+      typeof doc.mimetype === 'string' && doc.mimetype.startsWith('audio/')
+        ? 'audio'
+        : 'document'
+    return { mediaType: effectiveType, mediaMsg: doc }
+  }
+  return null
+}
+
+/** Collect all chunks from a Baileys Transform stream into a Buffer.
+ *  Using manual chunk collection (not `Buffer.concat` inside buffer-mode) avoids
+ *  the 0-byte audio bug caused by the Readable.fromWeb / PassThrough type mismatch
+ *  in some Baileys releases. */
+async function streamToBuffer(stream: AsyncIterable<Buffer>): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  const result = Buffer.concat(chunks)
+  return result
+}
+
+// ─── service ────────────────────────────────────────────────────────────────
 
 export class MediaService {
   constructor(
@@ -24,17 +65,11 @@ export class MediaService {
 
     const rawMessage = JSON.parse(dbMsg.content)
     const unwrapped = unwrapMessage(rawMessage)
-    
-    let mediaType: 'image' | 'sticker' | 'video' | 'document' | 'audio' | null = null
-    if (unwrapped.imageMessage) mediaType = 'image'
-    else if (unwrapped.stickerMessage) mediaType = 'sticker'
-    else if (unwrapped.videoMessage) mediaType = 'video'
-    else if (unwrapped.documentMessage) mediaType = 'document'
-    else if (unwrapped.audioMessage) mediaType = 'audio'
 
-    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
+    const resolved = resolveMediaType(unwrapped)
+    if (!resolved) throw new Error('Not a media message')
 
-    if (!mediaMsg || !mediaType) throw new Error('Not a media message')
+    const { mediaType, mediaMsg } = resolved
 
     const mediaDir = join(app.getPath('userData'), 'media')
     if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
@@ -43,40 +78,15 @@ export class MediaService {
     const filePath = join(mediaDir, fileName)
 
     if (!fs.existsSync(filePath)) {
-      try {
-        const stream = await downloadContentFromMessage(mediaMsg, mediaType as any)
-        let buffer = Buffer.from([])
-        for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk])
-        fs.writeFileSync(filePath, buffer)
-      } catch (err: any) {
-        if (err?.data === 410 || err?.output?.statusCode === 410) {
-          const updatedMsg = await sock.updateMediaMessage({
-            key: {
-              id: dbMsg.id,
-              remoteJid: dbMsg.chatJid,
-              fromMe: dbMsg.fromMe,
-              participant: dbMsg.chatJid.endsWith('@g.us') ? (dbMsg.participant || undefined) : undefined
-            },
-            message: rawMessage
-          } as any)
-          const updatedMedia = unwrapMessage(updatedMsg.message)
-          const target = updatedMedia.imageMessage || updatedMedia.stickerMessage || updatedMedia.videoMessage || updatedMedia.audioMessage
-          if (target) {
-            const stream = await downloadContentFromMessage(target, mediaType as any)
-            let buffer = Buffer.from([])
-            for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk])
-            fs.writeFileSync(filePath, buffer)
-            Object.assign(unwrapped, updatedMedia)
-          }
-        } else throw err
-      }
+      await this._downloadToFile(msgId, sock, dbMsg, rawMessage, mediaMsg, mediaType, filePath)
     }
 
-    if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
-    if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
-    if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
+    // Stamp the local URI back onto the unwrapped payload so the DB gets updated
+    if (unwrapped.imageMessage)    unwrapped.imageMessage.localURI    = `app://media/${fileName}`
+    if (unwrapped.stickerMessage)  unwrapped.stickerMessage.localURI  = `app://media/${fileName}`
+    if (unwrapped.videoMessage)    unwrapped.videoMessage.localURI    = `app://media/${fileName}`
     if (unwrapped.documentMessage) unwrapped.documentMessage.localURI = `app://media/${fileName}`
-    if (unwrapped.audioMessage) unwrapped.audioMessage.localURI = `app://media/${fileName}`
+    if (unwrapped.audioMessage)    unwrapped.audioMessage.localURI    = `app://media/${fileName}`
 
     const updated = await this.prisma.message.update({
       where: { id: msgId },
@@ -84,22 +94,121 @@ export class MediaService {
       include: { sender: true }
     })
 
-    const nameMap = await this.contactService.batchResolveNames([updated.participant || updated.chatJid], sock)
+    const nameMap = await this.contactService.batchResolveNames(
+      [updated.participant || updated.chatJid],
+      sock
+    )
     return this.messageService.enrichMessage(updated, sock, nameMap)
   }
+
+  // ── download pipeline ──────────────────────────────────────────────────────
+
+  private async _downloadToFile(
+    msgId: string,
+    sock: WASocket,
+    dbMsg: { id: string; chatJid: string; fromMe: boolean; participant: string | null },
+    rawMessage: any,
+    mediaMsg: Record<string, any>,
+    mediaType: MediaType,
+    filePath: string
+  ): Promise<void> {
+
+    // ── Primary attempt ────────────────────────────────────────────────────
+    // downloadContentFromMessage already falls back to directPath internally if the
+    // URL is not a valid mmg.whatsapp.net link — so we don't need a manual rewrite.
+    try {
+      const stream = await downloadContentFromMessage(mediaMsg as any, mediaType as any)
+      const buffer = await streamToBuffer(stream)
+      if (buffer.length === 0) throw new Error('Downloaded stream was 0 bytes')
+      fs.writeFileSync(filePath, buffer)
+      return
+    } catch (primaryErr: any) {
+      const statusCode: number | undefined =
+        primaryErr?.output?.statusCode ?? primaryErr?.statusCode
+
+      // Only retry on known recoverable CDN errors
+      if (statusCode !== 403 && statusCode !== 404 && statusCode !== 410) {
+        throw primaryErr
+      }
+
+      const isDirectStream = (primaryErr?.data?.url as string | undefined)?.includes('/o1/')
+      console.warn(
+        `[MediaService] Primary download failed (HTTP ${statusCode}${isDirectStream ? ', direct-stream /o1/' : ''}) for msg ${msgId} — attempting updateMediaMessage re-upload`
+      )
+    }
+
+    // ── Retry via updateMediaMessage ───────────────────────────────────────
+    // This sends a WebSocket signal to WhatsApp servers asking the sender's phone
+    // to re-upload the media to the CDN and return a fresh URL.
+    //
+    // Requires a valid mediaKey: the response is AES-GCM encrypted with it.
+    // History-sync stubs sometimes carry a corrupted/placeholder key → decryption
+    // will fail with "Unsupported state or unable to authenticate data".
+    if (!mediaMsg.mediaKey) {
+      throw new Error(
+        `[MediaService] Cannot download msg ${msgId}: mediaKey is missing. ` +
+        `This is likely a history-sync stub without full media metadata.`
+      )
+    }
+
+    try {
+      const updatedMsg = await sock.updateMediaMessage({
+        key: {
+          id: dbMsg.id,
+          remoteJid: dbMsg.chatJid,
+          fromMe: dbMsg.fromMe,
+          participant: dbMsg.chatJid.endsWith('@g.us')
+            ? (dbMsg.participant || undefined)
+            : undefined
+        },
+        message: rawMessage
+      } as any)
+
+      const updatedUnwrapped = unwrapMessage(updatedMsg.message)
+      const updatedResolved = resolveMediaType(updatedUnwrapped)
+
+      if (!updatedResolved) {
+        throw new Error('updateMediaMessage returned no downloadable media node')
+      }
+
+      const stream = await downloadContentFromMessage(
+        updatedResolved.mediaMsg as any,
+        updatedResolved.mediaType as any
+      )
+      const buffer = await streamToBuffer(stream)
+      if (buffer.length === 0) throw new Error('Re-uploaded stream was 0 bytes')
+      fs.writeFileSync(filePath, buffer)
+
+      // Merge the refreshed media metadata back so callers see the new URL
+      Object.assign(mediaMsg, updatedResolved.mediaMsg)
+
+    } catch (retryErr: any) {
+      const isDecryptErr =
+        retryErr?.message?.includes('authenticate') ||
+        retryErr?.message?.includes('Unsupported state')
+
+      const hint = isDecryptErr
+        ? `mediaKey is present but failed AES-GCM decryption — this message was likely synced as a stub during history sync and its key is invalid.`
+        : `updateMediaMessage request failed: ${retryErr?.message ?? retryErr}`
+
+      throw new Error(`[MediaService] Cannot download media for msg ${msgId}: ${hint}`)
+    }
+  }
+
+  // ── file opener ───────────────────────────────────────────────────────────
 
   async openFile(localURI: string): Promise<boolean> {
     try {
       const fileName = decodeURIComponent(localURI.split('/').pop() || '')
       if (!fileName) return false
-      
+
       const filePath = join(app.getPath('userData'), 'media', fileName)
       if (fs.existsSync(filePath)) {
         await shell.openPath(filePath)
         return true
       }
       return false
-    } catch (err) {
+    } catch {
       return false
     }
   }

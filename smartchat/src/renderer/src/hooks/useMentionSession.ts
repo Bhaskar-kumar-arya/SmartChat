@@ -9,7 +9,7 @@ interface UseMentionSessionOptions {
   setInputValue: (val: string) => void
   mentions: SelectedContext[]
   setMentions: React.Dispatch<React.SetStateAction<SelectedContext[]>>
-  inputRef: React.RefObject<HTMLTextAreaElement>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>
   autoGrow: (el: HTMLTextAreaElement) => void
 }
 

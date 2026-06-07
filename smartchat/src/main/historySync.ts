@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { ContactService } from './services/contacts/ContactService'
 import { mapBaileysStatus } from './services/whatsapp/ReceiptService'
-import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent } from './utils'
+import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from './utils'
 
 
 
@@ -352,6 +352,16 @@ export async function handleHistorySync(
           }
 
           if (existingMessages.length > 0) {
+            // Find existing message contents to preserve localURIs
+            const dbExisting = await prisma.message.findMany({
+              where: { id: { in: existingMessages.map(m => m.id) } },
+              select: { id: true, content: true }
+            })
+            const existingContentMap = new Map<string, string>()
+            for (const row of dbExisting) {
+              if (row.content) existingContentMap.set(row.id, row.content)
+            }
+
             const updateOps = existingMessages.map(msg => {
               const update: Record<string, unknown> = {}
               if (msg.chatJid) update.chatJid = msg.chatJid
@@ -359,7 +369,30 @@ export async function handleHistorySync(
               if (msg.participant !== undefined) update.participant = msg.participant
               if (msg.timestamp) update.timestamp = msg.timestamp
               if (msg.messageType !== 'unknown') update.messageType = msg.messageType
-              if (msg.content !== '{}') update.content = msg.content
+              
+              let finalContent = msg.content
+              const existingContentJson = existingContentMap.get(msg.id)
+              if (existingContentJson) {
+                try {
+                  const existingParsed = JSON.parse(existingContentJson)
+                  const existingUnwrapped = unwrapMessage(existingParsed)
+                  const existingMediaMsg = existingUnwrapped?.imageMessage || existingUnwrapped?.stickerMessage || existingUnwrapped?.videoMessage || existingUnwrapped?.documentMessage || existingUnwrapped?.audioMessage
+                  
+                  if (existingMediaMsg && existingMediaMsg.localURI) {
+                    const currentParsed = JSON.parse(msg.content)
+                    const currentUnwrapped = unwrapMessage(currentParsed)
+                    const currentMediaMsg = currentUnwrapped?.imageMessage || currentUnwrapped?.stickerMessage || currentUnwrapped?.videoMessage || currentUnwrapped?.documentMessage || currentUnwrapped?.audioMessage
+                    if (currentMediaMsg) {
+                      currentMediaMsg.localURI = existingMediaMsg.localURI
+                      finalContent = JSON.stringify(currentParsed)
+                    }
+                  }
+                } catch (e) {
+                  console.error('[HistorySync] Failed to preserve localURI:', e)
+                }
+              }
+              update.content = finalContent
+
               if (msg.textContent !== null) update.textContent = msg.textContent
               update.fromMe = msg.fromMe
               return prisma.message.update({
