@@ -63,7 +63,7 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
         setTimeout(() => { isInitialRenderForChat.current = false }, 100)
       }
     }
-  }, [messages.length, messages, targetMessageId]) 
+  }, [messages.length, messages, targetMessageId])
 
   // Scroll to and highlight target message when it's available
   useEffect(() => {
@@ -183,20 +183,20 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
             {dateSeparators.has(idx) && (
               <div className="date-separator"><span>{dateSeparators.get(idx)}</span></div>
             )}
-            <MessageItem 
-                msg={msg} 
-                onReply={handleReply} 
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onDownloadMedia={handleDownloadMedia} 
-                onViewReactions={handleViewReactions} 
+            <MessageItem
+              msg={msg}
+              onReply={handleReply}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onDownloadMedia={handleDownloadMedia}
+              onViewReactions={handleViewReactions}
             />
           </div>
         ))
       )}
 
       <div ref={bottomRef} />
-      
+
       {viewingReactions && (
         <ReactionDetailsModal message={viewingReactions} onClose={() => setViewingReactions(null)} />
       )}
@@ -206,7 +206,7 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
 
 function ReactionDetailsModal({ message, onClose }: { message: IMessageItem, onClose: () => void }) {
   const reactions = useMemo(() => {
-    return (message.reactions || []).sort((a,b) => parseInt(b.timestamp) - parseInt(a.timestamp))
+    return (message.reactions || []).sort((a, b) => parseInt(b.timestamp) - parseInt(a.timestamp))
   }, [message.reactions])
 
   return (

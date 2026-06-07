@@ -18,7 +18,7 @@ export const useMessages = (activeJid: string | null) => {
     setLoading(true)
     setCurrentPage(1)
     setHasMore(true)
-    
+
     // Optimistic mark read
     api.markRead(jid).catch(err => console.error('Failed to mark read:', err))
 
@@ -43,7 +43,7 @@ export const useMessages = (activeJid: string | null) => {
 
   const loadMore = useCallback(async () => {
     if (!activeJid || !hasMore || loading) return 0
-    
+
     const nextPage = currentPage + 1
     try {
       const olderMsgs = await api.getMessages(activeJid, nextPage, 50)
@@ -96,7 +96,7 @@ export const useMessages = (activeJid: string | null) => {
 
     const unSubDelete = api.onMessageDeleted((update: { id: string, chatJid: string, fromMe: boolean }) => {
       if (update.chatJid === activeJid) {
-        setMessages((prev) => 
+        setMessages((prev) =>
           prev.map((m) => (m.id === update.id ? { ...m, isDeleted: true } : m))
         )
       }
@@ -104,7 +104,7 @@ export const useMessages = (activeJid: string | null) => {
 
     const unSubStatus = api.onMessageStatusUpdated((update: { id: string, chatJid: string, status: string }) => {
       if (update.chatJid === activeJid) {
-        setMessages((prev) => 
+        setMessages((prev) =>
           prev.map((m) => (m.id === update.id ? { ...m, status: update.status } : m))
         )
       }
@@ -129,7 +129,7 @@ export const useMessages = (activeJid: string | null) => {
         // the IPC path (fromMe reactions sent by tool) and regular reaction events.
         const participantKey = msg.participant || msg.chatJid
 
-        setMessages((prev) => 
+        setMessages((prev) =>
           prev.map((m) => {
             if (m.id === targetId) {
               const reactions = m.reactions || []
@@ -205,7 +205,7 @@ export const useMessages = (activeJid: string | null) => {
     if (!activeJid) return
     try {
       await api.deleteMessage(activeJid, messageId)
-      setMessages((prev) => 
+      setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, isDeleted: true } : m))
       )
     } catch (err) {

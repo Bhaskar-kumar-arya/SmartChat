@@ -84,15 +84,15 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   let rawMsg: any = {}
   try {
     rawMsg = msg.content ? unwrapMessage(JSON.parse(msg.content)) : {}
-  } catch (e) {}
+  } catch (e) { }
 
-  const ctx = rawMsg?.extendedTextMessage?.contextInfo || 
-              rawMsg?.imageMessage?.contextInfo || 
-              rawMsg?.videoMessage?.contextInfo || 
-              rawMsg?.documentMessage?.contextInfo ||
-              rawMsg?.audioMessage?.contextInfo ||
-              rawMsg?.contextInfo
-  
+  const ctx = rawMsg?.extendedTextMessage?.contextInfo ||
+    rawMsg?.imageMessage?.contextInfo ||
+    rawMsg?.videoMessage?.contextInfo ||
+    rawMsg?.documentMessage?.contextInfo ||
+    rawMsg?.audioMessage?.contextInfo ||
+    rawMsg?.contextInfo
+
   const isReply = !!ctx?.quotedMessage
   let quotedText = 'Media'
   let quotedMentions = {}
@@ -118,8 +118,8 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     if (msg.isDeleted && msg.fromMe) {
       return (
         <div className="message-deleted-badge">
-           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-           <span className="message-deleted-text">You deleted this message</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+          <span className="message-deleted-text">You deleted this message</span>
         </div>
       )
     }
@@ -127,15 +127,15 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     if (isEditing) {
       return (
         <div className="message-edit-container">
-          <textarea 
-            className="message-edit-input" 
-            value={editText} 
+          <textarea
+            className="message-edit-input"
+            value={editText}
             onChange={(e) => setEditText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSaveEdit(); }
               if (e.key === 'Escape') setIsEditing(false);
             }}
-            autoFocus 
+            autoFocus
           />
           <div className="message-edit-actions">
             <button className="edit-btn edit-btn-cancel" onClick={() => setIsEditing(false)}>Cancel</button>
@@ -149,11 +149,11 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
       <div className="message-content-vertical">
         {msg.isDeleted && !msg.fromMe && (
           <div className="message-deleted-badge">
-             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-             <span className="message-deleted-text">This message was deleted</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+            <span className="message-deleted-text">This message was deleted</span>
           </div>
         )}
-        
+
         {isImage && <ImageMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
         {isSticker && <StickerMessage localURI={localURI} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
         {isVideo && <VideoMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
@@ -168,8 +168,8 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   }
 
   const hasCaption = !!msg.textContent
-  const mediaBubbleClass = (isImage || isVideo) 
-    ? (hasCaption ? 'bubble-media-caption' : 'bubble-media') 
+  const mediaBubbleClass = (isImage || isVideo)
+    ? (hasCaption ? 'bubble-media-caption' : 'bubble-media')
     : ''
 
   return (
@@ -185,7 +185,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
           <div className="message-quote">
             <span className="quote-sender">{quotedSender}</span>
             <div className="quote-text">
-                <TextMessage text={quotedText} mentions={quotedMentions} />
+              <TextMessage text={quotedText} mentions={quotedMentions} />
             </div>
           </div>
         )}
@@ -203,34 +203,34 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
           {msg.fromMe && renderStatusTicks(msg.status)}
         </span>
       </div>
-      
+
       <div className="message-actions">
         <div className="message-dropdown-container" ref={dropdownRef}>
           <button className="action-btn" onClick={() => setShowDropdown(!showDropdown)} title="Message Options">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
           </button>
-          
+
           {showDropdown && (
             <div className="dropdown-menu">
               <button className="dropdown-item" onClick={() => { onReply(msg); setShowDropdown(false); }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v1.5"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v1.5" /></svg>
                 Reply
               </button>
               {msg.fromMe && (
                 <button className="dropdown-item" onClick={handleShowInfo}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
                   Info
                 </button>
               )}
               {canEdit && (
                 <button className="dropdown-item" onClick={() => { setIsEditing(true); setShowDropdown(false); }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                   Edit
                 </button>
               )}
               {canDelete && (
                 <button className="dropdown-item delete" onClick={handleDelete}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
                   Delete
                 </button>
               )}
@@ -265,11 +265,11 @@ function ReactionsDisplay({ reactions, onClick }: { reactions?: ReactionItem[], 
 
 function renderStatusTicks(status?: string) {
   const normalized = status || 'SENT'
-  
+
   if (normalized === 'PENDING') {
     return (
       <span className="msg-status-tick" title="Pending" style={{ display: 'inline-flex', alignSelf: 'center', marginLeft: '4px' }}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="status-clock" style={{ opacity: 0.6 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="status-clock" style={{ opacity: 0.6 }}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
       </span>
     )
   }
@@ -277,7 +277,7 @@ function renderStatusTicks(status?: string) {
   if (normalized === 'DELIVERED') {
     return (
       <span className="msg-status-tick" title="Delivered" style={{ display: 'inline-flex', alignSelf: 'center', marginLeft: '4px' }}>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="currentColor" className="status-delivered" style={{ opacity: 0.6 }}><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="currentColor" className="status-delivered" style={{ opacity: 0.6 }}><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z" /></svg>
       </span>
     )
   }
@@ -285,7 +285,7 @@ function renderStatusTicks(status?: string) {
   if (normalized === 'READ' || normalized === 'PLAYED') {
     return (
       <span className="msg-status-tick" title="Read" style={{ display: 'inline-flex', alignSelf: 'center', marginLeft: '4px' }}>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="#53bdeb" className="status-read"><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="#53bdeb" className="status-read"><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z" /></svg>
       </span>
     )
   }
@@ -293,7 +293,7 @@ function renderStatusTicks(status?: string) {
   // default to SENT
   return (
     <span className="msg-status-tick" title="Sent" style={{ display: 'inline-flex', alignSelf: 'center', marginLeft: '4px' }}>
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="currentColor" className="status-sent" style={{ opacity: 0.6 }}><path d="M15.006 1.014a.75.75 0 0 0-1.062 0l-9.52 9.52-4.148-4.148a.75.75 0 0 0-1.06 1.06l4.678 4.678a.75.75 0 0 0 1.06 0l10.052-10.052a.75.75 0 0 0 0-1.058z"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="currentColor" className="status-sent" style={{ opacity: 0.6 }}><path d="M15.006 1.014a.75.75 0 0 0-1.062 0l-9.52 9.52-4.148-4.148a.75.75 0 0 0-1.06 1.06l4.678 4.678a.75.75 0 0 0 1.06 0l10.052-10.052a.75.75 0 0 0 0-1.058z" /></svg>
     </span>
   )
 }
@@ -310,7 +310,7 @@ function MessageInfoModal({ receipts, onClose }: InfoModalProps) {
         <div className="info-modal-header">
           <h3>Message Info</h3>
           <button className="info-modal-close" onClick={onClose}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
         <div className="info-modal-content">
@@ -327,12 +327,12 @@ function MessageInfoModal({ receipts, onClose }: InfoModalProps) {
                   <div className="receipt-item-status">
                     {receipt.status === 'READ' ? (
                       <div className="status-badge read">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="#53bdeb" className="status-read"><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="#53bdeb" className="status-read"><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z" /></svg>
                         <span>Read • {formatReceiptTime(receipt.timestamp)} <span className="receipt-date">{formatReceiptDate(receipt.timestamp)}</span></span>
                       </div>
                     ) : (
                       <div className="status-badge delivered">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="currentColor" className="status-delivered" style={{ opacity: 0.6 }}><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="currentColor" className="status-delivered" style={{ opacity: 0.6 }}><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z" /></svg>
                         <span>Delivered • {formatReceiptTime(receipt.timestamp)} <span className="receipt-date">{formatReceiptDate(receipt.timestamp)}</span></span>
                       </div>
                     )}

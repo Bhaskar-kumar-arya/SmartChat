@@ -68,7 +68,7 @@ export function registerIpcHandlers(
   ipcMain.handle('save-temp-file', async (_event, buffer: Buffer | ArrayBuffer | Uint8Array, fileName: string) => {
     const tempDir = join(app.getPath('userData'), 'temp')
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
-    
+
     const filePath = join(tempDir, fileName)
     const data = buffer instanceof Uint8Array ? buffer : Buffer.from(buffer as any)
     fs.writeFileSync(filePath, data)
@@ -109,7 +109,7 @@ export function registerIpcHandlers(
   // ── Logout ──────────────────────────────────────────────────────────
   ipcMain.handle('logout', async () => {
     const sock = getSock()
-    if (sock) await sock.logout().catch(() => {})
+    if (sock) await sock.logout().catch(() => { })
     await services.dataWipeService.wipeAllData()
     return true
   })
@@ -156,7 +156,7 @@ export function registerIpcHandlers(
       where: { id: 'sync_full_history' },
       update: { data: full ? 'true' : 'false' },
       create: { id: 'sync_full_history', data: full ? 'true' : 'false' }
-    }).catch(() => {})
+    }).catch(() => { })
 
     waConnectionManager.connect()
     return true
@@ -178,13 +178,13 @@ export function registerIpcHandlers(
   ipcMain.handle('clear-vectors', async (_event) => {
     try {
       await services.embeddingService.clearAllVectors()
-    } catch (err) {}
+    } catch (err) { }
   })
 
   // ── AI Handlers ───────────────────────────────────────────────────────
-  
+
   AIToolInitializer.initializeAll(getSock, services);
-  
+
   services.embeddingService.setOnActiveStateSync((isActive) => {
     BrowserWindow.getAllWindows().forEach(win => {
       win.webContents.send('embedding-state', isActive)
@@ -230,9 +230,9 @@ export function registerIpcHandlers(
       event.sender.send(`${channelId}-end`);
     } catch (err: any) {
       if (err.name === 'AbortError' || err.message?.includes('abort')) {
-         event.sender.send(`${channelId}-end`); // Treat abort as normal end for the frontend
+        event.sender.send(`${channelId}-end`); // Treat abort as normal end for the frontend
       } else {
-         event.sender.send(`${channelId}-error`, err.message || String(err));
+        event.sender.send(`${channelId}-error`, err.message || String(err));
       }
     }
   });

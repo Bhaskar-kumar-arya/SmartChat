@@ -17,10 +17,10 @@ type MediaType = 'image' | 'sticker' | 'video' | 'document' | 'audio'
 function resolveMediaType(
   unwrapped: Record<string, any>
 ): { mediaType: MediaType; mediaMsg: Record<string, any> } | null {
-  if (unwrapped.imageMessage)    return { mediaType: 'image',    mediaMsg: unwrapped.imageMessage }
-  if (unwrapped.stickerMessage)  return { mediaType: 'sticker',  mediaMsg: unwrapped.stickerMessage }
-  if (unwrapped.videoMessage)    return { mediaType: 'video',    mediaMsg: unwrapped.videoMessage }
-  if (unwrapped.audioMessage)    return { mediaType: 'audio',    mediaMsg: unwrapped.audioMessage }
+  if (unwrapped.imageMessage) return { mediaType: 'image', mediaMsg: unwrapped.imageMessage }
+  if (unwrapped.stickerMessage) return { mediaType: 'sticker', mediaMsg: unwrapped.stickerMessage }
+  if (unwrapped.videoMessage) return { mediaType: 'video', mediaMsg: unwrapped.videoMessage }
+  if (unwrapped.audioMessage) return { mediaType: 'audio', mediaMsg: unwrapped.audioMessage }
   if (unwrapped.documentMessage) {
     // HKDF label correction: an audio file sent as a generic document must be
     // downloaded with type='audio' so the key-derivation uses "WhatsApp Audio Keys"
@@ -48,6 +48,29 @@ async function streamToBuffer(stream: AsyncIterable<Buffer>): Promise<Buffer> {
   return result
 }
 
+/** Robustly ensures the value is converted back to a Buffer.
+ *  Handles string (base64/hex), Uint8Array, { type: 'Buffer', data: [...] }, and Buffer. */
+function ensureBuffer(val: any): Buffer | null {
+  if (!val) return null
+  if (Buffer.isBuffer(val)) return val
+  if (val instanceof Uint8Array) return Buffer.from(val.buffer, val.byteOffset, val.byteLength)
+  if (typeof val === 'string') {
+    if (/^[0-9a-fA-F]+$/.test(val) && val.length % 2 === 0) {
+      return Buffer.from(val, 'hex')
+    }
+    return Buffer.from(val, 'base64')
+  }
+  if (typeof val === 'object') {
+    if (val.type === 'Buffer' && Array.isArray(val.data)) {
+      return Buffer.from(val.data)
+    }
+    if (Array.isArray(val)) {
+      return Buffer.from(val)
+    }
+  }
+  return null
+}
+
 // ─── service ────────────────────────────────────────────────────────────────
 
 export class MediaService {
@@ -55,7 +78,7 @@ export class MediaService {
     private prisma: PrismaClient,
     private messageService: MessageService,
     private contactService: ContactService
-  ) {}
+  ) { }
 
   async downloadAndCacheMedia(msgId: string, sock: WASocket | null): Promise<EnrichedMessage> {
     if (!sock) throw new Error('WhatsApp socket is not connected')
@@ -71,6 +94,10 @@ export class MediaService {
 
     const { mediaType, mediaMsg } = resolved
 
+    if (mediaMsg.mediaKey) {
+      mediaMsg.mediaKey = ensureBuffer(mediaMsg.mediaKey)
+    }
+
     const mediaDir = join(app.getPath('userData'), 'media')
     if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
 
@@ -82,11 +109,11 @@ export class MediaService {
     }
 
     // Stamp the local URI back onto the unwrapped payload so the DB gets updated
-    if (unwrapped.imageMessage)    unwrapped.imageMessage.localURI    = `app://media/${fileName}`
-    if (unwrapped.stickerMessage)  unwrapped.stickerMessage.localURI  = `app://media/${fileName}`
-    if (unwrapped.videoMessage)    unwrapped.videoMessage.localURI    = `app://media/${fileName}`
+    if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
+    if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
+    if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
     if (unwrapped.documentMessage) unwrapped.documentMessage.localURI = `app://media/${fileName}`
-    if (unwrapped.audioMessage)    unwrapped.audioMessage.localURI    = `app://media/${fileName}`
+    if (unwrapped.audioMessage) unwrapped.audioMessage.localURI = `app://media/${fileName}`
 
     const updated = await this.prisma.message.update({
       where: { id: msgId },

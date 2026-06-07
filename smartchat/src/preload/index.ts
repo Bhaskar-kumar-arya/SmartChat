@@ -155,7 +155,7 @@ const api = {
   clearVectors: () => {
     return ipcRenderer.invoke('clear-vectors')
   },
-  
+
   // ── AI Methods ──────────────────────────────────────────────────────
   aiChat: (prompt: string, contextChats?: any[], history?: any[], mentions?: any[], options?: any) => {
     return ipcRenderer.invoke('ai-chat', prompt, contextChats, history, mentions, options)
@@ -206,7 +206,7 @@ const api = {
   setProviderKey: (provider: string, key: string) => {
     return ipcRenderer.invoke('set-provider-key', provider, key)
   },
-  
+
   // ── AI Session Methods ──────────────────────────────────────────────
   createAiSession: (title: string, modelId?: string) => {
     return ipcRenderer.invoke('ai-session-create', title, modelId)

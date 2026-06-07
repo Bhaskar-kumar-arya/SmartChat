@@ -41,12 +41,12 @@ export default function ChatLayout() {
     document.addEventListener('mouseup', onMouseUp)
   }, [sidebarWidth])
 
-  const { 
-    messages, 
-    loading: loadingMessages, 
-    loadMore, 
-    handleDownloadMedia, 
-    sendMessage, 
+  const {
+    messages,
+    loading: loadingMessages,
+    loadMore,
+    handleDownloadMedia,
+    sendMessage,
     sendMediaMessage,
     editMessage,
     deleteMessage
@@ -120,10 +120,10 @@ export default function ChatLayout() {
         {activeJid ? (
           <>
             <div className="chat-header">
-              <ProfilePicture 
-                jid={activeJid} 
-                initialUrl={activeProfilePic} 
-                size={40} 
+              <ProfilePicture
+                jid={activeJid}
+                initialUrl={activeProfilePic}
+                size={40}
                 onClick={handleHeaderProfileClick}
               />
               <div className="chat-header-info">
@@ -169,7 +169,7 @@ export default function ChatLayout() {
       </div>
 
       {isAIOpen && (
-        <div 
+        <div
           className="ai-sidebar-resizer"
           onMouseDown={startResizing}
         />
@@ -177,7 +177,7 @@ export default function ChatLayout() {
 
       <AIChatSidebar isOpen={isAIOpen} onClose={handleCloseAI} />
 
-      <button 
+      <button
         className={`ai-edge-tab ${isAIOpen ? 'open' : ''}`}
         onClick={handleToggleAI}
         title={isAIOpen ? "Close AI Assistant" : "Open AI Assistant"}
@@ -188,10 +188,10 @@ export default function ChatLayout() {
       </button>
 
       {overlayJid && (
-        <ProfilePicOverlay 
-          jid={overlayJid} 
-          name={overlayName} 
-          onClose={handleCloseOverlay} 
+        <ProfilePicOverlay
+          jid={overlayJid}
+          name={overlayName}
+          onClose={handleCloseOverlay}
         />
       )}
     </div>

@@ -3,271 +3,271 @@ import { api } from '../../services/api.service'
 export { AudioMessage } from './AudioMessage'
 
 const formatFileSize = (bytes?: number | string) => {
-  if (!bytes) return ''
-  const num = Number(bytes)
-  if (isNaN(num)) return ''
-  if (num < 1024) return `${num} B`
-  if (num < 1024 * 1024) return `${(num / 1024).toFixed(0)} kB`
-  return `${(num / (1024 * 1024)).toFixed(1)} MB`
+    if (!bytes) return ''
+    const num = Number(bytes)
+    if (isNaN(num)) return ''
+    if (num < 1024) return `${num} B`
+    if (num < 1024 * 1024) return `${(num / 1024).toFixed(0)} kB`
+    return `${(num / (1024 * 1024)).toFixed(1)} MB`
 }
 
 const getDisplayDimensions = (originalWidth?: number, originalHeight?: number) => {
-  const maxWidth = 300
-  const maxHeight = 400
-  const minWidth = 180
-  const minHeight = 150
+    const maxWidth = 300
+    const maxHeight = 400
+    const minWidth = 180
+    const minHeight = 150
 
-  // Fallback if dimensions are missing or invalid
-  if (!originalWidth || !originalHeight) {
-    return { width: maxWidth, height: 200 }
-  }
+    // Fallback if dimensions are missing or invalid
+    if (!originalWidth || !originalHeight) {
+        return { width: maxWidth, height: 200 }
+    }
 
-  let width = originalWidth
-  let height = originalHeight
+    let width = originalWidth
+    let height = originalHeight
 
-  const aspectRatio = width / height
+    const aspectRatio = width / height
 
-  // Scale down proportionally to fit within maxWidth and maxHeight limits
-  if (width > maxWidth) {
-    width = maxWidth
-    height = Math.round(width / aspectRatio)
-  }
-  
-  if (height > maxHeight) {
-    height = maxHeight
-    width = Math.round(height * aspectRatio)
-  }
+    // Scale down proportionally to fit within maxWidth and maxHeight limits
+    if (width > maxWidth) {
+        width = maxWidth
+        height = Math.round(width / aspectRatio)
+    }
 
-  // Enforce minimums while preserving aspect ratio
-  if (width < minWidth) {
-    width = minWidth
-    height = Math.round(width / aspectRatio)
-  }
+    if (height > maxHeight) {
+        height = maxHeight
+        width = Math.round(height * aspectRatio)
+    }
 
-  if (height < minHeight) {
-    height = minHeight
-    width = Math.round(height * aspectRatio)
-  }
+    // Enforce minimums while preserving aspect ratio
+    if (width < minWidth) {
+        width = minWidth
+        height = Math.round(width / aspectRatio)
+    }
 
-  // Final constraint clamp to ensure limits are strictly respected
-  if (width > maxWidth) width = maxWidth
-  if (height > maxHeight) height = maxHeight
+    if (height < minHeight) {
+        height = minHeight
+        width = Math.round(height * aspectRatio)
+    }
 
-  return { width, height }
+    // Final constraint clamp to ensure limits are strictly respected
+    if (width > maxWidth) width = maxWidth
+    if (height > maxHeight) height = maxHeight
+
+    return { width, height }
 }
 
 
 
 interface MediaMessageProps {
-  localURI?: string
-  textContent?: string | null
-  mentions?: Record<string, string>
-  onDownload: () => void
-  isDownloading: boolean
-  label: string
-  icon: any
-  downloadFailed?: boolean
+    localURI?: string
+    textContent?: string | null
+    mentions?: Record<string, string>
+    onDownload: () => void
+    isDownloading: boolean
+    label: string
+    icon: any
+    downloadFailed?: boolean
 }
 
 /**
  * Common layout for media that is not yet downloaded.
  */
 export const DownloadMediaPlaceholder = ({ onDownload, isDownloading, label, icon, downloadFailed }: MediaMessageProps) => {
-  return (
-    <div className="message-image-download" style={{
-        marginBottom: '0',
-        padding: '24px',
-        borderRadius: '12px',
-        background: 'var(--surface, rgba(0,0,0,0.05))',
-        border: '1px dashed var(--border, #ccc)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px',
-        minWidth: '200px'
-    }}>
-        {isDownloading ? (
-        <div className="spinner-small" style={{ margin: '8px' }} />
-        ) : downloadFailed ? (
-        <div style={{ textAlign: 'center', color: 'var(--text-secondary, #888)', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-            <div style={{ color: '#ea4335' }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            </div>
-            <span>{label} Expired</span>
+    return (
+        <div className="message-image-download" style={{
+            marginBottom: '0',
+            padding: '24px',
+            borderRadius: '12px',
+            background: 'var(--surface, rgba(0,0,0,0.05))',
+            border: '1px dashed var(--border, #ccc)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            minWidth: '200px'
+        }}>
+            {isDownloading ? (
+                <div className="spinner-small" style={{ margin: '8px' }} />
+            ) : downloadFailed ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary, #888)', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ color: '#ea4335' }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    </div>
+                    <span>{label} Expired</span>
+                </div>
+            ) : (
+                <div style={{ textAlign: 'center' }}>
+                    <div style={{ marginBottom: '12px' }}>
+                        {icon}
+                    </div>
+                    <button
+                        onClick={onDownload}
+                        style={{
+                            padding: '8px 16px',
+                            borderRadius: '16px',
+                            border: 'none',
+                            background: 'var(--primary, #00a884)',
+                            color: '#fff',
+                            fontWeight: 600,
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            width: '100%'
+                        }}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
+                        Download {label}
+                    </button>
+                </div>
+            )}
         </div>
-        ) : (
-        <div style={{ textAlign: 'center' }}>
-            <div style={{ marginBottom: '12px' }}>
-                {icon}
-            </div>
-            <button
-            onClick={onDownload}
-            style={{
-                padding: '8px 16px',
-                borderRadius: '16px',
-                border: 'none',
-                background: 'var(--primary, #00a884)',
-                color: '#fff',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                width: '100%'
-            }}
-            >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-            Download {label}
-            </button>
-        </div>
-        )}
-    </div>
-  )
+    )
 }
 
 export const ImageMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: any) => {
-  const [downloadFailed, setDownloadFailed] = useState(false)
-  const thumbnailData = getThumbnailData(rawMsg?.imageMessage)
+    const [downloadFailed, setDownloadFailed] = useState(false)
+    const thumbnailData = getThumbnailData(rawMsg?.imageMessage)
 
-  const imgMsg = rawMsg?.imageMessage || {}
-  const width = imgMsg.width
-  const height = imgMsg.height
-  const fileLength = imgMsg.fileLength
-  const fileSizeStr = formatFileSize(fileLength)
+    const imgMsg = rawMsg?.imageMessage || {}
+    const width = imgMsg.width
+    const height = imgMsg.height
+    const fileLength = imgMsg.fileLength
+    const fileSizeStr = formatFileSize(fileLength)
 
-  const { width: dispWidth, height: dispHeight } = getDisplayDimensions(width, height)
+    const { width: dispWidth, height: dispHeight } = getDisplayDimensions(width, height)
 
-  const handleDownload = async () => {
-    if (onDownload) {
-      setDownloadFailed(false)
-      try {
-        await onDownload()
-      } catch (err) {
-        console.error('Failed to download image:', err)
-        setDownloadFailed(true)
-      }
+    const handleDownload = async () => {
+        if (onDownload) {
+            setDownloadFailed(false)
+            try {
+                await onDownload()
+            } catch (err) {
+                console.error('Failed to download image:', err)
+                setDownloadFailed(true)
+            }
+        }
     }
-  }
 
-  if (!localURI) {
-    if (thumbnailData) {
-      return (
-        <div className="message-image-placeholder" style={{ 
-          marginBottom: textContent ? '8px' : '0',
-          position: 'relative', 
-          overflow: 'hidden', 
-          borderRadius: '12px',
-          width: `${dispWidth}px`,
-          height: `${dispHeight}px`,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          background: 'rgba(0,0,0,0.1)'
-        }}>
-          {/* Blurred Thumbnail Background */}
-          <img 
-            src={thumbnailData} 
-            alt="Preview" 
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              filter: 'blur(5px)',
-              transform: 'scale(1.05)',
-              opacity: 0.95,
-              transition: 'opacity 0.3s ease'
-            }} 
-          />
-          
-          {/* Semi-transparent Download Overlay */}
-          <div style={{
-            position: 'absolute',
-            top: 0, left: 0, right: 0, bottom: 0,
+    if (!localURI) {
+        if (thumbnailData) {
+            return (
+                <div className="message-image-placeholder" style={{
+                    marginBottom: textContent ? '8px' : '0',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    borderRadius: '12px',
+                    width: `${dispWidth}px`,
+                    height: `${dispHeight}px`,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    background: 'rgba(0,0,0,0.1)'
+                }}>
+                    {/* Blurred Thumbnail Background */}
+                    <img
+                        src={thumbnailData}
+                        alt="Preview"
+                        style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            filter: 'blur(5px)',
+                            transform: 'scale(1.05)',
+                            opacity: 0.95,
+                            transition: 'opacity 0.3s ease'
+                        }}
+                    />
+
+                    {/* Semi-transparent Download Overlay */}
+                    <div style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(0, 0, 0, 0.15)',
+                        zIndex: 2
+                    }}>
+                        {isDownloading ? (
+                            <div className="spinner-small" style={{ width: '28px', height: '28px' }} />
+                        ) : downloadFailed ? (
+                            <div style={{
+                                background: 'rgba(234, 67, 53, 0.85)',
+                                padding: '6px 12px',
+                                borderRadius: '16px',
+                                color: '#fff',
+                                fontSize: '0.8rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontWeight: 600,
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                            }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                                Expired
+                            </div>
+                        ) : (
+                            <button
+                                onClick={handleDownload}
+                                style={{
+                                    padding: '8px 16px',
+                                    borderRadius: '24px',
+                                    border: 'none',
+                                    background: 'rgba(0, 0, 0, 0.5)',
+                                    backdropFilter: 'blur(10px)',
+                                    color: '#fff',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                                    transition: 'background 0.2s, transform 0.1s'
+                                }}
+                                onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(0, 0, 0, 0.65)')}
+                                onMouseOut={(e) => (e.currentTarget.style.background = 'rgba(0, 0, 0, 0.5)')}
+                                title="Download Image"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
+                                {fileSizeStr && <span style={{ whiteSpace: 'nowrap' }}>{fileSizeStr}</span>}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )
+        }
+
+        return <DownloadMediaPlaceholder
+            label="Image"
+            icon={<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>}
+            onDownload={handleDownload}
+            isDownloading={isDownloading}
+            downloadFailed={downloadFailed}
+        />
+    }
+
+    return (
+        <div className="message-image" style={{
+            marginBottom: textContent ? '8px' : '0',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            cursor: 'pointer',
             display: 'flex',
-            alignItems: 'center',
             justifyContent: 'center',
-            background: 'rgba(0, 0, 0, 0.15)',
-            zIndex: 2
-          }}>
-            {isDownloading ? (
-              <div className="spinner-small" style={{ width: '28px', height: '28px' }} />
-            ) : downloadFailed ? (
-              <div style={{
-                background: 'rgba(234, 67, 53, 0.85)',
-                padding: '6px 12px',
-                borderRadius: '16px',
-                color: '#fff',
-                fontSize: '0.8rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontWeight: 600,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-              }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                Expired
-              </div>
-            ) : (
-              <button
-                onClick={handleDownload}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '24px',
-                  border: 'none',
-                  background: 'rgba(0, 0, 0, 0.5)',
-                  backdropFilter: 'blur(10px)',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                  transition: 'background 0.2s, transform 0.1s'
-                }}
-                onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(0, 0, 0, 0.65)')}
-                onMouseOut={(e) => (e.currentTarget.style.background = 'rgba(0, 0, 0, 0.5)')}
-                title="Download Image"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                {fileSizeStr && <span style={{ whiteSpace: 'nowrap' }}>{fileSizeStr}</span>}
-              </button>
-            )}
-          </div>
+            alignItems: 'center',
+            background: 'rgba(0,0,0,0.05)',
+            boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.1)',
+            width: `${dispWidth}px`,
+            height: `${dispHeight}px`
+        }} onClick={() => api.openFile(localURI)}>
+            <img src={localURI} alt="Media" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         </div>
-      )
-    }
-
-    return <DownloadMediaPlaceholder 
-      label="Image" 
-      icon={<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}
-      onDownload={handleDownload}
-      isDownloading={isDownloading}
-      downloadFailed={downloadFailed}
-    />
-  }
-
-  return (
-    <div className="message-image" style={{ 
-      marginBottom: textContent ? '8px' : '0',
-      borderRadius: '12px',
-      overflow: 'hidden',
-      cursor: 'pointer',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      background: 'rgba(0,0,0,0.05)',
-      boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.1)',
-      width: `${dispWidth}px`,
-      height: `${dispHeight}px`
-    }} onClick={() => api.openFile(localURI)}>
-      <img src={localURI} alt="Media" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
-    </div>
-  )
+    )
 }
 
 export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: any) => {
@@ -296,7 +296,7 @@ export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: 
     if (!localURI) {
         if (downloadFailed) {
             return (
-                <div className="message-sticker-placeholder" style={{ 
+                <div className="message-sticker-placeholder" style={{
                     width: '150px',
                     height: '150px',
                     display: 'flex',
@@ -312,7 +312,7 @@ export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: 
                     textAlign: 'center'
                 }}>
                     <div style={{ color: '#ea4335' }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                     </div>
                     <span>Sticker Expired</span>
                 </div>
@@ -321,9 +321,9 @@ export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: 
 
         if (thumbnailData) {
             return (
-                <div className="message-sticker-placeholder" style={{ 
-                    position: 'relative', 
-                    overflow: 'hidden', 
+                <div className="message-sticker-placeholder" style={{
+                    position: 'relative',
+                    overflow: 'hidden',
                     borderRadius: '8px',
                     width: '150px',
                     height: '150px',
@@ -332,9 +332,9 @@ export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: 
                     alignItems: 'center',
                     background: 'transparent'
                 }}>
-                    <img 
-                        src={thumbnailData} 
-                        alt="Preview" 
+                    <img
+                        src={thumbnailData}
+                        alt="Preview"
                         style={{
                             width: '100%',
                             height: '100%',
@@ -342,9 +342,9 @@ export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: 
                             filter: 'blur(3px)',
                             opacity: 0.95,
                             transition: 'opacity 0.3s ease'
-                        }} 
+                        }}
                     />
-                    
+
                     <div style={{
                         position: 'absolute',
                         top: 0, left: 0, right: 0, bottom: 0,
@@ -374,7 +374,7 @@ export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: 
                                 }}
                                 title="Download Sticker"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
                             </button>
                         )}
                     </div>
@@ -382,9 +382,9 @@ export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: 
             )
         }
 
-        return <DownloadMediaPlaceholder 
-            label="Sticker" 
-            icon={<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}
+        return <DownloadMediaPlaceholder
+            label="Sticker"
+            icon={<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>}
             onDownload={handleDownload}
             isDownloading={isDownloading}
             downloadFailed={downloadFailed}
@@ -446,10 +446,10 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
     if (!localURI) {
         if (thumbnailData) {
             return (
-                <div className="message-video-placeholder" style={{ 
+                <div className="message-video-placeholder" style={{
                     marginBottom: textContent ? '8px' : '0',
-                    position: 'relative', 
-                    overflow: 'hidden', 
+                    position: 'relative',
+                    overflow: 'hidden',
                     borderRadius: '12px',
                     width: `${dispWidth}px`,
                     height: `${dispHeight}px`,
@@ -459,9 +459,9 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
                     background: '#000'
                 }}>
                     {/* Blurred Thumbnail Background */}
-                    <img 
-                        src={thumbnailData} 
-                        alt="Preview" 
+                    <img
+                        src={thumbnailData}
+                        alt="Preview"
                         style={{
                             width: '100%',
                             height: '100%',
@@ -470,9 +470,9 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
                             transform: 'scale(1.05)',
                             opacity: 0.95,
                             transition: 'opacity 0.3s ease'
-                        }} 
+                        }}
                     />
-                    
+
                     {/* Semi-transparent Download Overlay */}
                     <div style={{
                         position: 'absolute',
@@ -498,7 +498,7 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
                                 fontWeight: 600,
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
                             }}>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                                 Expired
                             </div>
                         ) : (
@@ -524,7 +524,7 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
                                 onMouseOut={(e) => (e.currentTarget.style.background = 'rgba(0, 0, 0, 0.5)')}
                                 title="Download Video"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
                                 {fileSizeStr && <span style={{ whiteSpace: 'nowrap' }}>{fileSizeStr}</span>}
                             </button>
                         )}
@@ -550,16 +550,16 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
                         pointerEvents: 'none',
                         boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
                     }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
                         <span>{duration ? formatDuration(duration) : 'Video'}</span>
                     </div>
                 </div>
             )
         }
 
-        return <DownloadMediaPlaceholder 
-            label="Video" 
-            icon={<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="7" y1="3" x2="7" y2="10"/><line x1="17" y1="3" x2="17" y2="10"/><line x1="7" y1="10" x2="7" y2="17"/><line x1="17" y1="10" x2="17" y2="17"/></svg>}
+        return <DownloadMediaPlaceholder
+            label="Video"
+            icon={<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="2" y1="10" x2="22" y2="10" /><line x1="7" y1="3" x2="7" y2="10" /><line x1="17" y1="3" x2="17" y2="10" /><line x1="7" y1="10" x2="7" y2="17" /><line x1="17" y1="10" x2="17" y2="17" /></svg>}
             onDownload={handleDownload}
             isDownloading={isDownloading}
             downloadFailed={downloadFailed}
@@ -567,7 +567,7 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
     }
 
     return (
-        <div className="message-video" style={{ 
+        <div className="message-video" style={{
             marginBottom: textContent ? '8px' : '0',
             borderRadius: '12px',
             overflow: 'hidden',
@@ -580,11 +580,11 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
             height: `${dispHeight}px`,
             position: 'relative'
         }}>
-            <video 
-                src={localURI} 
-                controls 
+            <video
+                src={localURI}
+                controls
                 poster={thumbnailData}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} 
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
             />
         </div>
     )
@@ -623,15 +623,15 @@ export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isD
                 color: '#fff',
                 fontSize: '12px'
             }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14.5 2 14.5 7.5 20 7.5"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14.5 2 14.5 7.5 20 7.5" /></svg>
             </div>
-            
+
             <div style={{ flex: 1, overflow: 'hidden' }}>
-                <div style={{ 
-                    fontSize: '0.9rem', 
-                    fontWeight: 600, 
-                    whiteSpace: 'nowrap', 
-                    overflow: 'hidden', 
+                <div style={{
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     color: '#333'
                 }} title={fileName}>
@@ -642,7 +642,7 @@ export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isD
                 </div>
             </div>
 
-            <button 
+            <button
                 onClick={localURI ? handleOpen : onDownload}
                 disabled={isDownloading}
                 style={{
@@ -659,9 +659,9 @@ export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isD
                 {isDownloading ? (
                     <div className="spinner-small" style={{ width: '16px', height: '16px' }} />
                 ) : localURI ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" x2="21" y1="14" y2="3" /></svg>
                 ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
                 )}
             </button>
         </div>

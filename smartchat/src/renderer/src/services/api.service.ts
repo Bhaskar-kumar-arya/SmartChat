@@ -8,7 +8,7 @@ import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo
  * This satisfies the Dependency Inversion Principle.
  */
 export const api = {
-  getChats: (page: number, limit: number): Promise<ChatItem[]> => 
+  getChats: (page: number, limit: number): Promise<ChatItem[]> =>
     window.api.getChats(page, limit),
 
   getMessages: (jid: string, page: number, limit: number): Promise<MessageItem[]> =>

@@ -96,7 +96,7 @@ declare global {
       getAiModels: () => Promise<any[]>
       getProviderKeys: () => Promise<Record<string, string>>
       setProviderKey: (provider: string, key: string) => Promise<boolean>
-  
+
       // ── AI Session Methods ──────────────────────────────────────────────
       createAiSession: (title: string, modelId?: string) => Promise<any>
       listAiSessions: (page?: number, pageSize?: number) => Promise<any[]>

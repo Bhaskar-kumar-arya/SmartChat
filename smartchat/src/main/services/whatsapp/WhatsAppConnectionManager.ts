@@ -131,6 +131,17 @@ export class WhatsAppConnectionManager {
 
     this.currentSock = sock
 
+    // Prevent MaxListenersExceededWarning
+    try {
+      if ((sock.ev as any).target?.setMaxListeners) {
+        (sock.ev as any).target.setMaxListeners(100)
+      } else if ((sock.ev as any).setMaxListeners) {
+        (sock.ev as any).setMaxListeners(100)
+      }
+    } catch (err) {
+      console.warn('[Connection] Failed to set max listeners:', err)
+    }
+
     // creds.update must stay as a direct listener (saveCreds is a plain callback)
     sock.ev.on('creds.update', saveCreds)
 
