@@ -33,7 +33,7 @@ WHAT YOU RECEIVE BACK:
   logs: ["[log] ...", "[tool:name] call #1", ...],
   toolCallCount: N,
   error: "<message>",                 // present on failure
-  timedOut: true                      // present only if the 30s wall-clock was hit
+  timedOut: true                      // present only if the wall-clock was hit
 }
 If success is false, read 'error' and 'logs' to diagnose — then retry with a corrected script.
 
@@ -53,6 +53,21 @@ The user is looking for specific information. A simple search might return isola
   }
 }
 </tool_call>
+
+User: "summarize this week's messages"
+
+<thought>
+The user wants a summary of the past week's messages. I need to fetch all messages from the last 7 days and group them by chat.
+</thought>
+<tool_call>
+{
+  "tool": "executeScript",
+  "arguments": {
+    "script": "const now = Math.floor(Date.now() / 1000);\\nconst sevenDaysAgo = now - (7 * 24 * 60 * 60);\\n\\nconst messages = await queryDatabase({\\n  sql: \\"SELECT m.chatJid, m.textContent, m.timestamp, m.fromMe, m.participant, c.name as chatName, i.displayName as senderName, i.pushName as senderPushName FROM Message m JOIN Chat c ON m.chatJid = c.jid LEFT JOIN Identity i ON m.senderId = i.id WHERE m.timestamp >= ? ORDER BY m.timestamp ASC\\",\\n  params: [sevenDaysAgo],\\n  explanation: \\"Fetching all messages from the last 7 days including sender identity fields.\\"\\n});\\n\\nconst summaries = {};\\n\\nfor (const msg of messages.rows) {\\n  const chatKey = msg.chatName || msg.chatJid;\\n  if (!summaries[chatKey]) {\\n    summaries[chatKey] = [];\\n  }\\n  const sender = (msg.fromMe === 1 || msg.fromMe === true)\\n    ? 'Me'\\n    : (msg.senderName || msg.senderPushName || msg.participant || 'Unknown');\\n  summaries[chatKey].push({\\n    sender,\\n    text: msg.textContent\\n  });\\n}\\n\\nreturn summaries;",
+    "explanation": "Retrieve all messages from the last 7 days for summary"
+  }
+}
+</tool_call> 
 
 AVAILABLE TOOLS (injected as globals):
 `;
