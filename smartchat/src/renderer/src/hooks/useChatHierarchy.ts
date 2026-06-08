@@ -65,7 +65,26 @@ export const useChatHierarchy = (
       
       if (item.chat.isCommunity) {
         const totalUnreadCount = children.reduce((sum, c) => sum + (c.unreadCount || 0), 0)
-        finalItems.push({ ...item.chat, totalUnreadCount, children })
+        
+        let latestChildTimestamp: string | null = null
+        let maxTs = 0n
+        children.forEach(c => {
+          const ts = BigInt(c.lastMessageTimestamp || c.timestamp || 0)
+          if (ts > maxTs) {
+            maxTs = ts
+            latestChildTimestamp = c.lastMessageTimestamp || c.timestamp || null
+          }
+        })
+
+        const displayTimestamp = latestChildTimestamp || item.chat.lastMessageTimestamp || item.chat.timestamp
+
+        finalItems.push({ 
+          ...item.chat, 
+          totalUnreadCount, 
+          children,
+          lastMessageTimestamp: displayTimestamp,
+          timestamp: displayTimestamp
+        })
         
         children.forEach(child => {
           finalItems.push({ ...child, isChild: true, parentName: item.chat.name })

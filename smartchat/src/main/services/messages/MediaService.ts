@@ -123,30 +123,8 @@ export class MediaService {
       await this._downloadToFile(msgId, sock, dbMsg, rawMessage, mediaMsg, mediaType, filePath)
     }
 
-    // Stamp the local URI back onto the unwrapped payload so the DB gets updated
-    if (unwrapped.templateMessage) {
-      const tmpl = unwrapped.templateMessage
-      const hydrated = tmpl.hydratedFourRowTemplate || tmpl.hydratedTemplate
-      const interactive = tmpl.interactiveMessageTemplate
-
-      const img = hydrated?.imageMessage || interactive?.header?.imageMessage
-      const stk = hydrated?.stickerMessage
-      const vid = hydrated?.videoMessage || interactive?.header?.videoMessage
-      const doc = hydrated?.documentMessage || interactive?.header?.documentMessage
-      const aud = hydrated?.audioMessage
-
-      if (img) img.localURI = `app://media/${fileName}`
-      if (stk) stk.localURI = `app://media/${fileName}`
-      if (vid) vid.localURI = `app://media/${fileName}`
-      if (doc) doc.localURI = `app://media/${fileName}`
-      if (aud) aud.localURI = `app://media/${fileName}`
-    } else {
-      if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
-      if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
-      if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
-      if (unwrapped.documentMessage) unwrapped.documentMessage.localURI = `app://media/${fileName}`
-      if (unwrapped.audioMessage) unwrapped.audioMessage.localURI = `app://media/${fileName}`
-    }
+    // Stamp the local URI back onto the resolved media message payload so the DB gets updated
+    mediaMsg.localURI = `app://media/${fileName}`
 
     const updated = await this.prisma.message.update({
       where: { id: msgId },

@@ -29,6 +29,9 @@ export const useChats = (activeJid: string | null) => {
   const [chats, setChats] = useState<ChatItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   
   // Use a ref for activeJid so listeners always have the current value
   const activeJidRef = useRef(activeJid)
@@ -36,19 +39,45 @@ export const useChats = (activeJid: string | null) => {
     activeJidRef.current = activeJid
   }, [activeJid])
 
-  const loadChats = async () => {
+  const loadChats = async (pageToLoad = 1, append = false) => {
+    if (pageToLoad === 1) {
+      setLoading(true)
+    } else {
+      setLoadingMore(true)
+    }
     try {
-      const data = await api.getChats(1, 50)
-      setChats(data)
+      const pageSize = 50
+      const data = await api.getChats(pageToLoad, pageSize)
+      if (data.length < pageSize) {
+        setHasMore(false)
+      } else {
+        setHasMore(true)
+      }
+      
+      setChats((prev) => {
+        if (append) {
+          const existingJids = new Set(prev.map(c => c.jid))
+          const filteredNew = data.filter(c => !existingJids.has(c.jid))
+          return sortChats([...prev, ...filteredNew])
+        }
+        return data
+      })
+      setPage(pageToLoad)
     } catch (err) {
       console.error('Failed to load chats:', err)
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }
 
+  const loadMoreChats = async () => {
+    if (loading || loadingMore || !hasMore) return
+    await loadChats(page + 1, true)
+  }
+
   useEffect(() => {
-    loadChats()
+    loadChats(1, false)
 
     const unSubNewMsg = api.onNewMessage((msg: MessageItem) => {
       setChats((prev) => {
@@ -144,9 +173,12 @@ export const useChats = (activeJid: string | null) => {
     chats: filteredChats, 
     allChats: chats,
     loading, 
+    loadingMore,
+    hasMore,
+    loadMore: loadMoreChats,
     searchQuery, 
     setSearchQuery,
     clearUnreadCount,
-    reload: loadChats
+    reload: () => loadChats(1, false)
   }
 }

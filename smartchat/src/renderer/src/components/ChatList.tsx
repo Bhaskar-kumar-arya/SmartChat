@@ -18,8 +18,26 @@ interface ChatListProps {
 }
 
 export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: ChatListProps) {
-  const { chats, allChats, loading, searchQuery, setSearchQuery, clearUnreadCount } = useChats(activeJid)
+  const { 
+    chats, 
+    allChats, 
+    loading, 
+    loadingMore, 
+    loadMore, 
+    searchQuery, 
+    setSearchQuery, 
+    clearUnreadCount 
+  } = useChats(activeJid)
   const { presences } = usePresence()
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget
+    const threshold = 50
+    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + threshold
+    if (isAtBottom) {
+      loadMore()
+    }
+  }
   
   const [searchMode, setSearchMode] = useState<SearchMode>('normal')
   const [filters, setFilters] = useState<SearchFilters>({})
@@ -267,7 +285,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
           onSelectChat={(jid, name, messageId) => onSelectChat(jid, name, undefined, messageId)}
         />
       ) : (
-        <div className="chat-list">
+        <div className="chat-list" onScroll={handleScroll}>
           {loading ? (
             <div className="chat-list-loading">
               <div className="spinner" />
@@ -278,110 +296,118 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
               <p>No chats yet</p>
             </div>
           ) : (
-            groupedChats.map((chat) => {
-              const muted = isMuted(chat.muteExpiration)
-              const pinned = !!(chat.pinned && chat.pinned > 0)
-              const presenceText = getPresenceText(chat)
-              const isChild = chat.isChild
-              const isRoot = chat.isCommunity
-              
-              // Hide children if parent is collapsed
-              if (isChild && chat.linkedParentJid && !expandedCommunities.has(chat.linkedParentJid)) {
-                return null
-              }
+            <>
+              {groupedChats.map((chat) => {
+                const muted = isMuted(chat.muteExpiration)
+                const pinned = !!(chat.pinned && chat.pinned > 0)
+                const presenceText = getPresenceText(chat)
+                const isChild = chat.isChild
+                const isRoot = chat.isCommunity
+                
+                // Hide children if parent is collapsed
+                if (isChild && chat.linkedParentJid && !expandedCommunities.has(chat.linkedParentJid)) {
+                  return null
+                }
 
-              const isExpanded = expandedCommunities.has(chat.jid)
+                const isExpanded = expandedCommunities.has(chat.jid)
 
-              return (
-                <div
-                  key={chat.jid}
-                  className={`chat-list-item ${activeJid === chat.jid ? 'active' : ''} ${muted ? 'muted' : ''} ${isChild ? 'chat-child' : ''} ${isRoot ? 'chat-community-root' : ''}`}
-                  onClick={() => {
-                    if (isRoot) {
-                      handleRootClick(chat)
-                    } else {
-                      onSelectChat(chat.jid, chat.name, chat.profilePictureUrl)
-                      if (chat.unreadCount > 0) clearUnreadCount(chat.jid)
-                    }
-                  }}
-                >
-                  <ProfilePicture 
-                     jid={chat.jid} 
-                     initialUrl={chat.profilePictureUrl} 
-                     size={isChild ? 40 : 48} 
-                     onClick={(e) => {
-                       e.stopPropagation();
-                       onShowProfilePic(chat.jid, chat.name);
-                     }}
-                  />
-                  <div className="chat-item-content">
-                    <div className="chat-item-top">
-                      <span className="chat-item-name">
-                        {isRoot && (
-                          <button 
-                            className={`community-toggle-btn ${isExpanded ? 'expanded' : ''}`}
-                            onClick={(e) => toggleExpand(chat.jid, e)}
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="m9 18 6-6-6-6"/>
-                            </svg>
-                          </button>
-                        )}
-                        {chat.name}
-                      </span>
-                      <span className="chat-item-time">
-                        {formatChatTime(chat.lastMessageTimestamp || chat.timestamp)}
-                      </span>
-                    </div>
-                    <div className="chat-item-bottom">
-                      {isRoot ? (
-                        <div className="community-subgroups-preview">
-                          {(chat.children || []).map((child: ChatItem) => (
-                            <span 
-                              key={child.jid} 
-                              className={`subgroup-tag ${child.unreadCount > 0 ? 'has-unread' : ''}`}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onSelectChat(child.jid, child.name, child.profilePictureUrl)
-                              }}
+                return (
+                  <div
+                    key={chat.jid}
+                    className={`chat-list-item ${activeJid === chat.jid ? 'active' : ''} ${muted ? 'muted' : ''} ${isChild ? 'chat-child' : ''} ${isRoot ? 'chat-community-root' : ''}`}
+                    onClick={() => {
+                      if (isRoot) {
+                        handleRootClick(chat)
+                      } else {
+                        onSelectChat(chat.jid, chat.name, chat.profilePictureUrl)
+                        if (chat.unreadCount > 0) clearUnreadCount(chat.jid)
+                      }
+                    }}
+                  >
+                    <ProfilePicture 
+                       jid={chat.jid} 
+                       initialUrl={chat.profilePictureUrl} 
+                       size={isChild ? 40 : 48} 
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         onShowProfilePic(chat.jid, chat.name);
+                       }}
+                    />
+                    <div className="chat-item-content">
+                      <div className="chat-item-top">
+                        <span className="chat-item-name">
+                          {isRoot && (
+                            <button 
+                              className={`community-toggle-btn ${isExpanded ? 'expanded' : ''}`}
+                              onClick={(e) => toggleExpand(chat.jid, e)}
                             >
-                              {child.unreadCount > 0 && <span className="unread-dot" />}
-                              {child.name}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className={`chat-item-preview ${presenceText ? 'presence-typing' : ''}`}>
-                          {isChild && chat.isAnnounce && <span className="announce-tag">[Announcement] </span>}
-                          {renderLastMessageText(chat, presenceText)}
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="m9 18 6-6-6-6"/>
+                              </svg>
+                            </button>
+                          )}
+                          {chat.name}
                         </span>
-                      )}
-                      
-                      <div className="chat-item-indicators">
-                        {muted && (
-                          <svg className="indicator-icon muted-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                            <line x1="23" y1="9" x2="17" y2="15"/>
-                            <line x1="17" y1="9" x2="23" y2="15"/>
-                          </svg>
-                        )}
-                        {pinned && (
-                          <svg className="indicator-icon pin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="12" y1="17" x2="12" y2="22"/>
-                            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.68V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v4.68a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
-                          </svg>
-                        )}
-                        {((isRoot ? chat.totalUnreadCount : chat.unreadCount) || 0) > 0 && (
-                          <span className="chat-item-badge">
-                            {isRoot ? chat.totalUnreadCount : chat.unreadCount}
+                        <span className="chat-item-time">
+                          {formatChatTime(chat.lastMessageTimestamp || chat.timestamp)}
+                        </span>
+                      </div>
+                      <div className="chat-item-bottom">
+                        {isRoot ? (
+                          <div className="community-subgroups-preview">
+                            {(chat.children || []).map((child: ChatItem) => (
+                              <span 
+                                key={child.jid} 
+                                className={`subgroup-tag ${child.unreadCount > 0 ? 'has-unread' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onSelectChat(child.jid, child.name, child.profilePictureUrl)
+                                }}
+                              >
+                                {child.unreadCount > 0 && <span className="unread-dot" />}
+                                {child.name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className={`chat-item-preview ${presenceText ? 'presence-typing' : ''}`}>
+                            {isChild && chat.isAnnounce && <span className="announce-tag">[Announcement] </span>}
+                            {renderLastMessageText(chat, presenceText)}
                           </span>
                         )}
+                        
+                        <div className="chat-item-indicators">
+                          {muted && (
+                            <svg className="indicator-icon muted-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                              <line x1="23" y1="9" x2="17" y2="15"/>
+                              <line x1="17" y1="9" x2="23" y2="15"/>
+                            </svg>
+                          )}
+                          {pinned && (
+                            <svg className="indicator-icon pin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="12" y1="17" x2="12" y2="22"/>
+                              <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.68V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v4.68a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+                            </svg>
+                          )}
+                          {((isRoot ? chat.totalUnreadCount : chat.unreadCount) || 0) > 0 && (
+                            <span className="chat-item-badge">
+                              {isRoot ? chat.totalUnreadCount : chat.unreadCount}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
+                )
+              })}
+              {loadingMore && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', padding: '16px 0' }}>
+                  <div className="spinner-small" />
+                  <span style={{ fontSize: '12px', color: 'var(--wa-text-secondary)' }}>Loading more...</span>
                 </div>
-              )
-            })
+              )}
+            </>
           )}
         </div>
       )}
