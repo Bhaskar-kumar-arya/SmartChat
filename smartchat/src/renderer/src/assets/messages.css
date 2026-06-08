@@ -14,7 +14,7 @@
     url('./bg-chat-tile-dark.png');
   background-color: #1a1a1a;
   background-repeat: repeat;
-  background-size: auto, 700px; /* 'auto' keeps gradient full-size; 600px scales the tile up */
+  background-size: auto, 600px; /* 'auto' keeps gradient full-size; 600px scales the tile up */
   background-attachment: fixed;
   scrollbar-width: thin;
   scrollbar-color: var(--wa-border) transparent;
@@ -806,5 +806,130 @@
   color: #fff;
   transform: scale(1.08);
 }
+
+/* ─── Template Messages ────────────────────────────────────────────── */
+.bubble-template {
+  padding: 0 !important;
+  overflow: hidden;
+  max-width: 65%;
+  border-radius: 8px !important;
+}
+
+/* Square Media Header spanning full width */
+.bubble-template .message-image,
+.bubble-template .message-image-placeholder,
+.bubble-template .message-video,
+.bubble-template .message-video-placeholder {
+  width: 100% !important;
+  height: auto !important;
+  max-width: 100% !important;
+  aspect-ratio: 1 / 1 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+
+.bubble-template .message-image img,
+.bubble-template .message-image-placeholder img,
+.bubble-template .message-video video,
+.bubble-template .message-video-placeholder img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 0 !important;
+}
+
+/* Card Body Section */
+.template-msg-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.template-small-header {
+  font-size: 0.72rem;
+  color: var(--wa-primary, #22c05e);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.template-bold-title {
+  font-size: 1rem;
+  color: var(--wa-text-primary);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.template-body-text {
+  font-size: 0.88rem;
+  color: var(--wa-text-primary);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.template-msg-footer {
+  font-size: 0.75rem;
+  color: var(--wa-text-tertiary);
+  margin-top: 4px;
+}
+
+.template-body-bottom {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+/* Stacked Buttons Section */
+.template-msg-buttons {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--wa-border);
+}
+
+.template-msg-button {
+  background: transparent;
+  border: none;
+  padding: 12px 16px;
+  color: var(--wa-primary, #22c05e) !important;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 24px 1fr 24px;
+  align-items: center;
+  width: 100%;
+  transition: background 0.15s ease;
+  outline: none;
+}
+
+.template-msg-button:not(:last-child) {
+  border-bottom: 1px solid var(--wa-border);
+}
+
+.template-msg-button:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.template-msg-button:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.template-msg-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wa-primary, #22c05e);
+}
+
+.template-msg-btn-text {
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
 
 

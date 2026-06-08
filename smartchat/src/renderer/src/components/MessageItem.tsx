@@ -3,6 +3,7 @@ import { MessageItem as IMessageItem, ReactionItem, MessageReceiptInfo } from '.
 import { formatTime, formatReceiptTime, formatReceiptDate } from '../utils/formatters'
 import { TextMessage } from './messages/TextMessage'
 import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage, AudioMessage } from './messages/MediaMessages'
+import { TemplateMessage } from './messages/TemplateMessage'
 import { api } from '../services/api.service'
 
 /**
@@ -103,14 +104,22 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   }
   const quotedSender = ctx?.participantName || (ctx?.participant ? ctx.participant.split('@')[0] : 'Someone')
 
-  const isImage = msg.messageType === 'imageMessage' || !!rawMsg?.imageMessage
-  const isSticker = msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage
-  const isVideo = msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage
-  const isDocument = msg.messageType === 'documentMessage' || !!rawMsg?.documentMessage
-  const isAudio = msg.messageType === 'audioMessage' || !!rawMsg?.audioMessage
-  const localURI = rawMsg?.imageMessage?.localURI || rawMsg?.stickerMessage?.localURI || rawMsg?.videoMessage?.localURI || rawMsg?.documentMessage?.localURI || rawMsg?.audioMessage?.localURI || msg.localURI
+  const isTemplateMessage = msg.messageType === 'templateMessage' || !!rawMsg?.templateMessage
 
-  const isTextMessage = msg.messageType === 'conversation' || msg.messageType === 'extendedTextMessage'
+  const isImage = (msg.messageType === 'imageMessage' || !!rawMsg?.imageMessage) && !isTemplateMessage
+  const isSticker = (msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage) && !isTemplateMessage
+  const isVideo = (msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage) && !isTemplateMessage
+  const isDocument = (msg.messageType === 'documentMessage' || !!rawMsg?.documentMessage) && !isTemplateMessage
+  const isAudio = (msg.messageType === 'audioMessage' || !!rawMsg?.audioMessage) && !isTemplateMessage
+
+  const localURI = rawMsg?.imageMessage?.localURI ||
+                   rawMsg?.stickerMessage?.localURI ||
+                   rawMsg?.videoMessage?.localURI ||
+                   rawMsg?.documentMessage?.localURI ||
+                   rawMsg?.audioMessage?.localURI ||
+                   msg.localURI
+
+  const isTextMessage = (msg.messageType === 'conversation' || msg.messageType === 'extendedTextMessage') && !isTemplateMessage
   const canEdit = msg.fromMe && isTextMessage && !msg.isDeleted
   const canDelete = msg.fromMe && !msg.isDeleted
 
@@ -159,8 +168,9 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
         {isVideo && <VideoMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
         {isDocument && <DocumentMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
         {isAudio && <AudioMessage localURI={localURI} senderJid={msg.participant || msg.chatJid} onDownload={handleDownload} isDownloading={downloading} rawMsg={rawMsg} />}
+        {isTemplateMessage && <TemplateMessage msg={msg} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
         {isTextMessage && msg.textContent && <TextMessage text={msg.textContent} mentions={ctx?.mentions} />}
-        {!isImage && !isSticker && !isVideo && !isDocument && !isAudio && !isTextMessage && (
+        {!isImage && !isSticker && !isVideo && !isDocument && !isAudio && !isTemplateMessage && !isTextMessage && (
           <p className="message-text message-unsupported">[{msg.messageType}]</p>
         )}
       </div>
@@ -174,7 +184,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
 
   return (
     <div className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
-      <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
+      <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${isTemplateMessage ? 'bubble-template' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
         {!msg.fromMe && msg.participantName && (
           <span className="message-sender-name">
             {msg.participantName}
@@ -197,11 +207,13 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
         {msg.textContent && !isTextMessage && isDocument && <TextMessage text={msg.textContent} mentions={ctx?.mentions} />}
 
         <ReactionsDisplay reactions={msg.reactions} onClick={() => onViewReactions(msg)} />
-        <span className="message-time" style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-          {formatTime(msg.timestamp)}
-          {msg.isEdited && <span className="message-edited-badge">(edited)</span>}
-          {msg.fromMe && renderStatusTicks(msg.status)}
-        </span>
+        {!isTemplateMessage && (
+          <span className="message-time" style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+            {formatTime(msg.timestamp)}
+            {msg.isEdited && <span className="message-edited-badge">(edited)</span>}
+            {msg.fromMe && <MessageStatusTick status={msg.status} />}
+          </span>
+        )}
       </div>
 
       <div className="message-actions">
@@ -263,7 +275,7 @@ function ReactionsDisplay({ reactions, onClick }: { reactions?: ReactionItem[], 
   )
 }
 
-function renderStatusTicks(status?: string) {
+export function MessageStatusTick({ status }: { status?: string }) {
   const normalized = status || 'SENT'
 
   if (normalized === 'PENDING') {
