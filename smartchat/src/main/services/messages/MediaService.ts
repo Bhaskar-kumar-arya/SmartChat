@@ -17,15 +17,30 @@ type MediaType = 'image' | 'sticker' | 'video' | 'document' | 'audio'
 function resolveMediaType(
   unwrapped: Record<string, any>
 ): { mediaType: MediaType; mediaMsg: Record<string, any> } | null {
-  if (unwrapped.imageMessage) return { mediaType: 'image', mediaMsg: unwrapped.imageMessage }
-  if (unwrapped.stickerMessage) return { mediaType: 'sticker', mediaMsg: unwrapped.stickerMessage }
-  if (unwrapped.videoMessage) return { mediaType: 'video', mediaMsg: unwrapped.videoMessage }
-  if (unwrapped.audioMessage) return { mediaType: 'audio', mediaMsg: unwrapped.audioMessage }
-  if (unwrapped.documentMessage) {
+  let target = unwrapped
+
+  if (unwrapped.templateMessage) {
+    const tmpl = unwrapped.templateMessage
+    const hydrated = tmpl.hydratedFourRowTemplate || tmpl.hydratedTemplate
+    const interactive = tmpl.interactiveMessageTemplate
+    target = {
+      imageMessage: hydrated?.imageMessage || interactive?.header?.imageMessage,
+      stickerMessage: hydrated?.stickerMessage,
+      videoMessage: hydrated?.videoMessage || interactive?.header?.videoMessage,
+      documentMessage: hydrated?.documentMessage || interactive?.header?.documentMessage,
+      audioMessage: hydrated?.audioMessage
+    }
+  }
+
+  if (target.imageMessage) return { mediaType: 'image', mediaMsg: target.imageMessage }
+  if (target.stickerMessage) return { mediaType: 'sticker', mediaMsg: target.stickerMessage }
+  if (target.videoMessage) return { mediaType: 'video', mediaMsg: target.videoMessage }
+  if (target.audioMessage) return { mediaType: 'audio', mediaMsg: target.audioMessage }
+  if (target.documentMessage) {
     // HKDF label correction: an audio file sent as a generic document must be
     // downloaded with type='audio' so the key-derivation uses "WhatsApp Audio Keys"
     // instead of "WhatsApp Document Keys".
-    const doc = unwrapped.documentMessage
+    const doc = target.documentMessage
     const effectiveType: MediaType =
       typeof doc.mimetype === 'string' && doc.mimetype.startsWith('audio/')
         ? 'audio'
@@ -109,11 +124,29 @@ export class MediaService {
     }
 
     // Stamp the local URI back onto the unwrapped payload so the DB gets updated
-    if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
-    if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
-    if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
-    if (unwrapped.documentMessage) unwrapped.documentMessage.localURI = `app://media/${fileName}`
-    if (unwrapped.audioMessage) unwrapped.audioMessage.localURI = `app://media/${fileName}`
+    if (unwrapped.templateMessage) {
+      const tmpl = unwrapped.templateMessage
+      const hydrated = tmpl.hydratedFourRowTemplate || tmpl.hydratedTemplate
+      const interactive = tmpl.interactiveMessageTemplate
+
+      const img = hydrated?.imageMessage || interactive?.header?.imageMessage
+      const stk = hydrated?.stickerMessage
+      const vid = hydrated?.videoMessage || interactive?.header?.videoMessage
+      const doc = hydrated?.documentMessage || interactive?.header?.documentMessage
+      const aud = hydrated?.audioMessage
+
+      if (img) img.localURI = `app://media/${fileName}`
+      if (stk) stk.localURI = `app://media/${fileName}`
+      if (vid) vid.localURI = `app://media/${fileName}`
+      if (doc) doc.localURI = `app://media/${fileName}`
+      if (aud) aud.localURI = `app://media/${fileName}`
+    } else {
+      if (unwrapped.imageMessage) unwrapped.imageMessage.localURI = `app://media/${fileName}`
+      if (unwrapped.stickerMessage) unwrapped.stickerMessage.localURI = `app://media/${fileName}`
+      if (unwrapped.videoMessage) unwrapped.videoMessage.localURI = `app://media/${fileName}`
+      if (unwrapped.documentMessage) unwrapped.documentMessage.localURI = `app://media/${fileName}`
+      if (unwrapped.audioMessage) unwrapped.audioMessage.localURI = `app://media/${fileName}`
+    }
 
     const updated = await this.prisma.message.update({
       where: { id: msgId },
@@ -179,6 +212,14 @@ export class MediaService {
     }
 
     try {
+      // Synthesize a standard media message structure if the media is nested inside a templateMessage.
+      // This is because Baileys' updateMediaMessage depends on assertMediaContent, which lacks support
+      // for extracting media from newer template schemas like interactiveMessageTemplate.
+      const isTemplate = !!rawMessage.templateMessage
+      const updatePayload = isTemplate
+        ? { [`${mediaType}Message`]: mediaMsg }
+        : rawMessage
+
       const updatedMsg = await sock.updateMediaMessage({
         key: {
           id: dbMsg.id,
@@ -188,26 +229,38 @@ export class MediaService {
             ? (dbMsg.participant || undefined)
             : undefined
         },
-        message: rawMessage
+        message: updatePayload
       } as any)
 
-      const updatedUnwrapped = unwrapMessage(updatedMsg.message)
-      const updatedResolved = resolveMediaType(updatedUnwrapped)
+      // Extract the updated media metadata back
+      let updatedMediaMsg: any = null
+      let updatedMediaType = mediaType
 
-      if (!updatedResolved) {
+      if (isTemplate) {
+        updatedMediaMsg = updatedMsg.message?.[`${mediaType}Message`]
+      } else {
+        const updatedUnwrapped = unwrapMessage(updatedMsg.message)
+        const updatedResolved = resolveMediaType(updatedUnwrapped)
+        if (updatedResolved) {
+          updatedMediaMsg = updatedResolved.mediaMsg
+          updatedMediaType = updatedResolved.mediaType
+        }
+      }
+
+      if (!updatedMediaMsg) {
         throw new Error('updateMediaMessage returned no downloadable media node')
       }
 
       const stream = await downloadContentFromMessage(
-        updatedResolved.mediaMsg as any,
-        updatedResolved.mediaType as any
+        updatedMediaMsg as any,
+        updatedMediaType as any
       )
       const buffer = await streamToBuffer(stream)
       if (buffer.length === 0) throw new Error('Re-uploaded stream was 0 bytes')
       fs.writeFileSync(filePath, buffer)
 
       // Merge the refreshed media metadata back so callers see the new URL
-      Object.assign(mediaMsg, updatedResolved.mediaMsg)
+      Object.assign(mediaMsg, updatedMediaMsg)
 
     } catch (retryErr: any) {
       const isDecryptErr =
