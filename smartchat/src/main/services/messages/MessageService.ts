@@ -511,7 +511,10 @@ export class MessageService {
     const lowerPath = filePath.toLowerCase()
     
     if (lowerPath.endsWith('.webp')) return { sticker: buffer }
-    if (['.mp4', '.mkv', '.avi', '.mov'].some(ext => lowerPath.endsWith(ext))) return { video: buffer, caption }
+    if (['.mp4', '.mkv', '.avi', '.mov'].some(ext => lowerPath.endsWith(ext))) {
+      const isGifPlayback = lowerPath.includes('gifplayback') || lowerPath.includes('giphy')
+      return { video: buffer, caption, gifPlayback: isGifPlayback ? true : undefined }
+    }
     if (['.jpg', '.jpeg', '.png', '.gif'].some(ext => lowerPath.endsWith(ext))) return { image: buffer, caption }
     if (['.ogg', '.opus', '.mp3', '.m4a'].some(ext => lowerPath.endsWith(ext))) {
         const isPtt = lowerPath.endsWith('.ogg') || lowerPath.endsWith('.opus')

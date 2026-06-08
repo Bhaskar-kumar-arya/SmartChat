@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, memo } from 'react'
+import { Smile } from 'lucide-react'
 import { MessageItem as IMessageItem, ReactionItem, MessageReceiptInfo } from '../types'
 import { formatTime, formatReceiptTime, formatReceiptDate } from '../utils/formatters'
 import { TextMessage } from './messages/TextMessage'
 import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage, AudioMessage } from './messages/MediaMessages'
 import { TemplateMessage } from './messages/TemplateMessage'
+import EmojiStickerGifPicker from './EmojiStickerGifPicker'
 import { api } from '../services/api.service'
 
 /**
@@ -38,6 +40,15 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   const [showInfo, setShowInfo] = useState(false)
   const [receipts, setReceipts] = useState<MessageReceiptInfo[]>([])
 
+  const [myJid, setMyJid] = useState<string | null>(null)
+  const [showReactionMenu, setShowReactionMenu] = useState(false)
+  const [showFullEmojiPicker, setShowFullEmojiPicker] = useState(false)
+  const reactionTriggerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    api.getMyJid().then(setMyJid).catch(console.error)
+  }, [])
+
   const handleShowInfo = async () => {
     setShowDropdown(false)
     try {
@@ -54,10 +65,33 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowDropdown(false)
       }
+      if (reactionTriggerRef.current && !reactionTriggerRef.current.contains(event.target as Node)) {
+        setShowReactionMenu(false)
+        setShowFullEmojiPicker(false)
+      }
     }
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
+
+  const handleReactClick = async (emoji: string) => {
+    setShowReactionMenu(false)
+    setShowFullEmojiPicker(false)
+    try {
+      const myExistingReaction = msg.reactions?.find(r => 
+        r.senderId === myJid || 
+        r.senderName === 'Me' || 
+        r.senderId === 'Me'
+      )
+      if (myExistingReaction && myExistingReaction.text === emoji) {
+        await api.reactMessage(msg.chatJid, msg.id, '')
+      } else {
+        await api.reactMessage(msg.chatJid, msg.id, emoji)
+      }
+    } catch (err) {
+      console.error('Failed to react to message:', err)
+    }
+  }
 
   const handleDownload = async () => {
     if (onDownloadMedia) {
@@ -217,6 +251,52 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
       </div>
 
       <div className="message-actions">
+        <div className="reaction-trigger-container" ref={reactionTriggerRef}>
+          <button 
+            className={`action-btn reaction-btn ${showReactionMenu ? 'active' : ''}`}
+            onClick={() => setShowReactionMenu(!showReactionMenu)} 
+            title="React to Message"
+          >
+            <Smile size={18} />
+          </button>
+          
+          {showReactionMenu && (
+            <div className="quick-reaction-bar">
+              {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => {
+                const isMyReaction = msg.reactions?.some(r => 
+                  (r.senderId === myJid || r.senderName === 'Me' || r.senderId === 'Me') && r.text === emoji
+                )
+                return (
+                  <button 
+                    key={emoji} 
+                    className={`quick-reaction-btn ${isMyReaction ? 'active' : ''}`}
+                    onClick={() => handleReactClick(emoji)}
+                  >
+                    {emoji}
+                  </button>
+                )
+              })}
+              <button 
+                className="quick-reaction-btn plus-btn" 
+                onClick={() => setShowFullEmojiPicker(!showFullEmojiPicker)}
+                title="Choose emoji"
+              >
+                +
+              </button>
+              
+              {showFullEmojiPicker && (
+                <div className="reaction-full-picker-popover">
+                  <EmojiStickerGifPicker 
+                    initialTab="emoji" 
+                    onSelectEmoji={handleReactClick} 
+                    onClose={() => setShowFullEmojiPicker(false)} 
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="message-dropdown-container" ref={dropdownRef}>
           <button className="action-btn" onClick={() => setShowDropdown(!showDropdown)} title="Message Options">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>

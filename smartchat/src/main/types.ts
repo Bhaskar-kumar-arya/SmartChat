@@ -86,6 +86,7 @@ export interface MediaSendOptions {
   image?: Buffer; video?: Buffer; audio?: Buffer; document?: Buffer; sticker?: Buffer
   caption?: string; fileName?: string; mimetype?: string; ptt?: boolean
   mentions?: string[]
+  gifPlayback?: boolean
 }
 
 /** Payload shape for chat update events. */

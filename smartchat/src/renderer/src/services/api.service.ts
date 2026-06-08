@@ -23,6 +23,9 @@ export const api = {
   deleteMessage: (jid: string, messageId: string): Promise<boolean> =>
     window.api.deleteMessage(jid, messageId),
 
+  reactMessage: (jid: string, messageId: string, reaction: string): Promise<any> =>
+    window.api.reactMessage(jid, messageId, reaction),
+
   sendMediaMessage: (jid: string, filePath: string, caption: string, quotedId?: string, mentions?: string[]): Promise<MessageItem> =>
     window.api.sendMediaMessage(jid, filePath, caption, quotedId, mentions),
 
@@ -34,6 +37,9 @@ export const api = {
 
   markRead: (jid: string): Promise<boolean> =>
     window.api.markRead(jid),
+
+  getMyJid: (): Promise<string | null> =>
+    window.api.getMyJid(),
 
   logout: (): Promise<boolean> =>
     window.api.logout(),
@@ -107,6 +113,9 @@ export const api = {
 
   saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string): Promise<string> =>
     window.api.saveTempFile(buffer, fileName),
+
+  downloadUrlToTemp: (url: string, fileName: string): Promise<string> =>
+    window.api.downloadUrlToTemp(url, fileName),
 
   onMessageStatusUpdated: (callback: (update: { id: string, chatJid: string, status: string }) => void) =>
     window.api.onMessageStatusUpdated(callback),

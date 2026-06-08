@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from 'react'
-import { Paperclip, X, Mic, Send, Trash2, StopCircle, Play, Pause } from 'lucide-react'
+import { Paperclip, Smile, X, Mic, Send, Trash2, StopCircle, Play, Pause } from 'lucide-react'
 import { useMentions } from '../hooks/useMentions'
 import { useAudioRecorder } from '../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'
+import EmojiStickerGifPicker from './EmojiStickerGifPicker'
 import { api } from '../services/api.service'
 import { MessageItem } from '../types'
 
@@ -18,7 +19,32 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [selectedFile, setSelectedFile] = useState<{path: string, name: string} | null>(null)
+  const [showPicker, setShowPicker] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const pickerContainerRef = useRef<HTMLDivElement>(null)
+  const smileButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    setShowPicker(false)
+  }, [activeJid])
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        showPicker &&
+        pickerContainerRef.current &&
+        !pickerContainerRef.current.contains(event.target as Node) &&
+        smileButtonRef.current &&
+        !smileButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showPicker])
 
   const { 
     participants, 
@@ -48,6 +74,31 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
       inputRef.current?.focus()
     }
   }, [replyingTo])
+
+  const handleSelectEmoji = (emoji: string) => {
+    if (!inputRef.current) return
+    const input = inputRef.current
+    const start = input.selectionStart || 0
+    const end = input.selectionEnd || 0
+    const val = input.value
+    const newVal = val.substring(0, start) + emoji + val.substring(end)
+    setText(newVal)
+    
+    // Restore cursor position
+    setTimeout(() => {
+      input.focus()
+      const newPos = start + emoji.length
+      input.setSelectionRange(newPos, newPos)
+    }, 0)
+  }
+
+  const handleSelectGif = async (filePath: string) => {
+    await onSendMedia(filePath, '')
+  }
+
+  const handleSelectSticker = async (filePath: string) => {
+    await onSendMedia(filePath, '')
+  }
 
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
@@ -232,6 +283,17 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
       })()}
 
 
+      {showPicker && (
+        <div className="picker-popover-container" ref={pickerContainerRef}>
+          <EmojiStickerGifPicker
+            onSelectEmoji={handleSelectEmoji}
+            onSelectGif={handleSelectGif}
+            onSelectSticker={handleSelectSticker}
+            onClose={() => setShowPicker(false)}
+          />
+        </div>
+      )}
+
       <div className="message-input-container">
         {!isRecording && !audioBlob ? (
           <>
@@ -242,6 +304,17 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
               title="Attach file"
             >
               <Paperclip size={24} />
+            </button>
+
+            <button 
+              ref={smileButtonRef}
+              type="button"
+              className={`recording-action-btn ${showPicker ? 'active' : ''}`}
+              onClick={() => setShowPicker(!showPicker)}
+              disabled={sending}
+              title="Emojis, Stickers, GIFs"
+            >
+              <Smile size={24} />
             </button>
     
             <input

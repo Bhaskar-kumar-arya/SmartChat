@@ -71,6 +71,7 @@ declare global {
       onMessageEdited: (callback: (msg: MessageItem) => void) => () => void
       onMessageDeleted: (callback: (update: { id: string, chatJid: string, fromMe: boolean }) => void) => () => void
       markRead: (jid: string) => Promise<boolean>
+      getMyJid: () => Promise<string | null>
       onMessageStatusUpdated: (callback: (update: { id: string, chatJid: string, status: string }) => void) => () => void
       getMessageReceipts: (messageId: string) => Promise<{ userJid: string, name: string, status: string, timestamp: string }[]>
       onChatUpdated: (callback: (chat: Partial<ChatItem> & { jid: string }) => void) => () => void
@@ -79,6 +80,7 @@ declare global {
       openFile: (localURI: string) => Promise<boolean>
       getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean) => Promise<string | null>
       saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string) => Promise<string>
+      downloadUrlToTemp: (url: string, fileName: string) => Promise<string>
       searchAll: (query: string, mode?: 'normal' | 'deep', filters?: any) => Promise<SearchResults>
       searchMentionContacts: (query: string) => Promise<any[]>
       searchMentionChats: (query: string) => Promise<any[]>

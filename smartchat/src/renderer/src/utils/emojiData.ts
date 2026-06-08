@@ -1,0 +1,130 @@
+export interface EmojiCategory {
+  name: string
+  icon: string
+  emojis: string[]
+}
+
+export const EMOJI_CATEGORIES: EmojiCategory[] = [
+  {
+    name: 'Smileys',
+    icon: '😀',
+    emojis: [
+      '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', 
+      '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸', 
+      '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', 
+      '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', 
+      '🤗', '🤔', '🫣', '🤭', '🫢', '🤫', '🤥', '😶', '😶‍🌫️', '😐', '😑', '😬', '🫨', '🫠', '🙄', 
+      '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '😵‍💫', '🤐', '🥴', '🤢', '🤮', 
+      '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️'
+    ]
+  },
+  {
+    name: 'Gestures',
+    icon: '👋',
+    emojis: [
+      '👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🫰', '🤟', '🤘', '🤙', '👈', 
+      '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', 
+      '🤝', '🙏', '✍️', '💅', '🤳', '💪', '🦾', '🦿', '🦵', '🦶', '👂', '🦻', '👃', '🧠', '🫀', 
+      '🫁', '🦷', '🦴', '👀', '👁️', '👅', '👄', '💋', '🩸'
+    ]
+  },
+  {
+    name: 'People',
+    icon: '🧑',
+    emojis: [
+      '👶', '👧', '🧒', '👦', '👩', '🧑', '👨', '👩‍🦱', '🧑‍🦱', '👨‍🦱', '👩‍🦰', '🧑‍🦰', '👨‍🦰', '👱‍♀️', '👱', 
+      '👱‍♂️', '👩‍🦳', '🧑‍🦳', '👨‍🦳', '👩‍🦲', '🧑‍🦲', '👨‍🦲', '👵', '🧓', '👴', '👲', '👳‍♀️', '👳', '👳‍♂️', '🧕', 
+      '👮‍♀️', '👮', '👮‍♂️', '👷‍♀️', '👷', '👷‍♂️', '💂‍♀️', '💂', '💂‍♂️', '🕵️‍♀️', '🕵️', '🕵️‍♂️', '👩‍⚕️', '🧑‍⚕️', '👨‍⚕️', 
+      '👩‍🌾', '🧑‍🌾', '👨‍🌾', '👩‍🍳', '🧑‍🍳', '👨‍🍳', '👩‍🎓', '🧑‍🎓', '👨‍🎓', '👩‍🎤', '🧑‍🎤', '👨‍🎤', '👩‍🏫', '🧑‍🏫', 
+      '👨‍🏫', '👩‍🏭', '🧑‍🏭', '👨‍🏭', '👩‍💻', '🧑‍💻', '👨‍💻', '👩‍💼', '🧑‍💼', '👨‍💼', '👩‍🔧', '🧑‍🔧', '👨‍🔧', '👩‍🔬', 
+      '🧑‍🔬', '👨‍🔬', '👩‍🎨', '🧑‍🎨', '👨‍🎨', '👩‍🚒', '🧑‍🚒', '👨‍🚒', '👩‍✈️', '🧑‍✈️', '👨‍✈️', '👩‍🚀', '🧑‍🚀', '👨‍🚀'
+    ]
+  },
+  {
+    name: 'Nature',
+    icon: '🐱',
+    emojis: [
+      '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐻‍❄️', '🐨', '🐯', '🦁', '🐮', '🐷', '🐽', 
+      '🐸', '🐵', '🙈', '🙉', '🙊', '🐒', '🐔', '🐧', '🐦', '🐤', '🐣', '🐥', '🦆', '🦅', '🦉', 
+      '🦇', '🐺', '🐗', '🐴', '🦄', '🐝', '🪱', '🐛', '🦋', '🐌', '🐞', '🐜', '🪰', '🪲', '🪳', 
+      '🦟', '🦗', '🕷️', '🕸️', '🦂', '🐢', '🐍', '🦎', '🦖', '🦕', '🐙', '🦑', '🦐', '🦞', '🦀', 
+      '🐡', '🐠', '🐟', '🐬', '🐳', '🐋', '🦈', '🐊', '🐅', '🐆', '🦓', '🦍', '🦧', '🦣', '🐘'
+    ]
+  },
+  {
+    name: 'Food',
+    icon: '🍎',
+    emojis: [
+      '🍇', '🍈', '🍉', '🍊', '🍋', '🍌', '🍍', '🥭', '🍎', '🍏', ' pear', 'peach', 'cherries', 'strawberry', 'blueberries', 
+      '🥝', '🍅', '🫒', '🥥', '🥑', '🍆', '🥔', '🥕', '🌽', '🌶️', '🫑', '🧅', ' garlic', 'ginger', 'pea', 'broccoli', 
+      '🍄', '🥜', '🫘', '🌰', '🍞', '🥐', '🥖', '🫓', '🥨', '🥯', '🥞', '🧇', 'cheese', 'meat', 'poultry', 
+      'cutlet', 'hotdog', 'hamburger', 'fries', 'pizza', 'sandwich', 'taco', 'burrito', 'egg', 'cooking', 'soup', 
+      'salad', 'popcorn', 'butter', 'salt', 'canned', 'bento', 'rice', 'curry', 'ramen', 'sushi', 'shrimp', 'dango', 
+      'dumpling', 'fortune', 'takeout', 'icecream', 'shaved', 'cake', 'cupcake', 'pie', 'chocolate', 'candy', 'lollipop'
+    ].map(e => e.trim().startsWith('pear') ? '🍐' : e.trim().startsWith('peach') ? '🍑' : e.trim().startsWith('cherries') ? '🍒' : e.trim().startsWith('strawberry') ? '🍓' : e.trim().startsWith('blueberries') ? '🫐' : e.trim().startsWith('garlic') ? '🧄' : e.trim().startsWith('ginger') ? '🫚' : e.trim().startsWith('pea') ? '🫛' : e.trim().startsWith('cheese') ? '🧀' : e.trim().startsWith('meat') ? '🍖' : e.trim().startsWith('poultry') ? '🍗' : e.trim().startsWith('cutlet') ? '🥩' : e.trim().startsWith('hotdog') ? '🌭' : e.trim().startsWith('hamburger') ? '🍔' : e.trim().startsWith('fries') ? '🍟' : e.trim().startsWith('pizza') ? '🍕' : e.trim().startsWith('egg') ? '🍳' : e)
+  },
+  {
+    name: 'Activities',
+    icon: '⚽',
+    emojis: [
+      '👾', '⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🥏', '🎱', '🪀', '🏓', '🏸', '🏒', 
+      '🏑', '🥍', '🏏', '🪃', '🥅', '⛳', '🪁', '🏹', '🎣', '🤿', '🥊', '🥋', '🎽', '🛹', '🛼', 
+      '🛷', '⛸️', '🥌', '🎿', '⛷️', '🏂', '🏋️‍♀️', '🏋️', '🏋️‍♂️', '🤺', '🤼‍♀️', '🤼', '🤼‍♂️', '🤸‍♀️', '🤸', 
+      '🤸‍♂️', '⛹️‍♀️', '⛹️', '⛹️‍♂️', '🤾‍♀️', '🤾', '🤾‍♂️', '🧗‍♀️', '🧗', '🧗‍♂️', '🚴‍♀️', '🚴', '🚴‍♂️', '🚵‍♀️', '🚵'
+    ]
+  },
+  {
+    name: 'Objects',
+    icon: '💡',
+    emojis: [
+      '⌚', '📱', '📲', '💻', '⌨️', '🖥️', '🖨️', '🖱️', '🖲️', '🕹️', '🗜️', '💽', ' floppy', 'disc', 'dvd', 
+      '📼', '📷', '📸', '📹', '🎥', '📽️', '🎞️', '📞', '☎️', '📟', '📠', '📺', '📻', '🎙️', '🎚️', 
+      '🎛️', '🧭', '⏱️', '⏲️', '⏰', '⌛', '⏳', '📡', '💡', '🔦', '🕯️', '🪔', '🗑️', '🛢️', '💸', 
+      '💵', '💴', '💶', '💷', '🪙', '💰', '💳', '💎', '⚖️', '🪜', '🔧', '🔨', '⚒️', '🛠️', '⛏️'
+    ].map(e => e.trim().startsWith('floppy') ? '💾' : e.trim().startsWith('disc') ? '💿' : e.trim().startsWith('dvd') ? '📀' : e)
+  },
+  {
+    name: 'Symbols',
+    icon: '❤️',
+    emojis: [
+      '💘', '💝', '💖', '💗', '💓', '💞', '💕', '💟', '❣️', '💔', '❤️‍🔥', '❤️‍🩹', '❤️', '🩷', '🧡', 
+      '💛', '💚', '💙', '🩵', '💜', '🤎', '🖤', '🩶', '🤍', '💋', '💯', '💢', '💥', '💫', '💦', 
+      '💨', '🕳️', '💣', '💬', '👁️‍🗨️', '🗨️', '🗯️', '💭', '💤', '🌐', '🌀', '☮️', '🕉️', '☸️', '🔯'
+    ]
+  }
+]
+
+export interface DefaultSticker {
+  id: string
+  name: string
+  url: string
+}
+
+export const DEFAULT_STICKER_PACKS: { name: string; stickers: DefaultSticker[] }[] = [
+  {
+    name: 'Pepe & Friends',
+    stickers: [
+      { id: 'pepe1', name: 'Pepe Smile', url: 'https://media.giphy.com/media/t38v6BOfh2a6B89Ld4/giphy.gif' },
+      { id: 'pepe2', name: 'Pepe Cry', url: 'https://media.giphy.com/media/V83u16A0p4782uJ996/giphy.gif' },
+      { id: 'pepe3', name: 'Pepe Cool', url: 'https://media.giphy.com/media/tJqyalvo9ahykfykAj/giphy.gif' },
+      { id: 'pepe4', name: 'Pepe Hype', url: 'https://media.giphy.com/media/Y4vBiFdqtGsDu6wRIF/giphy.gif' },
+      { id: 'pepe5', name: 'Pepe Love', url: 'https://media.giphy.com/media/tN1l0uq7tMTtcWJ45J/giphy.gif' },
+      { id: 'pepe6', name: 'Pepe Clapping', url: 'https://media.giphy.com/media/3o7abKhOpu0NXS3HBS/giphy.gif' },
+      { id: 'pepe7', name: 'Pepe Facepalm', url: 'https://media.giphy.com/media/BY8OrEOfWdz07d1u95/giphy.gif' },
+      { id: 'pepe8', name: 'Pepe Dance', url: 'https://media.giphy.com/media/l0HlIDlC1JbFvH88U/giphy.gif' }
+    ]
+  },
+  {
+    name: 'Cute Animals',
+    stickers: [
+      { id: 'cat1', name: 'Cat Wave', url: 'https://media.giphy.com/media/3oriO0OEd9QIDdllqo/giphy.gif' },
+      { id: 'cat2', name: 'Cat Heart', url: 'https://media.giphy.com/media/13CoXDiaCcC9R6/giphy.gif' },
+      { id: 'dog1', name: 'Puppy Eyes', url: 'https://media.giphy.com/media/cJMmZY7ON89F6fa0aq/giphy.gif' },
+      { id: 'dog2', name: 'Dog Dance', url: 'https://media.giphy.com/media/9rtpH3SAPavoGVldsW/giphy.gif' },
+      { id: 'bear1', name: 'Bear Hug', url: 'https://media.giphy.com/media/U4DswrBiaz0p67ZweH/giphy.gif' },
+      { id: 'bear2', name: 'Bear Cry', url: 'https://media.giphy.com/media/Z9WQLv6VKRclYg0gTS/giphy.gif' },
+      { id: 'rabbit1', name: 'Bunny Jump', url: 'https://media.giphy.com/media/13lRBLn3s25SZM/giphy.gif' },
+      { id: 'rabbit2', name: 'Bunny Love', url: 'https://media.giphy.com/media/l4FGBs1Y4E3ZZSZj2/giphy.gif' }
+    ]
+  }
+]

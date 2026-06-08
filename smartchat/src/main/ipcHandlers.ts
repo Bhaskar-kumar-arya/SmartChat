@@ -80,9 +80,31 @@ export function registerIpcHandlers(
     return filePath
   })
 
+  // ── Download URL to Temp ─────────────────────────────────────────────
+  ipcMain.handle('download-url-to-temp', async (_event, url: string, fileName: string) => {
+    const tempDir = join(app.getPath('userData'), 'temp')
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
+
+    const filePath = join(tempDir, fileName)
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`Failed to download file: ${response.statusText}`)
+    
+    const arrayBuffer = await response.arrayBuffer()
+    fs.writeFileSync(filePath, Buffer.from(arrayBuffer))
+    return filePath
+  })
+
   // ── Mark Chat as Read ───────────────────────────────────────────────
   ipcMain.handle('mark-read', async (_event, jid: string) => {
     return services.chatService.markRead(jid)
+  })
+
+  // ── Get My JID ───────────────────────────────────────────────────────
+  ipcMain.handle('get-my-jid', async () => {
+    const me = await prisma.identity.findFirst({ where: { isMe: true } })
+    if (me) return me.phoneNumber
+    const rawJid = getSock()?.user?.id
+    return rawJid ? rawJid.split(':')[0] + '@s.whatsapp.net' : null
   })
 
   // ── Select File Dialog ───────────────────────────────────────────────

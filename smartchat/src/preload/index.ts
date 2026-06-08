@@ -85,6 +85,9 @@ const api = {
   saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string) => {
     return ipcRenderer.invoke('save-temp-file', buffer, fileName)
   },
+  downloadUrlToTemp: (url: string, fileName: string) => {
+    return ipcRenderer.invoke('download-url-to-temp', url, fileName)
+  },
   onNewMessage: (callback: (msg: Record<string, unknown>) => void) => {
     const listener = (_event: any, msg: any) => callback(msg)
     ipcRenderer.on('new-message', listener)
@@ -102,6 +105,9 @@ const api = {
   },
   markRead: (jid: string) => {
     return ipcRenderer.invoke('mark-read', jid)
+  },
+  getMyJid: () => {
+    return ipcRenderer.invoke('get-my-jid')
   },
   onMessageStatusUpdated: (callback: (update: { id: string, chatJid: string, status: string }) => void) => {
     const listener = (_event: any, update: any) => callback(update)
