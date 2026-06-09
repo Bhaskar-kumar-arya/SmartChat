@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo } from 'react'
+import React, { useState, useRef, useEffect, memo } from 'react'
 import { Smile } from 'lucide-react'
 import { MessageItem as IMessageItem, ReactionItem, MessageReceiptInfo, RawMessageContent } from '../../types'
 import { formatTime, formatReceiptTime, formatReceiptDate } from '../../utils/formatters'
@@ -6,7 +6,8 @@ import { TextMessage } from './messages/TextMessage'
 import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage, AudioMessage } from './messages/MediaMessages'
 import { TemplateMessage } from './messages/TemplateMessage'
 import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
-import { api } from '../../services/api.service'
+import { useAPI } from '../../context/APIContext'
+import ConfirmModal from '../common/ConfirmModal'
 
 /**
  * Utility to unwrap metadata from Baileys messages.
@@ -22,6 +23,74 @@ function unwrapMessage(msg: any): RawMessageContent {
   return unwrapped
 }
 
+interface MessageRendererProps {
+  msg: IMessageItem
+  rawMsg: RawMessageContent
+  localURI?: string
+  downloading: boolean
+  handleDownload: () => void
+  ctx?: any
+}
+
+// Message Component Registry mapping message type keys to renderers (OCP)
+const MESSAGE_REGISTRY: Record<string, React.ComponentType<MessageRendererProps>> = {
+  image: ({ rawMsg, localURI, handleDownload, downloading, msg }) => (
+    <ImageMessage
+      localURI={localURI}
+      textContent={msg.textContent}
+      rawMsg={rawMsg}
+      onDownload={handleDownload}
+      isDownloading={downloading}
+    />
+  ),
+  sticker: ({ rawMsg, localURI, handleDownload, downloading }) => (
+    <StickerMessage
+      localURI={localURI}
+      rawMsg={rawMsg}
+      onDownload={handleDownload}
+      isDownloading={downloading}
+    />
+  ),
+  video: ({ rawMsg, localURI, handleDownload, downloading, msg }) => (
+    <VideoMessage
+      localURI={localURI}
+      textContent={msg.textContent}
+      rawMsg={rawMsg}
+      onDownload={handleDownload}
+      isDownloading={downloading}
+    />
+  ),
+  document: ({ rawMsg, localURI, handleDownload, downloading, msg }) => (
+    <DocumentMessage
+      localURI={localURI}
+      textContent={msg.textContent}
+      rawMsg={rawMsg}
+      onDownload={handleDownload}
+      isDownloading={downloading}
+    />
+  ),
+  audio: ({ rawMsg, localURI, handleDownload, downloading, msg }) => (
+    <AudioMessage
+      localURI={localURI}
+      senderJid={msg.participant || msg.chatJid}
+      onDownload={handleDownload}
+      isDownloading={downloading}
+      rawMsg={rawMsg}
+    />
+  ),
+  template: ({ rawMsg, handleDownload, downloading, msg }) => (
+    <TemplateMessage
+      msg={msg}
+      rawMsg={rawMsg}
+      onDownload={handleDownload}
+      isDownloading={downloading}
+    />
+  ),
+  text: ({ msg, ctx }) => (
+    msg.textContent ? <TextMessage text={msg.textContent} mentions={ctx?.mentions} /> : null
+  )
+}
+
 interface MessageItemProps {
   msg: IMessageItem
   onReply: (msg: IMessageItem) => void
@@ -32,6 +101,7 @@ interface MessageItemProps {
 }
 
 const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, onDownloadMedia, onViewReactions }: MessageItemProps) {
+  const api = useAPI()
   const [downloading, setDownloading] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -43,6 +113,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   const [myJid, setMyJid] = useState<string | null>(null)
   const [showReactionMenu, setShowReactionMenu] = useState(false)
   const [showFullEmojiPicker, setShowFullEmojiPicker] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const reactionTriggerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -109,11 +180,16 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     setShowDropdown(false)
   }
 
-  const handleDelete = async () => {
-    if (onDelete && window.confirm('Delete this message for everyone?')) {
+  const handleDelete = () => {
+    setShowDropdown(false)
+    setShowDeleteConfirm(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    setShowDeleteConfirm(false)
+    if (onDelete) {
       await onDelete(msg.id)
     }
-    setShowDropdown(false)
   }
 
   let rawMsg: RawMessageContent = {}
@@ -145,6 +221,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   const isVideo = (msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage) && !isTemplateMessage
   const isDocument = (msg.messageType === 'documentMessage' || !!rawMsg?.documentMessage) && !isTemplateMessage
   const isAudio = (msg.messageType === 'audioMessage' || !!rawMsg?.audioMessage) && !isTemplateMessage
+  const isTextMessage = (msg.messageType === 'conversation' || msg.messageType === 'extendedTextMessage') && !isTemplateMessage
 
   const localURI = rawMsg?.imageMessage?.localURI ||
                    rawMsg?.stickerMessage?.localURI ||
@@ -153,7 +230,17 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
                    rawMsg?.audioMessage?.localURI ||
                    msg.localURI
 
-  const isTextMessage = (msg.messageType === 'conversation' || msg.messageType === 'extendedTextMessage') && !isTemplateMessage
+  const getMessageTypeKey = (): string | null => {
+    if (isTemplateMessage) return 'template'
+    if (isImage) return 'image'
+    if (isSticker) return 'sticker'
+    if (isVideo) return 'video'
+    if (isDocument) return 'document'
+    if (isAudio) return 'audio'
+    if (isTextMessage) return 'text'
+    return null
+  }
+
   const canEdit = msg.fromMe && isTextMessage && !msg.isDeleted
   const canDelete = msg.fromMe && !msg.isDeleted
 
@@ -188,6 +275,9 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
       )
     }
 
+    const typeKey = getMessageTypeKey()
+    const Renderer = typeKey ? MESSAGE_REGISTRY[typeKey] : null
+
     return (
       <div className="message-content-vertical">
         {msg.isDeleted && !msg.fromMe && (
@@ -197,14 +287,16 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
           </div>
         )}
 
-        {isImage && <ImageMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
-        {isSticker && <StickerMessage localURI={localURI} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
-        {isVideo && <VideoMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
-        {isDocument && <DocumentMessage localURI={localURI} textContent={msg.textContent} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
-        {isAudio && <AudioMessage localURI={localURI} senderJid={msg.participant || msg.chatJid} onDownload={handleDownload} isDownloading={downloading} rawMsg={rawMsg} />}
-        {isTemplateMessage && <TemplateMessage msg={msg} rawMsg={rawMsg} onDownload={handleDownload} isDownloading={downloading} />}
-        {isTextMessage && msg.textContent && <TextMessage text={msg.textContent} mentions={ctx?.mentions} />}
-        {!isImage && !isSticker && !isVideo && !isDocument && !isAudio && !isTemplateMessage && !isTextMessage && (
+        {Renderer ? (
+          <Renderer
+            msg={msg}
+            rawMsg={rawMsg}
+            localURI={localURI}
+            downloading={downloading}
+            handleDownload={handleDownload}
+            ctx={ctx}
+          />
+        ) : (
           <p className="message-text message-unsupported">[{msg.messageType}]</p>
         )}
       </div>
@@ -334,6 +426,16 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
       {showInfo && (
         <MessageInfoModal receipts={receipts} onClose={() => setShowInfo(false)} />
       )}
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="Delete Message"
+        description="Delete this message for everyone?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+        isDanger={true}
+      />
     </div>
   )
 })

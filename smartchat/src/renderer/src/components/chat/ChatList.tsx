@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useChats } from '../../hooks/useChats'
 import { usePresence } from '../../hooks/usePresence'
 import { useSearch } from '../../hooks/useSearch'
-import { api } from '../../services/api.service'
+import { useAPI } from '../../context/APIContext'
 import { formatChatTime, isMuted } from '../../utils/formatters'
 import { ChatItem, SearchFilters, SearchMode } from '../../types'
 import { ProfilePicture } from '../common/ProfilePicture'
@@ -18,6 +18,7 @@ interface ChatListProps {
 }
 
 export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: ChatListProps) {
+  const api = useAPI()
   const { 
     chats, 
     allChats, 

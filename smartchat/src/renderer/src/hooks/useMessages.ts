@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { api } from '../services/api.service'
+import { useAPI } from '../context/APIContext'
 import { MessageItem } from '../types'
 
 /**
@@ -9,6 +9,7 @@ import { MessageItem } from '../types'
  * This satisfies the Single Responsibility Principle.
  */
 export const useMessages = (activeJid: string | null) => {
+  const api = useAPI()
   const [messages, setMessages] = useState<MessageItem[]>([])
   const [loading, setLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)

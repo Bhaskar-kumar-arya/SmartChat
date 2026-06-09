@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { api } from '../services/api.service'
+import { useAPI } from '../context/APIContext'
 import { PresenceMap, PresenceUpdate } from '../types'
 
 /**
@@ -7,6 +7,7 @@ import { PresenceMap, PresenceUpdate } from '../types'
  * This satisfies the Single Responsibility Principle.
  */
 export const usePresence = () => {
+  const api = useAPI()
   const [presences, setPresences] = useState<Record<string, PresenceMap>>({})
 
   useEffect(() => {

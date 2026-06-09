@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { User, Users } from 'lucide-react'
-import { api } from '../../services/api.service'
+import { useAPI } from '../../context/APIContext'
 
 interface ProfilePictureProps {
   jid: string
@@ -17,6 +17,7 @@ export const ProfilePicture: React.FC<ProfilePictureProps> = ({
   className = '',
   onClick
 }) => {
+  const api = useAPI()
   const [url, setUrl] = useState<string | null>(initialUrl || null)
   const [retryAttempted, setRetryAttempted] = useState(false)
   const [loadError, setLoadError] = useState(false)

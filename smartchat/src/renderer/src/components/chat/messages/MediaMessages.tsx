@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { api } from '../../../services/api.service'
+import { useAPI } from '../../../context/APIContext'
 import { JPEGThumbnail, ImageMessageProps, StickerMessageProps, VideoMessageProps, DocumentMessageProps, isJPEGThumbnailBuffer } from '../../../types'
 export { AudioMessage } from './AudioMessage'
 
@@ -102,6 +102,7 @@ export const DownloadMediaPlaceholder = ({ onDownload, isDownloading, label, ico
 }
 
 export const ImageMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: ImageMessageProps) => {
+    const api = useAPI()
     const [downloadFailed, setDownloadFailed] = useState(false)
     const thumbnailData = getThumbnailData(rawMsg?.imageMessage)
 
@@ -184,6 +185,7 @@ export const ImageMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
 }
 
 export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: StickerMessageProps) => {
+    const api = useAPI()
     const [downloadFailed, setDownloadFailed] = useState(false)
 
     const handleDownload = async () => {
@@ -373,6 +375,7 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
 }
 
 export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: DocumentMessageProps) => {
+    const api = useAPI()
     const doc = rawMsg?.documentMessage || {}
     const fileName = doc.fileName || 'Document'
     const fileSize = doc.fileLength ? (Number(doc.fileLength) / 1024 / 1024).toFixed(2) + ' MB' : ''

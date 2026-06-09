@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { AIChatMessage, AIChatOptions, ToolDefinition } from '../types'
-import { api } from '../services/api.service'
+import { useAPI } from '../context/APIContext'
 
 interface UseAIStreamProps {
   aiOptions: AIChatOptions
@@ -15,6 +15,7 @@ export function useAIStream({
   activeSessionId,
   saveCurrentMessages
 }: UseAIStreamProps) {
+  const api = useAPI()
   const [messages, setMessages] = useState<AIChatMessage[]>([])
   const messagesRef = useRef<AIChatMessage[]>([])
   const [loading, setLoading] = useState(false)

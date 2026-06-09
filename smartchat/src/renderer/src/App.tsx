@@ -1,12 +1,13 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { api } from './services/api.service'
+import { useAPI } from './context/APIContext'
 import ChatLayout from './components/chat/ChatLayout'
 import { CheckCircle2, Loader2, Circle } from 'lucide-react'
 
 type AppState = 'initializing' | 'qr' | 'connected' | 'syncing' | 'ready'
 
 export function App() {
+  const api = useAPI()
   const [qr, setQr] = useState<string | null>(null)
   const [appState, setAppState] = useState<AppState>('initializing')
   const [syncProgress, setSyncProgress] = useState<number>(0)
@@ -16,7 +17,10 @@ export function App() {
   const [isRegeneratingQr, setIsRegeneratingQr] = useState<boolean>(false)
 
   const appStateRef = useRef<AppState>(appState)
-  appStateRef.current = appState
+
+  useEffect(() => {
+    appStateRef.current = appState
+  }, [appState])
 
   // 1. Initial configuration load
   useEffect(() => {
@@ -84,13 +88,8 @@ export function App() {
     await api.setSyncFullHistory(full)
   }
 
-  // ── Full-screen chat layout when ready ────────────────────────────
-  if (appState === 'ready') {
-    return <ChatLayout />
-  }
-
-  // Define steps
-  const steps = [
+  // Define steps (placed before any early returns to satisfy React Hook rules)
+  const steps = useMemo(() => [
     {
       id: 1,
       title: 'Connection Handshake',
@@ -121,7 +120,12 @@ export function App() {
         ? 'pending' 
         : (syncType === 6 && syncProgress < 100 ? 'active' : 'completed')
     }
-  ]
+  ], [appState, syncType, syncFullHistory, syncProgress])
+
+  // ── Full-screen chat layout when ready ────────────────────────────
+  if (appState === 'ready') {
+    return <ChatLayout />
+  }
 
   const radius = 60
   const circumference = 2 * Math.PI * radius

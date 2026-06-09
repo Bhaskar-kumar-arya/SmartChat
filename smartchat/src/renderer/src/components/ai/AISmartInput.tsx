@@ -3,7 +3,7 @@ import React, {
   KeyboardEvent, useImperativeHandle, forwardRef
 } from 'react'
 import { ChatItem, ModelInfo, SelectedContext } from '../../types'
-import { api } from '../../services/api.service'
+import { useAPI } from '../../context/APIContext'
 import { useMentionSession } from '../../hooks/useMentionSession'
 
 // ── Types & Component Props ───────────────────────────────────────────────────
@@ -47,8 +47,10 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
   onCancel,
   aiOptions,
   availableModels,
-  searchContacts = api.searchMentionContacts // Satisfies dependency inversion
+  searchContacts
 }, ref) => {
+  const api = useAPI()
+  const activeSearchContacts = searchContacts || api.searchMentionContacts
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [inputValue, setInputValue] = useState('')
@@ -73,7 +75,7 @@ const AISmartInput = forwardRef<AISmartInputRef, AISmartInputProps>(({
     handleBackspace
   } = useMentionSession({
     chatList,
-    searchContacts,
+    searchContacts: activeSearchContacts,
     inputValue,
     setInputValue,
     mentions,

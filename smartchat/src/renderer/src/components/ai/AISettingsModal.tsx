@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AIChatOptions, ModelInfo } from '../../types';
-import { api } from '../../services/api.service';
+import { useAPI } from '../../context/APIContext';
 
 interface AISettingsModalProps {
   isOpen: boolean;
@@ -11,6 +11,7 @@ interface AISettingsModalProps {
 }
 
 export default function AISettingsModal({ isOpen, onClose, options, onOptionsChange, availableModels }: AISettingsModalProps) {
+  const api = useAPI();
   const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'lmstudio' | 'groq' | 'mistral' | 'deepseek'>('gemini');
   const [searchQuery, setSearchQuery] = useState('');
   const [isOpenDropdown, setIsOpenDropdown] = useState(false);

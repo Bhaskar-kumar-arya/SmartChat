@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
-import { api } from '../../services/api.service'
+import { useAPI } from '../../context/APIContext'
 
 interface ProfilePicOverlayProps {
   jid: string
@@ -13,6 +13,7 @@ export const ProfilePicOverlay: React.FC<ProfilePicOverlayProps> = ({
   name,
   onClose
 }) => {
+  const api = useAPI()
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 

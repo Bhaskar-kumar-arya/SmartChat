@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../../../services/api.service'
+import { useAPI } from '../../../context/APIContext'
 import { ImageMessage, VideoMessage, DocumentMessage } from './MediaMessages'
 import { TextMessage } from './TextMessage'
 import { formatTime } from '../../../utils/formatters'
@@ -18,6 +18,7 @@ export const TemplateMessage = ({
   onDownload,
   isDownloading
 }: TemplateMessageProps) => {
+  const api = useAPI()
   const [isSendingReply, setIsSendingReply] = useState(false)
 
   const templateMsg = rawMsg?.templateMessage || {}

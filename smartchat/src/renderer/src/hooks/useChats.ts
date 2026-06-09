@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { api } from '../services/api.service'
+import { useAPI } from '../context/APIContext'
 import { ChatItem, MessageItem } from '../types'
 
 /**
@@ -26,6 +26,7 @@ const sortChats = (chatList: ChatItem[]) => {
  * This satisfies the Single Responsibility Principle.
  */
 export const useChats = (activeJid: string | null) => {
+  const api = useAPI()
   const [chats, setChats] = useState<ChatItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')

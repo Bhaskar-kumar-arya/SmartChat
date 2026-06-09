@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../../services/api.service'
+import { useAPI } from '../../context/APIContext'
 
 interface AIChatExportButtonProps {
   activeSessionId: string | null
@@ -18,6 +18,7 @@ export default function AIChatExportButton({
   cloneSession,
   focusInput
 }: AIChatExportButtonProps) {
+  const api = useAPI()
   const [exporting, setExporting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [cloning, setCloning] = useState(false)

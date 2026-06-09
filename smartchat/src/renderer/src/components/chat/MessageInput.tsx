@@ -4,7 +4,7 @@ import { useMentions } from '../../hooks/useMentions'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'
 import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
-import { api } from '../../services/api.service'
+import { useAPI } from '../../context/APIContext'
 import { MessageItem } from '../../types'
 
 interface MessageInputProps {
@@ -16,6 +16,7 @@ interface MessageInputProps {
 }
 
 export default function MessageInput({ activeJid, onSend, onSendMedia, replyingTo, onCancelReply }: MessageInputProps) {
+  const api = useAPI()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [selectedFile, setSelectedFile] = useState<{path: string, name: string} | null>(null)
@@ -61,13 +62,13 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     duration, 
     audioBlob, 
     visualizerData, 
+    isPlayingPreview,
     startRecording, 
     stopRecording, 
-    cancelRecording 
+    cancelRecording,
+    togglePreviewPlayback,
+    stopPreview
   } = useAudioRecorder()
-  
-  const [isPlayingPreview, setIsPlayingPreview] = useState(false)
-  const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     if (replyingTo) {
@@ -150,34 +151,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     }
   }
 
-  const stopPreview = () => {
-    if (audioPreviewRef.current) {
-      audioPreviewRef.current.pause()
-      audioPreviewRef.current.currentTime = 0
-      setIsPlayingPreview(false)
-    }
-  }
-
-  const togglePreviewPlayback = () => {
-    if (!audioBlob) return
-
-    if (isPlayingPreview) {
-      stopPreview()
-    } else {
-      if (!audioPreviewRef.current) {
-        audioPreviewRef.current = new Audio()
-        audioPreviewRef.current.onended = () => setIsPlayingPreview(false)
-      }
-      
-      const url = URL.createObjectURL(audioBlob)
-      audioPreviewRef.current.src = url
-      audioPreviewRef.current.play()
-      setIsPlayingPreview(true)
-    }
-  }
-
   const handleCancelRecording = () => {
-    stopPreview()
     cancelRecording()
   }
 

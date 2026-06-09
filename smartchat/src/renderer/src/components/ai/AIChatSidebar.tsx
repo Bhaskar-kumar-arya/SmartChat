@@ -7,7 +7,7 @@ import AIChatHistoryModal from './AIChatHistoryModal'
 import AIChatExportButton from './AIChatExportButton'
 import { useAIChatSessions } from '../../hooks/useAIChatSessions'
 import { useAIStream } from '../../hooks/useAIStream'
-import { api } from '../../services/api.service'
+import { useAPI } from '../../context/APIContext'
 
 interface AIChatSidebarProps {
   isOpen: boolean
@@ -15,6 +15,7 @@ interface AIChatSidebarProps {
 }
 
 export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
+  const api = useAPI()
   const [chatList, setChatList] = useState<ChatItem[]>([])
   const [availableTools, setAvailableTools] = useState<ToolDefinition[]>([])
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])

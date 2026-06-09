@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { api } from '../services/api.service'
+import { useAPI } from '../context/APIContext'
 
 interface Participant {
   jid: string
@@ -13,6 +13,7 @@ interface Participant {
  * Handles fetching participants and tracking the mention query.
  */
 export const useMentions = (activeJid: string | null) => {
+  const api = useAPI()
   const [participants, setParticipants] = useState<Participant[]>([])
   const [showMenu, setShowMenu] = useState(false)
   const [query, setQuery] = useState('')

@@ -1,6 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Smile, Sticker, Search, Loader2, Compass, Sparkles, Heart, Users, Trees, Utensils, Activity, Lightbulb, Flag } from 'lucide-react'
 import { EMOJI_CATEGORIES, DEFAULT_STICKER_PACKS } from '../../utils/emojiData'
+import { useAPI } from '../../context/APIContext'
+import { useGiphy } from '../../hooks/useGiphy'
+import { matchEmoji } from '../../utils/emojiKeywords'
 
 const categoryIconMap: Record<string, React.ReactNode> = {
   Smileys: <Smile size={18} />,
@@ -12,7 +15,6 @@ const categoryIconMap: Record<string, React.ReactNode> = {
   Objects: <Lightbulb size={18} />,
   Symbols: <Flag size={18} />
 }
-import { api } from '../../services/api.service'
 
 interface EmojiStickerGifPickerProps {
   onSelectEmoji?: (emoji: string) => void
@@ -22,8 +24,6 @@ interface EmojiStickerGifPickerProps {
   initialTab?: 'emoji' | 'gif' | 'sticker'
 }
 
-const GIPHY_API_KEY = (import.meta.env.VITE_GIPHY_API_KEY as string) || '5Gf9Jd9uS7N9xI5U8H7vFjXy4H9mN8Z1'
-
 export default function EmojiStickerGifPicker({
   onSelectEmoji,
   onSelectGif,
@@ -31,12 +31,20 @@ export default function EmojiStickerGifPicker({
   onClose,
   initialTab = 'emoji'
 }: EmojiStickerGifPickerProps) {
+  const api = useAPI()
+  const {
+    gifs,
+    giphyStickers,
+    loading: giphyLoading,
+    giphyError,
+    fetchGiphy,
+    clearGifs
+  } = useGiphy()
+
   const [activeTab, setActiveTab] = useState<'emoji' | 'gif' | 'sticker'>(initialTab)
   const [searchQuery, setSearchQuery] = useState('')
-  const [gifs, setGifs] = useState<any[]>([])
-  const [giphyStickers, setGiphyStickers] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
-  const [giphyError, setGiphyError] = useState<string | null>(null)
+  const [localLoading, setLocalLoading] = useState(false)
+  const loading = giphyLoading || localLoading
   const [selectedPackIndex, setSelectedPackIndex] = useState<number>(0)
   const [selectedEmojiCategory, setSelectedEmojiCategory] = useState<string>('Smileys')
 
@@ -47,47 +55,9 @@ export default function EmojiStickerGifPicker({
   // Focus search input on tab change
   useEffect(() => {
     setSearchQuery('')
-    setGifs([])
-    setGiphyStickers([])
-    setGiphyError(null)
+    clearGifs()
     setTimeout(() => searchInputRef.current?.focus(), 50)
-  }, [activeTab])
-
-  // Load trending or search GIFs/Stickers from GIPHY
-  const fetchGiphy = useCallback(async (query: string, type: 'gifs' | 'stickers') => {
-    setLoading(true)
-    setGiphyError(null)
-    try {
-      const endpoint = query.trim() ? 'search' : 'trending'
-      const searchParams = new URLSearchParams({
-        api_key: GIPHY_API_KEY,
-        limit: '24',
-        rating: 'g',
-        ...(query.trim() && { q: query.trim() })
-      })
-      const url = `https://api.giphy.com/v1/${type}/${endpoint}?${searchParams.toString()}`
-      const res = await fetch(url)
-      if (res.ok) {
-        const json = await res.json()
-        if (type === 'gifs') {
-          setGifs(json.data || [])
-        } else {
-          setGiphyStickers(json.data || [])
-        }
-      } else {
-        if (res.status === 401) {
-          setGiphyError('GIPHY API Key is invalid or unauthorized.')
-        } else {
-          setGiphyError(`GIPHY error: ${res.status} ${res.statusText || ''}`)
-        }
-      }
-    } catch (err) {
-      console.error(`Failed to fetch Giphy ${type}:`, err)
-      setGiphyError('Network error or connection blocked by CSP.')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  }, [activeTab, clearGifs])
 
   // Debounced search for GIPHY GIFs/Stickers
   useEffect(() => {
@@ -145,7 +115,7 @@ export default function EmojiStickerGifPicker({
     const mp4Url = gif.images?.fixed_height?.mp4 || gif.images?.original?.mp4
     if (!mp4Url) return
 
-    setLoading(true)
+    setLocalLoading(true)
     try {
       // Name it with gifplayback key so the backend sets gifPlayback: true
       const fileName = `giphy_gifplayback_${Date.now()}.mp4`
@@ -155,7 +125,7 @@ export default function EmojiStickerGifPicker({
     } catch (err) {
       console.error('Failed to process GIF selection:', err)
     } finally {
-      setLoading(false)
+      setLocalLoading(false)
     }
   }
 
@@ -163,7 +133,7 @@ export default function EmojiStickerGifPicker({
     if (!onSelectSticker) return
     // Convert gif URL to WebP to ensure it's sent as a native WhatsApp sticker
     const webpUrl = stickerUrl.replace('.gif', '.webp')
-    setLoading(true)
+    setLocalLoading(true)
     try {
       const fileName = `sticker_${name.replace(/\s+/g, '_')}_${Date.now()}.webp`
       const localPath = await api.downloadUrlToTemp(webpUrl, fileName)
@@ -172,7 +142,7 @@ export default function EmojiStickerGifPicker({
     } catch (err) {
       console.error('Failed to process sticker selection:', err)
     } finally {
-      setLoading(false)
+      setLocalLoading(false)
     }
   }
 
@@ -181,7 +151,7 @@ export default function EmojiStickerGifPicker({
     const webpUrl = sticker.images?.fixed_height?.webp || sticker.images?.original?.webp
     if (!webpUrl) return
 
-    setLoading(true)
+    setLocalLoading(true)
     try {
       const fileName = `giphy_sticker_${sticker.id}_${Date.now()}.webp`
       const localPath = await api.downloadUrlToTemp(webpUrl, fileName)
@@ -190,7 +160,7 @@ export default function EmojiStickerGifPicker({
     } catch (err) {
       console.error('Failed to process Giphy sticker selection:', err)
     } finally {
-      setLoading(false)
+      setLocalLoading(false)
     }
   }
 
@@ -199,14 +169,16 @@ export default function EmojiStickerGifPicker({
     ...cat,
     emojis: cat.emojis.filter(emoji => {
       if (!searchQuery.trim()) return true
-      // Simple match or index check. 
-      return emoji === searchQuery.trim() || searchQuery.trim().length === 0
+      return matchEmoji(emoji, searchQuery)
     })
   })).filter(cat => cat.emojis.length > 0)
 
   // Fallback search match: search emojis directly in a flattened way
   const flattenedEmojis = EMOJI_CATEGORIES.flatMap(cat => cat.emojis)
-  const isSingleEmojiSearch = searchQuery.trim().length > 0 && flattenedEmojis.includes(searchQuery.trim())
+  const isSingleEmojiSearch = searchQuery.trim().length > 0 && (
+    flattenedEmojis.includes(searchQuery.trim()) ||
+    filteredEmojiCategories.some(cat => cat.emojis.includes(searchQuery.trim()))
+  )
 
   return (
     <div className="emoji-picker-panel" onClick={e => e.stopPropagation()}>

@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react'
 import { AIChatSessionItem, AIChatMessage } from '../types'
-import { api } from '../services/api.service'
+import { useAPI } from '../context/APIContext'
 
 export function useAIChatSessions() {
+  const api = useAPI()
   const [sessions, setSessions] = useState<AIChatSessionItem[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)

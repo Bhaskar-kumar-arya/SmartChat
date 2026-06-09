@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../services/api.service'
+import { useAPI } from '../context/APIContext'
 import { SearchFilters, SearchMode, SearchResults } from '../types'
 
 const DEBOUNCE_MS = 300
@@ -10,6 +10,7 @@ const DEEP_DEBOUNCE_MS = 600
  * Supports keyword (normal) and semantic (deep) search with filters.
  */
 export const useSearch = (query: string, mode: SearchMode = 'normal', filters?: SearchFilters) => {
+  const api = useAPI()
   const [results, setResults] = useState<SearchResults>({ chats: [], messages: [] })
   const [isSearching, setIsSearching] = useState(false)
 
