@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { api } from '../../services/api.service'
+import { api } from '../../../services/api.service'
 import { ImageMessage, VideoMessage, DocumentMessage } from './MediaMessages'
 import { TextMessage } from './TextMessage'
-import { formatTime } from '../../utils/formatters'
+import { formatTime } from '../../../utils/formatters'
 import { MessageStatusTick } from '../MessageItem'
-import { HydratedButton, InteractiveButton, TemplateMessageProps } from '../../types'
+import { HydratedButton, InteractiveButton, TemplateMessageProps } from '../../../types'
 
 interface ParsedButton {
   type: 'quick_reply' | 'url' | 'call'

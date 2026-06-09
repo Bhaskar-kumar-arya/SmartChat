@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { AIChatOptions, ModelInfo } from '../types';
-import { api } from '../services/api.service';
+import { AIChatOptions, ModelInfo } from '../../types';
+import { api } from '../../services/api.service';
 
 interface AISettingsModalProps {
   isOpen: boolean;

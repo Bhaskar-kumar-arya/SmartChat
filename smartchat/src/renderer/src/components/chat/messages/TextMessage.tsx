@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { TextMessageProps } from '../../types'
+import { TextMessageProps } from '../../../types'
 
 /**
  * Renders text with highlighted mentions.

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { User, Users } from 'lucide-react'
-import { api } from '../services/api.service'
+import { api } from '../../services/api.service'
 
 interface ProfilePictureProps {
   jid: string

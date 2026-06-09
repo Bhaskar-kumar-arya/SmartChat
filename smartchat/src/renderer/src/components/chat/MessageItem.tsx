@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect, memo } from 'react'
 import { Smile } from 'lucide-react'
-import { MessageItem as IMessageItem, ReactionItem, MessageReceiptInfo, RawMessageContent } from '../types'
-import { formatTime, formatReceiptTime, formatReceiptDate } from '../utils/formatters'
+import { MessageItem as IMessageItem, ReactionItem, MessageReceiptInfo, RawMessageContent } from '../../types'
+import { formatTime, formatReceiptTime, formatReceiptDate } from '../../utils/formatters'
 import { TextMessage } from './messages/TextMessage'
 import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage, AudioMessage } from './messages/MediaMessages'
 import { TemplateMessage } from './messages/TemplateMessage'
-import EmojiStickerGifPicker from './EmojiStickerGifPicker'
-import { api } from '../services/api.service'
+import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
+import { api } from '../../services/api.service'
 
 /**
  * Utility to unwrap metadata from Baileys messages.

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { api } from '../../services/api.service'
-import { JPEGThumbnail, ImageMessageProps, StickerMessageProps, VideoMessageProps, DocumentMessageProps, isJPEGThumbnailBuffer } from '../../types'
+import { api } from '../../../services/api.service'
+import { JPEGThumbnail, ImageMessageProps, StickerMessageProps, VideoMessageProps, DocumentMessageProps, isJPEGThumbnailBuffer } from '../../../types'
 export { AudioMessage } from './AudioMessage'
 
 const formatFileSize = (bytes?: number | string) => {

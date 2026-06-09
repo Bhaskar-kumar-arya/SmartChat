@@ -2,9 +2,9 @@ import React, {
   useState, useRef, useEffect, useCallback,
   KeyboardEvent, useImperativeHandle, forwardRef
 } from 'react'
-import { ChatItem, ModelInfo, SelectedContext } from '../types'
-import { api } from '../services/api.service'
-import { useMentionSession } from '../hooks/useMentionSession'
+import { ChatItem, ModelInfo, SelectedContext } from '../../types'
+import { api } from '../../services/api.service'
+import { useMentionSession } from '../../hooks/useMentionSession'
 
 // ── Types & Component Props ───────────────────────────────────────────────────
 

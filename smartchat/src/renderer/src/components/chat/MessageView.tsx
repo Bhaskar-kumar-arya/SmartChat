@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
-import { MessageItem as IMessageItem } from '../types'
-import { formatDate } from '../utils/formatters'
+import { MessageItem as IMessageItem } from '../../types'
+import { formatDate } from '../../utils/formatters'
 import MessageItem from './MessageItem'
 
 interface MessageViewProps {

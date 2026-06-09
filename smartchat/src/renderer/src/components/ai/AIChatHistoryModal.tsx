@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AIChatSessionItem } from '../types'
+import { AIChatSessionItem } from '../../types'
 
 interface AIChatHistoryModalProps {
   isOpen: boolean

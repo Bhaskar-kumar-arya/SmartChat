@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef } from 'react'
 import { Paperclip, Smile, X, Mic, Send, Trash2, StopCircle, Play, Pause } from 'lucide-react'
-import { useMentions } from '../hooks/useMentions'
-import { useAudioRecorder } from '../hooks/useAudioRecorder'
+import { useMentions } from '../../hooks/useMentions'
+import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'
-import EmojiStickerGifPicker from './EmojiStickerGifPicker'
-import { api } from '../services/api.service'
-import { MessageItem } from '../types'
+import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
+import { api } from '../../services/api.service'
+import { MessageItem } from '../../types'
 
 interface MessageInputProps {
   activeJid: string

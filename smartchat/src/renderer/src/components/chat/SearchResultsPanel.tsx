@@ -1,5 +1,5 @@
-import { SearchResultItem, SearchMode } from '../types'
-import { formatChatTime } from '../utils/formatters'
+import { SearchResultItem, SearchMode } from '../../types'
+import { formatChatTime } from '../../utils/formatters'
 
 interface SearchResultsPanelProps {
   chats: SearchResultItem[]

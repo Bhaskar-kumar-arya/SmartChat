@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChatItem, ModelInfo, AIChatOptions, AIChatMessage, ToolDefinition } from '../types'
+import { ChatItem, ModelInfo, AIChatOptions, AIChatMessage, ToolDefinition } from '../../types'
 import AISmartInput, { AISmartInputRef } from './AISmartInput'
 import AIMessageBubble from './AIMessageBubble'
 import AISettingsModal from './AISettingsModal'
 import AIChatHistoryModal from './AIChatHistoryModal'
 import AIChatExportButton from './AIChatExportButton'
-import { useAIChatSessions } from '../hooks/useAIChatSessions'
-import { useAIStream } from '../hooks/useAIStream'
-import { api } from '../services/api.service'
+import { useAIChatSessions } from '../../hooks/useAIChatSessions'
+import { useAIStream } from '../../hooks/useAIStream'
+import { api } from '../../services/api.service'
 
 interface AIChatSidebarProps {
   isOpen: boolean

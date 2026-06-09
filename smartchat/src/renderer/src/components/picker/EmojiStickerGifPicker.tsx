@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Smile, Sticker, Search, Loader2, Compass, Sparkles, Heart, Users, Trees, Utensils, Activity, Lightbulb, Flag } from 'lucide-react'
-import { EMOJI_CATEGORIES, DEFAULT_STICKER_PACKS } from '../utils/emojiData'
+import { EMOJI_CATEGORIES, DEFAULT_STICKER_PACKS } from '../../utils/emojiData'
 
 const categoryIconMap: Record<string, React.ReactNode> = {
   Smileys: <Smile size={18} />,
@@ -12,7 +12,7 @@ const categoryIconMap: Record<string, React.ReactNode> = {
   Objects: <Lightbulb size={18} />,
   Symbols: <Flag size={18} />
 }
-import { api } from '../services/api.service'
+import { api } from '../../services/api.service'
 
 interface EmojiStickerGifPickerProps {
   onSelectEmoji?: (emoji: string) => void
