@@ -12,11 +12,40 @@ import { app } from "electron";
 import { is } from "@electron-toolkit/utils";
 import * as sqliteVec from "sqlite-vec";
 import type { EmbeddingService } from "./services/search";
+import { existsSync, copyFileSync, mkdirSync } from "fs";
 
 // In dev, use the local db. In prod, use the userData dir
-const dbPath = is.dev 
-  ? join(__dirname, '../../prisma/dev.db') 
-  : join(app.getPath("userData"), "dev.db");
+const dbPath = (() => {
+  if (is.dev) {
+    return join(__dirname, '../../prisma/dev.db');
+  } else {
+    const userDataDir = app.getPath("userData");
+    if (!existsSync(userDataDir)) {
+      mkdirSync(userDataDir, { recursive: true });
+    }
+    const dbFile = join(userDataDir, "dev.db");
+    if (!existsSync(dbFile)) {
+      const templatePath = join(process.resourcesPath, "resources", "template.db");
+      console.log(`[Database] Production db not found. Copying template from ${templatePath} to ${dbFile}`);
+      try {
+        if (existsSync(templatePath)) {
+          copyFileSync(templatePath, dbFile);
+        } else {
+          // Fallback if template is located under app unpacked resources
+          const fallbackTemplatePath = join(app.getAppPath(), "resources", "template.db");
+          if (existsSync(fallbackTemplatePath)) {
+            copyFileSync(fallbackTemplatePath, dbFile);
+          } else {
+            console.error(`[Database] Template db not found at ${templatePath} or ${fallbackTemplatePath}`);
+          }
+        }
+      } catch (err) {
+        console.error("[Database] Failed to copy template database:", err);
+      }
+    }
+    return dbFile;
+  }
+})();
 
 // In Prisma 7, we pass a config object to the adapter factory.
 // The factory will handle the creation of the better-sqlite3 instance.

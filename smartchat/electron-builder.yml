@@ -3,14 +3,26 @@ productName: smartchat
 directories:
   buildResources: build
 files:
+  - '**/*'
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!node_modules/.prisma/**/*'
+  - '!node_modules/@prisma/client/**/*'
+  - '!node_modules/@prisma/client-runtime-utils/**/*'
 asarUnpack:
   - resources/**
+  - node_modules/sqlite-vec-windows-x64/**
+extraResources:
+  - from: node_modules/.prisma
+    to: node_modules/.prisma
+  - from: node_modules/@prisma/client
+    to: node_modules/@prisma/client
+  - from: node_modules/@prisma/client-runtime-utils
+    to: node_modules/@prisma/client-runtime-utils
 win:
   executableName: smartchat
 nsis:
