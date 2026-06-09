@@ -1,0 +1,111 @@
+/* ─── AI Chat Message Bubbles ─────────────────────────────────────── */
+
+.ai-tool-error {
+  padding: 12px;
+  background: var(--wa-bg-hover);
+  color: var(--wa-text-secondary);
+  border-left: 4px solid #ef4444;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.ai-tool-error strong {
+  color: #ef4444;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.ai-tool-error pre {
+  margin: 8px 0 0 0;
+  background: var(--wa-bg-main);
+  padding: 8px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.ai-message-edit-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.ai-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.ai-edit-hint {
+  font-size: 11px;
+  color: var(--wa-text-tertiary);
+  font-style: italic;
+}
+
+.ai-cancel-btn {
+  background: transparent;
+  border: 1px solid var(--wa-border);
+  color: var(--wa-text-secondary);
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ai-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--wa-text-primary);
+}
+
+.ai-message-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.ai-message-bubble:hover .ai-message-actions {
+  opacity: 1;
+}
+
+.ai-action-btn {
+  background: none;
+  border: none;
+  color: var(--wa-text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-action-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+/* Ticks and status styling */
+.msg-status-tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-clock {
+  animation: pulse-clock 2s infinite ease-in-out;
+}
+
+@keyframes pulse-clock {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.4; }
+}

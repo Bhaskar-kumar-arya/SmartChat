@@ -579,23 +579,8 @@
   animation: spin 1s cubic-bezier(0.55, 0.085, 0.68, 0.53) infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .animate-spin {
   animation: spin 1s linear infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
 }
 
 /* QR Code Transition Loader Overlay styling */

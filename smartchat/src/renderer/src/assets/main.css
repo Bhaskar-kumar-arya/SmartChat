@@ -8,6 +8,8 @@
 @import './sidebar.css';
 @import './chat-main.css';
 @import './messages.css';
+@import './picker.css';
+@import './ai.css';
 @import './input.css';
 @import './shared.css';
 @import './modals.css';
