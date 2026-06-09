@@ -1,4 +1,4 @@
-import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo, AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionItem } from '../types'
+import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo, AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionItem, PresenceUpdate, AIContextItem, SelectedContext } from '../types'
 
 // This service wraps the window.api (Electron bridge) to provide a clean abstraction.
 // It allows us to mock the API in tests and decouple from the global window object.
@@ -23,7 +23,7 @@ export const api = {
   deleteMessage: (jid: string, messageId: string): Promise<boolean> =>
     window.api.deleteMessage(jid, messageId),
 
-  reactMessage: (jid: string, messageId: string, reaction: string): Promise<any> =>
+  reactMessage: (jid: string, messageId: string, reaction: string): Promise<void> =>
     window.api.reactMessage(jid, messageId, reaction),
 
   sendMediaMessage: (jid: string, filePath: string, caption: string, quotedId?: string, mentions?: string[]): Promise<MessageItem> =>
@@ -60,7 +60,7 @@ export const api = {
   onChatUpdated: (callback: (update: Partial<ChatItem> & { jid: string }) => void) =>
     window.api.onChatUpdated(callback),
 
-  onPresenceUpdate: (callback: (update: any) => void) =>
+  onPresenceUpdate: (callback: (update: PresenceUpdate) => void) =>
     window.api.onPresenceUpdate(callback),
 
   onWaQr: (callback: (qr: string) => void) =>
@@ -126,9 +126,9 @@ export const api = {
   // AI Chat & Session methods
   aiChatStream: (
     prompt: string,
-    contexts: any[],
+    contexts: AIContextItem[],
     history: AIChatMessage[],
-    mentions: any[],
+    mentions: SelectedContext[],
     options: AIChatOptions & { isSystem?: boolean },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
@@ -138,7 +138,7 @@ export const api = {
   abortAiChat: (channelId: string): Promise<boolean> =>
     window.api.abortAiChat(channelId),
 
-  executeTool: (toolName: string, args: any): Promise<any> =>
+  executeTool: (toolName: string, args: Record<string, any>): Promise<any> =>
     window.api.executeTool(toolName, args),
 
   getAiTools: (): Promise<ToolDefinition[]> =>
@@ -171,7 +171,7 @@ export const api = {
   deleteAiSession: (id: string): Promise<void> =>
     window.api.deleteAiSession(id),
 
-  cloneAiSession: (id: string): Promise<any> =>
+  cloneAiSession: (id: string): Promise<AIChatSessionItem> =>
     window.api.cloneAiSession(id),
 
   searchMentionContacts: (query: string): Promise<ChatItem[]> =>
@@ -180,19 +180,19 @@ export const api = {
   searchMentionChats: (query: string): Promise<ChatItem[]> =>
     window.api.searchMentionChats(query),
 
-  getProviderKeys: (): Promise<any> =>
+  getProviderKeys: (): Promise<Record<string, string>> =>
     window.api.getProviderKeys(),
 
-  setProviderKey: (provider: string, key: string): Promise<any> =>
+  setProviderKey: (provider: string, key: string): Promise<boolean> =>
     window.api.setProviderKey(provider, key),
 
-  setAiAutoSave: (checked: boolean): Promise<any> =>
+  setAiAutoSave: (checked: boolean): Promise<void> =>
     window.api.setAiAutoSave(checked),
 
-  exportAiChat: (session: any, messages: any[]): Promise<any> =>
+  exportAiChat: (session: AIChatSessionItem, messages: AIChatMessage[]): Promise<void> =>
     window.api.exportAiChat(session, messages),
 
-  deleteExportedAiChat: (sessionId: string): Promise<any> =>
+  deleteExportedAiChat: (sessionId: string): Promise<void> =>
     window.api.deleteExportedAiChat(sessionId),
 }
 

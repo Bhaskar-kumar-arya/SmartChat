@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { api } from '../../services/api.service'
+import { JPEGThumbnail, ImageMessageProps, StickerMessageProps, VideoMessageProps, DocumentMessageProps, isJPEGThumbnailBuffer } from '../../types'
 export { AudioMessage } from './AudioMessage'
 
 const formatFileSize = (bytes?: number | string) => {
@@ -65,7 +66,7 @@ interface MediaMessageProps {
     onDownload: () => void
     isDownloading: boolean
     label: string
-    icon: any
+    icon: React.ReactNode
     downloadFailed?: boolean
 }
 
@@ -128,7 +129,8 @@ export const DownloadMediaPlaceholder = ({ onDownload, isDownloading, label, ico
     )
 }
 
-export const ImageMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: any) => {
+
+export const ImageMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: ImageMessageProps) => {
     const [downloadFailed, setDownloadFailed] = useState(false)
     const thumbnailData = getThumbnailData(rawMsg?.imageMessage)
 
@@ -270,7 +272,8 @@ export const ImageMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
     )
 }
 
-export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: any) => {
+
+export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: StickerMessageProps) => {
     const [downloadFailed, setDownloadFailed] = useState(false)
 
     const handleDownload = async () => {
@@ -398,13 +401,13 @@ export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: 
     )
 }
 
-const getThumbnailData = (media: any) => {
+const getThumbnailData = (media?: { jpegThumbnail?: JPEGThumbnail }) => {
     if (!media || !media.jpegThumbnail) return undefined
     const thumb = media.jpegThumbnail
     if (typeof thumb === 'string') {
         return thumb.startsWith('data:') ? thumb : `data:image/jpeg;base64,${thumb}`
     }
-    if (thumb && typeof thumb === 'object' && thumb.type === 'Buffer' && Array.isArray(thumb.data)) {
+    if (isJPEGThumbnailBuffer(thumb)) {
         const uint8 = new Uint8Array(thumb.data)
         let binary = ''
         for (let i = 0; i < uint8.byteLength; i++) binary += String.fromCharCode(uint8[i])
@@ -413,7 +416,7 @@ const getThumbnailData = (media: any) => {
     return undefined
 }
 
-export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: any) => {
+export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: VideoMessageProps) => {
     const [downloadFailed, setDownloadFailed] = useState(false)
     const thumbnailData = getThumbnailData(rawMsg?.videoMessage)
     const vidMsg = rawMsg?.videoMessage || {}
@@ -590,7 +593,8 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
     )
 }
 
-export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: any) => {
+
+export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: DocumentMessageProps) => {
     const doc = rawMsg?.documentMessage || {}
     const fileName = doc.fileName || 'Document'
     const fileSize = doc.fileLength ? (Number(doc.fileLength) / 1024 / 1024).toFixed(2) + ' MB' : ''

@@ -62,7 +62,7 @@ declare global {
       sendMessage: (jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => Promise<MessageItem>
       editMessage: (jid: string, messageId: string, newText: string) => Promise<MessageItem>
       deleteMessage: (jid: string, messageId: string) => Promise<boolean>
-      reactMessage: (jid: string, messageId: string, reaction: string) => Promise<any>
+      reactMessage: (jid: string, messageId: string, reaction: string) => Promise<void>
       sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => Promise<MessageItem>
       getGroupParticipants: (jid: string) => Promise<{ jid: string, name: string, isAdmin: boolean, isMe: boolean }[]>
       downloadMedia: (msgId: string) => Promise<MessageItem>

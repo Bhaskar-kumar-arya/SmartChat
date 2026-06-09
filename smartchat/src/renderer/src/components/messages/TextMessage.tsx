@@ -1,10 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-
-interface TextMessageProps {
-  text: string
-  mentions?: Record<string, string>
-}
+import { TextMessageProps } from '../../types'
 
 /**
  * Renders text with highlighted mentions.
@@ -12,6 +8,20 @@ interface TextMessageProps {
  */
 export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
   if (!text) return null
+
+  // Normalize mentions to Record<string, string>
+  const normalizedMentions: Record<string, string> = {};
+  if (mentions) {
+    if (Array.isArray(mentions)) {
+      mentions.forEach(jid => {
+        const name = jid.split('@')[0];
+        normalizedMentions[jid] = name;
+        normalizedMentions[name] = name; // support matching just number
+      });
+    } else {
+      Object.assign(normalizedMentions, mentions);
+    }
+  }
 
   // Convert WhatsApp-style formatting (*bold*, ~strike~) to standard Markdown (**bold**, ~~strike~~)
   // while preserving code blocks and inline code.
@@ -43,15 +53,15 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
           rawContent = rawContent.substring(1, rawContent.length - 1)
         }
         
-        let name = mentions[rawContent]
+        let name = normalizedMentions[rawContent]
         
         if (!name && /^\d+$/.test(rawContent)) {
-          name = mentions[`${rawContent}@s.whatsapp.net`] || mentions[`${rawContent}@lid`]
+          name = normalizedMentions[`${rawContent}@s.whatsapp.net`] || normalizedMentions[`${rawContent}@lid`]
         }
 
         if (!name) {
-          const foundKey = Object.keys(mentions).find(k => k.startsWith(rawContent))
-          if (foundKey) name = mentions[foundKey]
+          const foundKey = Object.keys(normalizedMentions).find(k => k.startsWith(rawContent))
+          if (foundKey) name = normalizedMentions[foundKey]
         }
 
         if (name) {

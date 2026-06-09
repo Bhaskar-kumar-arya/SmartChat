@@ -108,12 +108,148 @@ export interface AIChatSessionItem {
   modelId?: string
 }
 
+export interface AIContextItem {
+  jid: string
+  name: string
+  messages: MessageItem[]
+}
+
+export interface JPEGThumbnailBuffer {
+  type: 'Buffer'
+  data: number[]
+}
+
+export type JPEGThumbnail = string | JPEGThumbnailBuffer | Uint8Array
+
+export interface ContextInfo {
+  quotedMessage?: RawMessageContent
+  participant?: string
+  participantName?: string
+  mentions?: Record<string, string> | string[]
+}
+
+export interface ImageMessageContent {
+  jpegThumbnail?: JPEGThumbnail
+  width?: number
+  height?: number
+  fileLength?: number | string
+  localURI?: string
+  mimetype?: string
+  caption?: string
+  contextInfo?: ContextInfo
+}
+
+export interface VideoMessageContent {
+  jpegThumbnail?: JPEGThumbnail
+  width?: number
+  height?: number
+  fileLength?: number | string
+  seconds?: number
+  localURI?: string
+  mimetype?: string
+  gifPlayback?: boolean
+  contextInfo?: ContextInfo
+}
+
+export interface DocumentMessageContent {
+  fileName?: string
+  fileLength?: number | string
+  mimetype?: string
+  localURI?: string
+  contextInfo?: ContextInfo
+}
+
+export interface AudioMessageContent {
+  seconds?: number
+  mimetype?: string
+  localURI?: string
+  ptt?: boolean
+  waveform?: Uint8Array | number[]
+  contextInfo?: ContextInfo
+}
+
+export interface StickerMessageContent {
+  localURI?: string
+  mimetype?: string
+  jpegThumbnail?: JPEGThumbnail
+  contextInfo?: ContextInfo
+}
+
+export interface HydratedButton {
+  quickReplyButton?: {
+    displayText?: string
+    id?: string
+  }
+  urlButton?: {
+    displayText?: string
+    url?: string
+  }
+  callButton?: {
+    displayText?: string
+    phoneNumber?: string
+  }
+}
+
+export interface InteractiveButton {
+  name: string
+  buttonParamsJson?: string
+}
+
+export interface HydratedTemplate {
+  hydratedContentText?: string
+  hydratedFooterText?: string
+  imageMessage?: ImageMessageContent
+  videoMessage?: VideoMessageContent
+  documentMessage?: DocumentMessageContent
+  hydratedButtons?: HydratedButton[]
+}
+
+export interface InteractiveMessageTemplate {
+  body?: {
+    text?: string
+  }
+  footer?: {
+    text?: string
+  }
+  header?: {
+    title?: string
+    text?: string
+    imageMessage?: ImageMessageContent
+    videoMessage?: VideoMessageContent
+    documentMessage?: DocumentMessageContent
+  }
+  nativeFlowMessage?: {
+    buttons?: InteractiveButton[]
+  }
+}
+
+export interface TemplateMessageContent {
+  hydratedFourRowTemplate?: HydratedTemplate
+  hydratedTemplate?: HydratedTemplate
+  interactiveMessageTemplate?: InteractiveMessageTemplate
+}
+
+export interface RawMessageContent {
+  conversation?: string
+  extendedTextMessage?: {
+    text?: string
+    contextInfo?: ContextInfo
+  }
+  imageMessage?: ImageMessageContent
+  videoMessage?: VideoMessageContent
+  documentMessage?: DocumentMessageContent
+  audioMessage?: AudioMessageContent
+  stickerMessage?: StickerMessageContent
+  templateMessage?: TemplateMessageContent
+  contextInfo?: ContextInfo
+}
+
 export interface AIChatMessage {
   id: string
   role: 'user' | 'ai'
   content: string
-  contexts?: any[]
-  mentions?: any[]
+  contexts?: AIContextItem[]
+  mentions?: SelectedContext[]
   isHidden?: boolean
   isSystem?: boolean
   toolResult?: string
@@ -143,7 +279,65 @@ export interface GroupParticipant {
 export interface ToolDefinition {
   name: string
   description?: string
-  argumentsSchema?: any
+  argumentsSchema?: Record<string, any>
   requiresPermission?: boolean
 }
+
+export interface ImageMessageProps {
+  localURI?: string
+  textContent?: string | null
+  rawMsg: RawMessageContent
+  onDownload?: () => void
+  isDownloading: boolean
+}
+
+export interface StickerMessageProps {
+  localURI?: string
+  rawMsg: RawMessageContent
+  onDownload?: () => void
+  isDownloading: boolean
+}
+
+export interface VideoMessageProps {
+  localURI?: string
+  textContent?: string | null
+  rawMsg: RawMessageContent
+  onDownload?: () => void
+  isDownloading: boolean
+}
+
+export interface DocumentMessageProps {
+  localURI?: string
+  textContent?: string | null
+  rawMsg: RawMessageContent
+  onDownload?: () => void
+  isDownloading: boolean
+}
+
+export interface TemplateMessageProps {
+  msg: MessageItem
+  rawMsg: RawMessageContent
+  localURI?: string
+  onDownload: () => void
+  isDownloading: boolean
+}
+
+export interface AudioMessageProps {
+  localURI?: string
+  textContent?: string | null
+  senderJid?: string
+  onDownload: () => void
+  isDownloading: boolean
+  rawMsg?: RawMessageContent
+}
+
+export interface TextMessageProps {
+  text: string
+  mentions?: Record<string, string> | string[]
+}
+
+export function isJPEGThumbnailBuffer(thumb: any): thumb is JPEGThumbnailBuffer {
+  return thumb && typeof thumb === 'object' && thumb.type === 'Buffer' && Array.isArray(thumb.data)
+}
+
 

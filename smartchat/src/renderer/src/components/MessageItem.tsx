@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, memo } from 'react'
 import { Smile } from 'lucide-react'
-import { MessageItem as IMessageItem, ReactionItem, MessageReceiptInfo } from '../types'
+import { MessageItem as IMessageItem, ReactionItem, MessageReceiptInfo, RawMessageContent } from '../types'
 import { formatTime, formatReceiptTime, formatReceiptDate } from '../utils/formatters'
 import { TextMessage } from './messages/TextMessage'
 import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage, AudioMessage } from './messages/MediaMessages'
@@ -11,7 +11,7 @@ import { api } from '../services/api.service'
 /**
  * Utility to unwrap metadata from Baileys messages.
  */
-function unwrapMessage(msg: any): any {
+function unwrapMessage(msg: any): RawMessageContent {
   if (!msg) return {}
   let unwrapped = msg
   if (unwrapped.ephemeralMessage) unwrapped = unwrapped.ephemeralMessage.message || unwrapped.ephemeralMessage
@@ -116,7 +116,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     setShowDropdown(false)
   }
 
-  let rawMsg: any = {}
+  let rawMsg: RawMessageContent = {}
   try {
     rawMsg = msg.content ? unwrapMessage(JSON.parse(msg.content)) : {}
   } catch (e) { }

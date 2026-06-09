@@ -6,7 +6,7 @@ function escapeRe(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function renderWithMentions(content: string, mentions: any[]): React.ReactNode {
+function renderWithMentions(content: string, mentions: SelectedContext[]): React.ReactNode {
   if (!mentions || mentions.length === 0) {
     return <ReactMarkdown>{content}</ReactMarkdown>
   }
@@ -31,28 +31,18 @@ function renderWithMentions(content: string, mentions: any[]): React.ReactNode {
 import remarkGfm from 'remark-gfm'
 import AIToolCard from './AIToolCard'
 import AISmartInput from './AISmartInput'
-
-interface AIChatMessage {
-  id: string
-  role: 'user' | 'ai'
-  content: string
-  contexts?: any[]
-  mentions?: any[]
-  isHidden?: boolean
-  toolResult?: string
-  hasError?: boolean
-}
+import { AIChatMessage, ToolDefinition, SelectedContext, ChatItem } from '../types'
 
 interface AIMessageBubbleProps {
   message: AIChatMessage
-  availableTools: any[]
+  availableTools: ToolDefinition[]
   isExecuting: boolean
-  onApprove: (messageId: string, tool: string, args: any) => void
+  onApprove: (messageId: string, tool: string, args: Record<string, any>) => void
   onDecline: (messageId: string) => void
   onRetry: () => void
   onReRun?: (messageId: string) => void
-  onSave?: (messageId: string, newContent: string, mentions: any[]) => void
-  chatList: any[]
+  onSave?: (messageId: string, newContent: string, mentions: SelectedContext[]) => void
+  chatList: ChatItem[]
 }
 
 const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({ 

@@ -4,14 +4,7 @@ import { ImageMessage, VideoMessage, DocumentMessage } from './MediaMessages'
 import { TextMessage } from './TextMessage'
 import { formatTime } from '../../utils/formatters'
 import { MessageStatusTick } from '../MessageItem'
-
-interface TemplateMessageProps {
-  msg: any
-  rawMsg: any
-  localURI?: string
-  onDownload: () => void
-  isDownloading: boolean
-}
+import { HydratedButton, InteractiveButton, TemplateMessageProps } from '../../types'
 
 interface ParsedButton {
   type: 'quick_reply' | 'url' | 'call'
@@ -88,7 +81,7 @@ export const TemplateMessage = ({
   // Parse Hydrated Buttons
   const hydratedButtons = hydratedFourRowTemplate?.hydratedButtons
   if (Array.isArray(hydratedButtons)) {
-    hydratedButtons.forEach((b: any) => {
+    hydratedButtons.forEach((b: HydratedButton) => {
       if (b.quickReplyButton) {
         parsedButtons.push({
           type: 'quick_reply',
@@ -114,8 +107,8 @@ export const TemplateMessage = ({
   // Parse Interactive Native Flow Buttons
   const interactiveButtons = interactiveMessageTemplate?.nativeFlowMessage?.buttons
   if (Array.isArray(interactiveButtons)) {
-    interactiveButtons.forEach((b: any) => {
-      let params: any = {}
+    interactiveButtons.forEach((b: InteractiveButton) => {
+      let params: Record<string, any> = {}
       try {
         params = b.buttonParamsJson ? JSON.parse(b.buttonParamsJson) : {}
       } catch (e) {

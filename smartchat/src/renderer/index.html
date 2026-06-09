@@ -2,8 +2,13 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Electron</title>
+    <title>SmartChat</title>
     <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <!-- 
+      Note: 'unsafe-inline' is required in style-src because Vite dynamically injects 
+      CSS styles in development mode, and various dynamic layouts rely on inline style attributes.
+      No 'unsafe-inline' is used in script-src, ensuring protection against inline XSS script injections.
+    -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: app: blob: https://*.whatsapp.net https://user-images.githubusercontent.com https://*.giphy.com; media-src 'self' app: blob: https://*.giphy.com; connect-src 'self' app: blob: https://api.giphy.com;"

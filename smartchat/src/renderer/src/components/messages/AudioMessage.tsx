@@ -1,14 +1,7 @@
 import WaveformPlayer from '../WaveformPlayer'
 import { ProfilePicture } from '../ProfilePicture'
 
-interface AudioMessageProps {
-  localURI?: string
-  textContent?: string | null
-  senderJid?: string
-  onDownload: () => void
-  isDownloading: boolean
-  rawMsg?: any
-}
+import { AudioMessageProps } from '../../types'
 
 export const AudioMessage = ({ localURI, senderJid, onDownload, isDownloading, rawMsg }: AudioMessageProps) => {
   const audioMsg = rawMsg?.audioMessage
