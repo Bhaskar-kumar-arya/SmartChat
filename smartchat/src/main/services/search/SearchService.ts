@@ -98,8 +98,10 @@ export class SearchService implements ISearchService {
           name,
           lastMessage:
             lastMsg?.messageType === 'stickerMessage' ? 'Sticker' :
+            lastMsg?.messageType === 'lottieStickerMessage' ? 'Sticker' :
             lastMsg?.messageType === 'imageMessage' ? 'Photo' :
             lastMsg?.messageType === 'videoMessage' ? 'Video' :
+            lastMsg?.messageType === 'ptvMessage' ? 'Video' :
             lastMsg?.messageType === 'documentMessage' ? 'Document' :
             lastMsg?.textContent || '',
           timestamp: lastMsg?.timestamp?.toString()

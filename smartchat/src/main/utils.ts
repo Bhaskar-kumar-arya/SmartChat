@@ -36,9 +36,11 @@ const MESSAGE_TYPE_PRIORITY_KEYS = [
   'extendedTextMessage',
   'imageMessage',
   'videoMessage',
+  'ptvMessage',
   'audioMessage',
   'documentMessage',
   'stickerMessage',
+  'lottieStickerMessage',
   'contactMessage',
   'locationMessage',
   'reactionMessage',
@@ -87,7 +89,7 @@ export function extractTextContent(message: Record<string, unknown> | null | und
   const extText = message.extendedTextMessage as Record<string, unknown> | undefined
   if (extText && typeof extText.text === 'string') return extText.text
 
-  for (const key of ['imageMessage', 'videoMessage', 'documentMessage', 'audioMessage']) {
+  for (const key of ['imageMessage', 'videoMessage', 'documentMessage', 'audioMessage', 'ptvMessage']) {
     const media = message[key] as Record<string, unknown> | undefined
     if (media && typeof media.caption === 'string') return media.caption
   }
@@ -113,6 +115,7 @@ export function unwrapMessage(msg: any): any {
       unwrapped.viewOnceMessageV2Extension?.message ||
       unwrapped.documentWithCaptionMessage?.message ||
       unwrapped.associatedChildMessage?.message ||
+      unwrapped.lottieStickerMessage?.message ||
       unwrapped.editedMessage?.message
     if (!next) break
     unwrapped = next

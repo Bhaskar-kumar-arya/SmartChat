@@ -278,8 +278,8 @@ const getThumbnailData = (media?: { jpegThumbnail?: JPEGThumbnail }) => {
 
 export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: VideoMessageProps) => {
     const [downloadFailed, setDownloadFailed] = useState(false)
-    const thumbnailData = getThumbnailData(rawMsg?.videoMessage)
-    const vidMsg = rawMsg?.videoMessage || {}
+    const vidMsg = rawMsg?.videoMessage || rawMsg?.ptvMessage || {}
+    const thumbnailData = getThumbnailData(vidMsg)
     const width = vidMsg.width
     const height = vidMsg.height
     const fileLength = vidMsg.fileLength

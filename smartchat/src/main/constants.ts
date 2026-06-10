@@ -42,8 +42,10 @@ export const MEDIA_MIME_MAP: Record<string, string> = {
 // ── Message type display labels ───────────────────────────────────────────
 export const MESSAGE_TYPE_LABELS: Record<string, string> = {
   stickerMessage: 'Sticker',
+  lottieStickerMessage: 'Sticker',
   imageMessage: 'Photo',
   videoMessage: 'Video',
+  ptvMessage: 'Video note',
   documentMessage: 'Document',
   audioMessage: 'Audio',
   contactMessage: 'Contact',

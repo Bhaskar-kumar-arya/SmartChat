@@ -35,6 +35,7 @@ function resolveMediaType(
   if (target.imageMessage) return { mediaType: 'image', mediaMsg: target.imageMessage }
   if (target.stickerMessage) return { mediaType: 'sticker', mediaMsg: target.stickerMessage }
   if (target.videoMessage) return { mediaType: 'video', mediaMsg: target.videoMessage }
+  if (target.ptvMessage) return { mediaType: 'video', mediaMsg: target.ptvMessage }
   if (target.audioMessage) return { mediaType: 'audio', mediaMsg: target.audioMessage }
   if (target.documentMessage) {
     // HKDF label correction: an audio file sent as a generic document must be

@@ -153,6 +153,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
           </span>
         )
       case 'videoMessage':
+      case 'ptvMessage':
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center' }}>
             <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
@@ -160,6 +161,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
           </span>
         )
       case 'stickerMessage':
+      case 'lottieStickerMessage':
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center' }}>
             <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>

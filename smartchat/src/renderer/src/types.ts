@@ -237,9 +237,11 @@ export interface RawMessageContent {
   }
   imageMessage?: ImageMessageContent
   videoMessage?: VideoMessageContent
+  ptvMessage?: VideoMessageContent
   documentMessage?: DocumentMessageContent
   audioMessage?: AudioMessageContent
   stickerMessage?: StickerMessageContent
+  lottieStickerMessage?: any
   templateMessage?: TemplateMessageContent
   contextInfo?: ContextInfo
 }

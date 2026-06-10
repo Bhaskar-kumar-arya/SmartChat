@@ -15,11 +15,19 @@ import ConfirmModal from '../common/ConfirmModal'
 function unwrapMessage(msg: any): RawMessageContent {
   if (!msg) return {}
   let unwrapped = msg
-  if (unwrapped.ephemeralMessage) unwrapped = unwrapped.ephemeralMessage.message || unwrapped.ephemeralMessage
-  if (unwrapped.viewOnceMessage) unwrapped = unwrapped.viewOnceMessage.message || unwrapped.viewOnceMessage
-  if (unwrapped.viewOnceMessageV2) unwrapped = unwrapped.viewOnceMessageV2.message || unwrapped.viewOnceMessageV2
-  if (unwrapped.viewOnceMessageV2Extension) unwrapped = unwrapped.viewOnceMessageV2Extension.message || unwrapped.viewOnceMessageV2Extension
-  if (unwrapped.documentWithCaptionMessage) unwrapped = unwrapped.documentWithCaptionMessage.message || unwrapped.documentWithCaptionMessage
+  for (let i = 0; i < 5; i++) {
+    const next =
+      unwrapped.ephemeralMessage?.message ||
+      unwrapped.viewOnceMessage?.message ||
+      unwrapped.viewOnceMessageV2?.message ||
+      unwrapped.viewOnceMessageV2Extension?.message ||
+      unwrapped.documentWithCaptionMessage?.message ||
+      unwrapped.associatedChildMessage?.message ||
+      unwrapped.lottieStickerMessage?.message ||
+      unwrapped.editedMessage?.message
+    if (!next) break
+    unwrapped = next
+  }
   return unwrapped
 }
 
@@ -219,8 +227,8 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   const isTemplateMessage = msg.messageType === 'templateMessage' || !!rawMsg?.templateMessage
 
   const isImage = (msg.messageType === 'imageMessage' || !!rawMsg?.imageMessage) && !isTemplateMessage
-  const isSticker = (msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage) && !isTemplateMessage
-  const isVideo = (msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage) && !isTemplateMessage
+  const isSticker = (msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage || msg.messageType === 'lottieStickerMessage' || !!rawMsg?.lottieStickerMessage) && !isTemplateMessage
+  const isVideo = (msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage || msg.messageType === 'ptvMessage' || !!rawMsg?.ptvMessage) && !isTemplateMessage
   const isDocument = (msg.messageType === 'documentMessage' || !!rawMsg?.documentMessage) && !isTemplateMessage
   const isAudio = (msg.messageType === 'audioMessage' || !!rawMsg?.audioMessage) && !isTemplateMessage
   const isTextMessage = (msg.messageType === 'conversation' || msg.messageType === 'extendedTextMessage') && !isTemplateMessage
@@ -228,6 +236,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   const localURI = rawMsg?.imageMessage?.localURI ||
                    rawMsg?.stickerMessage?.localURI ||
                    rawMsg?.videoMessage?.localURI ||
+                   rawMsg?.ptvMessage?.localURI ||
                    rawMsg?.documentMessage?.localURI ||
                    rawMsg?.audioMessage?.localURI ||
                    msg.localURI

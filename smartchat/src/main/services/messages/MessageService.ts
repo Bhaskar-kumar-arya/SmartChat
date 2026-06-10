@@ -86,7 +86,7 @@ export class MessageService {
       } else if (unwrapped.extendedTextMessage?.text) {
         textContent = unwrapped.extendedTextMessage.text
       } else {
-        const mediaMsg = unwrapped.imageMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
+        const mediaMsg = unwrapped.imageMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage || unwrapped.ptvMessage
         if (mediaMsg && typeof mediaMsg.caption === 'string') {
           textContent = mediaMsg.caption
         }
@@ -304,7 +304,7 @@ export class MessageService {
       } else if (unwrapped.extendedTextMessage?.text) {
         textContent = unwrapped.extendedTextMessage.text
       } else {
-        const mediaMsg = unwrapped.imageMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
+        const mediaMsg = unwrapped.imageMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage || unwrapped.ptvMessage
         if (mediaMsg && typeof mediaMsg.caption === 'string') {
           textContent = mediaMsg.caption
         }
