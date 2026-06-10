@@ -1,33 +1,24 @@
 import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
 import fs from 'fs'
-import { join } from 'path'
+import { join, } from 'path'
 import { MessageService } from './MessageService'
 import { ChatService } from '../chats/ChatService'
-import { BrowserWindow, app } from 'electron'
+import { app } from 'electron'
 import { proto } from '@whiskeysockets/baileys'
 import { WASocket, EnrichedMessage } from '../../types'
 import { unwrapMessage } from '../../utils'
+import type { WAEventBus } from '../whatsapp/WAEventBus'
+import { cleanJid } from '../../utils'
 
 export class MessageActionService {
   constructor(
     private prisma: PrismaClient,
     private contactService: ContactService,
     private messageService: MessageService,
-    private chatService: ChatService
+    private chatService: ChatService,
+    private getBus: () => WAEventBus | null
   ) {}
-
-  /**
-   * Helper to send notification to all open BrowserWindow instances.
-   */
-  private notifyWindows(event: string, payload: any) {
-    const windows = BrowserWindow.getAllWindows();
-    for (const win of windows) {
-      if (!win.isDestroyed()) {
-        win.webContents.send(event, payload);
-      }
-    }
-  }
 
   /**
    * Deletes (revokes) a message.
@@ -58,11 +49,11 @@ export class MessageActionService {
       data: { isDeleted: true }
     });
 
-    this.notifyWindows('message-deleted', {
-      id: messageId,
+    this.getBus()?.emit('message:deleted', {
+      messageId,
       chatJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe
-    });
+    }).catch(() => {});
 
     return {
       success: true,
@@ -124,7 +115,13 @@ export class MessageActionService {
     const nameMap = await this.contactService.batchResolveNames([updated.participant || resolvedJid], sock);
     const enriched = await this.messageService.enrichMessage(updated, sock, nameMap);
 
-    this.notifyWindows('message-edited', enriched);
+    this.getBus()?.emit('message:edited', {
+      messageId,
+      chatJid: enriched.chatJid,
+      editedTextContent: newText,
+      editedContent: enriched,
+      sock
+    }).catch(() => {});
 
     return enriched;
   }
@@ -180,7 +177,16 @@ export class MessageActionService {
         sock
       );
       const enriched = await this.messageService.enrichMessage(processed, sock, nameMap);
-      this.notifyWindows('new-message', enriched);
+      this.getBus()?.emit('message:incoming', {
+        chatJid: enriched.chatJid,
+        senderJid: cleanJid(enriched.participant || enriched.chatJid),
+        messageType: enriched.messageType,
+        textContent: processed.textContent,
+        fromMe: enriched.fromMe,
+        timestamp: BigInt(enriched.timestamp),
+        processed: enriched as any,
+        sock
+      }).catch(() => {});
 
       results.push({
         jid: resolvedDest,
@@ -265,32 +271,7 @@ export class MessageActionService {
       }).catch(() => {});
     }
 
-    // 2. Notify the frontend to update UI reactively
-    const myJid = sock.user?.id || '';
-    const myLid = (sock.user as { lid?: string })?.lid || '';
-    const reactorJidString = myLid ? myLid.split(':')[0] + '@lid' : (myJid ? myJid.split(':')[0] + '@s.whatsapp.net' : '');
-
-    const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock);
-    const reactorName = nameMap.get(reactorJidString) || sock.user?.name || 'Me';
-
-    const mockMsg = {
-      id: messageId,
-      chatJid: dbMsg.chatJid,
-      fromMe: true,
-      senderId: reactorId,
-      participant: reactorJidString,
-      participantName: reactorName,
-      timestamp: timestamp.toString(),
-      messageType: 'reactionMessage',
-      content: JSON.stringify({
-        reactionMessage: {
-          key: { id: messageId },
-          text: reaction || ''
-        }
-      })
-    };
-
-    this.notifyWindows('new-message', mockMsg);
+    // Reactions are fully handled by ReceiptSubscriber via the reaction:update bus event.
 
     return {
       success: true,
@@ -337,7 +318,18 @@ export class MessageActionService {
     await this.chatService.updateTimestamp(targetJid, processed.timestamp)
 
     const nameMap = await this.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
-    return this.messageService.enrichMessage(processed, sock, nameMap)
+    const enriched = await this.messageService.enrichMessage(processed, sock, nameMap)
+    this.getBus()?.emit('message:incoming', {
+      chatJid: enriched.chatJid,
+      senderJid: cleanJid(enriched.participant || enriched.chatJid),
+      messageType: enriched.messageType,
+      textContent: processed.textContent,
+      fromMe: enriched.fromMe,
+      timestamp: BigInt(enriched.timestamp),
+      processed: enriched as any,
+      sock
+    }).catch(() => {})
+    return enriched
   }
 
   /**
@@ -413,6 +405,17 @@ export class MessageActionService {
     await this.chatService.updateTimestamp(targetJid, processed.timestamp)
     
     const nameMap = await this.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
-    return this.messageService.enrichMessage(processed, sock, nameMap)
+    const enriched = await this.messageService.enrichMessage(processed, sock, nameMap)
+    this.getBus()?.emit('message:incoming', {
+      chatJid: enriched.chatJid,
+      senderJid: cleanJid(enriched.participant || enriched.chatJid),
+      messageType: enriched.messageType,
+      textContent: processed.textContent,
+      fromMe: enriched.fromMe,
+      timestamp: BigInt(enriched.timestamp),
+      processed: enriched as any,
+      sock
+    }).catch(() => {})
+    return enriched
   }
 }

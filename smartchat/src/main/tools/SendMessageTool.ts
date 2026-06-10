@@ -1,6 +1,5 @@
 import { AITool } from '../services/ai/AIToolService';
-import { MessageService } from '../services/messages/MessageService';
-import { ChatService } from '../services/chats/ChatService';
+import { MessageActionService } from '../services/messages/MessageActionService';
 import { WASocket } from '../types';
 
 export class SendMessageTool implements AITool {
@@ -39,8 +38,7 @@ CONSTRAINTS:
 
   constructor(
     private getSock: () => WASocket | null,
-    private messageService: MessageService,
-    private chatService: ChatService
+    private messageActionService: MessageActionService
   ) {}
 
   async execute(args: any) {
@@ -50,20 +48,7 @@ CONSTRAINTS:
     const sock = this.getSock();
     if (!sock) throw new Error('WhatsApp socket is not connected');
 
-    const messageContent: any = { text };
-    if (mentions && Array.isArray(mentions) && mentions.length > 0) {
-      messageContent.mentions = mentions;
-    }
-
-    const sentMsg = await sock.sendMessage(jid, messageContent);
-    if (!sentMsg) throw new Error('Failed to send message');
-    
-    // Persist via Service
-    const processed = await this.messageService.processMessage(sentMsg, sock);
-    if (!processed || 'type' in processed) {
-      throw new Error('Failed to process sent message');
-    }
-    await this.chatService.updateTimestamp(jid, processed.timestamp);
+    await this.messageActionService.sendMessageWorkflow(sock, jid, text, undefined, mentions);
 
     return { 
       success: true, 

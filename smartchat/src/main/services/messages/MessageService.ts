@@ -62,7 +62,19 @@ export class MessageService {
     }
 
     const remoteJid = cleanJid(key.remoteJid || '')
-    const participantString = key.participant ? cleanJid(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
+    let participantString = key.participant ? cleanJid(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
+    if (key.fromMe) {
+      if (_sock?.user) {
+        const myJid = _sock.user.id || ''
+        const myLid = (_sock.user as { lid?: string })?.lid || ''
+        participantString = myLid ? myLid.split(':')[0] + '@lid' : (myJid ? myJid.split(':')[0] + '@s.whatsapp.net' : participantString)
+      } else {
+        const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
+        if (meIdent?.phoneNumber) {
+          participantString = meIdent.phoneNumber
+        }
+      }
+    }
 
     // 2. Extract text content & Unwrap
     let textContent: string | null = null
@@ -607,7 +619,20 @@ export class MessageService {
     )
 
     // 3. Resolve reactor JID and Identity ID
-    const reactorJid = reactionKey.participant || (reactionKey.remoteJid?.endsWith('@g.us') ? null : reactionKey.remoteJid)
+    let reactorJid = reactionKey.participant || (reactionKey.remoteJid?.endsWith('@g.us') ? null : reactionKey.remoteJid)
+    if (reactionKey.fromMe) {
+      if (sock?.user) {
+        const myRawJid = sock.user.id || ''
+        const myLid = (sock.user as any)?.lid || ''
+        reactorJid = myLid ? myLid.split(':')[0] + '@lid' : (myRawJid ? myRawJid.split(':')[0] + '@s.whatsapp.net' : reactorJid)
+      } else {
+        const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
+        if (meIdent?.phoneNumber) {
+          reactorJid = meIdent.phoneNumber
+        }
+      }
+    }
+
     let reactorId: number | null = null
 
     if (reactionKey.fromMe) {

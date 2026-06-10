@@ -16,7 +16,7 @@ export class AIToolInitializer {
    */
   static initializeAll(getSock: () => WASocket | null, services: ServiceContainer) {
     // 1. Instantiate tools
-    const sendMessageTool = new SendMessageTool(getSock, services.messageService, services.chatService);
+    const sendMessageTool = new SendMessageTool(getSock, services.messageActionService);
     const readChatTool = new ReadChatTool(getSock);
     const queryDatabaseTool = new QueryDatabaseTool();
     const messageActionTool = new MessageActionTool(getSock, services.messageActionService);

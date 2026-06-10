@@ -40,6 +40,10 @@ export class WhatsAppConnectionManager {
     return this.currentSock
   }
 
+  public getBus(): WAEventBus | null {
+    return this.currentBus
+  }
+
   public async connect() {
     this.services.embeddingService.setPaused(false) // Clean start
     if (!this.mainWindow) {

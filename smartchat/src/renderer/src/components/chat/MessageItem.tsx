@@ -145,15 +145,17 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+  const isMeReaction = (senderId: string, senderName?: string | null) => {
+    if (senderName === 'Me' || senderId === 'Me') return true
+    if (!myJid) return false
+    return senderId.split('@')[0] === myJid.split('@')[0]
+  }
+
   const handleReactClick = async (emoji: string) => {
     setShowReactionMenu(false)
     setShowFullEmojiPicker(false)
     try {
-      const myExistingReaction = msg.reactions?.find(r => 
-        r.senderId === myJid || 
-        r.senderName === 'Me' || 
-        r.senderId === 'Me'
-      )
+      const myExistingReaction = msg.reactions?.find(r => isMeReaction(r.senderId, r.senderName))
       if (myExistingReaction && myExistingReaction.text === emoji) {
         await api.reactMessage(msg.chatJid, msg.id, '')
       } else {
@@ -356,7 +358,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
             <div className="quick-reaction-bar">
               {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => {
                 const isMyReaction = msg.reactions?.some(r => 
-                  (r.senderId === myJid || r.senderName === 'Me' || r.senderId === 'Me') && r.text === emoji
+                  isMeReaction(r.senderId, r.senderName) && r.text === emoji
                 )
                 return (
                   <button 

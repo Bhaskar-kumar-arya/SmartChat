@@ -14,7 +14,13 @@ import { AIChatSessionService } from './services/ai/AIChatSessionService'
 import { AIChatExportService } from './services/ai/AIChatExportService'
 import { NotificationService } from './services/notification/NotificationService'
 
-export function createServices(prisma: PrismaClient, getMainWindow: () => BrowserWindow | null) {
+import type { WAEventBus } from './services/whatsapp/WAEventBus'
+
+export function createServices(
+  prisma: PrismaClient,
+  getMainWindow: () => BrowserWindow | null,
+  getBus: () => WAEventBus | null
+) {
   // 1. Foundation services (no service dependencies)
   const contactService = new ContactService(prisma)
   const embeddingService = new EmbeddingService(prisma)
@@ -25,7 +31,7 @@ export function createServices(prisma: PrismaClient, getMainWindow: () => Browse
   // 2. Services with service dependencies
   const chatService = new ChatService(prisma, contactService)
   const messageService = new MessageService(prisma, contactService, embeddingService)
-  const messageActionService = new MessageActionService(prisma, contactService, messageService, chatService)
+  const messageActionService = new MessageActionService(prisma, contactService, messageService, chatService, getBus)
   const mediaService = new MediaService(prisma, messageService, contactService)
   const searchService = new SearchService(prisma, contactService, embeddingService)
 
