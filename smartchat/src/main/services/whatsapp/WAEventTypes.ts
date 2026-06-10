@@ -107,7 +107,7 @@ export interface GroupParticipantsEvent {
 
 export interface ReactionEvent {
   reactions: any[]
-  sock: WASocket
+  sock: WASocket | null
 }
 
 export interface PresenceEvent {

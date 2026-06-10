@@ -13,6 +13,8 @@ import { AIService } from './services/ai/AIService'
 import { AIChatSessionService } from './services/ai/AIChatSessionService'
 import { AIChatExportService } from './services/ai/AIChatExportService'
 import { NotificationService } from './services/notification/NotificationService'
+import { SecretMessageService } from './services/whatsapp/secret/SecretMessageService'
+import { MessageReactionStrategy } from './services/whatsapp/secret/MessageReactionStrategy'
 
 import type { WAEventBus } from './services/whatsapp/WAEventBus'
 
@@ -27,10 +29,12 @@ export function createServices(
   const dataWipeService = new DataWipeService(prisma)
   const receiptService = new ReceiptService(prisma, contactService)
   const notificationService = new NotificationService(getMainWindow)
+  const secretMessageService = new SecretMessageService(prisma)
+  secretMessageService.registerStrategy(new MessageReactionStrategy(getBus))
 
   // 2. Services with service dependencies
   const chatService = new ChatService(prisma, contactService)
-  const messageService = new MessageService(prisma, contactService, embeddingService)
+  const messageService = new MessageService(prisma, contactService, embeddingService, secretMessageService)
   const messageActionService = new MessageActionService(prisma, contactService, messageService, chatService, getBus)
   const mediaService = new MediaService(prisma, messageService, contactService)
   const searchService = new SearchService(prisma, contactService, embeddingService)
@@ -53,7 +57,8 @@ export function createServices(
     aiService,
     aiChatSessionService,
     aiChatExportService,
-    notificationService
+    notificationService,
+    secretMessageService
   }
 }
 

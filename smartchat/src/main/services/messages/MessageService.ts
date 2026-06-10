@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
 import { EmbeddingService } from '../search/EmbeddingService'
+import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils'
 import { BrowserWindow } from 'electron'
@@ -27,7 +28,8 @@ export class MessageService {
   constructor(
     private prisma: PrismaClient,
     private contactService: ContactService,
-    private embeddingService: EmbeddingService
+    private embeddingService: EmbeddingService,
+    private secretMessageService: SecretMessageService
   ) {}
 
 
@@ -38,6 +40,11 @@ export class MessageService {
   async processMessage(msg: BaileysMessage, _sock: WASocket | null): Promise<ProcessedMessage | ProtocolResult | null> {
     const key = msg.key
     if (!key?.id) return null
+
+    // Intercept and handle secret encrypted messages or encrypted reactions
+    if (msg.message?.secretEncryptedMessage || msg.message?.encReactionMessage) {
+      return this.secretMessageService.handleSecretMessage(msg, _sock)
+    }
 
     // 1. Unwrap and safely JSON-ify
     let rawMessage: any = null
