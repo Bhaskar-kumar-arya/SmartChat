@@ -293,12 +293,22 @@ export class EmbeddingService implements IEmbeddingService {
     const vectors = await this.prisma.messageVector.findMany()
     console.log(`[EmbeddingService] Syncing ${vectors.length} vectors to virtual table...`)
     for (const v of vectors) {
-      await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, v.messageId)
-      await this.prisma.$executeRawUnsafe(
-        `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
-        v.messageId,
-        v.vector
-      )
+      try {
+        const parsed = JSON.parse(v.vector)
+        if (Array.isArray(parsed) && parsed.length !== 768) {
+          console.warn(`[EmbeddingService] Dimension mismatch for message ${v.messageId} (expected 768, got ${parsed.length}). Deleting stale vector.`)
+          await this.prisma.messageVector.delete({ where: { messageId: v.messageId } }).catch(() => {})
+          continue
+        }
+        await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, v.messageId)
+        await this.prisma.$executeRawUnsafe(
+          `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
+          v.messageId,
+          v.vector
+        )
+      } catch (err) {
+        console.error(`[EmbeddingService] Error syncing vector for ${v.messageId}:`, err)
+      }
     }
     console.log('[EmbeddingService] Sync complete.')
   }

@@ -13,6 +13,32 @@ export class NotificationService implements INotificationService {
 
   constructor(private getMainWindow: () => BrowserWindow | null) {
     this.provider = new ElectronNotificationProvider()
+    this.initPreferences()
+  }
+
+  private initPreferences(): void {
+    if (!fs.existsSync(preferencesPath)) {
+      const defaultPrefs: NotificationPreferences = {
+        enabled: true,
+        soundEnabled: true,
+        notifyWhenFocused: false,
+        minimizeToTray: true,
+        launchOnStartup: true
+      }
+      this.writePreferences(defaultPrefs)
+      if (app.isPackaged) {
+        try {
+          app.setLoginItemSettings({
+            openAtLogin: true,
+            path: app.getPath('exe'),
+            args: ['--hidden']
+          })
+          console.log('[NotificationService] Default startup settings initialized: openAtLogin=true')
+        } catch (err) {
+          console.error('Failed to set initial startup settings:', err)
+        }
+      }
+    }
   }
 
   setActiveChat(jid: string | null): void {
@@ -31,6 +57,19 @@ export class NotificationService implements INotificationService {
     const current = this.readPreferences()
     const updated = { ...current, ...prefs }
     this.writePreferences(updated)
+
+    if (prefs.launchOnStartup !== undefined && app.isPackaged) {
+      try {
+        app.setLoginItemSettings({
+          openAtLogin: prefs.launchOnStartup,
+          path: app.getPath('exe'),
+          args: ['--hidden']
+        })
+        console.log(`[NotificationService] Startup entry set: openAtLogin=${prefs.launchOnStartup}`)
+      } catch (err) {
+        console.error('Failed to set login item settings:', err)
+      }
+    }
   }
 
   notify(options: NotificationOptions): void {
@@ -151,7 +190,8 @@ export class NotificationService implements INotificationService {
       enabled: true,
       soundEnabled: true,
       notifyWhenFocused: false,
-      minimizeToTray: true
+      minimizeToTray: true,
+      launchOnStartup: true
     }
 
     try {

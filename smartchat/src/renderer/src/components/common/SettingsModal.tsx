@@ -10,7 +10,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     enabled: true,
     soundEnabled: true,
     notifyWhenFocused: false,
-    minimizeToTray: true
+    minimizeToTray: true,
+    launchOnStartup: true
   })
   const [loading, setLoading] = useState(true)
 
@@ -74,6 +75,19 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               </div>
               <span className="settings-caption">
                 When closed, keep SmartChat running in the system tray for background tasks and notifications.
+              </span>
+
+              <div className="settings-row">
+                <span className="settings-label">Launch on Startup</span>
+                <input
+                  type="checkbox"
+                  className="settings-checkbox"
+                  checked={prefs.launchOnStartup}
+                  onChange={() => handleToggle('launchOnStartup')}
+                />
+              </div>
+              <span className="settings-caption">
+                Start the app automatically when you log in to your computer to receive real-time notifications in the background.
               </span>
             </div>
 

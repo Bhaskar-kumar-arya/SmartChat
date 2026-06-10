@@ -114,8 +114,8 @@ declare global {
       exportAiChat: (session: any, messages: any[]) => Promise<void>
       deleteExportedAiChat: (sessionId: string) => Promise<void>
       duplicateExportedAiChat: (sessionId: string) => Promise<void>
-      getNotificationPreferences: () => Promise<{ enabled: boolean, soundEnabled: boolean, notifyWhenFocused: boolean, minimizeToTray: boolean }>
-      setNotificationPreferences: (prefs: Partial<{ enabled: boolean, soundEnabled: boolean, notifyWhenFocused: boolean, minimizeToTray: boolean }>) => Promise<void>
+      getNotificationPreferences: () => Promise<{ enabled: boolean, soundEnabled: boolean, notifyWhenFocused: boolean, minimizeToTray: boolean, launchOnStartup: boolean }>
+      setNotificationPreferences: (prefs: Partial<{ enabled: boolean, soundEnabled: boolean, notifyWhenFocused: boolean, minimizeToTray: boolean, launchOnStartup: boolean }>) => Promise<void>
       setActiveChat: (jid: string | null) => Promise<void>
       onOpenChat: (callback: (chat: { jid: string; name: string }) => void) => () => void
     }

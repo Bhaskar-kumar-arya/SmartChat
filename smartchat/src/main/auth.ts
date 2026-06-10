@@ -67,7 +67,11 @@ const adapter = new Proxy(baseAdapter, {
         const conn = await (value as Function).apply(target, args);
         if (conn && conn.client) {
           try {
-            sqliteVec.load(conn.client);
+            let loadablePath = sqliteVec.getLoadablePath();
+            if (loadablePath.includes('app.asar') && !loadablePath.includes('app.asar.unpacked')) {
+              loadablePath = loadablePath.replace('app.asar', 'app.asar.unpacked');
+            }
+            conn.client.loadExtension(loadablePath);
             console.log("[AdapterPatch] sqlite-vec successfully loaded into connection");
           } catch (e) {
             console.error("[AdapterPatch] Failed to load sqlite-vec into connection:", e);

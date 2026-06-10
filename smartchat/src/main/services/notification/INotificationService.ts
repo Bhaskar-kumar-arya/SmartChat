@@ -12,6 +12,7 @@ export interface NotificationPreferences {
   soundEnabled: boolean
   notifyWhenFocused: boolean
   minimizeToTray: boolean
+  launchOnStartup: boolean
 }
 
 export interface INotificationService {

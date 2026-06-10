@@ -79,8 +79,17 @@ export class WhatsAppConnectionManager {
     }
 
     const { state, saveCreds } = await usePrismaAuthState()
-    const { version, isLatest } = await fetchLatestBaileysVersion()
-    console.log(`using WA v${version.join('.')}, isLatest: ${isLatest}`)
+    let version = [2, 3000, 1035194821]
+    let isLatest = false
+    try {
+      console.log('[Connection] Fetching latest WhatsApp version from Baileys...')
+      const latest = await fetchLatestBaileysVersion()
+      version = latest.version
+      isLatest = latest.isLatest
+      console.log(`[Connection] Successfully fetched WA v${version.join('.')}, isLatest: ${isLatest}`)
+    } catch (err) {
+      console.warn('[Connection] Failed to fetch latest WhatsApp version (possibly offline). Using fallback version.', err)
+    }
 
     if (this.isFreshLogin) {
       await this.prisma.authState.deleteMany({

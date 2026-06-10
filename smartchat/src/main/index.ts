@@ -10,12 +10,63 @@ import { registerIpcHandlers } from './ipcHandlers'
 import { createServices } from './ServiceContainer'
 import { TrayService } from './services/notification/TrayService'
 
-// Register 'app' protocol as privileged BEFORE app is ready
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
-])
+function getLogFile(): string {
+  try {
+    const logDir = app.isPackaged
+      ? join(app.getPath('userData'), 'logs')
+      : join(process.cwd(), 'dev_only', 'logs')
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true })
+    }
+    return join(logDir, 'main.log')
+  } catch {
+    return join(process.cwd(), 'main.log')
+  }
+}
 
-let mainWindow: BrowserWindow | null = null
+function logMain(message: string, error?: any) {
+  const timestamp = new Date().toISOString()
+  const errorMsg = error ? ` | Error: ${error.message || error}\n${error.stack || ''}` : ''
+  const logLine = `[${timestamp}] ${message}${errorMsg}\n`
+  console.log(message, error || '')
+  try {
+    fs.appendFileSync(getLogFile(), logLine, 'utf8')
+  } catch (err) {
+    console.error('[Main] Failed to write to main log file:', err)
+  }
+}
+
+// Global Exception Handlers
+process.on('uncaughtException', (error) => {
+  logMain('Uncaught Exception in main process', error)
+})
+
+process.on('unhandledRejection', (reason) => {
+  logMain('Unhandled Rejection in main process', reason)
+})
+
+// Single Instance Lock
+const gotTheLock = app.requestSingleInstanceLock()
+
+if (!gotTheLock) {
+  logMain('[Main] Another instance is already running. Quitting.')
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    logMain('[Main] Second instance detected. Restoring and focusing main window.')
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  // Register 'app' protocol as privileged BEFORE app is ready
+  protocol.registerSchemesAsPrivileged([
+    { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
+  ])
+
+  let mainWindow: BrowserWindow | null = null
 let services: ReturnType<typeof createServices>
 let waConnectionManager: WhatsAppConnectionManager
 let trayService: TrayService | null = null
@@ -32,7 +83,8 @@ function createWindow(): void {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: false
     }
   })
 
@@ -53,7 +105,12 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     if (mainWindow) {
-      mainWindow.show()
+      const isAutoStart = process.argv.includes('--hidden')
+      if (!isAutoStart) {
+        mainWindow.show()
+      } else {
+        console.log('[Main] Started hidden via --hidden argument')
+      }
       waConnectionManager.setWindow(mainWindow)
       waConnectionManager.connect()
     }
@@ -72,7 +129,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.electron.smartchat')
 
   protocol.handle('app', async (request) => {
     try {
@@ -149,3 +206,5 @@ app.on('will-quit', async (e) => {
     app.exit(0);
   }
 })
+
+}

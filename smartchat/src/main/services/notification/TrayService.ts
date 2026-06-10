@@ -1,4 +1,4 @@
-import { Tray, Menu, app, BrowserWindow } from 'electron'
+import { Tray, Menu, app, BrowserWindow, nativeImage } from 'electron'
 import icon from '../../../../resources/icon.png?asset'
 
 export class TrayService {
@@ -11,7 +11,12 @@ export class TrayService {
 
   init(): void {
     try {
-      this.tray = new Tray(icon)
+      let iconPath = icon
+      if (typeof iconPath === 'string' && iconPath.includes('app.asar') && !iconPath.includes('app.asar.unpacked')) {
+        iconPath = iconPath.replace('app.asar', 'app.asar.unpacked')
+      }
+      const image = nativeImage.createFromPath(iconPath)
+      this.tray = new Tray(image)
       this.tray.setToolTip('SmartChat')
 
       const contextMenu = Menu.buildFromTemplate([
