@@ -1,4 +1,4 @@
-appId: com.electron.app
+appId: com.electron.smartchat
 productName: smartchat
 directories:
   buildResources: build
@@ -7,12 +7,18 @@ files:
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md,tsconfig.web.tsbuildinfo}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!node_modules/.prisma/**/*'
   - '!node_modules/@prisma/client/**/*'
   - '!node_modules/@prisma/client-runtime-utils/**/*'
+  - '!dev_only/**/*'
+  - '!prisma/dev.db'
+  - '!node_modules/onnxruntime-node/bin/napi-v6/darwin/**/*'
+  - '!node_modules/onnxruntime-node/bin/napi-v6/linux/**/*'
+  - '!node_modules/@xenova/transformers/node_modules/onnxruntime-node/bin/napi-v3/darwin/**/*'
+  - '!node_modules/@xenova/transformers/node_modules/onnxruntime-node/bin/napi-v3/linux/**/*'
 asarUnpack:
   - resources/**
   - node_modules/sqlite-vec-windows-x64/**

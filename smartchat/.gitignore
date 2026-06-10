@@ -13,3 +13,4 @@ venv/
 /prisma/dev.db-journal
 /scripts/node_modules
 /wiki
+/dev_only

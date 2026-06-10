@@ -172,6 +172,7 @@ model Message {
   isDeleted   Boolean   @default(false)
   /// True if the message was subsequently edited by the sender.
   isEdited    Boolean   @default(false)
+  status      String?   @default("PENDING")
 
   reactions   Reaction[]
   vector      MessageVector?
@@ -271,4 +272,16 @@ model LidMap {
   lastSeenDateTime BigInt
 
   @@index([pn])
+}
+
+// ── 13. MESSAGE RECEIPT ──────────────────────────────────────────────────────
+/// Delivery/read receipts for messages. Composite PK on (messageId, userJid).
+model MessageReceipt {
+  messageId String
+  userJid   String
+  status    String
+  timestamp BigInt
+
+  @@id([messageId, userJid])
+  @@index([messageId])
 }
