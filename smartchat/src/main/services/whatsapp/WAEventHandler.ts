@@ -60,6 +60,41 @@ export class WAEventHandler {
           if (!processed.fromMe) {
             if (messageType !== 'reactionMessage') {
               await this.services.chatService.incrementUnread(chatJid, timestamp)
+
+              // Trigger desktop notification
+              try {
+                const senderJid = cleanJid(participant || chatJid)
+                const nameMap = await this.services.contactService.batchResolveNames([senderJid], sock)
+                const senderName = nameMap.get(senderJid) || senderJid.split('@')[0]
+
+                let chatName = chatJid
+                const chat = await this.prisma.chat.findUnique({ where: { jid: chatJid } })
+                if (chat?.name) {
+                  chatName = chat.name
+                } else {
+                  const chatNameMap = await this.services.contactService.batchResolveNames([chatJid], sock)
+                  chatName = chatNameMap.get(chatJid) || chatJid.split('@')[0]
+                }
+
+                let profilePicUrl: string | null = null
+                try {
+                  const targetJid = chatJid.endsWith('@g.us') ? chatJid : senderJid
+                  profilePicUrl = await this.services.contactService.getProfilePicture(targetJid, 'preview', sock)
+                } catch (pErr) {
+                  console.error('Failed to get notification profile picture:', pErr)
+                }
+
+                this.services.notificationService.notify({
+                  chatJid,
+                  chatName,
+                  senderName,
+                  messageType,
+                  textContent: processed.textContent || undefined,
+                  profilePicUrl: profilePicUrl || undefined
+                })
+              } catch (notifyErr) {
+                console.error('[messages.upsert:notify] Notification error:', notifyErr)
+              }
             }
           } else if (messageType !== 'reactionMessage') {
             await this.services.chatService.updateTimestamp(chatJid, timestamp)

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import ChatList from './ChatList'
 import MessageView from './MessageView'
 import MessageInput from './MessageInput'
@@ -61,6 +61,19 @@ export default function ChatLayout() {
     setReplyingTo(null)
     setTargetMessageId(messageId || null)
   }, [])
+
+  useEffect(() => {
+    window.api.setActiveChat(activeJid).catch(console.error)
+  }, [activeJid])
+
+  useEffect(() => {
+    const unsubscribe = window.api.onOpenChat((chat) => {
+      handleSelectChat(chat.jid, chat.name)
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [handleSelectChat])
 
   const handleSendMessage = useCallback(async (text: string, mentions?: string[]) => {
     await sendMessage(text, replyingTo?.id, mentions)

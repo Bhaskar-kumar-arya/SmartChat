@@ -27,7 +27,7 @@ export class EmbeddingService implements IEmbeddingService {
   private pendingJobs = new Map<number, { resolve: (v: any) => void; reject: (e: any) => void }>()
   private initPromise: Promise<void> | null = null
   private isPaused = false
-  private modelName = 'bhasha-embed-onnx-quantized'
+  private modelName = 'Xenova/all-MiniLM-L6-v2'
   private onActiveStateChange?: (isActive: boolean) => void
   private activeJobs = 0
 

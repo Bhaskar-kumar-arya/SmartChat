@@ -8,6 +8,7 @@ import { WhatsAppConnectionManager } from './services/whatsapp'
 import { prisma, initVectorDb } from './auth'
 import { registerIpcHandlers } from './ipcHandlers'
 import { createServices } from './ServiceContainer'
+import { TrayService } from './services/notification/TrayService'
 
 // Register 'app' protocol as privileged BEFORE app is ready
 protocol.registerSchemesAsPrivileged([
@@ -17,6 +18,8 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow: BrowserWindow | null = null
 let services: ReturnType<typeof createServices>
 let waConnectionManager: WhatsAppConnectionManager
+let trayService: TrayService | null = null
+let isQuitting = false
 
 const getSock = () => waConnectionManager?.getSocket() || null
 
@@ -30,6 +33,21 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
+    }
+  })
+
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      try {
+        const prefs = services.notificationService.getPreferencesSync()
+        if (prefs.minimizeToTray) {
+          event.preventDefault()
+          mainWindow?.hide()
+          return
+        }
+      } catch (err) {
+        console.error('Error in window close interceptor:', err)
+      }
     }
   })
 
@@ -84,7 +102,18 @@ app.whenReady().then(() => {
 
   ipcMain.on('ping', () => console.log('pong'))
 
-  services = createServices(prisma)
+  services = createServices(prisma, () => mainWindow)
+
+  // Initialize Tray Service
+  trayService = new TrayService(
+    () => mainWindow,
+    () => {
+      isQuitting = true
+      app.quit()
+    }
+  )
+  trayService.init()
+
   waConnectionManager = new WhatsAppConnectionManager(services, prisma)
   registerIpcHandlers(prisma, services, getSock, waConnectionManager)
   initVectorDb(services.embeddingService)

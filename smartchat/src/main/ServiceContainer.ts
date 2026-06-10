@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { BrowserWindow } from 'electron'
 import { ContactService } from './services/contacts/ContactService'
 import { EmbeddingService } from './services/search/EmbeddingService'
 import { DataWipeService } from './services/DataWipeService'
@@ -11,13 +12,15 @@ import { SearchService } from './services/search/SearchService'
 import { AIService } from './services/ai/AIService'
 import { AIChatSessionService } from './services/ai/AIChatSessionService'
 import { AIChatExportService } from './services/ai/AIChatExportService'
+import { NotificationService } from './services/notification/NotificationService'
 
-export function createServices(prisma: PrismaClient) {
+export function createServices(prisma: PrismaClient, getMainWindow: () => BrowserWindow | null) {
   // 1. Foundation services (no service dependencies)
   const contactService = new ContactService(prisma)
   const embeddingService = new EmbeddingService(prisma)
   const dataWipeService = new DataWipeService(prisma)
   const receiptService = new ReceiptService(prisma, contactService)
+  const notificationService = new NotificationService(getMainWindow)
 
   // 2. Services with service dependencies
   const chatService = new ChatService(prisma, contactService)
@@ -43,8 +46,10 @@ export function createServices(prisma: PrismaClient) {
     searchService,
     aiService,
     aiChatSessionService,
-    aiChatExportService
+    aiChatExportService,
+    notificationService
   }
 }
 
 export type ServiceContainer = ReturnType<typeof createServices>
+

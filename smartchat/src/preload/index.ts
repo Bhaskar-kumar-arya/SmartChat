@@ -255,6 +255,20 @@ const api = {
   },
   duplicateExportedAiChat: (sessionId: string) => {
     return ipcRenderer.invoke('duplicate-exported-ai-chat', sessionId)
+  },
+  getNotificationPreferences: () => {
+    return ipcRenderer.invoke('get-notification-preferences')
+  },
+  setNotificationPreferences: (prefs: any) => {
+    return ipcRenderer.invoke('set-notification-preferences', prefs)
+  },
+  setActiveChat: (jid: string | null) => {
+    return ipcRenderer.invoke('set-active-chat', jid)
+  },
+  onOpenChat: (callback: (chat: { jid: string; name: string }) => void) => {
+    const listener = (_event: any, chat: { jid: string; name: string }) => callback(chat)
+    ipcRenderer.on('open-chat', listener)
+    return () => { ipcRenderer.removeListener('open-chat', listener) }
   }
 }
 

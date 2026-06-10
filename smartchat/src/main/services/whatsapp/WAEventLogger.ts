@@ -106,11 +106,11 @@ class WAEventLogger {
         this.logsDir = path.join(electronApp.getPath('userData'), 'logs')
       } else {
         // Dev: process.cwd() === project root when running `npm run dev`
-        this.logsDir = path.join(process.cwd(), 'logs')
+        this.logsDir = path.join(process.cwd(), 'dev_only', 'logs')
       }
     } catch {
       // Fallback: always works
-      this.logsDir = path.join(process.cwd(), 'logs')
+      this.logsDir = path.join(process.cwd(), 'dev_only', 'logs')
     }
 
     try {

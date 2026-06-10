@@ -328,4 +328,16 @@ export function registerIpcHandlers(
   ipcMain.handle('get-message-receipts', async (_event, messageId: string) => {
     return services.receiptService.getMessageReceipts(messageId, getSock())
   })
+
+  ipcMain.handle('get-notification-preferences', async () => {
+    return services.notificationService.getPreferences()
+  })
+
+  ipcMain.handle('set-notification-preferences', async (_event, prefs: any) => {
+    return services.notificationService.setPreferences(prefs)
+  })
+
+  ipcMain.handle('set-active-chat', async (_event, jid: string | null) => {
+    services.notificationService.setActiveChat(jid)
+  })
 }
