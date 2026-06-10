@@ -13,6 +13,8 @@ import {
 import { DataWipeService } from '../DataWipeService'
 import type { ServiceContainer } from '../../ServiceContainer'
 import { WAEventHandler } from './WAEventHandler'
+import { WAEventBus } from './WAEventBus'
+import { createSubscribers } from './subscribers'
 import { HistorySyncManager } from './HistorySyncManager'
 
 export class WhatsAppConnectionManager {
@@ -21,6 +23,7 @@ export class WhatsAppConnectionManager {
   private isFreshLogin = false
   private mainWindow: BrowserWindow | null = null
   private historySyncManager: HistorySyncManager
+  private currentBus: WAEventBus | null = null
 
   constructor(
     private services: ServiceContainer,
@@ -60,6 +63,12 @@ export class WhatsAppConnectionManager {
         console.warn('[Connection] Error cleaning up old socket:', err)
       }
       this.currentSock = null
+    }
+
+    // Tear down previous event bus and subscribers
+    if (this.currentBus) {
+      this.currentBus.removeAllListeners()
+      this.currentBus = null
     }
 
     // Clean up orphan data if not logged in
@@ -154,7 +163,12 @@ export class WhatsAppConnectionManager {
     // creds.update must stay as a direct listener (saveCreds is a plain callback)
     sock.ev.on('creds.update', saveCreds)
 
-    const eventHandler = new WAEventHandler(this.services, () => this.mainWindow, this.prisma)
+    // Create the event bus and wire up all subscribers for this connection
+    const bus = new WAEventBus()
+    this.currentBus = bus
+    createSubscribers(bus, this.services, () => this.mainWindow, this.prisma)
+
+    const eventHandler = new WAEventHandler(this.services, bus)
 
     // All other events go through ev.process()
     sock.ev.process(async (events) => {
