@@ -52,6 +52,7 @@ export interface ProtocolResult {
   type: 'protocol'
   subType: 'revoke' | 'edit'
   targetId: string
+  chatJid?: string
   key: any
 }
 

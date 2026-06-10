@@ -49,13 +49,13 @@ export class WAEventHandler {
           if (processed.subType === 'revoke') {
             await this.bus.emit('message:deleted', {
               messageId: processed.targetId,
-              chatJid: cleanJid(processed.key.remoteJid),
+              chatJid: processed.chatJid || cleanJid(processed.key.remoteJid),
               fromMe: processed.key.fromMe ?? false
             })
           } else if (processed.subType === 'edit') {
             await this.bus.emit('message:edited', {
               messageId: processed.targetId,
-              chatJid: cleanJid(processed.key.remoteJid),
+              chatJid: processed.chatJid || cleanJid(processed.key.remoteJid),
               editedTextContent: null,
               editedContent: processed.key,
               sock
@@ -99,35 +99,35 @@ export class WAEventHandler {
         const key = protocol.key
         if (!key?.id) continue
 
-        switch (protocol.type) {
-          case PROTOCOL_TYPE_REVOKE:
-            console.log('[WAEventHandler] Message revoked:', key.id)
-            await this.bus.emit('message:deleted', {
-              messageId: key.id,
-              chatJid: cleanJid(key.remoteJid),
-              fromMe: key.fromMe ?? false
-            })
-            break
+        const isRevoke = protocol.type === PROTOCOL_TYPE_REVOKE || protocol.type === 'REVOKE'
+        const isEdit = protocol.type === PROTOCOL_TYPE_EDIT || protocol.type === 'MESSAGE_EDIT'
 
-          case PROTOCOL_TYPE_EDIT: {
-            console.log('[WAEventHandler] Message edited:', key.id)
-            const editedMsg = protocol.editedMessage
-            if (editedMsg) {
-              const textContent =
-                editedMsg.conversation ||
-                editedMsg.extendedTextMessage?.text ||
-                editedMsg.imageMessage?.caption ||
-                editedMsg.videoMessage?.caption ||
-                null
-              await this.bus.emit('message:edited', {
-                messageId: key.id,
-                chatJid: cleanJid(key.remoteJid),
-                editedTextContent: textContent,
-                editedContent: editedMsg,
-                sock
-              })
-            }
-            break
+        if (isRevoke) {
+          console.log('[WAEventHandler] Message revoked:', key.id)
+          const chatJid = cleanJid(update.key?.remoteJid || key.remoteJid)
+          await this.bus.emit('message:deleted', {
+            messageId: key.id,
+            chatJid,
+            fromMe: key.fromMe ?? false
+          })
+        } else if (isEdit) {
+          console.log('[WAEventHandler] Message edited:', key.id)
+          const editedMsg = protocol.editedMessage
+          if (editedMsg) {
+            const textContent =
+              editedMsg.conversation ||
+              editedMsg.extendedTextMessage?.text ||
+              editedMsg.imageMessage?.caption ||
+              editedMsg.videoMessage?.caption ||
+              null
+            const chatJid = cleanJid(update.key?.remoteJid || key.remoteJid)
+            await this.bus.emit('message:edited', {
+              messageId: key.id,
+              chatJid,
+              editedTextContent: textContent,
+              editedContent: editedMsg,
+              sock
+            })
           }
         }
       } catch (err) {

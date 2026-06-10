@@ -149,24 +149,14 @@ export class MessageService {
         if (targetId) {
             try {
                 if (protocol.type === 0 || protocol.type === 'REVOKE') {
-                    await this.prisma.message.update({
-                        where: { id: targetId },
-                        data: { isDeleted: true }
-                    }).catch(() => {})
-                    return { type: 'protocol', subType: 'revoke', targetId, key: protocol.key }
+                    await this.revokeMessageInDb(targetId)
+                    return { type: 'protocol', subType: 'revoke', targetId, chatJid: remoteJid, key: protocol.key }
                 } else if (protocol.type === 14 || protocol.type === 'MESSAGE_EDIT') {
                     const editedMsg = protocol.editedMessage
                     const editContent = editedMsg?.conversation || editedMsg?.extendedTextMessage?.text || (editedMsg?.imageMessage?.caption) || (editedMsg?.videoMessage?.caption) || null
                     
-                    await this.prisma.message.update({
-                        where: { id: targetId },
-                        data: { 
-                            content: JSON.stringify(editedMsg || {}), 
-                            textContent: editContent,
-                            isEdited: true 
-                        }
-                    }).catch(() => {})
-                    return { type: 'protocol', subType: 'edit', targetId, key: protocol.key }
+                    await this.editMessageInDb(targetId, editContent, editedMsg)
+                    return { type: 'protocol', subType: 'edit', targetId, chatJid: remoteJid, key: protocol.key }
                 }
             } catch (err) {
                 console.error('[MessageService] Error handling protocol message:', err)
@@ -272,6 +262,34 @@ export class MessageService {
         isEdited: false,
         status: mapBaileysStatus(msg.status)
     }
+  }
+
+  /**
+   * Marks a message as deleted in the database.
+   */
+  async revokeMessageInDb(messageId: string): Promise<void> {
+    await this.prisma.message.update({
+      where: { id: messageId },
+      data: { isDeleted: true }
+    }).catch((err) => {
+      console.warn(`[MessageService] Failed to mark message ${messageId} as deleted:`, err)
+    })
+  }
+
+  /**
+   * Updates a message's content and marks it as edited in the database.
+   */
+  async editMessageInDb(messageId: string, textContent: string | null, editedContent: any): Promise<void> {
+    await this.prisma.message.update({
+      where: { id: messageId },
+      data: {
+        content: JSON.stringify(editedContent || {}),
+        textContent: textContent,
+        isEdited: true
+      }
+    }).catch((err) => {
+      console.warn(`[MessageService] Failed to update edited message ${messageId}:`, err)
+    })
   }
 
   /**

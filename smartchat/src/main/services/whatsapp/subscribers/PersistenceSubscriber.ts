@@ -16,6 +16,8 @@ import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type {
   IncomingMessageEvent,
   AppendMessagesEvent,
+  MessageDeletedEvent,
+  MessageEditedEvent,
   ChatUpdatedEvent,
   ChatUpsertedEvent,
 } from '../WAEventTypes'
@@ -29,11 +31,8 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
   register(bus: WAEventBus): void {
     bus.on('messages:append',  this.onAppend.bind(this))
     bus.on('message:incoming', this.onIncoming.bind(this))
-    // NOTE: message:deleted and message:edited are NOT handled here.
-    // MessageService.processMessage() already performs the DB write for protocol
-    // messages (revoke/edit) before WAEventHandler emits these domain events.
-    // PersistenceSubscriber adding a second write would be a duplicate.
-    // UIBroadcastSubscriber handles these events to push UI updates.
+    bus.on('message:deleted',  this.onDeleted.bind(this))
+    bus.on('message:edited',   this.onEdited.bind(this))
     bus.on('chat:updated',     this.onChatUpdated.bind(this))
     bus.on('chat:upserted',    this.onChatUpserted.bind(this))
   }
@@ -80,6 +79,26 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
       await this.services.chatService.upsertChat(event.jid, event.raw).catch(() => {})
     } catch (err) {
       console.error('[PersistenceSubscriber] Error upserting chat:', err)
+    }
+  }
+
+  private async onDeleted(event: MessageDeletedEvent): Promise<void> {
+    try {
+      await this.services.messageService.revokeMessageInDb(event.messageId)
+    } catch (err) {
+      console.error('[PersistenceSubscriber] Error updating DB for deleted message:', err)
+    }
+  }
+
+  private async onEdited(event: MessageEditedEvent): Promise<void> {
+    try {
+      await this.services.messageService.editMessageInDb(
+        event.messageId,
+        event.editedTextContent,
+        event.editedContent
+      )
+    } catch (err) {
+      console.error('[PersistenceSubscriber] Error updating DB for edited message:', err)
     }
   }
 }
