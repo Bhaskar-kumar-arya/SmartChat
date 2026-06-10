@@ -9,7 +9,7 @@ export class SecretMessageService {
   private strategies = new Map<number | string, ISecretMessageStrategy>()
 
   constructor(private prisma: PrismaClient) {
-    this.registerStrategy(new MessageEditStrategy(this.prisma))
+    this.registerStrategy(new MessageEditStrategy())
   }
 
   public registerStrategy(strategy: ISecretMessageStrategy) {

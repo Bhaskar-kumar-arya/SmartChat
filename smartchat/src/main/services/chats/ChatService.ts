@@ -336,13 +336,15 @@ export class ChatService {
           name,
           unreadCount: chat.unreadCount,
           timestamp: effectiveTimestamp.toString(),
-          lastMessage: lastMsg?.messageType === 'stickerMessage' ? 'Sticker' : 
-                       lastMsg?.messageType === 'lottieStickerMessage' ? 'Sticker' : 
-                       lastMsg?.messageType === 'imageMessage' ? 'Photo' : 
+          lastMessage: lastMsg?.messageType === 'stickerMessage' ? 'Sticker' :
+                       lastMsg?.messageType === 'lottieStickerMessage' ? 'Sticker' :
+                       lastMsg?.messageType === 'imageMessage' ? 'Photo' :
                        lastMsg?.messageType === 'videoMessage' ? 'Video' :
                        lastMsg?.messageType === 'ptvMessage' ? 'Video' :
                        lastMsg?.messageType === 'documentMessage' ? 'Document' :
-                       (lastMsg?.textContent || (lastMsg?.messageType && lastMsg?.messageType !== 'unknown' ? `[${lastMsg?.messageType}]` : '')),
+                       lastMsg?.messageType === 'audioMessage' ? 'Audio' :
+                       (lastMsg?.textContent ?? ''),
+          // Note: conversation/extendedTextMessage/unknown all fall through to textContent
           lastMessageType: lastMsg?.messageType || null,
           lastMessageTimestamp: effectiveTimestamp.toString(),
           pinned: chat.pinned,

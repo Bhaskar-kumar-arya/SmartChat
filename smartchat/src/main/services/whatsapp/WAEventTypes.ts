@@ -52,7 +52,7 @@ export interface MessageEditedEvent {
   messageId: string
   chatJid: string
   editedTextContent: string | null
-  editedContent: any  // raw edited message object for DB persist
+  editedContent: any | null  // null = already persisted by strategy, skip DB write
   sock: WASocket
 }
 

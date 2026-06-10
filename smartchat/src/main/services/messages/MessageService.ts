@@ -304,11 +304,16 @@ export class MessageService {
       ...(originalContextInfo ? { messageContextInfo: originalContextInfo } : {})
     }
 
+    // Derive the new messageType from editedContent so the DB column stays
+    // in sync with the content JSON (renderer uses messageType to pick renderer).
+    const newMessageType = editedContent?.extendedTextMessage ? 'extendedTextMessage' : 'conversation'
+
     await this.prisma.message.update({
       where: { id: messageId },
       data: {
         content: JSON.stringify(contentToStore),
         textContent: textContent,
+        messageType: newMessageType,
         isEdited: true
       }
     }).catch((err) => {

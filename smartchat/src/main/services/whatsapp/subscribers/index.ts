@@ -35,10 +35,10 @@ export function createSubscribers(
   prisma: PrismaClient
 ): IWAEventSubscriber[] {
   const subscribers: IWAEventSubscriber[] = [
-    new NotificationSubscriber(services),
-    new UIBroadcastSubscriber(services, getMainWindow, prisma),
     new PersistenceSubscriber(services),
     new ContactGroupSubscriber(services, prisma),
+    new NotificationSubscriber(services),
+    new UIBroadcastSubscriber(services, getMainWindow, prisma),
     new ReceiptSubscriber(services, getMainWindow),
   ]
 

@@ -141,9 +141,48 @@ export const useChats = (activeJid: string | null) => {
       })
     })
 
+    const unSubMsgEdited = api.onMessageEdited((msg: MessageItem) => {
+      setChats((prev) => {
+        const idx = prev.findIndex((c) => c.jid === msg.chatJid)
+        if (idx === -1) return prev
+
+        const existing = prev[idx]
+        const msgTs = BigInt(msg.timestamp || 0)
+        const chatTs = BigInt(existing.lastMessageTimestamp || existing.timestamp || 0)
+
+        // Only update preview if the edited message is the latest (or matches current last message timestamp)
+        if (msgTs >= chatTs) {
+          let lastMessageText = ''
+          if (msg.messageType === 'stickerMessage') {
+            lastMessageText = 'Sticker'
+          } else if (msg.messageType === 'imageMessage') {
+            lastMessageText = msg.textContent || 'Photo'
+          } else if (msg.messageType === 'videoMessage') {
+            lastMessageText = msg.textContent || 'Video'
+          } else if (msg.messageType === 'documentMessage') {
+            lastMessageText = msg.textContent || 'Document'
+          } else if (msg.messageType === 'audioMessage') {
+            lastMessageText = 'Voice message'
+          } else {
+            lastMessageText = msg.textContent || (msg.messageType && msg.messageType !== 'unknown' ? `[${msg.messageType}]` : '')
+          }
+
+          const updatedChat: ChatItem = {
+            ...existing,
+            lastMessage: lastMessageText,
+            lastMessageType: msg.messageType
+          }
+          const filtered = prev.filter((c) => c.jid !== msg.chatJid)
+          return sortChats([updatedChat, ...filtered])
+        }
+        return prev
+      })
+    })
+
     return () => {
       unSubNewMsg()
       unSubChatUpd()
+      unSubMsgEdited()
     }
   }, []) // Dependency array empty ensures we only register once
 

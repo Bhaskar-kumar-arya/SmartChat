@@ -55,9 +55,9 @@ export class WAEventHandler {
           } else if (processed.subType === 'edit') {
             await this.bus.emit('message:edited', {
               messageId: processed.targetId,
-              chatJid: processed.chatJid || cleanJid(processed.key.remoteJid),
-              editedTextContent: null,
-              editedContent: processed.key,
+              chatJid: processed.chatJid || cleanJid(processed.key?.remoteJid || ''),
+              editedTextContent: processed.editedTextContent ?? null,
+              editedContent: processed.editedContent ?? null,
               sock
             })
           }

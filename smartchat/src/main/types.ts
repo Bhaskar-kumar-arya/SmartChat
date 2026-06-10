@@ -54,6 +54,8 @@ export interface ProtocolResult {
   targetId: string
   chatJid?: string
   key: any
+  editedTextContent?: string | null
+  editedContent?: any
 }
 
 /** Raw Baileys message as received from events. */
