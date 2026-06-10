@@ -33,6 +33,7 @@ export interface IncomingMessageEvent {
  */
 export interface AppendMessagesEvent {
   messages: any[]
+  sock: any
 }
 
 /**

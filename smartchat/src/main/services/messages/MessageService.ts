@@ -322,6 +322,29 @@ export class MessageService {
   }
 
   /**
+   * Checks if a message is a protocol, reaction, or secret encrypted message
+   * that requires special per-message handling instead of simple bulk persistence.
+   */
+  isSpecialMessage(msg: BaileysMessage): boolean {
+    let rawMessage: any = null
+    if (msg.message) {
+      try {
+        rawMessage = JSON.parse(JSON.stringify(msg.message))
+      } catch {
+        rawMessage = null
+      }
+    }
+    const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
+    const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
+    return (
+      messageType === 'protocolMessage' ||
+      messageType === 'reactionMessage' ||
+      messageType === 'secretEncryptedMessage' ||
+      messageType === 'encReactionMessage'
+    )
+  }
+
+  /**
    * Synchronously parses a raw Baileys message into a plain data object (ParsedMessage).
    * Zero DB calls, zero side-effects — safe to call on large batches.
    * Returns null for messages that cannot or should not be bulk-persisted
@@ -330,6 +353,8 @@ export class MessageService {
   parseMessageSync(msg: BaileysMessage): ParsedMessage | null {
     const key = msg.key
     if (!key?.id) return null
+
+    if (this.isSpecialMessage(msg)) return null
 
     let rawMessage: any = null
     if (msg.message) {
@@ -343,12 +368,8 @@ export class MessageService {
     const remoteJid = cleanJid(key.remoteJid || '')
     const participantString = key.participant ? cleanJid(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
 
-    // Determine message type
     const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
     const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
-
-    // Protocol and reaction messages need special per-message handling — skip in bulk
-    if (messageType === 'protocolMessage' || messageType === 'reactionMessage') return null
 
     // Extract text content
     let textContent: string | null = null

@@ -34,7 +34,36 @@ export class WAEventHandler {
 
     // 'append' = backlog catch-up after reconnect. Fast bulk path.
     if (type === 'append') {
-      await this.bus.emit('messages:append', { messages })
+      // 1. Bulk-persist standard messages first
+      await this.bus.emit('messages:append', { messages, sock })
+
+      // 2. Process special messages (edits, revokes, reactions) sequentially
+      for (const msg of messages) {
+        if (this.services.messageService.isSpecialMessage(msg)) {
+          try {
+            const processed = await this.services.messageService.processMessage(msg, sock)
+            if (processed && 'type' in processed) {
+              if (processed.subType === 'revoke') {
+                await this.bus.emit('message:deleted', {
+                  messageId: processed.targetId,
+                  chatJid: processed.chatJid || cleanJid(processed.key.remoteJid),
+                  fromMe: processed.key.fromMe ?? false
+                })
+              } else if (processed.subType === 'edit') {
+                await this.bus.emit('message:edited', {
+                  messageId: processed.targetId,
+                  chatJid: processed.chatJid || cleanJid(processed.key?.remoteJid || ''),
+                  editedTextContent: processed.editedTextContent ?? null,
+                  editedContent: processed.editedContent ?? null,
+                  sock
+                })
+              }
+            }
+          } catch (err) {
+            console.error('[WAEventHandler] Error processing special message in backlog:', err)
+          }
+        }
+      }
       return
     }
 
