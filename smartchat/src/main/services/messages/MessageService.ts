@@ -278,12 +278,36 @@ export class MessageService {
 
   /**
    * Updates a message's content and marks it as edited in the database.
+   *
+   * Preserves the original messageContextInfo (which contains messageSecret)
+   * so that subsequent edits or encrypted actions on this message can still
+   * be decrypted by SecretMessageService.
    */
   async editMessageInDb(messageId: string, textContent: string | null, editedContent: any): Promise<void> {
+    // Read the existing record first to salvage messageContextInfo
+    let originalContextInfo: Record<string, any> | null = null
+    try {
+      const existing = await this.prisma.message.findUnique({
+        where: { id: messageId },
+        select: { content: true }
+      })
+      if (existing?.content) {
+        const parsed = JSON.parse(existing.content)
+        originalContextInfo = parsed.messageContextInfo ?? null
+      }
+    } catch {
+      // Non-fatal — proceed without preserving the secret
+    }
+
+    const contentToStore = {
+      ...(editedContent || {}),
+      ...(originalContextInfo ? { messageContextInfo: originalContextInfo } : {})
+    }
+
     await this.prisma.message.update({
       where: { id: messageId },
       data: {
-        content: JSON.stringify(editedContent || {}),
+        content: JSON.stringify(contentToStore),
         textContent: textContent,
         isEdited: true
       }
