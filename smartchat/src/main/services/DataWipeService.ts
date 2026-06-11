@@ -3,6 +3,25 @@ import { PrismaClient } from '@prisma/client'
 export class DataWipeService {
   constructor(private prisma: PrismaClient) {}
 
+  private wipeFavouritesFolder(): void {
+    try {
+      const { app } = require('electron')
+      const fs = require('fs')
+      const path = require('path')
+      const favsDir = path.join(app.getPath('userData'), 'favourites')
+      if (fs.existsSync(favsDir)) {
+        const files = fs.readdirSync(favsDir)
+        for (const file of files) {
+          try {
+            fs.unlinkSync(path.join(favsDir, file))
+          } catch (err) {}
+        }
+      }
+    } catch (e) {
+      console.error('[DataWipeService] Failed to clear favourites folder:', e)
+    }
+  }
+
   async wipeAllData(): Promise<void> {
     // Delete in FK-safe order: children before parents
     await this.prisma.reaction.deleteMany()
@@ -14,6 +33,8 @@ export class DataWipeService {
     await this.prisma.identityAlias.deleteMany()
     await this.prisma.identity.deleteMany()
     await this.prisma.authState.deleteMany()
+    await this.prisma.favoriteSticker.deleteMany().catch(() => {})
+    this.wipeFavouritesFolder()
     console.log('[DataWipeService] All database tables cleared (including AuthState).')
   }
 
@@ -27,6 +48,9 @@ export class DataWipeService {
     await this.prisma.community.deleteMany()
     await this.prisma.identityAlias.deleteMany()
     await this.prisma.identity.deleteMany()
+    await this.prisma.favoriteSticker.deleteMany().catch(() => {})
+    this.wipeFavouritesFolder()
     console.log('[DataWipeService] User data tables cleared (AuthState preserved).')
   }
 }
+

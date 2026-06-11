@@ -4,8 +4,10 @@ import { EMOJI_CATEGORIES, DEFAULT_STICKER_PACKS } from '../../utils/emojiData'
 import { useAPI } from '../../context/APIContext'
 import { useGiphy } from '../../hooks/useGiphy'
 import { matchEmoji } from '../../utils/emojiKeywords'
+import ConfirmModal from '../common/ConfirmModal'
 
 const categoryIconMap: Record<string, React.ReactNode> = {
+  Recent: <span style={{ fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>🕒</span>,
   Smileys: <Smile size={18} />,
   Gestures: <Heart size={18} />,
   People: <Users size={18} />,
@@ -41,16 +43,38 @@ export default function EmojiStickerGifPicker({
     clearGifs
   } = useGiphy()
 
+  const [recentEmojis, setRecentEmojis] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('smartchat_recent_emojis') || '[]')
+    } catch (e) {
+      return []
+    }
+  })
+
   const [activeTab, setActiveTab] = useState<'emoji' | 'gif' | 'sticker'>(initialTab)
   const [searchQuery, setSearchQuery] = useState('')
   const [localLoading, setLocalLoading] = useState(false)
   const loading = giphyLoading || localLoading
-  const [selectedPackIndex, setSelectedPackIndex] = useState<number>(0)
-  const [selectedEmojiCategory, setSelectedEmojiCategory] = useState<string>('Smileys')
+  const [selectedPackIndex, setSelectedPackIndex] = useState<number>(-2)
+  const [favoriteStickers, setFavoriteStickers] = useState<any[]>([])
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
+  const [stickerToRemove, setStickerToRemove] = useState<any | null>(null)
+  const [selectedEmojiCategory, setSelectedEmojiCategory] = useState<string>(
+    recentEmojis.length > 0 ? 'Recent' : 'Smileys'
+  )
 
   const emojiCategoryRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const emojiContainerRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+
+  const recentCategory = {
+    name: 'Recent',
+    icon: '🕒',
+    emojis: recentEmojis
+  }
+  const displayedCategories = recentEmojis.length > 0
+    ? [recentCategory, ...EMOJI_CATEGORIES]
+    : EMOJI_CATEGORIES
 
   // Focus search input on tab change
   useEffect(() => {
@@ -88,8 +112,8 @@ export default function EmojiStickerGifPicker({
     const container = emojiContainerRef.current
     const containerTop = container.getBoundingClientRect().top
 
-    let currentCategory = EMOJI_CATEGORIES[0].name
-    for (const cat of EMOJI_CATEGORIES) {
+    let currentCategory = displayedCategories[0].name
+    for (const cat of displayedCategories) {
       const el = emojiCategoryRefs.current[cat.name]
       if (el) {
         const rect = el.getBoundingClientRect()
@@ -108,6 +132,16 @@ export default function EmojiStickerGifPicker({
       setSelectedEmojiCategory(categoryName)
     }
   }
+
+  const handleEmojiClick = (emoji: string) => {
+    onSelectEmoji?.(emoji)
+    setRecentEmojis(prev => {
+      const next = [emoji, ...prev.filter(e => e !== emoji)].slice(0, 24)
+      localStorage.setItem('smartchat_recent_emojis', JSON.stringify(next))
+      return next
+    })
+  }
+
 
   const handleGifClick = async (gif: any) => {
     if (!onSelectGif) return
@@ -164,6 +198,45 @@ export default function EmojiStickerGifPicker({
     }
   }
 
+  useEffect(() => {
+    if (activeTab === 'sticker') {
+      api.getFavoriteStickers().then(setFavoriteStickers).catch(console.error)
+    }
+  }, [activeTab])
+
+  const handleRequestRemoveFavorite = (fav: any) => {
+    setStickerToRemove(fav)
+    setShowRemoveConfirm(true)
+  }
+
+  const handleConfirmRemoveFavorite = async () => {
+    if (!stickerToRemove) return
+    setShowRemoveConfirm(false)
+    try {
+      const success = await api.removeFavoriteStickerById(stickerToRemove.id)
+      if (success) {
+        setFavoriteStickers(prev => prev.filter(f => f.id !== stickerToRemove.id))
+      }
+    } catch (err) {
+      console.error('Failed to remove favorite sticker:', err)
+    } finally {
+      setStickerToRemove(null)
+    }
+  }
+
+  const handleFavoriteStickerClick = async (fav: any) => {
+    if (!onSelectSticker) return
+    setLocalLoading(true)
+    try {
+      await onSelectSticker(fav.localURI)
+      if (onClose) onClose()
+    } catch (err) {
+      console.error('Failed to send favorite sticker:', err)
+    } finally {
+      setLocalLoading(false)
+    }
+  }
+
   // Filter emojis based on query
   const filteredEmojiCategories = EMOJI_CATEGORIES.map(cat => ({
     ...cat,
@@ -213,7 +286,7 @@ export default function EmojiStickerGifPicker({
           <div className="emoji-tab-container">
             {/* Category Quick Selector */}
             <div className="emoji-categories-header">
-              {EMOJI_CATEGORIES.map(cat => (
+              {displayedCategories.map(cat => (
                 <button
                   key={cat.name}
                   className={`emoji-cat-btn ${selectedEmojiCategory === cat.name ? 'active' : ''}`}
@@ -242,7 +315,7 @@ export default function EmojiStickerGifPicker({
                         <button
                           key={emoji}
                           className="emoji-item"
-                          onClick={() => onSelectEmoji?.(emoji)}
+                          onClick={() => handleEmojiClick(emoji)}
                         >
                           {emoji}
                         </button>
@@ -254,7 +327,7 @@ export default function EmojiStickerGifPicker({
                   </div>
                 </div>
               ) : (
-                filteredEmojiCategories.map(cat => (
+                displayedCategories.map(cat => (
                   <div
                     key={cat.name}
                     ref={el => { emojiCategoryRefs.current[cat.name] = el }}
@@ -266,7 +339,7 @@ export default function EmojiStickerGifPicker({
                         <button
                           key={emoji}
                           className="emoji-item"
-                          onClick={() => onSelectEmoji?.(emoji)}
+                          onClick={() => handleEmojiClick(emoji)}
                         >
                           {emoji}
                         </button>
@@ -320,6 +393,18 @@ export default function EmojiStickerGifPicker({
           <div className="sticker-tab-container">
             {/* Sticker Pack Tabs */}
             <div className="sticker-packs-header">
+              <button
+                className={`sticker-pack-btn favorites-tab ${selectedPackIndex === -2 ? 'active' : ''}`}
+                onClick={() => {
+                  setSelectedPackIndex(-2)
+                  api.getFavoriteStickers().then(setFavoriteStickers).catch(console.error)
+                }}
+                title="Starred Stickers"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill={selectedPackIndex === -2 ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: selectedPackIndex === -2 ? '#e9c46a' : 'currentColor' }}>
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              </button>
               {DEFAULT_STICKER_PACKS.map((pack, idx) => (
                 <button
                   key={pack.name}
@@ -341,7 +426,62 @@ export default function EmojiStickerGifPicker({
 
             {/* Sticker list */}
             <div className="sticker-grid-scrollable">
-              {selectedPackIndex !== -1 ? (
+              {selectedPackIndex === -2 ? (
+                // Starred / Favorite Stickers
+                favoriteStickers.length === 0 ? (
+                  <div className="picker-empty-state">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, marginBottom: '8px' }}>
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    </svg>
+                    <p>No starred stickers yet.</p>
+                    <p style={{ fontSize: '0.75rem', opacity: 0.7, marginTop: '4px', textAlign: 'center', padding: '0 16px' }}>
+                      Right-click or click options on any sticker in a chat and select "Star Sticker" to add it here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="sticker-grid">
+                    {favoriteStickers.map(fav => (
+                      <div
+                        key={fav.id}
+                        className="sticker-item favorite-item-container"
+                        onClick={() => handleFavoriteStickerClick(fav)}
+                      >
+                        <img src={fav.localURI} alt="Favorite sticker" loading="lazy" />
+                        <button
+                          className="remove-favorite-btn"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleRequestRemoveFavorite(fav)
+                          }}
+                          title="Remove from favorites"
+                          style={{
+                            position: 'absolute',
+                            top: '2px',
+                            right: '2px',
+                            background: 'rgba(239, 83, 80, 0.95)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '18px',
+                            height: '18px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            opacity: 0,
+                            transition: 'opacity 0.2s ease',
+                            padding: 0,
+                            lineHeight: 1
+                          }}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : selectedPackIndex >= 0 ? (
                 // Local static packs
                 <div className="sticker-grid">
                   {DEFAULT_STICKER_PACKS[selectedPackIndex].stickers.map(st => (
@@ -420,6 +560,16 @@ export default function EmojiStickerGifPicker({
           </button>
         </div>
       </div>
+      <ConfirmModal
+        isOpen={showRemoveConfirm}
+        title="Remove Favorite"
+        description="Are you sure you want to remove this sticker from your favorites?"
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmRemoveFavorite}
+        onCancel={() => setShowRemoveConfirm(false)}
+        isDanger={true}
+      />
     </div>
   )
 }

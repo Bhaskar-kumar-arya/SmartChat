@@ -505,3 +505,17 @@
 .sticker-packs-header::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }
+
+/* Favorites Sticker Items */
+.favorite-item-container {
+  position: relative;
+}
+
+.favorite-item-container:hover .remove-favorite-btn {
+  opacity: 1 !important;
+}
+
+.remove-favorite-btn:hover {
+  transform: scale(1.15);
+  background: #f44336 !important;
+}

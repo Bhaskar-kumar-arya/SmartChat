@@ -194,5 +194,20 @@ export const api = {
 
   deleteExportedAiChat: (sessionId: string): Promise<void> =>
     window.api.deleteExportedAiChat(sessionId),
+
+  addStickerToFavorites: (msgId: string): Promise<boolean> =>
+    window.api.addStickerToFavorites(msgId),
+
+  removeStickerFromFavorites: (msgId: string): Promise<boolean> =>
+    window.api.removeStickerFromFavorites(msgId),
+
+  removeFavoriteStickerById: (id: string): Promise<boolean> =>
+    window.api.removeFavoriteStickerById(id),
+
+  isStickerFavorite: (msgId: string): Promise<boolean> =>
+    window.api.isStickerFavorite(msgId),
+
+  getFavoriteStickers: (): Promise<any[]> =>
+    window.api.getFavoriteStickers(),
 }
 

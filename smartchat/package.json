@@ -42,6 +42,7 @@
     "lucide-react": "^0.577.0",
     "ml-kmeans": "^7.0.0",
     "node-cache": "^5.1.2",
+    "node-webpmux": "^3.2.1",
     "onnxruntime-node": "^1.24.3",
     "openai": "^6.34.0",
     "qrcode.react": "^4.2.0",

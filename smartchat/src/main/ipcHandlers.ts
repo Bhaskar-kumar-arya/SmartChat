@@ -123,6 +123,27 @@ export function registerIpcHandlers(
     return services.mediaService.downloadAndCacheMedia(msgId, sock)
   })
 
+  // ── Favorite Stickers ────────────────────────────────────────────────
+  ipcMain.handle('add-sticker-to-favorites', async (_event, msgId: string) => {
+    return services.favoriteStickerService.addStickerToFavorites(msgId)
+  })
+
+  ipcMain.handle('remove-sticker-from-favorites', async (_event, msgId: string) => {
+    return services.favoriteStickerService.removeStickerFromFavorites(msgId)
+  })
+
+  ipcMain.handle('remove-favorite-sticker-by-id', async (_event, id: string) => {
+    return services.favoriteStickerService.removeFavoriteStickerById(id)
+  })
+
+  ipcMain.handle('is-sticker-favorite', async (_event, msgId: string) => {
+    return services.favoriteStickerService.isStickerFavorite(msgId)
+  })
+
+  ipcMain.handle('get-favorite-stickers', async () => {
+    return services.favoriteStickerService.getFavoriteStickers()
+  })
+
   // ── Open File with System Default ──────────────────────────────────
   ipcMain.handle('open-file', async (_event, localURI: string) => {
     return services.mediaService.openFile(localURI)

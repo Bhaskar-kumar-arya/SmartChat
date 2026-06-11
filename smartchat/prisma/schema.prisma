@@ -285,3 +285,12 @@ model MessageReceipt {
   @@id([messageId, userJid])
   @@index([messageId])
 }
+
+// ── 14. FAVORITE STICKERS ──────────────────────────────────────────────────
+model FavoriteSticker {
+  id         String   @id @default(uuid())
+  fileSha256 String   @unique
+  fileName   String
+  createdAt  BigInt
+}
+

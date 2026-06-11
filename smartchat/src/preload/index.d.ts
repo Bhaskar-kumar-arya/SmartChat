@@ -66,6 +66,11 @@ declare global {
       sendMediaMessage: (jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => Promise<MessageItem>
       getGroupParticipants: (jid: string) => Promise<{ jid: string, name: string, isAdmin: boolean, isMe: boolean }[]>
       downloadMedia: (msgId: string) => Promise<MessageItem>
+      addStickerToFavorites: (msgId: string) => Promise<boolean>
+      removeStickerFromFavorites: (msgId: string) => Promise<boolean>
+      removeFavoriteStickerById: (id: string) => Promise<boolean>
+      isStickerFavorite: (msgId: string) => Promise<boolean>
+      getFavoriteStickers: () => Promise<any[]>
       selectFile: () => Promise<string | null>
       onNewMessage: (callback: (msg: MessageItem) => void) => () => void
       onMessageEdited: (callback: (msg: MessageItem) => void) => () => void

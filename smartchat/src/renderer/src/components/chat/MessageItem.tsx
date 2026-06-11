@@ -110,6 +110,15 @@ interface MessageItemProps {
 
 const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, onDownloadMedia, onViewReactions }: MessageItemProps) {
   const api = useAPI()
+
+  let rawMsg: RawMessageContent = {}
+  try {
+    rawMsg = msg.content ? unwrapMessage(JSON.parse(msg.content)) : {}
+  } catch (e) { }
+
+  const isTemplateMessage = msg.messageType === 'templateMessage' || !!rawMsg?.templateMessage
+  const isSticker = (msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage || msg.messageType === 'lottieStickerMessage' || !!rawMsg?.lottieStickerMessage) && !isTemplateMessage
+
   const [downloading, setDownloading] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -122,11 +131,34 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   const [showReactionMenu, setShowReactionMenu] = useState(false)
   const [showFullEmojiPicker, setShowFullEmojiPicker] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showStarConfirm, setShowStarConfirm] = useState(false)
+  const [isFavoriteSticker, setIsFavoriteSticker] = useState(false)
   const reactionTriggerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     api.getMyJid().then(setMyJid).catch(console.error)
   }, [])
+
+  useEffect(() => {
+    if (isSticker && showDropdown) {
+      api.isStickerFavorite(msg.id).then(setIsFavoriteSticker).catch(console.error)
+    }
+  }, [isSticker, showDropdown, msg.id])
+
+  const handleConfirmStarToggle = async () => {
+    setShowStarConfirm(false)
+    try {
+      if (isFavoriteSticker) {
+        const success = await api.removeStickerFromFavorites(msg.id)
+        if (success) setIsFavoriteSticker(false)
+      } else {
+        const success = await api.addStickerToFavorites(msg.id)
+        if (success) setIsFavoriteSticker(true)
+      }
+    } catch (err) {
+      console.error('Failed to toggle sticker favorite status:', err)
+    }
+  }
 
   const handleShowInfo = async () => {
     setShowDropdown(false)
@@ -202,11 +234,6 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     }
   }
 
-  let rawMsg: RawMessageContent = {}
-  try {
-    rawMsg = msg.content ? unwrapMessage(JSON.parse(msg.content)) : {}
-  } catch (e) { }
-
   const ctx = rawMsg?.extendedTextMessage?.contextInfo ||
     rawMsg?.imageMessage?.contextInfo ||
     rawMsg?.videoMessage?.contextInfo ||
@@ -224,10 +251,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   }
   const quotedSender = ctx?.participantName || (ctx?.participant ? ctx.participant.split('@')[0] : 'Someone')
 
-  const isTemplateMessage = msg.messageType === 'templateMessage' || !!rawMsg?.templateMessage
-
   const isImage = (msg.messageType === 'imageMessage' || !!rawMsg?.imageMessage) && !isTemplateMessage
-  const isSticker = (msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage || msg.messageType === 'lottieStickerMessage' || !!rawMsg?.lottieStickerMessage) && !isTemplateMessage
   const isVideo = (msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage || msg.messageType === 'ptvMessage' || !!rawMsg?.ptvMessage) && !isTemplateMessage
   const isDocument = (msg.messageType === 'documentMessage' || !!rawMsg?.documentMessage) && !isTemplateMessage
   const isAudio = (msg.messageType === 'audioMessage' || !!rawMsg?.audioMessage) && !isTemplateMessage
@@ -411,6 +435,14 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v1.5" /></svg>
                 Reply
               </button>
+              {isSticker && (
+                <button className="dropdown-item" onClick={() => { setShowStarConfirm(true); setShowDropdown(false); }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={isFavoriteSticker ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: isFavoriteSticker ? '#e9c46a' : 'currentColor' }}>
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                  {isFavoriteSticker ? 'Unstar Sticker' : 'Star Sticker'}
+                </button>
+              )}
               {msg.fromMe && (
                 <button className="dropdown-item" onClick={handleShowInfo}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
@@ -446,6 +478,16 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
         onConfirm={handleConfirmDelete}
         onCancel={() => setShowDeleteConfirm(false)}
         isDanger={true}
+      />
+      <ConfirmModal
+        isOpen={showStarConfirm}
+        title={isFavoriteSticker ? "Remove from Favorites" : "Add to Favorites"}
+        description={isFavoriteSticker ? "Are you sure you want to remove this sticker from favorites?" : "Are you sure you want to add this sticker to favorites?"}
+        confirmLabel={isFavoriteSticker ? "Remove" : "Add"}
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmStarToggle}
+        onCancel={() => setShowStarConfirm(false)}
+        isDanger={isFavoriteSticker}
       />
     </div>
   )

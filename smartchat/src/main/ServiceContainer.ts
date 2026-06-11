@@ -15,6 +15,7 @@ import { AIChatExportService } from './services/ai/AIChatExportService'
 import { NotificationService } from './services/notification/NotificationService'
 import { SecretMessageService } from './services/whatsapp/secret/SecretMessageService'
 import { MessageReactionStrategy } from './services/whatsapp/secret/MessageReactionStrategy'
+import { FavoriteStickerService } from './services/messages/FavoriteStickerService'
 
 import type { WAEventBus } from './services/whatsapp/WAEventBus'
 
@@ -31,6 +32,7 @@ export function createServices(
   const notificationService = new NotificationService(getMainWindow)
   const secretMessageService = new SecretMessageService(prisma)
   secretMessageService.registerStrategy(new MessageReactionStrategy(getBus))
+  const favoriteStickerService = new FavoriteStickerService(prisma)
 
   // 2. Services with service dependencies
   const chatService = new ChatService(prisma, contactService)
@@ -58,9 +60,11 @@ export function createServices(
     aiChatSessionService,
     aiChatExportService,
     notificationService,
-    secretMessageService
+    secretMessageService,
+    favoriteStickerService
   }
 }
 
 export type ServiceContainer = ReturnType<typeof createServices>
+
 

@@ -141,6 +141,13 @@ app.whenReady().then(() => {
         if (fs.existsSync(filePath)) {
           return net.fetch(pathToFileURL(filePath).href)
         }
+      } else if (host === 'favourites') {
+        const fileName = pathname.startsWith('/') ? pathname.slice(1) : pathname
+        const filePath = join(app.getPath('userData'), 'favourites', fileName)
+        
+        if (fs.existsSync(filePath)) {
+          return net.fetch(pathToFileURL(filePath).href)
+        }
       } else if (host === 'local') {
         const filePath = decodeURIComponent(pathname.startsWith('/') ? pathname.slice(1) : pathname)
         if (fs.existsSync(filePath)) {

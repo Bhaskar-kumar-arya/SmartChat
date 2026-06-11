@@ -79,6 +79,21 @@ const api = {
   downloadMedia: (msgId: string) => {
     return ipcRenderer.invoke('download-media', msgId)
   },
+  addStickerToFavorites: (msgId: string) => {
+    return ipcRenderer.invoke('add-sticker-to-favorites', msgId)
+  },
+  removeStickerFromFavorites: (msgId: string) => {
+    return ipcRenderer.invoke('remove-sticker-from-favorites', msgId)
+  },
+  removeFavoriteStickerById: (id: string) => {
+    return ipcRenderer.invoke('remove-favorite-sticker-by-id', id)
+  },
+  isStickerFavorite: (msgId: string) => {
+    return ipcRenderer.invoke('is-sticker-favorite', msgId)
+  },
+  getFavoriteStickers: () => {
+    return ipcRenderer.invoke('get-favorite-stickers')
+  },
   selectFile: () => {
     return ipcRenderer.invoke('select-file')
   },

@@ -1,15 +1,16 @@
 import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
 import fs from 'fs'
-import { join, } from 'path'
+import { join } from 'path'
 import { MessageService } from './MessageService'
 import { ChatService } from '../chats/ChatService'
 import { app } from 'electron'
 import { proto } from '@whiskeysockets/baileys'
 import { WASocket, EnrichedMessage } from '../../types'
-import { unwrapMessage } from '../../utils'
+import { unwrapMessage, cleanJid } from '../../utils'
 import type { WAEventBus } from '../whatsapp/WAEventBus'
-import { cleanJid } from '../../utils'
+import { stickerMetadataService } from './StickerMetadataService'
+
 
 export class MessageActionService {
   constructor(
@@ -355,15 +356,46 @@ export class MessageActionService {
         }
     }
 
-    const buffer = fs.readFileSync(filePath)
-    const sendOptions = this.messageService.getMediaSendOptions(filePath, buffer, caption)
+    let finalPathToSend = filePath
+    let isAlreadyProcessed = false
+    if (filePath.startsWith('app://favourites/')) {
+      const fileName = filePath.replace('app://favourites/', '')
+      finalPathToSend = join(app.getPath('userData'), 'favourites', fileName)
+      isAlreadyProcessed = true
+    } else if (filePath.startsWith('app://media/')) {
+      const fileName = filePath.replace('app://media/', '')
+      finalPathToSend = join(app.getPath('userData'), 'media', fileName)
+      isAlreadyProcessed = true
+    }
+
+    let isTempFile = false
+    const isSticker = finalPathToSend.toLowerCase().endsWith('.webp')
+    if (isSticker && !isAlreadyProcessed) {
+      try {
+        finalPathToSend = await stickerMetadataService.processAndAddMetadata(finalPathToSend)
+        isTempFile = true
+      } catch (err) {
+        console.error('[MessageActionService] Failed to process sticker metadata:', err)
+      }
+    }
+
+    const buffer = fs.readFileSync(finalPathToSend)
+    const sendOptions = this.messageService.getMediaSendOptions(finalPathToSend, buffer, caption)
     if (mentions && mentions.length > 0) sendOptions.mentions = mentions
 
     const sentMsg = await sock.sendMessage(targetJid, sendOptions as any, { quoted } as any)
-    if (!sentMsg) throw new Error('Failed to send media message')
+    if (!sentMsg) {
+      if (isTempFile) {
+        try { fs.unlinkSync(finalPathToSend) } catch (e) {}
+      }
+      throw new Error('Failed to send media message')
+    }
 
     const processed = await this.messageService.processMessage(sentMsg, sock)
     if (!processed || 'type' in processed) {
+      if (isTempFile) {
+        try { fs.unlinkSync(finalPathToSend) } catch (e) {}
+      }
       throw new Error('Failed to process sent message')
     }
 
@@ -386,7 +418,7 @@ export class MessageActionService {
         const fileName = this.messageService.getSafeMediaFileName(processed.id, mediaType, mediaMsg)
         const cachedFilePath = join(mediaDir, fileName)
 
-        fs.copyFileSync(filePath, cachedFilePath)
+        fs.copyFileSync(finalPathToSend, cachedFilePath)
 
         mediaMsg.localURI = `app://media/${fileName}`
 
@@ -400,6 +432,10 @@ export class MessageActionService {
       } catch (err) {
         console.error('[MessageActionService] Failed to cache sent media file:', err)
       }
+    }
+
+    if (isTempFile) {
+      try { fs.unlinkSync(finalPathToSend) } catch (e) {}
     }
 
     await this.chatService.updateTimestamp(targetJid, processed.timestamp)
@@ -418,4 +454,5 @@ export class MessageActionService {
     }).catch(() => {})
     return enriched
   }
+
 }
