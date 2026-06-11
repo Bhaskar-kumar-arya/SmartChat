@@ -20,6 +20,7 @@ import { UIBroadcastSubscriber }   from './UIBroadcastSubscriber'
 import { PersistenceSubscriber }   from './PersistenceSubscriber'
 import { ContactGroupSubscriber }  from './ContactGroupSubscriber'
 import { ReceiptSubscriber }       from './ReceiptSubscriber'
+import { FavoriteStickerSubscriber } from './FavoriteStickerSubscriber'
 
 export type { IWAEventSubscriber }
 
@@ -40,6 +41,7 @@ export function createSubscribers(
     new NotificationSubscriber(services),
     new UIBroadcastSubscriber(services, getMainWindow, prisma),
     new ReceiptSubscriber(services, getMainWindow),
+    new FavoriteStickerSubscriber(services),
   ]
 
   // Register each subscriber on the bus — order matters for same-event handlers

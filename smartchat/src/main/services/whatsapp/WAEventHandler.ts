@@ -17,6 +17,7 @@ import {
 } from '../../constants'
 import type { ServiceContainer } from '../../ServiceContainer'
 import type { WAEventBus } from './WAEventBus'
+import { AppStateSyncParser } from './AppStateSyncParser'
 
 export class WAEventHandler {
   constructor(
@@ -238,5 +239,15 @@ export class WAEventHandler {
 
   async handleCallEvent(calls: any[]): Promise<void> {
     await this.bus.emit('call:event', { calls })
+  }
+
+  async handleAppStateSync(syncEvents: any[], sock: WASocket): Promise<void> {
+    for (const e of syncEvents) {
+      // 1. Emit generic/raw event first
+      await this.bus.emit('app-state:sync', { syncAction: e, sock })
+
+      // 2. Parse specific actions and emit typed domain events via decoupled parser
+      await AppStateSyncParser.parseAndDispatch(e, sock, this.bus)
+    }
   }
 }

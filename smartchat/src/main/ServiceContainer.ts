@@ -38,7 +38,7 @@ export function createServices(
   const chatService = new ChatService(prisma, contactService)
   const messageService = new MessageService(prisma, contactService, embeddingService, secretMessageService)
   const messageActionService = new MessageActionService(prisma, contactService, messageService, chatService, getBus)
-  const mediaService = new MediaService(prisma, messageService, contactService)
+  const mediaService = new MediaService(prisma, messageService, contactService, favoriteStickerService)
   const searchService = new SearchService(prisma, contactService, embeddingService)
 
   // 3. AI services (unchanged internally — just re-exported/wired)

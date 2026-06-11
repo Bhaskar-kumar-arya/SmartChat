@@ -16,6 +16,8 @@ import { WAEventHandler } from './WAEventHandler'
 import { WAEventBus } from './WAEventBus'
 import { createSubscribers } from './subscribers'
 import { HistorySyncManager } from './HistorySyncManager'
+import { BaileysPatcher } from './BaileysPatcher'
+import { waEventLogger } from './WAEventLogger'
 
 export class WhatsAppConnectionManager {
   private currentSock: WASocket | null = null
@@ -45,6 +47,7 @@ export class WhatsAppConnectionManager {
   }
 
   public async connect() {
+    BaileysPatcher.patch()
     this.services.embeddingService.setPaused(false) // Clean start
     if (!this.mainWindow) {
       console.warn('[WhatsAppConnectionManager] No window set, cannot connect.')
@@ -321,6 +324,16 @@ export class WhatsAppConnectionManager {
       // ── Call Events ───────────────────────────────────────────────────────
       if (events['call']) {
         await eventHandler.handleCallEvent(events['call'])
+      }
+
+      // ── App State Sync ────────────────────────────────────────────────────
+      if (events['app-state.sync']) {
+        const syncEvent = events['app-state.sync']
+        const syncEvents = Array.isArray(syncEvent) ? (syncEvent as any[]) : [syncEvent]
+        for (const e of syncEvents) {
+          waEventLogger.log('app-state.sync', e)
+        }
+        await eventHandler.handleAppStateSync(syncEvents, sock)
       }
     })
   }

@@ -4,6 +4,7 @@ import { app, shell } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 import { MessageService } from './MessageService'
+import { FavoriteStickerService } from './FavoriteStickerService'
 import { ContactService } from '../contacts/ContactService'
 import { EnrichedMessage, WASocket } from '../../types'
 import { unwrapMessage } from '../../utils'
@@ -93,7 +94,8 @@ export class MediaService {
   constructor(
     private prisma: PrismaClient,
     private messageService: MessageService,
-    private contactService: ContactService
+    private contactService: ContactService,
+    private favoriteStickerService: FavoriteStickerService
   ) { }
 
   async downloadAndCacheMedia(msgId: string, sock: WASocket | null): Promise<EnrichedMessage> {
@@ -122,6 +124,31 @@ export class MediaService {
 
     if (!fs.existsSync(filePath)) {
       await this._downloadToFile(msgId, sock, dbMsg, rawMessage, mediaMsg, mediaType, filePath)
+    }
+
+    // Self-healing: if this is a sticker and it matches a favorite sticker, copy it to favourites
+    if (mediaType === 'sticker') {
+      try {
+        let shaStr = ''
+        if (mediaMsg.fileSha256) {
+          const sha = mediaMsg.fileSha256
+          if (typeof sha === 'string') {
+            shaStr = sha
+          } else if (Buffer.isBuffer(sha)) {
+            shaStr = sha.toString('base64')
+          } else if (sha && typeof sha === 'object' && sha.type === 'Buffer' && Array.isArray(sha.data)) {
+            shaStr = Buffer.from(sha.data).toString('base64')
+          } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
+            shaStr = Buffer.from(sha).toString('base64')
+          }
+        }
+
+        if (shaStr) {
+          await this.favoriteStickerService.handleDownloadedSticker(shaStr, filePath)
+        }
+      } catch (err) {
+        console.error('[MediaService] Failed during favorite sticker auto-copy check:', err)
+      }
     }
 
     // Stamp the local URI back onto the resolved media message payload so the DB gets updated
