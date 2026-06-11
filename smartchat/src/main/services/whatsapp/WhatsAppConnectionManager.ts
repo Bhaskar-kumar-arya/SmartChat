@@ -17,7 +17,7 @@ import { WAEventBus } from './WAEventBus'
 import { createSubscribers } from './subscribers'
 import { HistorySyncManager } from './HistorySyncManager'
 import { BaileysPatcher } from './BaileysPatcher'
-import { waEventLogger } from './WAEventLogger'
+// import { waEventLogger } from './WAEventLogger'
 
 export class WhatsAppConnectionManager {
   private currentSock: WASocket | null = null
@@ -330,9 +330,9 @@ export class WhatsAppConnectionManager {
       if (events['app-state.sync']) {
         const syncEvent = events['app-state.sync']
         const syncEvents = Array.isArray(syncEvent) ? (syncEvent as any[]) : [syncEvent]
-        for (const e of syncEvents) {
-          waEventLogger.log('app-state.sync', e)
-        }
+        // for (const e of syncEvents) {
+        //   waEventLogger.log('app-state.sync', e)
+        // }
         await eventHandler.handleAppStateSync(syncEvents, sock)
       }
     })
