@@ -60,11 +60,19 @@ export class HistorySyncManager {
       if (this.syncTimeout) clearTimeout(this.syncTimeout)
       this.syncTimeout = setTimeout(() => this.finishSync(sock, syncFullHistory), HISTORY_SYNC_TIMEOUT_MS)
 
-      await handleHistorySync(
+      const syncResult = await handleHistorySync(
         data as any,
         this.prisma,
         this.services.contactService
       )
+
+      // Post-sync processing: check and download favorite stickers in this batch
+      this.services.mediaService.downloadFavoriteStickersFromSync(
+        syncResult.importedMessages,
+        sock
+      ).catch((err) => {
+        console.error('[HistorySync] Failed to process favorite stickers from sync:', err)
+      })
 
       const mainWindow = this.getMainWindow()
       if (mainWindow && !mainWindow.isDestroyed() && !this.syncComplete) {

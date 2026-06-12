@@ -1,5 +1,5 @@
 import { downloadContentFromMessage } from '@whiskeysockets/baileys'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Message } from '@prisma/client'
 import { app, shell } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
@@ -97,6 +97,47 @@ export class MediaService {
     private contactService: ContactService,
     private favoriteStickerService: FavoriteStickerService
   ) { }
+
+  async downloadFavoriteStickersFromSync(messages: Message[], sock: WASocket | null): Promise<void> {
+    if (!sock) return
+
+    for (const msg of messages) {
+      if (msg.messageType === 'stickerMessage') {
+        try {
+          const rawMessage = JSON.parse(msg.content)
+          const unwrapped = unwrapMessage(rawMessage)
+          const stickerMsg = unwrapped.stickerMessage
+          if (stickerMsg && stickerMsg.fileSha256) {
+            let shaStr = ''
+            const sha = stickerMsg.fileSha256
+            if (typeof sha === 'string') {
+              shaStr = sha
+            } else if (Buffer.isBuffer(sha)) {
+              shaStr = sha.toString('base64')
+            } else if (sha && typeof sha === 'object' && sha.type === 'Buffer' && Array.isArray(sha.data)) {
+              shaStr = Buffer.from(sha.data).toString('base64')
+            } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
+              shaStr = Buffer.from(sha).toString('base64')
+            }
+
+            if (shaStr) {
+              const favRecord = await this.prisma.favoriteSticker.findUnique({
+                where: { fileSha256: shaStr }
+              })
+              if (favRecord) {
+                console.log(`[MediaService] Detected matching favorite sticker message: ${msg.id} (SHA: ${shaStr}), triggering auto-download...`)
+                this.downloadAndCacheMedia(msg.id, sock).catch((err) => {
+                  console.error(`[MediaService] Failed to auto-download favorite sticker for msg ${msg.id}:`, err)
+                })
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[MediaService] Error checking sticker for sync auto-download:', err)
+        }
+      }
+    }
+  }
 
   async downloadAndCacheMedia(msgId: string, sock: WASocket | null): Promise<EnrichedMessage> {
     if (!sock) throw new Error('WhatsApp socket is not connected')

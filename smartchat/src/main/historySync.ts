@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Message } from '@prisma/client'
 import { ContactService } from './services/contacts/ContactService'
 import { mapBaileysStatus } from './services/whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from './utils'
-
-
 
 export interface HistorySyncData {
   chats: Array<Record<string, unknown>>
@@ -22,6 +20,7 @@ export interface HistorySyncResult {
   contactCount: number
   chatCount: number
   messageCount: number
+  importedMessages: Message[]
 }
 
 export async function handleHistorySync(
@@ -35,6 +34,7 @@ export async function handleHistorySync(
   let contactCount = 0
   let chatCount = 0
   let messageCount = 0
+  const importedMessages: Message[] = []
 
   // Clear in-memory JID lookup/link caches for a fresh sync chunk
   contactService.clearCaches()
@@ -408,6 +408,8 @@ export async function handleHistorySync(
           await prisma.$transaction(reactionOps).catch(err => console.error('[HistorySync] Reaction transaction failed:', err))
         }
 
+        importedMessages.push(...standardMessages)
+
         messageCount += messageData.length
         await new Promise(resolve => setImmediate(resolve))
       }
@@ -423,6 +425,7 @@ export async function handleHistorySync(
     isLatest,
     contactCount,
     chatCount,
-    messageCount
+    messageCount,
+    importedMessages
   }
 }

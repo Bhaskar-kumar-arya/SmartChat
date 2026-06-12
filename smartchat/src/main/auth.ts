@@ -3,7 +3,8 @@ import {
   BufferJSON,
   AuthenticationState,
   AuthenticationCreds,
-  makeCacheableSignalKeyStore
+  makeCacheableSignalKeyStore,
+  proto
 } from "@whiskeysockets/baileys";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
@@ -179,7 +180,10 @@ export const usePrismaAuthState = async (): Promise<{
       const data: { [key: string]: any } = {};
       await Promise.all(
         ids.map(async (id) => {
-          const value = await readData(`${type}-${id}`);
+          let value = await readData(`${type}-${id}`);
+          if (type === 'app-state-sync-key' && value) {
+            value = proto.Message.AppStateSyncKeyData.fromObject(value);
+          }
           data[id] = value;
         })
       );

@@ -1,1 +1,4 @@
 %LOCALAPPDATA%\Programs\smartchat\smartchat.exe
+
+// for dev in terminal : 
+npm run dev 2>&1 | Tee-Object -FilePath "dev_output.log"

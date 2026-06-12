@@ -19,37 +19,48 @@ export class BaileysPatcher {
       }
 
       if (!targetPath) {
-        console.warn('[BaileysPatcher] Could not locate chat-utils.js to apply app-state.sync patch.');
+        console.warn('[BaileysPatcher] Could not locate chat-utils.js to apply patches.');
         return;
       }
 
-      const content = fs.readFileSync(targetPath, 'utf8');
-      
-      // Check if already patched
-      if (content.includes("ev.emit('app-state.sync'")) {
-        console.log('[BaileysPatcher] chat-utils.js is already patched.');
-        return;
-      }
+      let content = fs.readFileSync(targetPath, 'utf8');
+      let modified = false;
 
-      // We want to insert the event emission inside processSyncAction
-      const targetSignature = 'export const processSyncAction = (syncAction, ev, me, initialSyncOpts, logger) => {';
-      const replacement = `${targetSignature}
+      // 1. Patch processSyncAction to emit 'app-state.sync' events
+      if (!content.includes("ev.emit('app-state.sync'")) {
+        const targetSignature = 'export const processSyncAction = (syncAction, ev, me, initialSyncOpts, logger) => {';
+        const replacement = `${targetSignature}
     try {
         ev.emit('app-state.sync', syncAction);
     } catch (e) {
         logger?.error({ err: e }, 'Failed to emit app-state.sync');
     }`;
 
-      if (!content.includes(targetSignature)) {
-        console.error('[BaileysPatcher] Target signature for processSyncAction not found in chat-utils.js.');
-        return;
+        if (content.includes(targetSignature)) {
+          content = content.replace(targetSignature, replacement);
+          console.log('[BaileysPatcher] Successfully patched chat-utils.js to emit app-state.sync events.');
+          modified = true;
+        } else {
+          console.error('[BaileysPatcher] Target signature for processSyncAction not found in chat-utils.js.');
+        }
       }
 
-      const patchedContent = content.replace(targetSignature, replacement);
-      fs.writeFileSync(targetPath, patchedContent, 'utf8');
-      console.log('[BaileysPatcher] Successfully patched chat-utils.js to emit app-state.sync events.');
+      // 2. Patch "tried remove, but no previous op" to ignore and return instead of throwing
+      const targetThrow = "throw new Boom('tried remove, but no previous op', { data: { indexMac, valueMac } });";
+      if (content.includes(targetThrow)) {
+        const replacementThrow = "console.warn('[BaileysPatcher] tried remove, but no previous op', { indexMacBase64 });\n                    return;";
+        content = content.replace(targetThrow, replacementThrow);
+        console.log('[BaileysPatcher] Successfully patched chat-utils.js to bypass tried remove error.');
+        modified = true;
+      }
+
+      if (modified) {
+        fs.writeFileSync(targetPath, content, 'utf8');
+      } else {
+        console.log('[BaileysPatcher] chat-utils.js is already fully patched.');
+      }
     } catch (error) {
-      console.error('[BaileysPatcher] Error applying patch to chat-utils.js:', error);
+      console.error('[BaileysPatcher] Error applying patches to chat-utils.js:', error);
     }
   }
 }
