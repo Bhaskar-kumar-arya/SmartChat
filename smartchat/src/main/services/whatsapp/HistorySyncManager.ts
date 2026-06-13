@@ -123,9 +123,6 @@ export class HistorySyncManager {
 
     try {
       const groups = await sock.groupFetchAllParticipating()
-      const groupKeys = Object.keys(groups)
-      const totalGroups = groupKeys.length
-      let groupCount = 0
 
       const mainWindow = this.getMainWindow()
       mainWindow?.webContents.send('wa-sync-progress', {
@@ -134,27 +131,16 @@ export class HistorySyncManager {
         syncFullHistory
       })
       mainWindow?.webContents.send('wa-sync-status', 'Fetching group metadata from WhatsApp...')
-
-      for (const jid of groupKeys) {
-        groupCount++
-        if (groupCount % 5 === 0) {
-          await new Promise(r => setImmediate(r))
-          const groupProgress = 95 + Math.round((groupCount / totalGroups) * 4)
-          mainWindow?.webContents.send('wa-sync-progress', {
-            progress: groupProgress,
-            syncType: SYNC_TYPE_GROUP_HYDRATION,
-            syncFullHistory
-          })
-          mainWindow?.webContents.send('wa-sync-status', `Syncing group members... (${groupCount} / ${totalGroups})`)
-        }
-        const raw = groups[jid] as any
-        await this.services.chatService.upsertChat(jid, raw).catch(() => { })
-        if (raw.participants && raw.participants.length > 0) {
-          await this.services.chatService.syncGroupMembers(jid, raw.participants).catch((err) => {
-            console.error(`Failed to sync members for ${jid}:`, err)
-          })
-        }
-      }
+      await this.services.groupHydrationService.hydrateGroups(groups, (progress, status) => {
+        mainWindow?.webContents.send('wa-sync-progress', {
+          progress,
+          syncType: SYNC_TYPE_GROUP_HYDRATION,
+          syncFullHistory
+        })
+        mainWindow?.webContents.send('wa-sync-status', status)
+      }).catch((err) => {
+        console.error('[HistorySync] Group hydration failed:', err)
+      })
     } catch (err) {
       console.warn('[WhatsAppConnectionManager] Failed to sync community metadata:', err)
     }

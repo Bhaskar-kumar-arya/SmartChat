@@ -36,6 +36,16 @@ export class ContactService {
     console.log('[ContactService] Caches cleared')
   }
 
+  public warmLinkCache(cacheKey: string): void {
+    this.linkCache.add(cacheKey)
+  }
+
+  public populateIdentityIdCache(entries: Map<string, number>): void {
+    for (const [jid, id] of entries) {
+      this.identityIdCache.set(jid, id)
+    }
+  }
+
   /**
    * Resolves a collection of JIDs into a map of display names.
    * Efficiently handles the N+1 problem by batching DB requests.

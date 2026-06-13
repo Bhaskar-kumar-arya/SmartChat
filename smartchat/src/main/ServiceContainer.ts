@@ -16,6 +16,7 @@ import { NotificationService } from './services/notification/NotificationService
 import { SecretMessageService } from './services/whatsapp/secret/SecretMessageService'
 import { MessageReactionStrategy } from './services/whatsapp/secret/MessageReactionStrategy'
 import { FavoriteStickerService } from './services/messages/FavoriteStickerService'
+import { GroupHydrationService } from './services/chats/GroupHydrationService'
 
 import type { WAEventBus } from './services/whatsapp/WAEventBus'
 
@@ -36,6 +37,7 @@ export function createServices(
 
   // 2. Services with service dependencies
   const chatService = new ChatService(prisma, contactService)
+  const groupHydrationService = new GroupHydrationService(prisma, contactService)
   const messageService = new MessageService(prisma, contactService, embeddingService, secretMessageService)
   const messageActionService = new MessageActionService(prisma, contactService, messageService, chatService, getBus)
   const mediaService = new MediaService(prisma, messageService, contactService, favoriteStickerService)
@@ -52,6 +54,7 @@ export function createServices(
     dataWipeService,
     receiptService,
     chatService,
+    groupHydrationService,
     messageService,
     messageActionService,
     mediaService,

@@ -258,12 +258,12 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   const isTextMessage = (msg.messageType === 'conversation' || msg.messageType === 'extendedTextMessage') && !isTemplateMessage
 
   const localURI = rawMsg?.imageMessage?.localURI ||
-                   rawMsg?.stickerMessage?.localURI ||
-                   rawMsg?.videoMessage?.localURI ||
-                   rawMsg?.ptvMessage?.localURI ||
-                   rawMsg?.documentMessage?.localURI ||
-                   rawMsg?.audioMessage?.localURI ||
-                   msg.localURI
+    rawMsg?.stickerMessage?.localURI ||
+    rawMsg?.videoMessage?.localURI ||
+    rawMsg?.ptvMessage?.localURI ||
+    rawMsg?.documentMessage?.localURI ||
+    rawMsg?.audioMessage?.localURI ||
+    msg.localURI
 
   const getMessageTypeKey = (): string | null => {
     if (isTemplateMessage) return 'template'
@@ -379,23 +379,23 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
 
       <div className="message-actions">
         <div className="reaction-trigger-container" ref={reactionTriggerRef}>
-          <button 
+          <button
             className={`action-btn reaction-btn ${showReactionMenu ? 'active' : ''}`}
-            onClick={() => setShowReactionMenu(!showReactionMenu)} 
+            onClick={() => setShowReactionMenu(!showReactionMenu)}
             title="React to Message"
           >
             <Smile size={18} />
           </button>
-          
+
           {showReactionMenu && (
             <div className="quick-reaction-bar">
               {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => {
-                const isMyReaction = msg.reactions?.some(r => 
+                const isMyReaction = msg.reactions?.some(r =>
                   isMeReaction(r.senderId, r.senderName) && r.text === emoji
                 )
                 return (
-                  <button 
-                    key={emoji} 
+                  <button
+                    key={emoji}
                     className={`quick-reaction-btn ${isMyReaction ? 'active' : ''}`}
                     onClick={() => handleReactClick(emoji)}
                   >
@@ -403,20 +403,20 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
                   </button>
                 )
               })}
-              <button 
-                className="quick-reaction-btn plus-btn" 
+              <button
+                className="quick-reaction-btn plus-btn"
                 onClick={() => setShowFullEmojiPicker(!showFullEmojiPicker)}
                 title="Choose emoji"
               >
                 +
               </button>
-              
+
               {showFullEmojiPicker && (
                 <div className="reaction-full-picker-popover">
-                  <EmojiStickerGifPicker 
-                    initialTab="emoji" 
-                    onSelectEmoji={handleReactClick} 
-                    onClose={() => setShowFullEmojiPicker(false)} 
+                  <EmojiStickerGifPicker
+                    initialTab="emoji"
+                    onSelectEmoji={handleReactClick}
+                    onClose={() => setShowFullEmojiPicker(false)}
                   />
                 </div>
               )}
