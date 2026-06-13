@@ -9,6 +9,10 @@ import { ProfilePicture } from '../common/ProfilePicture'
 import { ProfilePicOverlay } from '../common/ProfilePicOverlay'
 import AIChatSidebar from '../ai/AIChatSidebar'
 import '../../styles/sidebar.css'
+import { useDragAndDrop } from '../../hooks/useDragAndDrop'
+import { useMultiFileQueue } from '../../hooks/useMultiFileQueue'
+import DragDropOverlay from './DragDropOverlay'
+import MultiFilePreview from './MultiFilePreview'
 
 export default function ChatLayout() {
   const [activeJid, setActiveJid] = useState<string | null>(null)
@@ -53,6 +57,52 @@ export default function ChatLayout() {
   } = useMessages(activeJid)
 
   const { getActivePresence } = usePresence()
+
+  const {
+    stagedFiles,
+    selectedIndex,
+    setSelectedIndex,
+    addFiles,
+    removeFile,
+    updateCaption,
+    clearQueue
+  } = useMultiFileQueue()
+
+  const { isDraggingOver, dragHandlers } = useDragAndDrop({
+    onFilesDropped: addFiles,
+    disabled: !activeJid
+  })
+
+  const [sendingFiles, setSendingFiles] = useState(false)
+
+  const handleSendMultiMedia = useCallback(async () => {
+    if (stagedFiles.length === 0 || sendingFiles) return
+    setSendingFiles(true)
+    try {
+      await Promise.all(
+        stagedFiles.map(file =>
+          sendMediaMessage(file.path, file.caption, replyingTo?.id)
+        )
+      )
+      clearQueue()
+      setReplyingTo(null)
+    } catch (err) {
+      console.error('Failed to send multiple media files:', err)
+    } finally {
+      setSendingFiles(false)
+    }
+  }, [stagedFiles, sendingFiles, sendMediaMessage, replyingTo, clearQueue])
+
+  const handleAddMoreFiles = useCallback(async () => {
+    try {
+      const paths = await window.api.selectFile()
+      if (paths && paths.length > 0) {
+        addFiles(paths)
+      }
+    } catch (err) {
+      console.error('Failed to select file:', err)
+    }
+  }, [addFiles])
 
   const handleSelectChat = useCallback((jid: string, name: string, profilePictureUrl?: string | null, messageId?: string | null) => {
     setActiveJid(jid)
@@ -129,9 +179,10 @@ export default function ChatLayout() {
         onSelectChat={handleSelectChat}
         onShowProfilePic={openOverlay}
       />
-      <div className="chat-main">
+      <div className="chat-main" {...dragHandlers}>
         {activeJid ? (
           <>
+            <DragDropOverlay isVisible={isDraggingOver} />
             <div className="chat-header">
               <ProfilePicture
                 jid={activeJid}
@@ -166,6 +217,18 @@ export default function ChatLayout() {
               activeJid={activeJid}
               replyingTo={replyingTo}
               onCancelReply={handleCancelReply}
+              onAttachFiles={addFiles}
+            />
+            <MultiFilePreview
+              files={stagedFiles}
+              selectedIndex={selectedIndex}
+              onSelectFile={setSelectedIndex}
+              onRemoveFile={removeFile}
+              onAddMore={handleAddMoreFiles}
+              onCaptionChange={updateCaption}
+              onSend={handleSendMultiMedia}
+              onClose={clearQueue}
+              sending={sendingFiles}
             />
           </>
         ) : (

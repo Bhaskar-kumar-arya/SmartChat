@@ -93,7 +93,7 @@ export const api = {
   getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean): Promise<string | null> =>
     window.api.getProfilePicture(jid, type, forceRefresh),
 
-  selectFile: (): Promise<string | null> =>
+  selectFile: (): Promise<string[] | null> =>
     window.api.selectFile(),
 
   searchAll: (query: string, mode: 'normal' | 'deep' = 'normal', filters?: SearchFilters): Promise<SearchResults> =>

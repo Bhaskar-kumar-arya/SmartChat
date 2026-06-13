@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
@@ -284,6 +284,13 @@ const api = {
     const listener = (_event: any, chat: { jid: string; name: string }) => callback(chat)
     ipcRenderer.on('open-chat', listener)
     return () => { ipcRenderer.removeListener('open-chat', listener) }
+  },
+
+  // ── File Utilities ──────────────────────────────────────────────────
+  // webUtils.getPathForFile is the modern Electron API to get the real
+  // filesystem path of a File object dropped into the renderer.
+  getPathForFile: (file: File): string => {
+    return webUtils.getPathForFile(file)
   }
 }
 

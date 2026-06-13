@@ -13,13 +13,13 @@ interface MessageInputProps {
   onSendMedia: (filePath: string, text: string, mentions?: string[]) => void | Promise<void>
   replyingTo: MessageItem | null
   onCancelReply: () => void
+  onAttachFiles?: (paths: string[]) => void
 }
 
-export default function MessageInput({ activeJid, onSend, onSendMedia, replyingTo, onCancelReply }: MessageInputProps) {
+export default function MessageInput({ activeJid, onSend, onSendMedia, replyingTo, onCancelReply, onAttachFiles }: MessageInputProps) {
   const api = useAPI()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<{path: string, name: string} | null>(null)
   const [showPicker, setShowPicker] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const pickerContainerRef = useRef<HTMLDivElement>(null)
@@ -131,19 +131,14 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
 
   const handleSend = async () => {
     const trimmed = text.trim()
-    if ((!trimmed && !selectedFile) || sending) return
+    if (!trimmed || sending) return
 
     setSending(true)
     const mentions = Array.from(mentionedJids)
     
     try {
-      if (selectedFile) {
-        await onSendMedia(selectedFile.path, trimmed, mentions)
-      } else {
-        await onSend(trimmed, mentions)
-      }
+      await onSend(trimmed, mentions)
       setText('')
-      setSelectedFile(null)
       clearMentions()
     } finally {
       setSending(false)
@@ -176,11 +171,9 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
 
   const handleAttachClick = async () => {
     try {
-      const path = await api.selectFile()
-      if (path) {
-        const name = path.split(/[\\/]/).pop() || 'File'
-        setSelectedFile({ path, name })
-        inputRef.current?.focus()
+      const paths = await api.selectFile()
+      if (paths && paths.length > 0 && onAttachFiles) {
+        onAttachFiles(paths)
       }
     } catch (err) {
       console.error('Failed to select file:', err)
@@ -221,40 +214,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         </div>
       )}
       
-      {selectedFile && (() => {
-        const ext = selectedFile.name.split('.').pop()?.toLowerCase() || ''
-        const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)
-        const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)
-        const localUrl = `app://local/${encodeURIComponent(selectedFile.path)}`
 
-        return (
-          <div className="draft-preview-container">
-            <div className="draft-preview-card">
-              {isImage ? (
-                <img src={localUrl} alt="Preview" className="draft-preview-media" />
-              ) : isVideo ? (
-                <video src={localUrl} className="draft-preview-media" muted playsInline autoPlay loop />
-              ) : (
-                <div className="draft-preview-doc">
-                  <svg className="draft-preview-doc-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14.5 2 14.5 7.5 20 7.5"/></svg>
-                  <span className="draft-preview-doc-ext">{ext || 'file'}</span>
-                </div>
-              )}
-            </div>
-            
-            <div className="draft-preview-meta">
-              <span className="draft-preview-title">{selectedFile.name}</span>
-              <span className="draft-preview-subtitle">
-                {isImage ? 'Image attachment' : isVideo ? 'Video attachment' : 'Document attachment'}
-              </span>
-            </div>
-
-            <button onClick={() => setSelectedFile(null)} className="draft-preview-close" title="Remove attachment">
-              <X size={16} />
-            </button>
-          </div>
-        )
-      })()}
 
 
       {showPicker && (
@@ -295,7 +255,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
               ref={inputRef}
               type="text"
               className="message-input"
-              placeholder={selectedFile ? "Add a caption..." : "Type a message..."}
+              placeholder="Type a message..."
               value={text}
               onChange={handleTextChange}
               onKeyDown={handleKeyDown}
@@ -342,11 +302,11 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
       {!isRecording && !audioBlob && (
         <button
             className="send-button"
-            onClick={text.trim() || selectedFile ? handleSend : startRecording}
+            onClick={text.trim() ? handleSend : startRecording}
             disabled={sending}
-            title={text.trim() || selectedFile ? "Send message" : "Record voice message"}
+            title={text.trim() ? "Send message" : "Record voice message"}
         >
-            {text.trim() || selectedFile ? (
+            {text.trim() ? (
                 <Send size={24} />
             ) : (
                 <Mic size={24} />

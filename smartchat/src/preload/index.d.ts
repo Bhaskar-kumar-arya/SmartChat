@@ -71,7 +71,7 @@ declare global {
       removeFavoriteStickerById: (id: string) => Promise<boolean>
       isStickerFavorite: (msgId: string) => Promise<boolean>
       getFavoriteStickers: () => Promise<any[]>
-      selectFile: () => Promise<string | null>
+      selectFile: () => Promise<string[] | null>
       onNewMessage: (callback: (msg: MessageItem) => void) => () => void
       onMessageEdited: (callback: (msg: MessageItem) => void) => () => void
       onMessageDeleted: (callback: (update: { id: string, chatJid: string, fromMe: boolean }) => void) => () => void
@@ -123,6 +123,7 @@ declare global {
       setNotificationPreferences: (prefs: Partial<{ enabled: boolean, soundEnabled: boolean, notifyWhenFocused: boolean, minimizeToTray: boolean, launchOnStartup: boolean }>) => Promise<void>
       setActiveChat: (jid: string | null) => Promise<void>
       onOpenChat: (callback: (chat: { jid: string; name: string }) => void) => () => void
+      getPathForFile: (file: File) => string
     }
   }
 }

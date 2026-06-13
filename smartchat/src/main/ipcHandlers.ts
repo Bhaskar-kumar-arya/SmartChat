@@ -111,10 +111,10 @@ export function registerIpcHandlers(
   ipcMain.handle('select-file', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
-      properties: ['openFile'],
+      properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'All Files', extensions: ['*'] }]
     })
-    return (canceled || filePaths.length === 0) ? null : filePaths[0]
+    return (canceled || filePaths.length === 0) ? null : filePaths
   })
 
   // ── Download Media ───────────────────────────────────────────────────
