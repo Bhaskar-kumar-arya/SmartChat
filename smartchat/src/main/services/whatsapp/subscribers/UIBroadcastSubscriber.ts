@@ -19,6 +19,8 @@ import type {
   MessageEditedEvent,
   ChatUpdatedEvent,
   PresenceEvent,
+  MessageStatusUpdatedEvent,
+  ReactionProcessedEvent,
 } from '../WAEventTypes'
 import type { ServiceContainer } from '../../../ServiceContainer'
 import { cleanJid } from '../../../utils'
@@ -36,6 +38,8 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     bus.on('message:edited',   this.onEdited.bind(this))
     bus.on('chat:updated',     this.onChatUpdated.bind(this))
     bus.on('presence:update',  this.onPresence.bind(this))
+    bus.on('message:status-updated', this.onStatusUpdated.bind(this))
+    bus.on('reaction:processed', this.onReactionProcessed.bind(this))
   }
 
   dispose(): void {
@@ -129,5 +133,13 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     } catch (err) {
       console.error('[UIBroadcastSubscriber] Error broadcasting presence update:', err)
     }
+  }
+
+  private async onStatusUpdated(event: MessageStatusUpdatedEvent): Promise<void> {
+    this.send('message-status-updated', event)
+  }
+
+  private async onReactionProcessed(event: ReactionProcessedEvent): Promise<void> {
+    this.send('new-message', event)
   }
 }

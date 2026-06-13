@@ -44,7 +44,7 @@ export class MessageReactionStrategy implements ISecretMessageStrategy {
               participant: senderJid
             },
             text: emoji,
-            senderTimestampMs: timestamp
+            senderTimestampMs: Number(timestamp) * 1000
           }
         }
 

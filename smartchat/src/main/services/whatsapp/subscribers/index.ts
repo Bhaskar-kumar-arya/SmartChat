@@ -40,7 +40,7 @@ export function createSubscribers(
     new ContactGroupSubscriber(services, prisma),
     new NotificationSubscriber(services),
     new UIBroadcastSubscriber(services, getMainWindow, prisma),
-    new ReceiptSubscriber(services, getMainWindow),
+    new ReceiptSubscriber(services),
     new FavoriteStickerSubscriber(services),
   ]
 

@@ -160,7 +160,7 @@ export function registerIpcHandlers(
   // ── Get Profile Picture ─────────────────────────────────────────────
   ipcMain.handle('get-profile-picture', async (_event, jid: string, type: 'preview' | 'image' = 'preview', forceRefresh: boolean = false) => {
     const sock = getSock()
-    return services.contactService.getProfilePicture(jid, type, sock, forceRefresh)
+    return services.profileSyncService.getProfilePicture(jid, type, sock, forceRefresh)
   })
 
   // ── Get Group Participants ────────────────────────────────────────────

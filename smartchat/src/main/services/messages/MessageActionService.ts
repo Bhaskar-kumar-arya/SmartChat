@@ -10,6 +10,7 @@ import { WASocket, EnrichedMessage } from '../../types'
 import { unwrapMessage, cleanJid } from '../../utils'
 import type { WAEventBus } from '../whatsapp/WAEventBus'
 import { stickerMetadataService } from './StickerMetadataService'
+import { getMediaSendOptions } from './MediaHelper'
 
 
 export class MessageActionService {
@@ -120,7 +121,7 @@ export class MessageActionService {
       messageId,
       chatJid: enriched.chatJid,
       editedTextContent: newText,
-      editedContent: enriched,
+      editedContent: updatedContent as proto.IMessage,
       sock
     }).catch(() => {});
 
@@ -380,7 +381,7 @@ export class MessageActionService {
     }
 
     const buffer = fs.readFileSync(finalPathToSend)
-    const sendOptions = this.messageService.getMediaSendOptions(finalPathToSend, buffer, caption)
+    const sendOptions = getMediaSendOptions(finalPathToSend, buffer, caption)
     if (mentions && mentions.length > 0) sendOptions.mentions = mentions
 
     const sentMsg = await sock.sendMessage(targetJid, sendOptions as any, { quoted } as any)

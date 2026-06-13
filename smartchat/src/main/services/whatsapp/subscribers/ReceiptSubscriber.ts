@@ -10,7 +10,6 @@
  * Single responsibility: message status tracking and call-event side-effects.
  */
 
-import { BrowserWindow } from 'electron'
 import type { WAEventBus } from '../WAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type {
@@ -23,8 +22,7 @@ import type { ServiceContainer } from '../../../ServiceContainer'
 
 export class ReceiptSubscriber implements IWAEventSubscriber {
   constructor(
-    private services: ServiceContainer,
-    private getMainWindow: () => BrowserWindow | null
+    private services: ServiceContainer
   ) {}
 
   register(bus: WAEventBus): void {
@@ -38,22 +36,17 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
     // Bus teardown handles listener removal
   }
 
-  private get window(): BrowserWindow | null {
-    const w = this.getMainWindow()
-    return w && !w.isDestroyed() ? w : null
-  }
-
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   private async onMessageStatus(event: MessageStatusEvent): Promise<void> {
     await this.services.receiptService
-      .processMessageStatusUpdate(event.key, event.baileysStatus, this.window)
+      .processMessageStatusUpdate(event.key, event.baileysStatus)
       .catch(() => {})
   }
 
   private async onReceipt(event: ReceiptEvent): Promise<void> {
     for (const update of event.updates) {
-      const { key, receipt } = update as any
+      const { key, receipt } = update
       const type = receipt?.readTimestamp
         ? 'read'
         : receipt?.deliveredTimestamp
@@ -63,7 +56,7 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
         `[ReceiptSubscriber] ${type} | msgId=${key?.id} | chat=${key?.remoteJid} | by=${receipt?.userJid} | ts=${receipt?.readTimestamp ?? receipt?.deliveredTimestamp}`
       )
       await this.services.receiptService
-        .processMessageReceipt(update, event.sock, this.window)
+        .processMessageReceipt(update, event.sock)
         .catch(() => {})
     }
   }
@@ -71,7 +64,7 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
   private async onReaction(event: ReactionEvent): Promise<void> {
     for (const reactionUpdate of event.reactions) {
       await this.services.messageService
-        .processReaction(reactionUpdate, event.sock, this.window)
+        .processReaction(reactionUpdate, event.sock)
         .catch((err) => {
           console.error('[ReceiptSubscriber] Error processing reaction:', err)
         })
@@ -81,10 +74,9 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
   private async onCall(event: CallEvent): Promise<void> {
     for (const call of event.calls) {
       try {
-        const rawCall = call as any
-        const fromJid = rawCall.from
-        const altPn = rawCall.callerPn || rawCall.content?.attrs?.['caller_pn'] || rawCall.attrs?.['caller_pn']
-        const altLid = rawCall.content?.attrs?.['caller_lid'] || rawCall.attrs?.['caller_lid']
+        const fromJid = call.from
+        const altPn = call.callerPn || call.content?.attrs?.['caller_pn'] || call.attrs?.['caller_pn']
+        const altLid = call.content?.attrs?.['caller_lid'] || call.attrs?.['caller_lid']
 
         const ids = [fromJid, altPn, altLid].filter(Boolean) as string[]
         let callLid: string | null = null

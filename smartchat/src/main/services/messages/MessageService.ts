@@ -4,8 +4,9 @@ import { EmbeddingService } from '../search/EmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils'
-import { BrowserWindow } from 'electron'
-import { WASocket, BaileysMessage, ProcessedMessage, ProtocolResult, DBMessageWithSender, MediaSendOptions, EnrichedMessage, BaileysReactionUpdate } from '../../types'
+import { WASocket, BaileysMessage, ProcessedMessage, ProtocolResult, DBMessageWithSender, EnrichedMessage, BaileysReactionUpdate } from '../../types'
+import { WAEventBus } from '../whatsapp/WAEventBus'
+import { resolveExtension } from './MediaHelper'
 
 /**
  * Plain data object produced by parseMessageSync().
@@ -29,7 +30,8 @@ export class MessageService {
     private prisma: PrismaClient,
     private contactService: ContactService,
     private embeddingService: EmbeddingService,
-    private secretMessageService: SecretMessageService
+    private secretMessageService: SecretMessageService,
+    private getBus: () => WAEventBus | null
   ) {}
 
 
@@ -591,77 +593,7 @@ export class MessageService {
     }
   }
 
-  /**
-   * Prepares send options for media or document messages based on file type.
-   */
-  getMediaSendOptions(filePath: string, buffer: Buffer, caption?: string): MediaSendOptions {
-    const lowerPath = filePath.toLowerCase()
-    
-    if (lowerPath.endsWith('.webp')) return { sticker: buffer }
-    if (['.mp4', '.mkv', '.avi', '.mov'].some(ext => lowerPath.endsWith(ext))) {
-      const isGifPlayback = lowerPath.includes('gifplayback') || lowerPath.includes('giphy')
-      return { video: buffer, caption, gifPlayback: isGifPlayback ? true : undefined }
-    }
-    if (['.jpg', '.jpeg', '.png', '.gif'].some(ext => lowerPath.endsWith(ext))) return { image: buffer, caption }
-    if (['.ogg', '.opus', '.mp3', '.m4a'].some(ext => lowerPath.endsWith(ext))) {
-        const isPtt = lowerPath.endsWith('.ogg') || lowerPath.endsWith('.opus')
-        return { 
-          audio: buffer, 
-          mimetype: isPtt ? 'audio/ogg; codecs=opus' : undefined,
-          ptt: isPtt 
-        }
-    }
-    
-    // Fallback to document message
-    const ext = lowerPath.split('.').pop() || 'bin'
-    const mimes: Record<string, string> = {
-        'pdf': 'application/pdf',
-        'doc': 'application/msword',
-        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'xls': 'application/vnd.ms-excel',
-        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'ppt': 'application/vnd.ms-powerpoint',
-        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'txt': 'text/plain',
-        'zip': 'application/zip',
-        'rar': 'application/x-rar-compressed'
-    }
-
-    return { 
-        document: buffer, 
-        fileName: filePath.split(/[\\/]/).pop(),
-        mimetype: mimes[ext] || 'application/octet-stream',
-        caption
-    }
-  }
-
-  /**
-   * Resolves the correct file extension for a media/document message based on its metadata.
-   */
-  resolveExtension(mediaType: string, mediaMsg: any): string {
-    if (mediaType === 'image') return 'jpg'
-    if (mediaType === 'sticker') return 'webp'
-    if (mediaType === 'video') return 'mp4'
-    if (mediaType === 'audio') return 'ogg'
-    
-    if (mediaType === 'document') {
-        const mime = mediaMsg.mimetype || ''
-        if (mime.includes('pdf')) return 'pdf'
-        if (mime.includes('word')) return 'docx'
-        if (mime.includes('sheet')) return 'xlsx'
-        if (mime.includes('text')) return 'txt'
-        
-        const originalName = mediaMsg.fileName || ''
-        if (originalName.includes('.')) return originalName.split('.').pop() || 'dat'
-    }
-    
-    return 'dat'
-  }
-
-  /**
-   * Processes a real-time messages.reaction event update.
-   */
-  async processReaction(reactionUpdate: BaileysReactionUpdate, sock: WASocket | null, mainWindow: BrowserWindow | null): Promise<void> {
+  async processReaction(reactionUpdate: BaileysReactionUpdate, sock: WASocket | null): Promise<void> {
     const targetId = reactionUpdate.key?.id
     const reactionKey = reactionUpdate.reaction?.key
     const text = reactionUpdate.reaction?.text
@@ -748,38 +680,32 @@ export class MessageService {
       }
     }
 
-    // 5. Notify the frontend to update UI reactively
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      const reactorJidString = reactorJid || (reactionKey.remoteJid || '')
-      const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock)
-      const reactorName = nameMap.get(reactorJidString) || reactorJidString.replace(/@.*$/, '')
+    // 5. Notify the frontend to update UI reactively via event bus
+    const reactorJidString = reactorJid || (reactionKey.remoteJid || '')
+    const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock)
+    const reactorName = nameMap.get(reactorJidString) || reactorJidString.replace(/@.*$/, '')
 
-      const mockMsg = {
-        id: reactionKey.id || targetId,
-        chatJid: cleanJid(reactionKey.remoteJid || ''),
-        remoteJid: reactionKey.remoteJid || '',
-        fromMe: reactionKey.fromMe === true,
-        senderId: reactorId,
-        participant: reactorJidString,
-        participantName: reactorName,
-        timestamp: timestamp.toString(),
-        messageType: 'reactionMessage',
-        content: JSON.stringify({
-          reactionMessage: {
-            key: { id: targetId },
-            text: text || ''
-          }
-        })
-      }
-      mainWindow.webContents.send('new-message', mockMsg)
-    }
+    await this.getBus()?.emit('reaction:processed', {
+      id: reactionKey.id || targetId,
+      chatJid: cleanJid(reactionKey.remoteJid || ''),
+      remoteJid: reactionKey.remoteJid || '',
+      fromMe: reactionKey.fromMe === true,
+      senderId: reactorId,
+      participant: reactorJidString,
+      participantName: reactorName,
+      timestamp: timestamp.toString(),
+      messageType: 'reactionMessage',
+      content: JSON.stringify({
+        reactionMessage: {
+          key: { id: targetId },
+          text: text || ''
+        }
+      })
+    })
   }
 
-  /**
-   * Generates a safe and descriptive filename for a media/document message.
-   */
   getSafeMediaFileName(msgId: string, mediaType: string, mediaMsg: any): string {
-    const ext = this.resolveExtension(mediaType, mediaMsg)
+    const ext = resolveExtension(mediaType, mediaMsg)
     
     // Attempt to resolve fileSha256 hash for deduplication
     let fileHash: string | null = null

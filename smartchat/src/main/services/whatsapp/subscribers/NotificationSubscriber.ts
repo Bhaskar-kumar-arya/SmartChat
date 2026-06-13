@@ -49,7 +49,7 @@ export class NotificationSubscriber implements IWAEventSubscriber {
       let profilePicUrl: string | null = null
       try {
         const targetJid = chatJid.endsWith('@g.us') ? chatJid : senderJid
-        profilePicUrl = await this.services.contactService.getProfilePicture(targetJid, 'preview', sock)
+        profilePicUrl = await this.services.profileSyncService.getProfilePicture(targetJid, 'preview', sock)
       } catch {
         // Non-fatal — notify without picture
       }

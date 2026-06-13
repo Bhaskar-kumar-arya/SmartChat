@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client'
 import { BrowserWindow } from 'electron'
 import { ContactService } from './services/contacts/ContactService'
+import { IdentityReconciliationService } from './services/contacts/IdentityReconciliationService'
+import { ProfileSyncService } from './services/contacts/ProfileSyncService'
 import { EmbeddingService } from './services/search/EmbeddingService'
 import { DataWipeService } from './services/DataWipeService'
 import { ReceiptService } from './services/whatsapp/ReceiptService'
@@ -29,7 +31,7 @@ export function createServices(
   const contactService = new ContactService(prisma)
   const embeddingService = new EmbeddingService(prisma)
   const dataWipeService = new DataWipeService(prisma)
-  const receiptService = new ReceiptService(prisma, contactService)
+  const receiptService = new ReceiptService(prisma, contactService, getBus)
   const notificationService = new NotificationService(getMainWindow)
   const secretMessageService = new SecretMessageService(prisma)
   secretMessageService.registerStrategy(new MessageReactionStrategy(getBus))
@@ -38,10 +40,12 @@ export function createServices(
   // 2. Services with service dependencies
   const chatService = new ChatService(prisma, contactService)
   const groupHydrationService = new GroupHydrationService(prisma, contactService)
-  const messageService = new MessageService(prisma, contactService, embeddingService, secretMessageService)
+  const messageService = new MessageService(prisma, contactService, embeddingService, secretMessageService, getBus)
   const messageActionService = new MessageActionService(prisma, contactService, messageService, chatService, getBus)
   const mediaService = new MediaService(prisma, messageService, contactService, favoriteStickerService)
   const searchService = new SearchService(prisma, contactService, embeddingService)
+  const identityReconciliationService = new IdentityReconciliationService(prisma)
+  const profileSyncService = new ProfileSyncService(prisma, contactService)
 
   // 3. AI services (unchanged internally — just re-exported/wired)
   const aiService = new AIService()
@@ -64,7 +68,9 @@ export function createServices(
     aiChatExportService,
     notificationService,
     secretMessageService,
-    favoriteStickerService
+    favoriteStickerService,
+    identityReconciliationService,
+    profileSyncService
   }
 }
 

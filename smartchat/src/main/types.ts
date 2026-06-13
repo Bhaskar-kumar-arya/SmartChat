@@ -131,6 +131,7 @@ export interface MessageReceiptUpdate {
     userJid?: string
     readTimestamp?: number | bigint | null
     receiptTimestamp?: number | bigint | null
+    deliveredTimestamp?: number | bigint | null
   }
 }
 
@@ -148,4 +149,49 @@ export interface BaileysReactionUpdate {
     text?: string | null
     senderTimestampMs?: number | { low: number; high: number } | null
   }
+}
+
+/** Baileys Call structure representing call events */
+export interface BaileysCall {
+  id: string
+  from: string
+  status: string
+  timestamp: number | bigint
+  callerPn?: string
+  callerLid?: string
+  content?: {
+    attrs?: Record<string, string>
+  }
+  attrs?: Record<string, string>
+}
+
+/** Baileys Contact structure from Baileys events */
+export interface BaileysContact {
+  id: string
+  name?: string | null
+  notify?: string | null
+  verifiedName?: string | null
+  imgUrl?: string | null
+  status?: string | null
+  lid?: string | null
+  phoneNumber?: string | null
+}
+
+/** Baileys Group Update structure representing group metadata updates */
+export interface BaileysGroupUpdate {
+  id: string
+  subject?: string
+  participants?: Array<{ id?: string; userJid?: string; [key: string]: any }>
+  [key: string]: any
+}
+
+/** Type-safe extension of WASocket for accessing private signalRepository */
+export interface BaileysSignalRepository {
+  lidMapping?: {
+    getPNForLID?: (lid: string) => string | undefined
+  }
+}
+
+export interface WASocketWithSignalRepository {
+  signalRepository?: BaileysSignalRepository
 }

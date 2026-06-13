@@ -50,15 +50,14 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
       }
       await this.services.contactService.upsertContact(cleanContact).catch(() => {})
 
-      const raw = contact as any
       if (
-        raw.lid &&
-        raw.id &&
-        !String(raw.id).endsWith('@lid') &&
-        String(raw.id).includes('@s.whatsapp.net')
+        contact.lid &&
+        contact.id &&
+        !String(contact.id).endsWith('@lid') &&
+        String(contact.id).includes('@s.whatsapp.net')
       ) {
         await this.services.contactService
-          .linkLidAndPn(cleanJid(raw.lid), cleanJid(raw.id), 'contacts.upsert')
+          .linkLidAndPn(cleanJid(contact.lid), cleanJid(contact.id), 'contacts.upsert')
           .catch(() => {})
       }
     }
@@ -90,18 +89,17 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
 
   private async onGroupUpdated(event: GroupUpdatedEvent): Promise<void> {
     for (const update of event.updates) {
-      const raw = update as any
-      if (!raw.id) continue
-      const cleanGroupId = cleanJid(raw.id)
+      if (!update.id) continue
+      const cleanGroupId = cleanJid(update.id)
 
       await this.services.chatService
-        .upsertChat(cleanGroupId, { ...raw, id: cleanGroupId })
-        .catch(() => {})
+         .upsertChat(cleanGroupId, { ...update, id: cleanGroupId })
+         .catch(() => {})
 
-      if (raw.participants && raw.participants.length > 0) {
-        const cleanParticipants = raw.participants.map((p: any) => ({
+      if (update.participants && update.participants.length > 0) {
+        const cleanParticipants = update.participants.map((p) => ({
           ...p,
-          id: cleanJid(p.id || p.userJid)
+          id: cleanJid(p.id || p.userJid || '')
         }))
         await this.services.chatService
           .syncGroupMembers(cleanGroupId, cleanParticipants)

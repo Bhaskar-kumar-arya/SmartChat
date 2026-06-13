@@ -9,7 +9,16 @@
  * All of that lives in the subscribers (see subscribers/).
  */
 
-import { WASocket } from '../../types'
+import {
+  WASocket,
+  BaileysMessage,
+  BaileysContact,
+  BaileysGroupUpdate,
+  BaileysReactionUpdate,
+  BaileysCall,
+  ChatUpdatePayload,
+  MessageReceiptUpdate
+} from '../../types'
 import { cleanJid } from '../../utils'
 import {
   PROTOCOL_TYPE_REVOKE,
@@ -28,7 +37,7 @@ export class WAEventHandler {
   // ── messages.upsert ───────────────────────────────────────────────────────
 
   async handleMessagesUpsert(
-    data: { messages: any[]; type: string },
+    data: { messages: BaileysMessage[]; type: string },
     sock: WASocket
   ): Promise<void> {
     const { messages, type } = data
@@ -168,11 +177,11 @@ export class WAEventHandler {
 
   // ── contacts ──────────────────────────────────────────────────────────────
 
-  async handleContactsUpsert(contacts: any[]): Promise<void> {
+  async handleContactsUpsert(contacts: BaileysContact[]): Promise<void> {
     await this.bus.emit('contact:upserted', { contacts })
   }
 
-  async handleContactsUpdate(contacts: any[]): Promise<void> {
+  async handleContactsUpdate(contacts: BaileysContact[]): Promise<void> {
     await this.bus.emit('contact:updated', { contacts })
   }
 
@@ -185,7 +194,7 @@ export class WAEventHandler {
 
   // ── chats ─────────────────────────────────────────────────────────────────
 
-  async handleChatsUpdate(updates: any[]): Promise<void> {
+  async handleChatsUpdate(updates: ChatUpdatePayload[]): Promise<void> {
     for (const update of updates) {
       const jid = cleanJid(update.id)
       if (jid) {
@@ -194,7 +203,7 @@ export class WAEventHandler {
     }
   }
 
-  async handleChatsUpsert(chats: any[]): Promise<void> {
+  async handleChatsUpsert(chats: ChatUpdatePayload[]): Promise<void> {
     for (const chat of chats) {
       const jid = cleanJid(chat.id)
       if (jid) {
@@ -207,11 +216,11 @@ export class WAEventHandler {
 
   // ── groups ────────────────────────────────────────────────────────────────
 
-  async handleGroupsUpdate(updates: any[]): Promise<void> {
+  async handleGroupsUpdate(updates: BaileysGroupUpdate[]): Promise<void> {
     await this.bus.emit('group:updated', { updates })
   }
 
-  async handleGroupParticipantsUpdate(data: any): Promise<void> {
+  async handleGroupParticipantsUpdate(data: { id: string; participants: string[]; action: string }): Promise<void> {
     await this.bus.emit('group:participants', {
       id: data.id,
       participants: data.participants,
@@ -221,11 +230,11 @@ export class WAEventHandler {
 
   // ── reactions, presence, receipts, calls ─────────────────────────────────
 
-  async handleMessagesReaction(reactions: any[], sock: WASocket): Promise<void> {
+  async handleMessagesReaction(reactions: BaileysReactionUpdate[], sock: WASocket): Promise<void> {
     await this.bus.emit('reaction:update', { reactions, sock })
   }
 
-  async handlePresenceUpdate(data: any, sock: WASocket): Promise<void> {
+  async handlePresenceUpdate(data: { id: string; presences: Record<string, any> }, sock: WASocket): Promise<void> {
     await this.bus.emit('presence:update', {
       id: data.id,
       presences: data.presences,
@@ -233,11 +242,11 @@ export class WAEventHandler {
     })
   }
 
-  async handleMessageReceiptUpdate(updates: any[], sock: WASocket): Promise<void> {
+  async handleMessageReceiptUpdate(updates: MessageReceiptUpdate[], sock: WASocket): Promise<void> {
     await this.bus.emit('receipt:update', { updates, sock })
   }
 
-  async handleCallEvent(calls: any[]): Promise<void> {
+  async handleCallEvent(calls: BaileysCall[]): Promise<void> {
     await this.bus.emit('call:event', { calls })
   }
 

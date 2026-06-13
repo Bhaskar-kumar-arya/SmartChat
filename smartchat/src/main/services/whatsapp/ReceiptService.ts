@@ -1,8 +1,8 @@
-import { BrowserWindow } from 'electron'
 import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
 import { WASocket, MessageReceiptUpdate, BaileysMessage } from '../../types'
 import { ContactService } from '../contacts/ContactService'
+import { WAEventBus } from './WAEventBus'
 
 export function mapBaileysStatus(status: number | null | undefined): string {
   if (status === undefined || status === null) return 'SENT'
@@ -32,7 +32,8 @@ export class ReceiptService {
 
   constructor(
     private prisma: PrismaClient,
-    private contactService: ContactService
+    private contactService: ContactService,
+    private getBus: () => WAEventBus | null
   ) {}
 
   /**
@@ -40,8 +41,7 @@ export class ReceiptService {
    */
   public async processMessageStatusUpdate(
     key: BaileysMessage['key'] | null | undefined,
-    baileysStatus: number,
-    mainWindow: BrowserWindow | null
+    baileysStatus: number
   ): Promise<void> {
     const msgId = key?.id
     if (!msgId) return
@@ -65,13 +65,11 @@ export class ReceiptService {
           data: { status: newStatus }
         })
 
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('message-status-updated', {
-            id: msgId,
-            chatJid: currentMsg.chatJid,
-            status: newStatus
-          })
-        }
+        await this.getBus()?.emit('message:status-updated', {
+          id: msgId,
+          chatJid: currentMsg.chatJid,
+          status: newStatus
+        })
       }
     } catch (err) {
       console.error('[ReceiptService] Error processing message status update:', err)
@@ -83,8 +81,7 @@ export class ReceiptService {
    */
   public async processMessageReceipt(
     update: MessageReceiptUpdate,
-    _sock: WASocket | null,
-    mainWindow: BrowserWindow | null
+    _sock: WASocket | null
   ): Promise<void> {
     const { key, receipt } = update
     const messageId = key?.id
@@ -155,13 +152,11 @@ export class ReceiptService {
               data: { status: 'READ' }
             })
 
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('message-status-updated', {
-                id: messageId,
-                chatJid: remoteJid,
-                status: 'READ'
-              })
-            }
+            await this.getBus()?.emit('message:status-updated', {
+              id: messageId,
+              chatJid: remoteJid,
+              status: 'READ'
+            })
           }
         } else {
           // Check if everyone got it delivered
@@ -183,13 +178,11 @@ export class ReceiptService {
                 data: { status: 'DELIVERED' }
               })
 
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('message-status-updated', {
-                  id: messageId,
-                  chatJid: remoteJid,
-                  status: 'DELIVERED'
-                })
-              }
+              await this.getBus()?.emit('message:status-updated', {
+                id: messageId,
+                chatJid: remoteJid,
+                status: 'DELIVERED'
+              })
             }
           } else {
             // Keep status at SENT if not delivered to all yet
@@ -200,13 +193,11 @@ export class ReceiptService {
                 data: { status: 'SENT' }
               })
 
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('message-status-updated', {
-                  id: messageId,
-                  chatJid: remoteJid,
-                  status: 'SENT'
-                })
-              }
+              await this.getBus()?.emit('message:status-updated', {
+                id: messageId,
+                chatJid: remoteJid,
+                status: 'SENT'
+              })
             }
           }
         }
@@ -222,13 +213,11 @@ export class ReceiptService {
             data: { status }
           })
 
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('message-status-updated', {
-              id: messageId,
-              chatJid: remoteJid,
-              status
-            })
-          }
+          await this.getBus()?.emit('message:status-updated', {
+            id: messageId,
+            chatJid: remoteJid,
+            status
+          })
         }
       }
     } catch (err) {

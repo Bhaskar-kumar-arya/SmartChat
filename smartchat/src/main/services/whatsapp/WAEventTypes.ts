@@ -7,7 +7,18 @@
  * Subscribers receive these types — no raw Baileys payloads leak through.
  */
 
-import { WASocket, ProcessedMessage, MessageReceiptUpdate } from '../../types'
+import {
+  WASocket,
+  ProcessedMessage,
+  MessageReceiptUpdate,
+  BaileysMessage,
+  ChatUpdatePayload,
+  BaileysContact,
+  BaileysGroupUpdate,
+  BaileysReactionUpdate,
+  BaileysCall
+} from '../../types'
+import { proto } from '@whiskeysockets/baileys'
 
 // ─── Message Events ───────────────────────────────────────────────────────────
 
@@ -32,8 +43,8 @@ export interface IncomingMessageEvent {
  * Fast path — no enrichment needed.
  */
 export interface AppendMessagesEvent {
-  messages: any[]
-  sock: any
+  messages: BaileysMessage[]
+  sock: WASocket
 }
 
 /**
@@ -53,7 +64,7 @@ export interface MessageEditedEvent {
   messageId: string
   chatJid: string
   editedTextContent: string | null
-  editedContent: any | null  // null = already persisted by strategy, skip DB write
+  editedContent: proto.IMessage | null  // null = already persisted by strategy, skip DB write
   sock: WASocket
 }
 
@@ -70,22 +81,22 @@ export interface MessageStatusEvent {
 
 export interface ChatUpdatedEvent {
   jid: string
-  update: Record<string, any>
+  update: ChatUpdatePayload
 }
 
 export interface ChatUpsertedEvent {
   jid: string
-  raw: Record<string, any>
+  raw: ChatUpdatePayload
 }
 
 // ─── Contact Events ───────────────────────────────────────────────────────────
 
 export interface ContactUpsertedEvent {
-  contacts: any[]
+  contacts: BaileysContact[]
 }
 
 export interface ContactUpdatedEvent {
-  contacts: any[]
+  contacts: BaileysContact[]
 }
 
 export interface LidMappingEvent {
@@ -95,7 +106,7 @@ export interface LidMappingEvent {
 // ─── Group Events ─────────────────────────────────────────────────────────────
 
 export interface GroupUpdatedEvent {
-  updates: any[]
+  updates: BaileysGroupUpdate[]
 }
 
 export interface GroupParticipantsEvent {
@@ -107,7 +118,7 @@ export interface GroupParticipantsEvent {
 // ─── Social Events ────────────────────────────────────────────────────────────
 
 export interface ReactionEvent {
-  reactions: any[]
+  reactions: BaileysReactionUpdate[]
   sock: WASocket | null
 }
 
@@ -127,21 +138,21 @@ export interface ReceiptEvent {
 // ─── Call Events ──────────────────────────────────────────────────────────────
 
 export interface CallEvent {
-  calls: any[]
+  calls: BaileysCall[]
 }
 
 // ─── App State Sync Events ───────────────────────────────────────────────────
 
 export interface AppStateSyncEvent {
   syncAction: any
-  sock: any
+  sock: WASocket
 }
 
 export interface FavoriteStickerSyncEvent {
   fileSha256: string
   isFavorite: boolean
   stickerAction?: any
-  sock: any
+  sock: WASocket
 }
 
 export interface MuteSyncEvent {
@@ -199,6 +210,25 @@ export interface NotificationSettingSyncEvent {
   setting: string
 }
 
+export interface MessageStatusUpdatedEvent {
+  id: string
+  chatJid: string
+  status: string
+}
+
+export interface ReactionProcessedEvent {
+  id: string
+  chatJid: string
+  remoteJid: string
+  fromMe: boolean
+  senderId: number | null
+  participant: string
+  participantName: string
+  timestamp: string
+  messageType: 'reactionMessage'
+  content: string
+}
+
 // ─── Bus Event Map ────────────────────────────────────────────────────────────
 
 /**
@@ -211,6 +241,7 @@ export interface WAEventMap {
   'message:deleted':     MessageDeletedEvent
   'message:edited':      MessageEditedEvent
   'message:status':      MessageStatusEvent
+  'message:status-updated': MessageStatusUpdatedEvent
   'chat:updated':        ChatUpdatedEvent
   'chat:upserted':       ChatUpsertedEvent
   'contact:upserted':    ContactUpsertedEvent
@@ -219,6 +250,7 @@ export interface WAEventMap {
   'group:updated':       GroupUpdatedEvent
   'group:participants':  GroupParticipantsEvent
   'reaction:update':     ReactionEvent
+  'reaction:processed':  ReactionProcessedEvent
   'presence:update':     PresenceEvent
   'receipt:update':      ReceiptEvent
   'call:event':          CallEvent

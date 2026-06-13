@@ -147,7 +147,7 @@ export class HistorySyncManager {
 
     // Heal any LID-stub / PN-identity splits that formed during the sync
     console.log('[finishSync] Running post-sync identity deduplication...')
-    await this.services.contactService.deduplicateIdentities().catch((err) => {
+    await this.services.identityReconciliationService.deduplicateIdentities().catch((err) => {
       console.warn('[finishSync] deduplicateIdentities error:', err)
     })
 
