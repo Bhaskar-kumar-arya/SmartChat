@@ -19,6 +19,9 @@ export interface ChatItem {
   lastMessageStatus?: string | null
   lastMessageFromMe?: boolean
   lastMessageId?: string | null
+  lastMessageTargetType?: string | null
+  lastMessageTargetText?: string | null
+  lastMessageReactionText?: string | null
 }
 
 export interface SelectedContext {
@@ -56,6 +59,8 @@ export interface MessageItem {
   isDeleted?: boolean
   isEdited?: boolean
   status?: string
+  targetMessageType?: string
+  targetTextContent?: string | null
 }
 
 export interface MessageReceiptInfo {

@@ -4,7 +4,7 @@ import { usePresence } from '../../hooks/usePresence'
 import { useSearch } from './hooks/useSearch'
 import { useAPI } from '../../context/APIContext'
 import { formatChatTime, isMuted } from '../../utils/formatters'
-import { ChatItem, SearchFilters, SearchMode } from '../../types'
+import { ChatItem, SearchFilters, SearchMode, MessageType } from '../../types'
 import { getPresenceStatusText } from '../../utils/presenceUtils'
 import { ProfilePicture } from '../common/ProfilePicture'
 import { SearchResultsPanel } from './SearchResultsPanel'
@@ -117,6 +117,46 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
     return getPresenceStatusText(chat, presences[chat.jid])
   }
 
+  const getMessageIcon = (typeStr: string | null | undefined) => {
+    if (!typeStr) return null
+    const type = typeStr as MessageType
+    const iconStyle = { marginRight: '4px', display: 'inline', verticalAlign: 'middle' }
+    switch (type) {
+      case 'imageMessage':
+        return (
+          <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        )
+      case 'videoMessage':
+      case 'ptvMessage':
+        return (
+          <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        )
+      case 'stickerMessage':
+      case 'lottieStickerMessage':
+        return (
+          <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        )
+      case 'audioMessage':
+        return (
+          <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+        )
+      case 'documentMessage':
+        return (
+          <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        )
+      case 'conversation':
+      case 'extendedTextMessage':
+      case 'templateMessage':
+      case 'reactionMessage':
+      case 'unknown':
+        return null
+      default: {
+        const _exhaustiveCheck: never = type
+        return _exhaustiveCheck
+      }
+    }
+  }
+
   const renderLastMessageText = (chat: ChatItem, presenceText: string | null) => {
     if (presenceText) return presenceText
 
@@ -124,52 +164,46 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
       return 'No messages'
     }
 
-    const iconStyle = { marginRight: '4px', display: 'inline', verticalAlign: 'middle' }
-
     const isGroup = chat.jid.endsWith('@g.us') || !!chat.linkedParentJid
     const senderPrefix = isGroup && chat.lastMessageSender ? `${chat.lastMessageSender}: ` : ''
 
-    switch (chat.lastMessageType) {
-      case 'imageMessage':
+    if (chat.lastMessageType === 'reactionMessage') {
+      const targetType = chat.lastMessageTargetType
+      const targetText = chat.lastMessageTargetText || 'message'
+      const reactionText = chat.lastMessageReactionText || ''
+      const icon = getMessageIcon(targetType)
+
+      if (chat.lastMessageFromMe) {
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-            <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-            {senderPrefix}{chat.lastMessage || 'Photo'}
+            You reacted {reactionText} to&nbsp;
+            {icon}
+            {targetText}
           </span>
         )
-      case 'videoMessage':
-      case 'ptvMessage':
-        return (
-          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-            <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-            {senderPrefix}{chat.lastMessage || 'Video'}
-          </span>
-        )
-      case 'stickerMessage':
-      case 'lottieStickerMessage':
-        return (
-          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-            <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-            {senderPrefix}{chat.lastMessage || 'Sticker'}
-          </span>
-        )
-      case 'audioMessage':
-        return (
-          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-            <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-            {senderPrefix}{chat.lastMessage || 'Voice message'}
-          </span>
-        )
-      case 'documentMessage':
-        return (
-          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-            <svg style={iconStyle} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            {senderPrefix}{chat.lastMessage || 'Document'}
-          </span>
-        )
-      default:
-        return <>{senderPrefix}{chat.lastMessage || 'No messages'}</>
+      }
+
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+          {senderPrefix}Reacted {reactionText} to&nbsp;
+          {icon}
+          {targetText}
+        </span>
+      )
     }
+
+    const icon = getMessageIcon(chat.lastMessageType)
+
+    if (icon) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+          {icon}
+          {senderPrefix}{chat.lastMessage}
+        </span>
+      )
+    }
+
+    return <>{senderPrefix}{chat.lastMessage || 'No messages'}</>
   }
 
 
@@ -370,7 +404,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
                         ) : (
                           <span className={`chat-item-preview ${presenceText ? 'presence-typing' : ''}`}>
                             {isChild && chat.isAnnounce && <span className="announce-tag">[Announcement] </span>}
-                            {chat.lastMessageFromMe && (
+                            {chat.lastMessageFromMe && chat.lastMessageType !== 'reactionMessage' && (
                               <MessageStatusTick status={chat.lastMessageStatus || 'SENT'} className="chat-item-status-tick" style={{ marginLeft: 0 }} />
                             )}
                             <span className="chat-item-preview-text">

@@ -65,6 +65,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
       const participantOrChat = cleanJid(processed.participant || processed.chatJid)
       const nameMap = await this.services.contactService.batchResolveNames([participantOrChat], sock)
       const enriched = await this.services.messageService.enrichMessage(processed, sock, nameMap)
+      console.log('[UIBroadcastSubscriber] onIncoming message:', enriched.id, 'type:', enriched.messageType, 'chat:', enriched.chatJid)
       this.send('new-message', enriched)
     } catch (err) {
       console.error('[UIBroadcastSubscriber] Error broadcasting new-message:', err)
@@ -140,6 +141,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
   }
 
   private async onReactionProcessed(event: ReactionProcessedEvent): Promise<void> {
+    console.log('[UIBroadcastSubscriber] onReactionProcessed:', event.id, 'type:', event.messageType, 'chat:', event.chatJid)
     this.send('new-message', event)
   }
 }

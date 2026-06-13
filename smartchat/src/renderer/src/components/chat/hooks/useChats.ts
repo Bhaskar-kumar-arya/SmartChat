@@ -90,14 +90,38 @@ export const useChats = (activeJid: string | null) => {
         // Use ref value to avoid stale closures
         const isCurrentChat = activeJidRef.current === msg.chatJid
         
-        const lastMessageText = formatMessagePreview(msg)
+        let reactionText = ''
+        try {
+          if (msg.messageType === 'reactionMessage' && msg.content) {
+            const parsed = JSON.parse(msg.content)
+            reactionText = parsed.reactionMessage?.text || ''
+          }
+        } catch {}
+
+        let targetMsgPreview = 'message'
+        if (msg.targetMessageType) {
+          const targetMockItem: MessageItem = {
+            id: '',
+            chatJid: msg.chatJid,
+            fromMe: false,
+            participant: null,
+            timestamp: msg.timestamp,
+            messageType: msg.targetMessageType,
+            textContent: msg.targetTextContent || null
+          }
+          targetMsgPreview = formatMessagePreview(targetMockItem) || 'message'
+        }
+
+        const lastMessageText = msg.messageType === 'reactionMessage'
+          ? `Reacted ${reactionText} to ${targetMsgPreview}`
+          : formatMessagePreview(msg)
 
         const updatedChat: ChatItem = {
           ...(existing || {}),
           jid: msg.chatJid,
           name: existing ? existing.name : msg.chatJid.replace(/@.*$/, ''),
           unreadCount: existing 
-            ? (isCurrentChat ? 0 : existing.unreadCount + (msg.fromMe ? 0 : 1)) 
+            ? (msg.messageType === 'reactionMessage' ? existing.unreadCount : (isCurrentChat ? 0 : existing.unreadCount + (msg.fromMe ? 0 : 1)))
             : (isCurrentChat ? 0 : 1),
           timestamp: msg.timestamp,
           lastMessage: lastMessageText,
@@ -106,12 +130,16 @@ export const useChats = (activeJid: string | null) => {
           pinned: existing?.pinned,
           muteExpiration: existing?.muteExpiration,
           lastMessageSender: formatSenderName(msg.fromMe, msg.participantName, msg.participant),
-          lastMessageStatus: msg.status || null,
+          lastMessageStatus: msg.messageType === 'reactionMessage' ? null : (msg.status || null),
           lastMessageFromMe: msg.fromMe,
-          lastMessageId: msg.id
+          lastMessageId: msg.id,
+          lastMessageTargetType: msg.messageType === 'reactionMessage' ? (msg.targetMessageType || null) : null,
+          lastMessageTargetText: msg.messageType === 'reactionMessage' ? targetMsgPreview : null,
+          lastMessageReactionText: msg.messageType === 'reactionMessage' ? reactionText : null
         }
         const filtered = prev.filter((c) => c.jid !== msg.chatJid)
-        return sortChats([updatedChat, ...filtered])
+        const sorted = sortChats([updatedChat, ...filtered])
+        return sorted
       })
     })
 

@@ -619,11 +619,14 @@ export class MessageService {
     }
 
     // 2. Parse reaction timestamp
-    const timestamp = parseBaileysTimestamp(
+    let timestamp = parseBaileysTimestamp(
       typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
         ? ts
         : (ts || Math.floor(Date.now() / 1000))
     )
+    if (timestamp > 9999999999n) {
+      timestamp = timestamp / 1000n
+    }
 
     // 3. Resolve reactor JID and Identity ID
     let reactorJid = reactionKey.participant || (reactionKey.remoteJid?.endsWith('@g.us') ? null : reactionKey.remoteJid)
@@ -680,6 +683,15 @@ export class MessageService {
       }
     }
 
+    // Fetch target message details for enrichment
+    const targetMsg = await this.prisma.message.findUnique({
+      where: { id: targetId },
+      select: {
+        messageType: true,
+        textContent: true
+      }
+    })
+
     // 5. Notify the frontend to update UI reactively via event bus
     const reactorJidString = reactorJid || (reactionKey.remoteJid || '')
     const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock)
@@ -695,11 +707,17 @@ export class MessageService {
       participantName: reactorName,
       timestamp: timestamp.toString(),
       messageType: 'reactionMessage',
+      targetMessageType: targetMsg?.messageType,
+      targetTextContent: targetMsg?.textContent,
       content: JSON.stringify({
         reactionMessage: {
           key: { id: targetId },
           text: text || ''
-        }
+        },
+        targetMessage: targetMsg ? {
+          messageType: targetMsg.messageType,
+          textContent: targetMsg.textContent
+        } : null
       })
     })
   }

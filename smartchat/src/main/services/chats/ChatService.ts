@@ -325,10 +325,53 @@ export class ChatService {
           }
         })
 
-        const effectiveTimestamp = lastMsg?.timestamp ?? chat.timestamp
+        // Fetch the most recent reaction for the chat
+        const lastReaction = await this.prisma.reaction.findFirst({
+          where: {
+            message: {
+              chatJid: chat.jid
+            }
+          },
+          orderBy: { timestamp: 'desc' },
+          select: {
+            text: true,
+            timestamp: true,
+            sender: {
+              select: {
+                displayName: true,
+                pushName: true,
+                verifiedName: true,
+                phoneNumber: true,
+                isMe: true
+              }
+            },
+            message: {
+              select: {
+                id: true,
+                messageType: true,
+                textContent: true
+              }
+            }
+          }
+        })
+
+        const reactionTs = lastReaction?.timestamp ?? 0n
+        const msgTs = lastMsg?.timestamp ?? 0n
+        const isReactionNewer = !!(lastReaction && (reactionTs > msgTs || lastMsg?.messageType === 'reactionMessage'))
+
+        const effectiveTimestamp = isReactionNewer ? reactionTs : msgTs
 
         let lastMessageSender: string | null = null
-        if (lastMsg) {
+        if (isReactionNewer && lastReaction) {
+          if (lastReaction.sender.isMe) {
+            lastMessageSender = 'You'
+          } else {
+            lastMessageSender = ContactService.getDisplayName(
+              lastReaction.sender,
+              lastReaction.sender.phoneNumber?.split('@')[0] || 'Someone'
+            )
+          }
+        } else if (lastMsg) {
           if (lastMsg.fromMe) {
             lastMessageSender = 'You'
           } else {
@@ -339,21 +382,38 @@ export class ChatService {
           }
         }
 
+        const getPreview = (type: string | null, text: string | null) => {
+          if (!type) return ''
+          if (type === 'stickerMessage' || type === 'lottieStickerMessage') return 'Sticker'
+          if (type === 'imageMessage') return text || 'Photo'
+          if (type === 'videoMessage' || type === 'ptvMessage') return text || 'Video'
+          if (type === 'documentMessage') return text || 'Document'
+          if (type === 'audioMessage') return 'Audio'
+          return text || ''
+        }
+
+        let lastMessageText = ''
+        if (isReactionNewer && lastReaction) {
+          const targetPreview = getPreview(lastReaction.message.messageType, lastReaction.message.textContent)
+          lastMessageText = `Reacted ${lastReaction.text} to ${targetPreview || 'message'}`
+        } else if (lastMsg) {
+          lastMessageText = lastMsg.messageType === 'stickerMessage' ? 'Sticker' :
+                            lastMsg.messageType === 'lottieStickerMessage' ? 'Sticker' :
+                            lastMsg.messageType === 'imageMessage' ? 'Photo' :
+                            lastMsg.messageType === 'videoMessage' ? 'Video' :
+                            lastMsg.messageType === 'ptvMessage' ? 'Video' :
+                            lastMsg.messageType === 'documentMessage' ? 'Document' :
+                            lastMsg.messageType === 'audioMessage' ? 'Audio' :
+                            (lastMsg.textContent ?? '')
+        }
+
         return {
           jid: chat.jid,
           name,
           unreadCount: chat.unreadCount,
           timestamp: effectiveTimestamp.toString(),
-          lastMessage: lastMsg?.messageType === 'stickerMessage' ? 'Sticker' :
-                       lastMsg?.messageType === 'lottieStickerMessage' ? 'Sticker' :
-                       lastMsg?.messageType === 'imageMessage' ? 'Photo' :
-                       lastMsg?.messageType === 'videoMessage' ? 'Video' :
-                       lastMsg?.messageType === 'ptvMessage' ? 'Video' :
-                       lastMsg?.messageType === 'documentMessage' ? 'Document' :
-                       lastMsg?.messageType === 'audioMessage' ? 'Audio' :
-                       (lastMsg?.textContent ?? ''),
-          // Note: conversation/extendedTextMessage/unknown all fall through to textContent
-          lastMessageType: lastMsg?.messageType || null,
+          lastMessage: lastMessageText,
+          lastMessageType: isReactionNewer ? 'reactionMessage' : (lastMsg?.messageType || null),
           lastMessageTimestamp: effectiveTimestamp.toString(),
           pinned: chat.pinned,
           muteExpiration: chat.muteExpiration.toString(),
@@ -362,9 +422,12 @@ export class ChatService {
           isAnnounce: chat.type === 'ANNOUNCE',
           linkedParentJid: (chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') ? (chat.community?.jid ?? null) : null,
           lastMessageSender,
-          lastMessageStatus: lastMsg?.status || null,
-          lastMessageFromMe: lastMsg?.fromMe || false,
-          lastMessageId: lastMsg?.id || null
+          lastMessageStatus: isReactionNewer ? null : (lastMsg?.status || null),
+          lastMessageFromMe: isReactionNewer ? (lastReaction?.sender.isMe ?? false) : (lastMsg?.fromMe || false),
+          lastMessageId: isReactionNewer ? (lastReaction?.message.id ?? null) : (lastMsg?.id || null),
+          lastMessageTargetType: isReactionNewer ? (lastReaction?.message.messageType || null) : null,
+          lastMessageTargetText: isReactionNewer ? (getPreview(lastReaction?.message.messageType || null, lastReaction?.message.textContent || null) || 'message') : null,
+          lastMessageReactionText: isReactionNewer ? (lastReaction?.text || null) : null
         }
       })
     )

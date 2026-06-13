@@ -42,3 +42,7 @@ This skill defines the rules, principles, and architectural standards that must 
 - **Isolate Root Causes:** Do not apply patch-work fixes (like wrapping buggy paths in generic try-catch blocks or speculative null-checks) that hide the symptom. Identify and repair the underlying state or logic issue.
 - **Design & Pipeline Suitability:** Critically evaluate the design, pipeline, or pattern selected for implementation. Ensure you choose the most optimal, decoupled, and robust architectural pattern or data pipeline (e.g., event streams, queues, state machines, pub/sub, provider strategies) for the task rather than simply picking the easiest path.
 - **Zero TypeScript Warnings:** The application must compile with zero compiler warnings or errors after code changes.
+- **Non-empty try catch:** When using try catch blocks, always include a catch block that handles the error and logs it to the console. Do not leave empty catch blocks.
+- **Leverage logs to find bugs:** If you are unsure about the root cause of a bug, use `console.log` or `console.error` to inspect the values of variables and trace the execution flow.make sure you remove them after you find the root cause.
+
+ 

@@ -226,6 +226,8 @@ export interface ReactionProcessedEvent {
   participantName: string
   timestamp: string
   messageType: 'reactionMessage'
+  targetMessageType?: string
+  targetTextContent?: string | null
   content: string
 }
 

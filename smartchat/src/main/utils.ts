@@ -21,8 +21,13 @@ export function cleanJid(jid: any): string {
  */
 export function parseBaileysTimestamp(ts: unknown): bigint {
   if (ts === null || ts === undefined) return BigInt(0)
-  if (typeof ts === 'object' && 'low' in (ts as Record<string, unknown>)) {
-    return BigInt((ts as Record<string, unknown>).low as number)
+  if (typeof ts === 'object') {
+    const obj = ts as Record<string, any>
+    if ('low' in obj && 'high' in obj) {
+      const low = BigInt(obj.low >>> 0)
+      const high = BigInt(obj.high >>> 0)
+      return (high << 32n) | low
+    }
   }
   return BigInt(ts as number)
 }
