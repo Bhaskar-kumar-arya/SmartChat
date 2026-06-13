@@ -1,13 +1,14 @@
 import { useState, useCallback, useEffect } from 'react'
+import { useAPI } from '../../context/APIContext'
 import ChatList from './ChatList'
 import MessageView from './MessageView'
 import MessageInput from './MessageInput'
-import { useMessages } from '../../hooks/useMessages'
+import { useMessages } from './hooks/useMessages'
 import { usePresence } from '../../hooks/usePresence'
 import { MessageItem } from '../../types'
 import { ProfilePicture } from '../common/ProfilePicture'
 import { ProfilePicOverlay } from '../common/ProfilePicOverlay'
-import AIChatSidebar from '../ai/AIChatSidebar'
+import { AIChatSidebar } from '../ai'
 import '../../styles/sidebar.css'
 import { useDragAndDrop } from '../../hooks/useDragAndDrop'
 import { useMultiFileQueue } from '../../hooks/useMultiFileQueue'
@@ -15,6 +16,7 @@ import DragDropOverlay from './DragDropOverlay'
 import MultiFilePreview from './MultiFilePreview'
 
 export default function ChatLayout() {
+  const api = useAPI()
   const [activeJid, setActiveJid] = useState<string | null>(null)
   const [activeName, setActiveName] = useState<string>('')
   const [activeProfilePic, setActiveProfilePic] = useState<string | null>(null)
@@ -95,14 +97,14 @@ export default function ChatLayout() {
 
   const handleAddMoreFiles = useCallback(async () => {
     try {
-      const paths = await window.api.selectFile()
+      const paths = await api.selectFile()
       if (paths && paths.length > 0) {
         addFiles(paths)
       }
     } catch (err) {
       console.error('Failed to select file:', err)
     }
-  }, [addFiles])
+  }, [addFiles, api])
 
   const handleSelectChat = useCallback((jid: string, name: string, profilePictureUrl?: string | null, messageId?: string | null) => {
     setActiveJid(jid)
@@ -113,17 +115,17 @@ export default function ChatLayout() {
   }, [])
 
   useEffect(() => {
-    window.api.setActiveChat(activeJid).catch(console.error)
-  }, [activeJid])
+    api.setActiveChat(activeJid).catch(console.error)
+  }, [activeJid, api])
 
   useEffect(() => {
-    const unsubscribe = window.api.onOpenChat((chat) => {
+    const unsubscribe = api.onOpenChat((chat) => {
       handleSelectChat(chat.jid, chat.name)
     })
     return () => {
       unsubscribe()
     }
-  }, [handleSelectChat])
+  }, [handleSelectChat, api])
 
   const handleSendMessage = useCallback(async (text: string, mentions?: string[]) => {
     await sendMessage(text, replyingTo?.id, mentions)

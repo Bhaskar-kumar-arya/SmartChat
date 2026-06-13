@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ChatItem, ExtendedChatItem } from '../types'
+import { ChatItem, ExtendedChatItem } from '../../../types'
 
 /**
  * Custom hook to manage the community hierarchy sorting and rendering states.

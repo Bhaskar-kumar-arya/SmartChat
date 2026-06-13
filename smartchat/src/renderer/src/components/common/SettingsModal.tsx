@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useAPI } from '../../context/APIContext'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -6,6 +7,7 @@ interface SettingsModalProps {
 }
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+  const api = useAPI()
   const [prefs, setPrefs] = useState({
     enabled: true,
     soundEnabled: true,
@@ -17,7 +19,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   useEffect(() => {
     if (isOpen) {
-      window.api.getNotificationPreferences()
+      api.getNotificationPreferences()
         .then((data) => {
           setPrefs(data)
           setLoading(false)
@@ -27,7 +29,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           setLoading(false)
         })
     }
-  }, [isOpen])
+  }, [isOpen, api])
 
   if (!isOpen) return null
 
@@ -35,7 +37,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const updated = { ...prefs, [key]: !prefs[key] }
     setPrefs(updated)
     try {
-      await window.api.setNotificationPreferences(updated)
+      await api.setNotificationPreferences(updated)
     } catch (err) {
       console.error('Failed to save notification preferences:', err)
     }

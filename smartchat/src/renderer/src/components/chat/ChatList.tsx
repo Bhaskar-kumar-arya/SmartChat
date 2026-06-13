@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
-import { useChats } from '../../hooks/useChats'
+import { useChats } from './hooks/useChats'
 import { usePresence } from '../../hooks/usePresence'
-import { useSearch } from '../../hooks/useSearch'
+import { useSearch } from './hooks/useSearch'
 import { useAPI } from '../../context/APIContext'
 import { formatChatTime, isMuted } from '../../utils/formatters'
 import { ChatItem, SearchFilters, SearchMode } from '../../types'
+import { getPresenceStatusText } from '../../utils/presenceUtils'
 import { ProfilePicture } from '../common/ProfilePicture'
 import { SearchResultsPanel } from './SearchResultsPanel'
 import { SearchFiltersPanel } from './SearchFiltersPanel'
-import { useChatHierarchy } from '../../hooks/useChatHierarchy'
+import { useChatHierarchy } from './hooks/useChatHierarchy'
 import ConfirmModal from '../common/ConfirmModal'
 import SettingsModal from '../common/SettingsModal'
 import { MessageStatusTick } from '../common/MessageStatusTick'
@@ -113,27 +114,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
   }
 
   const getPresenceText = (chat: ChatItem) => {
-    const presence = presences[chat.jid]
-    if (!presence) return null
-    const entries = Object.entries(presence) as [string, any][]
-    const composing = entries.filter(([_, s]) => s.lastKnownPresence === 'composing')
-    const recording = entries.filter(([_, s]) => s.lastKnownPresence === 'recording')
-    
-    if (composing.length > 0) {
-      if (chat.jid.endsWith('@g.us')) {
-        if (composing.length === 1) return `${composing[0][1].name || composing[0][0].split('@')[0]} typing...`
-        return `${composing.length} typing...`
-      }
-      return 'typing...'
-    }
-    if (recording.length > 0) {
-      if (chat.jid.endsWith('@g.us')) {
-        if (recording.length === 1) return `${recording[0][1].name || recording[0][0].split('@')[0]} recording...`
-        return `${recording.length} recording...`
-      }
-      return 'recording...'
-    }
-    return null
+    return getPresenceStatusText(chat, presences[chat.jid])
   }
 
   const renderLastMessageText = (chat: ChatItem, presenceText: string | null) => {

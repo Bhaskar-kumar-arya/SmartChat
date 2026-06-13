@@ -1,46 +1,21 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-
-interface ChatItem {
-  jid: string
-  name: string
-  unreadCount: number
-  timestamp: string
-  lastMessage: string
-  lastMessageType?: string | null
-  lastMessageTimestamp: string
-  pinned?: number
-  muteExpiration?: string
-  profilePictureUrl?: string | null
-}
-
-interface MessageItem {
-  id: string
-  chatJid: string
-  fromMe: boolean
-  participant: string | null
-  timestamp: string
-  messageType: string
-  textContent: string | null
-  isDeleted?: boolean
-  isEdited?: boolean
-  status?: string
-}
-
-interface SearchResultItem {
-  type: 'chat' | 'message'
-  jid: string
-  name: string
-  lastMessage?: string
-  messageId?: string
-  snippet?: string
-  timestamp?: string
-  score?: number
-}
-
-interface SearchResults {
-  chats: SearchResultItem[]
-  messages: SearchResultItem[]
-}
+import {
+  ChatItem,
+  MessageItem,
+  SearchResultItem,
+  SearchResults,
+  AIChatMessage,
+  AIChatOptions,
+  ToolDefinition,
+  ModelInfo,
+  AIChatSessionItem,
+  PresenceUpdate,
+  AIContextItem,
+  SelectedContext,
+  SearchFilters,
+  MessageReceiptInfo,
+  NotificationPreferences
+} from '../renderer/src/types'
 
 declare global {
   interface Window {
@@ -56,6 +31,7 @@ declare global {
       skipSync: () => void
       getSyncFullHistory: () => Promise<boolean>
       setSyncFullHistory: (full: boolean) => Promise<boolean>
+      
       // Phase 3 & 4
       getChats: (page?: number, pageSize?: number) => Promise<ChatItem[]>
       getMessages: (jid: string, page?: number, pageSize?: number) => Promise<MessageItem[]>
@@ -78,49 +54,64 @@ declare global {
       markRead: (jid: string) => Promise<boolean>
       getMyJid: () => Promise<string | null>
       onMessageStatusUpdated: (callback: (update: { id: string, chatJid: string, status: string }) => void) => () => void
-      getMessageReceipts: (messageId: string) => Promise<{ userJid: string, name: string, status: string, timestamp: string }[]>
+      getMessageReceipts: (messageId: string) => Promise<MessageReceiptInfo[]>
       onChatUpdated: (callback: (chat: Partial<ChatItem> & { jid: string }) => void) => () => void
       logout: () => Promise<boolean>
-      onPresenceUpdate: (callback: (update: { remoteJid: string; presences: Record<string, any> }) => void) => () => void
+      onPresenceUpdate: (callback: (update: PresenceUpdate) => void) => () => void
       openFile: (localURI: string) => Promise<boolean>
       getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean) => Promise<string | null>
       saveTempFile: (buffer: ArrayBuffer | Uint8Array, fileName: string) => Promise<string>
       downloadUrlToTemp: (url: string, fileName: string) => Promise<string>
-      searchAll: (query: string, mode?: 'normal' | 'deep', filters?: any) => Promise<SearchResults>
-      searchMentionContacts: (query: string) => Promise<any[]>
-      searchMentionChats: (query: string) => Promise<any[]>
+      searchAll: (query: string, mode?: 'normal' | 'deep', filters?: SearchFilters) => Promise<SearchResults>
+      searchMentionContacts: (query: string) => Promise<ChatItem[]>
+      searchMentionChats: (query: string) => Promise<ChatItem[]>
       indexEmbeddings: () => Promise<void>
       onEmbeddingProgress: (callback: (pct: number) => void) => () => void
       onEmbeddingState: (callback: (isActive: boolean) => void) => () => void
       clearVectors: () => Promise<void>
-      aiChat: (prompt: string, contextChats?: any[], history?: any[], mentions?: any[], options?: any) => Promise<string>
-      aiChatStream: (prompt: string, contextChats: any[] | undefined, history: any[] | undefined, mentions: any[] | undefined, options: any | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: any) => void) => string
+      aiChat: (
+        prompt: string,
+        contextChats?: AIContextItem[],
+        history?: AIChatMessage[],
+        mentions?: SelectedContext[],
+        options?: AIChatOptions & { isSystem?: boolean }
+      ) => Promise<string>
+      aiChatStream: (
+        prompt: string,
+        contextChats: AIContextItem[] | undefined,
+        history: AIChatMessage[] | undefined,
+        mentions: SelectedContext[] | undefined,
+        options: (AIChatOptions & { isSystem?: boolean }) | undefined,
+        onChunk: (chunk: string) => void,
+        onEnd: () => void,
+        onError: (err: Error) => void
+      ) => string
       abortAiChat: (channelId: string) => Promise<boolean>
 
       getChatContext: (jid: string) => Promise<MessageItem[]>
-      executeTool: (toolName: string, args: any) => Promise<any>
-      getAiTools: () => Promise<any[]>
-      getAiModels: () => Promise<any[]>
+      executeTool: (toolName: string, args: Record<string, any>) => Promise<any>
+      getAiTools: () => Promise<ToolDefinition[]>
+      getAiModels: () => Promise<ModelInfo[]>
       getProviderKeys: () => Promise<Record<string, string>>
       setProviderKey: (provider: string, key: string) => Promise<boolean>
 
       // ── AI Session Methods ──────────────────────────────────────────────
-      createAiSession: (title: string, modelId?: string) => Promise<any>
-      listAiSessions: (page?: number, pageSize?: number) => Promise<any[]>
-      getAiSession: (id: string) => Promise<any>
-      renameAiSession: (id: string, title: string) => Promise<any>
+      createAiSession: (title: string, modelId?: string) => Promise<AIChatSessionItem>
+      listAiSessions: (page?: number, pageSize?: number) => Promise<AIChatSessionItem[]>
+      getAiSession: (id: string) => Promise<{ id: string; title: string; messages: AIChatMessage[] } | null>
+      renameAiSession: (id: string, title: string) => Promise<void>
       deleteAiSession: (id: string) => Promise<void>
-      cloneAiSession: (id: string) => Promise<any>
-      saveAiSessionMessages: (sessionId: string, messages: any[]) => Promise<void>
+      cloneAiSession: (id: string) => Promise<AIChatSessionItem>
+      saveAiSessionMessages: (sessionId: string, messages: AIChatMessage[]) => Promise<void>
       getAiAutoSave: () => Promise<boolean>
       setAiAutoSave: (enabled: boolean) => Promise<void>
-      getAiOptions: () => Promise<any>
-      setAiOptions: (options: any) => Promise<void>
-      exportAiChat: (session: any, messages: any[]) => Promise<void>
+      getAiOptions: () => Promise<AIChatOptions>
+      setAiOptions: (options: AIChatOptions) => Promise<void>
+      exportAiChat: (session: AIChatSessionItem, messages: AIChatMessage[]) => Promise<void>
       deleteExportedAiChat: (sessionId: string) => Promise<void>
       duplicateExportedAiChat: (sessionId: string) => Promise<void>
-      getNotificationPreferences: () => Promise<{ enabled: boolean, soundEnabled: boolean, notifyWhenFocused: boolean, minimizeToTray: boolean, launchOnStartup: boolean }>
-      setNotificationPreferences: (prefs: Partial<{ enabled: boolean, soundEnabled: boolean, notifyWhenFocused: boolean, minimizeToTray: boolean, launchOnStartup: boolean }>) => Promise<void>
+      getNotificationPreferences: () => Promise<NotificationPreferences>
+      setNotificationPreferences: (prefs: Partial<NotificationPreferences>) => Promise<void>
       setActiveChat: (jid: string | null) => Promise<void>
       onOpenChat: (callback: (chat: { jid: string; name: string }) => void) => () => void
       getPathForFile: (file: File) => string

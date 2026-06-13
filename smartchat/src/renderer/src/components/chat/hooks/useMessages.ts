@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useAPI } from '../context/APIContext'
-import { MessageItem } from '../types'
+import { useAPI } from '../../../context/APIContext'
+import { MessageItem } from '../../../types'
 
 /**
  * Hook to manage messages for a specific chat.
@@ -120,8 +120,9 @@ export const useMessages = (activeJid: string | null) => {
   }, [activeJid])
 
   const handleReactionUpdate = (msg: MessageItem) => {
+    if (!msg.content) return
     try {
-      const raw = JSON.parse(msg.content!)
+      const raw = JSON.parse(msg.content)
       const reaction = raw.reactionMessage
       if (reaction && reaction.key && reaction.key.id) {
         const targetId = reaction.key.id

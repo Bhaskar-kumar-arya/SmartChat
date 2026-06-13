@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChatItem, ModelInfo, AIChatOptions, AIChatMessage, ToolDefinition } from '../../types'
+import { ChatItem, ModelInfo, AIChatOptions, AIChatMessage, ToolDefinition, SelectedContext, AIContextItem } from '../../types'
 import AISmartInput, { AISmartInputRef } from './AISmartInput'
 import AIMessageBubble from './AIMessageBubble'
 import AISettingsModal from './AISettingsModal'
 import AIChatHistoryModal from './AIChatHistoryModal'
 import AIChatExportButton from './AIChatExportButton'
-import { useAIChatSessions } from '../../hooks/useAIChatSessions'
-import { useAIStream } from '../../hooks/useAIStream'
+import { useAIChatSessions } from './hooks/useAIChatSessions'
+import { useAIStream } from './hooks/useAIStream'
 import { useAPI } from '../../context/APIContext'
 
 interface AIChatSidebarProps {
@@ -88,13 +88,13 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, loading])
 
-  const handleSend = async (prompt: string, currentMentions: any[], overrideHistory?: AIChatMessage[]) => {
+  const handleSend = async (prompt: string, currentMentions: SelectedContext[], overrideHistory?: AIChatMessage[]) => {
     let baseHistory = overrideHistory || messages
 
     if (!prompt) return
 
     try {
-      const resolvedContexts: any[] = []
+      const resolvedContexts: AIContextItem[] = []
 
       // Generate unique IDs synchronously
       const userMessageId = crypto.randomUUID()
@@ -151,7 +151,7 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
     handleSend(msg.content, msg.mentions || [], truncatedHistory)
   }
 
-  const handleSaveMessage = (messageId: string, newContent: string, mentions: any[]) => {
+  const handleSaveMessage = (messageId: string, newContent: string, mentions: SelectedContext[]) => {
     const msgIndex = messages.findIndex((m) => m.id === messageId)
     if (msgIndex === -1) return
 

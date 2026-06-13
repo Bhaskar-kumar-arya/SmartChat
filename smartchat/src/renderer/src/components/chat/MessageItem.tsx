@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect, memo } from 'react'
 import { Smile } from 'lucide-react'
-import { MessageItem as IMessageItem, ReactionItem, MessageReceiptInfo, RawMessageContent } from '../../types'
-import { formatTime, formatReceiptTime, formatReceiptDate } from '../../utils/formatters'
+import { MessageItem as IMessageItem, MessageReceiptInfo, RawMessageContent } from '../../types'
+import { formatTime } from '../../utils/formatters'
+import ReactionsDisplay from './ReactionsDisplay'
+import MessageInfoModal from './MessageInfoModal'
 import { TextMessage } from './messages/TextMessage'
 import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage, AudioMessage } from './messages/MediaMessages'
 import { TemplateMessage } from './messages/TemplateMessage'
@@ -115,7 +117,9 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   let rawMsg: RawMessageContent = {}
   try {
     rawMsg = msg.content ? unwrapMessage(JSON.parse(msg.content)) : {}
-  } catch (e) { }
+  } catch (e) {
+    console.warn('[MessageItem] Failed to parse message content:', e)
+  }
 
   const isTemplateMessage = msg.messageType === 'templateMessage' || !!rawMsg?.templateMessage
   const isSticker = (msg.messageType === 'stickerMessage' || !!rawMsg?.stickerMessage || msg.messageType === 'lottieStickerMessage' || !!rawMsg?.lottieStickerMessage) && !isTemplateMessage
@@ -494,70 +498,6 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   )
 })
 
-function ReactionsDisplay({ reactions, onClick }: { reactions?: ReactionItem[], onClick: () => void }) {
-  if (!reactions || reactions.length === 0) return null
-  const emojiCounts: Record<string, number> = {}
-  for (const r of reactions) emojiCounts[r.text] = (emojiCounts[r.text] || 0) + 1
-  const uniqueEmojis = Object.keys(emojiCounts)
-  return (
-    <div className="message-reactions" onClick={onClick} style={{ cursor: 'pointer' }}>
-      <div className="reaction-bubbles-group">
-        {uniqueEmojis.slice(0, 3).map((emoji) => (
-          <span key={emoji} className="reaction-bubble-mini">{emoji}</span>
-        ))}
-      </div>
-      {reactions.length > 0 && <span className="reaction-total-count">{reactions.length}</span>}
-    </div>
-  )
-}
 
-interface InfoModalProps {
-  receipts: MessageReceiptInfo[]
-  onClose: () => void
-}
-
-function MessageInfoModal({ receipts, onClose }: InfoModalProps) {
-  return (
-    <div className="info-modal-backdrop" onClick={onClose}>
-      <div className="info-modal-container" onClick={(e) => e.stopPropagation()}>
-        <div className="info-modal-header">
-          <h3>Message Info</h3>
-          <button className="info-modal-close" onClick={onClose}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        </div>
-        <div className="info-modal-content">
-          {receipts.length === 0 ? (
-            <p className="no-receipts-label">No delivery information available yet.</p>
-          ) : (
-            <div className="receipts-list">
-              {receipts.map((receipt) => (
-                <div className="receipt-item" key={receipt.userJid}>
-                  <div className="receipt-item-details">
-                    <span className="receipt-item-name">{receipt.name}</span>
-                    <span className="receipt-item-jid">{receipt.userJid.split('@')[0]}</span>
-                  </div>
-                  <div className="receipt-item-status">
-                    {receipt.status === 'READ' ? (
-                      <div className="status-badge read">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="#53bdeb" className="status-read"><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z" /></svg>
-                        <span>Read • {formatReceiptTime(receipt.timestamp)} <span className="receipt-date">{formatReceiptDate(receipt.timestamp)}</span></span>
-                      </div>
-                    ) : (
-                      <div className="status-badge delivered">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="currentColor" className="status-delivered" style={{ opacity: 0.6 }}><path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z" /></svg>
-                        <span>Delivered • {formatReceiptTime(receipt.timestamp)} <span className="receipt-date">{formatReceiptDate(receipt.timestamp)}</span></span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default MessageItem

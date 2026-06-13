@@ -143,3 +143,6 @@ When reviewing code, ask yourself:
 - [ ] **Location:** Is this new file placed in the correct domain/layer directory?
 - [ ] **Clean Boundary:** Does the UI code call backend libraries directly, or does it properly route through the IPC bridge/preload?
 - [ ] **Pipeline & Design Check:** Is the current processing pipeline or design pattern the most optimal, or is there a better architectural alternative to solve this problem?
+
+## Actionable recommendations & Refactoring Plan 
+after auditing , include a phase split Refactoring plan which includes all the issues fix possible

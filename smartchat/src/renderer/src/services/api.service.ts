@@ -1,4 +1,4 @@
-import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo, AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionItem, PresenceUpdate, AIContextItem, SelectedContext } from '../types'
+import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo, AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionItem, PresenceUpdate, AIContextItem, SelectedContext, NotificationPreferences } from '../types'
 
 // This service wraps the window.api (Electron bridge) to provide a clean abstraction.
 // It allows us to mock the API in tests and decouple from the global window object.
@@ -209,5 +209,20 @@ export const api = {
 
   getFavoriteStickers: (): Promise<any[]> =>
     window.api.getFavoriteStickers(),
+
+  getPathForFile: (file: File): string =>
+    window.api.getPathForFile(file),
+
+  getNotificationPreferences: (): Promise<NotificationPreferences> =>
+    window.api.getNotificationPreferences(),
+
+  setNotificationPreferences: (prefs: Partial<NotificationPreferences>): Promise<void> =>
+    window.api.setNotificationPreferences(prefs),
+
+  setActiveChat: (jid: string | null): Promise<void> =>
+    window.api.setActiveChat(jid),
+
+  onOpenChat: (callback: (chat: { jid: string; name: string }) => void): (() => void) =>
+    window.api.onOpenChat(callback),
 }
 

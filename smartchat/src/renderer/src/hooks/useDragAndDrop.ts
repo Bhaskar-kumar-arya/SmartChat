@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
+import { useAPI } from '../context/APIContext'
 
 interface UseDragAndDropOptions {
   onFilesDropped: (paths: string[]) => void
@@ -6,6 +7,7 @@ interface UseDragAndDropOptions {
 }
 
 export const useDragAndDrop = ({ onFilesDropped, disabled = false }: UseDragAndDropOptions) => {
+  const api = useAPI()
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const dragCounter = useRef(0)
 
@@ -59,7 +61,7 @@ export const useDragAndDrop = ({ onFilesDropped, disabled = false }: UseDragAndD
           const file = files.item(i)
           if (!file) continue
           try {
-            const path = window.api.getPathForFile(file)
+            const path = api.getPathForFile(file)
             if (path) {
               filePaths.push(path)
             }
@@ -72,7 +74,7 @@ export const useDragAndDrop = ({ onFilesDropped, disabled = false }: UseDragAndD
         }
       }
     },
-    [disabled, onFilesDropped]
+    [disabled, onFilesDropped, api]
   )
 
   return {

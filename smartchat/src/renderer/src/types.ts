@@ -289,53 +289,58 @@ export interface ToolDefinition {
   requiresPermission?: boolean
 }
 
-export interface ImageMessageProps {
+export type MessageType =
+  | 'stickerMessage'
+  | 'lottieStickerMessage'
+  | 'imageMessage'
+  | 'videoMessage'
+  | 'ptvMessage'
+  | 'documentMessage'
+  | 'audioMessage'
+  | 'conversation'
+  | 'extendedTextMessage'
+  | 'templateMessage'
+  | 'reactionMessage'
+  | 'unknown'
+
+export interface BaseMediaMessageProps {
   localURI?: string
+  rawMsg?: RawMessageContent
+  onDownload?: () => void
+  isDownloading: boolean
+}
+
+export interface ImageMessageProps extends BaseMediaMessageProps {
   textContent?: string | null
   rawMsg: RawMessageContent
-  onDownload?: () => void
-  isDownloading: boolean
 }
 
-export interface StickerMessageProps {
-  localURI?: string
+export interface StickerMessageProps extends BaseMediaMessageProps {
   rawMsg: RawMessageContent
-  onDownload?: () => void
-  isDownloading: boolean
 }
 
-export interface VideoMessageProps {
-  localURI?: string
+export interface VideoMessageProps extends BaseMediaMessageProps {
   textContent?: string | null
   rawMsg: RawMessageContent
-  onDownload?: () => void
-  isDownloading: boolean
 }
 
-export interface DocumentMessageProps {
-  localURI?: string
+export interface DocumentMessageProps extends BaseMediaMessageProps {
   textContent?: string | null
   rawMsg: RawMessageContent
-  onDownload?: () => void
-  isDownloading: boolean
 }
 
-export interface TemplateMessageProps {
+export interface TemplateMessageProps extends BaseMediaMessageProps {
   msg: MessageItem
   rawMsg: RawMessageContent
-  localURI?: string
   onDownload: () => void
-  isDownloading: boolean
 }
 
-export interface AudioMessageProps {
-  localURI?: string
+export interface AudioMessageProps extends BaseMediaMessageProps {
   textContent?: string | null
   senderJid?: string
   onDownload: () => void
-  isDownloading: boolean
-  rawMsg?: RawMessageContent
 }
+
 
 export interface TextMessageProps {
   text: string
@@ -345,5 +350,14 @@ export interface TextMessageProps {
 export function isJPEGThumbnailBuffer(thumb: any): thumb is JPEGThumbnailBuffer {
   return thumb && typeof thumb === 'object' && thumb.type === 'Buffer' && Array.isArray(thumb.data)
 }
+
+export interface NotificationPreferences {
+  enabled: boolean
+  soundEnabled: boolean
+  notifyWhenFocused: boolean
+  minimizeToTray: boolean
+  launchOnStartup: boolean
+}
+
 
 

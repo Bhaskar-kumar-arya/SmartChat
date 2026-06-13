@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { AIChatMessage, AIChatOptions, ToolDefinition } from '../types'
-import { useAPI } from '../context/APIContext'
+import { AIChatMessage, AIChatOptions, ToolDefinition, AIContextItem, SelectedContext } from '../../../types'
+import { useAPI } from '../../../context/APIContext'
 
 interface UseAIStreamProps {
   aiOptions: AIChatOptions
@@ -23,7 +23,7 @@ export function useAIStream({
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null)
 
   const streamingBuffers = useRef<Record<string, string>>({})
-  const typingInterval = useRef<any>(null)
+  const typingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Keep references to latest options and tools to avoid stale closures in callbacks
   const activeSessionIdRef = useRef<string | null>(activeSessionId)
@@ -54,8 +54,8 @@ export function useAIStream({
     prompt: string,
     history: AIChatMessage[],
     aiMsgId: string,
-    context: any[] = [],
-    mentions: any[] = [],
+    context: AIContextItem[] = [],
+    mentions: SelectedContext[] = [],
     isSystem: boolean = false
   ) => {
     streamingBuffers.current[aiMsgId] = ''
@@ -76,8 +76,10 @@ export function useAIStream({
             }
           }
           if (!hasWork) {
-            clearInterval(typingInterval.current)
-            typingInterval.current = null
+            if (typingInterval.current) {
+              clearInterval(typingInterval.current)
+              typingInterval.current = null
+            }
             return
           }
           setMessages((p) =>
@@ -164,14 +166,15 @@ export function useAIStream({
     setActiveChannelId(channelId)
   }, [])
 
-  const executeToolCall = useCallback(async (messageId: string, toolName: string, args: any) => {
+  const executeToolCall = useCallback(async (messageId: string, toolName: string, args: Record<string, any>) => {
     setExecutingToolId(messageId)
     let resultPayload = ''
     try {
       const result = await api.executeTool(toolName, args)
       resultPayload = JSON.stringify(result, null, 2)
-    } catch (err: any) {
-      resultPayload = JSON.stringify({ error: err.message || String(err) })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      resultPayload = JSON.stringify({ error: errorMsg })
     }
 
     setExecutingToolId(null)

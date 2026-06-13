@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useAPI } from '../context/APIContext'
-import { ChatItem, MessageItem } from '../types'
-import { formatSenderName } from '../utils/formatters'
+import { useAPI } from '../../../context/APIContext'
+import { ChatItem, MessageItem } from '../../../types'
+import { formatSenderName } from '../../../utils/formatters'
+import { formatMessagePreview } from '../../../utils/messagePreview'
 
 /**
  * Helper to sort chats: pinned first, then by timestamp
@@ -89,20 +90,7 @@ export const useChats = (activeJid: string | null) => {
         // Use ref value to avoid stale closures
         const isCurrentChat = activeJidRef.current === msg.chatJid
         
-        let lastMessageText = ''
-        if (msg.messageType === 'stickerMessage') {
-          lastMessageText = 'Sticker'
-        } else if (msg.messageType === 'imageMessage') {
-          lastMessageText = msg.textContent || 'Photo'
-        } else if (msg.messageType === 'videoMessage') {
-          lastMessageText = msg.textContent || 'Video'
-        } else if (msg.messageType === 'documentMessage') {
-          lastMessageText = msg.textContent || 'Document'
-        } else if (msg.messageType === 'audioMessage') {
-          lastMessageText = 'Voice message'
-        } else {
-          lastMessageText = msg.textContent || (msg.messageType && msg.messageType !== 'unknown' ? `[${msg.messageType}]` : '')
-        }
+        const lastMessageText = formatMessagePreview(msg)
 
         const updatedChat: ChatItem = {
           ...(existing || {}),
@@ -157,20 +145,7 @@ export const useChats = (activeJid: string | null) => {
 
         // Only update preview if the edited message is the latest (or matches current last message timestamp)
         if (msgTs >= chatTs) {
-          let lastMessageText = ''
-          if (msg.messageType === 'stickerMessage') {
-            lastMessageText = 'Sticker'
-          } else if (msg.messageType === 'imageMessage') {
-            lastMessageText = msg.textContent || 'Photo'
-          } else if (msg.messageType === 'videoMessage') {
-            lastMessageText = msg.textContent || 'Video'
-          } else if (msg.messageType === 'documentMessage') {
-            lastMessageText = msg.textContent || 'Document'
-          } else if (msg.messageType === 'audioMessage') {
-            lastMessageText = 'Voice message'
-          } else {
-            lastMessageText = msg.textContent || (msg.messageType && msg.messageType !== 'unknown' ? `[${msg.messageType}]` : '')
-          }
+          const lastMessageText = formatMessagePreview(msg)
 
           const updatedChat: ChatItem = {
             ...existing,

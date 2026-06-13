@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useAPI } from './context/APIContext'
-import ChatLayout from './components/chat/ChatLayout'
+import { ChatLayout } from './components/chat'
 import { CheckCircle2, Loader2, Circle } from 'lucide-react'
 
 type AppState = 'initializing' | 'qr' | 'connected' | 'syncing' | 'ready'

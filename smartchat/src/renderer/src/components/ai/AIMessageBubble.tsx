@@ -11,7 +11,7 @@ function renderWithMentions(content: string, mentions: SelectedContext[]): React
     return <ReactMarkdown>{content}</ReactMarkdown>
   }
   const sorted = [...mentions].sort((a, b) => (b.name?.length ?? 0) - (a.name?.length ?? 0))
-  const pattern = sorted.map((m: any) => escapeRe(`@${m.name}`)).join('|')
+  const pattern = sorted.map((m) => escapeRe(`@${m.name}`)).join('|')
   const regex = new RegExp(`(${pattern})`, 'g')
   const parts = content.split(regex)
   // If no splits happened, just use markdown
@@ -20,7 +20,7 @@ function renderWithMentions(content: string, mentions: SelectedContext[]): React
   return (
     <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {parts.map((part, i) => {
-        const hit = mentions.find((m: any) => `@${m.name}` === part)
+        const hit = mentions.find((m) => `@${m.name}` === part)
         return hit
           ? <span key={i} className="ai-bubble-mention">{part}</span>
           : <span key={i}>{part}</span>
@@ -74,9 +74,9 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
       let jsonStr = toolMatch[1].trim()
       jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
       toolData = JSON.parse(jsonStr) 
-    } catch (e: any) {
+    } catch (e) {
       console.error('Failed to parse tool data:', e)
-      parseError = e.message || String(e)
+      parseError = e instanceof Error ? e.message : String(e)
     }
   }
 
