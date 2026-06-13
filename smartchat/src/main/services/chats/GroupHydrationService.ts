@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
-import { cleanJid, parseBaileysTimestamp } from '../../utils'
+import { cleanJid, parseBaileysTimestamp, parseCommunityMetadata } from '../../utils'
 
 export class GroupHydrationService {
   constructor(
@@ -53,24 +53,13 @@ export class GroupHydrationService {
     for (const jid of groupKeys) {
       const raw = groups[jid]
       const cleanedJid = cleanJid(jid)
-      const hasCommunityData = raw.isCommunity !== undefined || 
-                               raw.isParentGroup !== undefined || 
-                               raw.isAnnounce !== undefined || 
-                               raw.isCommunityAnnounce !== undefined || 
-                               raw.isDefaultSubgroup !== undefined || 
-                               raw.linkedParentJid !== undefined || 
-                               raw.linkedParent !== undefined || 
-                               raw.parentGroupId !== undefined
+      const commInfo = parseCommunityMetadata(jid, raw)
 
-      if (hasCommunityData) {
-        const isComm = raw.isCommunity === true || raw.isParentGroup === true
-        const isAnn = raw.isCommunityAnnounce === true || raw.isDefaultSubgroup === true || raw.isAnnounce === true
-        const parent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
-
-        const rootJidVal = isComm ? cleanedJid : (parent ? cleanJid(parent) : null)
+      if (commInfo.hasCommunityData) {
+        const rootJidVal = commInfo.rootJid
         if (rootJidVal) {
           rootJids.add(rootJidVal)
-          if (isAnn) {
+          if (commInfo.isAnnounce) {
             announceUpdates.push({ rootJid: rootJidVal, announceJid: cleanedJid })
           }
         }
@@ -134,57 +123,50 @@ export class GroupHydrationService {
     for (const jid of groupKeys) {
       const raw = groups[jid]
       const cleanedJid = cleanJid(jid)
-      const chatName = raw.name || raw.subject
+      const chatName = raw.name || raw.subject || null
 
       const ts = raw.conversationTimestamp ?? raw.timestamp
-      const timestamp = (ts !== undefined && ts !== null) ? parseBaileysTimestamp(ts) : BigInt(0)
+      const hasTimestamp = ts !== undefined && ts !== null
+      const timestamp = hasTimestamp ? parseBaileysTimestamp(ts) : null
       const isArchived = ('archived' in raw || 'isArchived' in raw) ? (raw.archived === true || raw.isArchived === true) : false
 
       let type = 'GROUP'
       let communityId: number | null = null
 
-      const hasCommunityData = raw.isCommunity !== undefined || 
-                               raw.isParentGroup !== undefined || 
-                               raw.isAnnounce !== undefined || 
-                               raw.isCommunityAnnounce !== undefined || 
-                               raw.isDefaultSubgroup !== undefined || 
-                               raw.linkedParentJid !== undefined || 
-                               raw.linkedParent !== undefined || 
-                               raw.parentGroupId !== undefined
-
-      if (hasCommunityData) {
-        const isComm = raw.isCommunity === true || raw.isParentGroup === true
-        const isAnn = raw.isCommunityAnnounce === true || raw.isDefaultSubgroup === true || raw.isAnnounce === true
-        const parent = raw.linkedParentJid || raw.linkedParent || raw.parentGroupId
-
-        if (isComm) type = 'COMMUNITY'
-        else if (isAnn) type = 'ANNOUNCE'
-        else if (parent) type = 'SUBGROUP'
-        else type = 'GROUP'
-
-        const rootJidVal = isComm ? cleanedJid : (parent ? cleanJid(parent) : null)
+      const commInfo = parseCommunityMetadata(jid, raw)
+      if (commInfo.hasCommunityData) {
+        type = commInfo.type
+        const rootJidVal = commInfo.rootJid
         if (rootJidVal) {
           communityId = communityJidToIdMap.get(rootJidVal) ?? null
         }
       }
 
-      const chatObj = {
-        jid: cleanedJid,
-        type,
-        unreadCount: typeof raw.unreadCount === 'number' ? raw.unreadCount : 0,
-        timestamp,
-        pinned: typeof raw.pinned === 'number' ? raw.pinned : 0,
-        muteExpiration: BigInt(typeof raw.muteExpiration === 'number' ? raw.muteExpiration : 0),
-        isArchived,
-        name: chatName || null,
-        communityId,
-        profilePictureUrl: raw.profilePictureUrl || null
-      }
+      const existing = existingChatsMap.get(cleanedJid)
 
-      if (existingChatsMap.has(cleanedJid)) {
-        chatsToUpdate.push(chatObj)
+      if (existing) {
+        // Only overwrite fields that the payload actually provides
+        const updateObj: Record<string, any> = { type, isArchived, communityId }
+        if (chatName) updateObj.name = chatName  // never blank out an existing name
+        if (timestamp !== null) updateObj.timestamp = timestamp  // never zero out an existing timestamp
+        if (typeof raw.unreadCount === 'number') updateObj.unreadCount = raw.unreadCount
+        if (typeof raw.pinned === 'number') updateObj.pinned = raw.pinned
+        if (raw.muteExpiration !== undefined) updateObj.muteExpiration = BigInt(typeof raw.muteExpiration === 'number' ? raw.muteExpiration : 0)
+        if (raw.profilePictureUrl !== undefined) updateObj.profilePictureUrl = raw.profilePictureUrl || null
+        chatsToUpdate.push({ jid: cleanedJid, ...updateObj })
       } else {
-        chatsToInsert.push(chatObj)
+        chatsToInsert.push({
+          jid: cleanedJid,
+          type,
+          unreadCount: typeof raw.unreadCount === 'number' ? raw.unreadCount : 0,
+          timestamp: timestamp ?? BigInt(0),
+          pinned: typeof raw.pinned === 'number' ? raw.pinned : 0,
+          muteExpiration: BigInt(typeof raw.muteExpiration === 'number' ? raw.muteExpiration : 0),
+          isArchived,
+          name: chatName,
+          communityId,
+          profilePictureUrl: raw.profilePictureUrl || null
+        })
       }
     }
 

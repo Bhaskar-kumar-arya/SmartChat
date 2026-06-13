@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { cleanJid } from '../../utils'
+import { cleanJid, parseCommunityMetadata } from '../../utils'
 import { ContactService } from '../contacts/ContactService'
 import { ChatListItem, ChatUpdatePayload, WASocket } from '../../types'
 
@@ -47,31 +47,11 @@ export class ChatService {
     }
 
     // Community Metadata Normalization
-    const hasCommunityData = update.isCommunity !== undefined || 
-                             update.isParentGroup !== undefined || 
-                             update.isAnnounce !== undefined || 
-                             update.isCommunityAnnounce !== undefined || 
-                             update.isDefaultSubgroup !== undefined || 
-                             update.linkedParentJid !== undefined || 
-                             update.linkedParent !== undefined || 
-                             update.parentGroupId !== undefined;
+    const commInfo = parseCommunityMetadata(cleanedJid, update)
 
-    if (hasCommunityData) {
-      const isComm = update.isCommunity === true || update.isParentGroup === true
-      const isAnn = update.isAnnounce === true || update.isCommunityAnnounce === true || update.isDefaultSubgroup === true
-      const parent = update.linkedParentJid || update.linkedParent || update.parentGroupId
-
-      let type = 'DM'
-      if (cleanedJid.endsWith('@g.us')) {
-        if (isComm) type = 'COMMUNITY'
-        else if (isAnn) type = 'ANNOUNCE'
-        else if (parent) type = 'SUBGROUP'
-        else type = 'GROUP'
-      }
-      data.type = type
-      
-      // Determine the root community JID if applicable
-      const rootJid = isComm ? cleanedJid : (parent ? cleanJid(parent) : null)
+    if (commInfo.hasCommunityData) {
+      data.type = commInfo.type
+      const rootJid = commInfo.rootJid
       let communityId: number | null = null
 
       // Link owner LIDs to Phone Numbers if provided in metadata
@@ -92,18 +72,18 @@ export class ChatService {
 
       if (rootJid) {
         const updateData: any = {}
-        if (isComm && chatName) updateData.name = chatName
+        if (commInfo.isCommunity && chatName) updateData.name = chatName
 
         // Ensure Community exists
         const comm = await this.prisma.community.upsert({
           where: { jid: rootJid },
           update: updateData,
-          create: { jid: rootJid, name: isComm ? chatName : null }
+          create: { jid: rootJid, name: commInfo.isCommunity ? chatName : null }
         })
         communityId = comm.id
         
         // Update announce channel if known
-        if (isAnn && rootJid) {
+        if (commInfo.isAnnounce && rootJid) {
           await this.prisma.community.update({
             where: { id: communityId },
             data: { announceJid: cleanedJid }
