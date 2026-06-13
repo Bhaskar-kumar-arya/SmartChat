@@ -3,7 +3,7 @@ import { useAPI } from '../../../context/APIContext'
 import { ImageMessage, VideoMessage, DocumentMessage } from './MediaMessages'
 import { TextMessage } from './TextMessage'
 import { formatTime } from '../../../utils/formatters'
-import { MessageStatusTick } from '../MessageItem'
+import { MessageStatusTick } from '../../common/MessageStatusTick'
 import { HydratedButton, InteractiveButton, TemplateMessageProps } from '../../../types'
 
 interface ParsedButton {

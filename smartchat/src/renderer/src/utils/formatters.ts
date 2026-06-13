@@ -65,3 +65,13 @@ export const formatReceiptDate = (timestampStr: string): string => {
     return ''
   }
 }
+
+export const formatSenderName = (
+  fromMe: boolean,
+  participantName?: string | null,
+  participant?: string | null,
+  fallback: string | null = null
+): string | null => {
+  if (fromMe) return 'You'
+  return participantName || participant?.split('@')[0] || fallback
+}

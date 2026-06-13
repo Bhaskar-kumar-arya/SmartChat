@@ -37,6 +37,10 @@ export interface ChatListItem {
   isCommunity: boolean
   isAnnounce: boolean
   linkedParentJid: string | null
+  lastMessageSender?: string | null
+  lastMessageStatus?: string | null
+  lastMessageFromMe?: boolean
+  lastMessageId?: string | null
 }
 
 /** Enriched reaction for UI display. */

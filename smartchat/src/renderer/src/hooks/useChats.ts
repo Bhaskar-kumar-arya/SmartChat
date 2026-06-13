@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useAPI } from '../context/APIContext'
 import { ChatItem, MessageItem } from '../types'
+import { formatSenderName } from '../utils/formatters'
 
 /**
  * Helper to sort chats: pinned first, then by timestamp
@@ -115,7 +116,11 @@ export const useChats = (activeJid: string | null) => {
           lastMessageType: msg.messageType,
           lastMessageTimestamp: msg.timestamp,
           pinned: existing?.pinned,
-          muteExpiration: existing?.muteExpiration
+          muteExpiration: existing?.muteExpiration,
+          lastMessageSender: formatSenderName(msg.fromMe, msg.participantName, msg.participant),
+          lastMessageStatus: msg.status || null,
+          lastMessageFromMe: msg.fromMe,
+          lastMessageId: msg.id
         }
         const filtered = prev.filter((c) => c.jid !== msg.chatJid)
         return sortChats([updatedChat, ...filtered])
@@ -170,9 +175,31 @@ export const useChats = (activeJid: string | null) => {
           const updatedChat: ChatItem = {
             ...existing,
             lastMessage: lastMessageText,
-            lastMessageType: msg.messageType
+            lastMessageType: msg.messageType,
+            lastMessageSender: formatSenderName(msg.fromMe, msg.participantName, msg.participant),
+            lastMessageStatus: msg.status || null,
+            lastMessageFromMe: msg.fromMe,
+            lastMessageId: msg.id
           }
           const filtered = prev.filter((c) => c.jid !== msg.chatJid)
+          return sortChats([updatedChat, ...filtered])
+        }
+        return prev
+      })
+    })
+
+    const unSubMsgStatus = api.onMessageStatusUpdated((update) => {
+      setChats((prev) => {
+        const idx = prev.findIndex((c) => c.jid === update.chatJid)
+        if (idx === -1) return prev
+
+        const existing = prev[idx]
+        if (existing.lastMessageId === update.id) {
+          const updatedChat = {
+            ...existing,
+            lastMessageStatus: update.status
+          }
+          const filtered = prev.filter((c) => c.jid !== update.chatJid)
           return sortChats([updatedChat, ...filtered])
         }
         return prev
@@ -183,6 +210,7 @@ export const useChats = (activeJid: string | null) => {
       unSubNewMsg()
       unSubChatUpd()
       unSubMsgEdited()
+      unSubMsgStatus()
     }
   }, []) // Dependency array empty ensures we only register once
 

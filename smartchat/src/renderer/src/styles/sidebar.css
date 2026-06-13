@@ -185,9 +185,14 @@
 
 .chat-item-time {
   font-size: 0.75rem;
-  color: var(--wa-text-tertiary);
+  color: var(--wa-text-secondary);
   white-space: nowrap;
   margin-left: 0.5rem;
+}
+
+.chat-item-time.unread {
+  color: var(--wa-primary);
+  font-weight: 500;
 }
 
 .chat-item-bottom {
@@ -203,6 +208,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chat-item-status-tick {
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.chat-item-preview-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-item-badge {

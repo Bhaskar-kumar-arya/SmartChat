@@ -306,10 +306,38 @@ export class ChatService {
         const lastMsg = await this.prisma.message.findFirst({
           where: { chatJid: chat.jid },
           orderBy: { timestamp: 'desc' },
-          select: { textContent: true, messageType: true, timestamp: true }
+          select: {
+            id: true,
+            textContent: true,
+            messageType: true,
+            timestamp: true,
+            fromMe: true,
+            participant: true,
+            status: true,
+            sender: {
+              select: {
+                displayName: true,
+                pushName: true,
+                verifiedName: true,
+                phoneNumber: true
+              }
+            }
+          }
         })
 
         const effectiveTimestamp = lastMsg?.timestamp ?? chat.timestamp
+
+        let lastMessageSender: string | null = null
+        if (lastMsg) {
+          if (lastMsg.fromMe) {
+            lastMessageSender = 'You'
+          } else {
+            lastMessageSender = ContactService.getDisplayName(
+              lastMsg.sender,
+              lastMsg.participant?.split('@')[0] || 'Someone'
+            )
+          }
+        }
 
         return {
           jid: chat.jid,
@@ -332,7 +360,11 @@ export class ChatService {
           profilePictureUrl: chat.profilePictureUrl,
           isCommunity: chat.type === 'COMMUNITY',
           isAnnounce: chat.type === 'ANNOUNCE',
-          linkedParentJid: (chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') ? (chat.community?.jid ?? null) : null
+          linkedParentJid: (chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') ? (chat.community?.jid ?? null) : null,
+          lastMessageSender,
+          lastMessageStatus: lastMsg?.status || null,
+          lastMessageFromMe: lastMsg?.fromMe || false,
+          lastMessageId: lastMsg?.id || null
         }
       })
     )

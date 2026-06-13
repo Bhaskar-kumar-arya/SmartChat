@@ -15,6 +15,10 @@ export interface ChatItem {
   pushName?: string | null
   verifiedName?: string | null
   phoneNumber?: string | null
+  lastMessageSender?: string | null
+  lastMessageStatus?: string | null
+  lastMessageFromMe?: boolean
+  lastMessageId?: string | null
 }
 
 export interface SelectedContext {
