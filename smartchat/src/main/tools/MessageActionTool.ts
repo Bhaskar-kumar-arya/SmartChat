@@ -58,7 +58,7 @@ HOW TO USE:
   constructor(
     private getSock: () => WASocket | null,
     private messageActionService: MessageActionService
-  ) {}
+  ) { }
 
   async execute(args: any) {
     const { action, messageId, jid, newText, targetJids, reaction } = args;

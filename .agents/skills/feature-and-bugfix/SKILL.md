@@ -1,7 +1,7 @@
 ---
 name: feature-and-bugfix
 description: |
-  Enforces strict type safety, SOLID principles, clean folder structures, and layered boundaries
+  Enforces strict type safety, SOLID principles,DRY principles, clean folder structures, and layered boundaries
   when implementing new features or fixing bugs.
 version: 1.0.0
 tags:

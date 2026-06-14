@@ -95,9 +95,9 @@ export class AppStateSyncParser {
             )
             const participants = Array.isArray(callLogRecord.participants)
               ? callLogRecord.participants.map((p: any) => ({
-                  userJid: p.userJid || '',
-                  callResult: p.callResult || ''
-                }))
+                userJid: p.userJid || '',
+                callResult: p.callResult || ''
+              }))
               : []
 
             await bus.emit('app-state:call-log', {

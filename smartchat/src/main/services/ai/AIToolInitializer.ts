@@ -1,6 +1,6 @@
 import { toolRegistry } from './AIToolService';
 import { SendMessageTool } from '../../tools/SendMessageTool';
-import { ReadChatTool } from '../../tools/ReadChatTool';
+import { ReadMessagesTool } from '../../tools/ReadMessagesTool';
 import { QueryDatabaseTool } from '../../tools/QueryDatabaseTool';
 import { MessageActionTool } from '../../tools/MessageActionTool';
 import { ExecuteScriptTool } from '../../tools/ExecuteScriptTool';
@@ -17,7 +17,7 @@ export class AIToolInitializer {
   static initializeAll(getSock: () => WASocket | null, services: ServiceContainer) {
     // 1. Instantiate tools
     const sendMessageTool = new SendMessageTool(getSock, services.messageActionService);
-    const readChatTool = new ReadChatTool(getSock);
+    const readMessagesTool = new ReadMessagesTool(getSock);
     const queryDatabaseTool = new QueryDatabaseTool();
     const messageActionTool = new MessageActionTool(getSock, services.messageActionService);
     // ExecuteScriptTool must be instantiated last — its initialize() builds the
@@ -26,7 +26,7 @@ export class AIToolInitializer {
 
     // 2. Register tools
     toolRegistry.registerTool(sendMessageTool);
-    toolRegistry.registerTool(readChatTool);
+    toolRegistry.registerTool(readMessagesTool);
     toolRegistry.registerTool(queryDatabaseTool);
     toolRegistry.registerTool(messageActionTool);
     toolRegistry.registerTool(executeScriptTool);

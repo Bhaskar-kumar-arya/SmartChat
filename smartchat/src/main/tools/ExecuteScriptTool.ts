@@ -1,8 +1,8 @@
 import vm from 'vm';
 import { AITool, toolRegistry } from '../services/ai/AIToolService';
 
-const MAX_EXECUTION_MS = 60_000; // 30 second wall-clock timeout
-const MAX_TOOL_CALLS = 1000;       // prevent runaway loops
+const MAX_EXECUTION_MS = 60_000; // 60 second wall-clock timeout
+const MAX_TOOL_CALLS = 10000;       // prevent runaway loops
 
 const DESCRIPTION_BASE = `Write and execute a JavaScript program that can call registered tools with full control flow — loops, conditionals, variables, and any standard JS logic.
 
@@ -42,14 +42,14 @@ EXAMPLES(YOU MUST ADHERE TO THESE PATTERNS):
 User: "find me the syllabus for CN endsem"
 
 <thought>
-The user is looking for specific information. A simple search might return isolated messages without enough context to verify if it's the right one. I will write a script to first find the matching messages, and then fetch a window of surrounding messages for each match to provide better context. To prevent redundant data, I'll ensure deduplication of the contextual messages. If this initial context isn't enough, I can fetch a larger window in the next turn.
+The user is looking for specific information. A simple search might return isolated messages without enough context to verify if it's the right one. I will write a script to first find the matching messages, and then fetch a window of surrounding messages for each match to provide better context. To prevent redundant data, I'll ensure deduplication of the contextual messages. I'll use groupByChat: true so results from the same chat are shown together cleanly. If this initial context isn't enough, I can fetch a larger window in the next turn.
 </thought>
 <tool_call>
 {
   "tool": "executeScript",
   "arguments": {
-    "script": "const matches = await queryDatabase({\\n  sql: \\"SELECT id, chatJid, timestamp FROM Message WHERE (textContent LIKE '%syllabus%' OR content LIKE '%syllabus%') AND (textContent LIKE '%CN%' OR textContent LIKE '%Computer Network%' OR content LIKE '%CN%' OR content LIKE '%Computer Network%') ORDER BY timestamp DESC\\",\\n  explanation: \\"Find messages matching CN syllabus\\"\\n});\\n\\nconst contextMessages = [];\\nconst seenIds = new Set();\\n\\nfor (const match of matches.rows) {\\n  const window = await queryDatabase({\\n    sql: \\"SELECT m.id, m.textContent, json_extract(m.content, '$.documentMessage.fileName') as fileName, m.timestamp, c.name as chatName FROM Message m JOIN Chat c ON m.chatJid = c.jid WHERE m.chatJid = ? AND m.timestamp >= ? - 86400 AND m.timestamp <= ? + 86400 ORDER BY m.timestamp ASC LIMIT 20\\",\\n    params: [match.chatJid, match.timestamp, match.timestamp],\\n    explanation: \\"Fetch context window around match\\"\\n  });\\n  \\n  for (const msg of window.rows) {\\n    if (!seenIds.has(msg.id)) {\\n      seenIds.add(msg.id);\\n      contextMessages.push(msg);\\n    }\\n  }\\n}\\n\\nreturn contextMessages;\",
-    "explanation": "Search for CN syllabus and fetch surrounding messages for context, ensuring deduplication."
+    "script": "const matches = await queryDatabase({\\n  sql: \\"SELECT id, chatJid, timestamp FROM Message WHERE (textContent LIKE '%syllabus%' OR content LIKE '%syllabus%') AND (textContent LIKE '%CN%' OR textContent LIKE '%Computer Network%' OR content LIKE '%CN%' OR content LIKE '%Computer Network%') ORDER BY timestamp DESC\\",\\n  explanation: \\"Find messages matching CN syllabus\\"\\n});\\n\\nconst seenIds = new Set();\\n\\nfor (const match of matches.rows) {\\n  const window = await queryDatabase({\\n    sql: \\"SELECT id FROM Message WHERE chatJid = ? AND timestamp >= ? - 86400 AND timestamp <= ? + 86400 ORDER BY timestamp ASC LIMIT 20\\",\\n    params: [match.chatJid, match.timestamp, match.timestamp],\\n    explanation: \\"Fetch context message IDs around match\\"\\n  });\\n  \\n  for (const row of window.rows) {\\n    seenIds.add(row.id);\\n  }\\n}\\n\\nconst idList = Array.from(seenIds);\\nif (idList.length === 0) return \\"No messages found.\\";\\nreturn await readMessages({\\n  sql: \\"SELECT id FROM Message WHERE id IN (\\" + idList.map(() => \\"?\\").join(\\",\\") + \\")\\" ,\\n  params: idList,\\n  groupByChat: true\\n});",
+    "explanation": "Search for CN syllabus, aggregate surrounding message IDs, and format them grouped by chat using readMessages."
   }
 }
 </tool_call>
@@ -57,14 +57,14 @@ The user is looking for specific information. A simple search might return isola
 User: "summarize this week's messages"
 
 <thought>
-The user wants a summary of the past week's messages. I need to fetch all messages from the last 7 days and group them by chat.
+The user wants a summary of the past week's messages. I need to fetch all messages from the last 7 days. Since this spans multiple chats, I'll use groupByChat: true so the output is cleanly organised per chat without needing to sort in SQL.
 </thought>
 <tool_call>
 {
   "tool": "executeScript",
   "arguments": {
-    "script": "const now = Math.floor(Date.now() / 1000);\\nconst sevenDaysAgo = now - (7 * 24 * 60 * 60);\\n\\nconst messages = await queryDatabase({\\n  sql: \\"SELECT m.chatJid, m.textContent, m.timestamp, m.fromMe, m.participant, c.name as chatName, i.displayName as senderName, i.pushName as senderPushName FROM Message m JOIN Chat c ON m.chatJid = c.jid LEFT JOIN Identity i ON m.senderId = i.id WHERE m.timestamp >= ? ORDER BY m.timestamp ASC\\",\\n  params: [sevenDaysAgo],\\n  explanation: \\"Fetching all messages from the last 7 days including sender identity fields.\\"\\n});\\n\\nconst summaries = {};\\n\\nfor (const msg of messages.rows) {\\n  const chatKey = msg.chatName || msg.chatJid;\\n  if (!summaries[chatKey]) {\\n    summaries[chatKey] = [];\\n  }\\n  const sender = (msg.fromMe === 1 || msg.fromMe === true)\\n    ? 'Me'\\n    : (msg.senderName || msg.senderPushName || msg.participant || 'Unknown');\\n  summaries[chatKey].push({\\n    sender,\\n    text: msg.textContent\\n  });\\n}\\n\\nreturn summaries;",
-    "explanation": "Retrieve all messages from the last 7 days for summary"
+    "script": "const now = Math.floor(Date.now() / 1000);\\nconst sevenDaysAgo = now - (7 * 24 * 60 * 60);\\n\\nreturn await readMessages({\\n  sql: \\"SELECT id FROM Message WHERE timestamp >= ?\\",\\n  params: [sevenDaysAgo],\\n  groupByChat: true\\n});",
+    "explanation": "Retrieve and format all messages from the last 7 days, grouped by chat, using readMessages."
   }
 }
 </tool_call> 

@@ -120,6 +120,9 @@ WHAT YOU RECEIVE BACK:
 }
 Note: Timestamp columns may be returned as strings due to BigInt serialization.
 
+TIP:
+- If structured JSON objects (with repeated keys) are not desired, you can format the output using column concatenation '||' or 'json_array'.
+
 CONSTRAINTS:
 - Results are capped at ${MAX_ROWS} rows automatically
 - Read-only — INSERT, UPDATE, DELETE, DROP and similar mutations are rejected
@@ -134,7 +137,7 @@ The user wants to find chats where the last message was received (fromMe = 0). I
 {
   "tool": "queryDatabase",
   "arguments": {
-    "sql": "WITH LastMsg AS (SELECT chatJid, MAX(timestamp) as last_ts FROM Message GROUP BY chatJid) SELECT c.name as groupName, i.displayName as contactName, m.messageType, m.textContent, json_extract(m.content, '$.documentMessage.fileName') as fileName, m.timestamp, c.jid FROM LastMsg lm JOIN Message m ON lm.chatJid = m.chatJid AND lm.last_ts = m.timestamp JOIN Chat c ON m.chatJid = c.jid LEFT JOIN Identity i ON m.senderId = i.id WHERE m.fromMe = 0 ORDER BY m.timestamp DESC",
+    "sql": "WITH LastMsg AS (SELECT chatJid, MAX(timestamp) as last_ts FROM Message GROUP BY chatJid) SELECT c.type as chatType, COALESCE(c.name, i.displayName, i.pushName, i.verifiedName, i.phoneNumber) as chatName, m.messageType, m.textContent, json_extract(m.content, '$.documentMessage.fileName') as fileName, m.timestamp, c.jid, c.unreadCount FROM LastMsg lm JOIN Message m ON lm.chatJid = m.chatJid AND lm.last_ts = m.timestamp JOIN Chat c ON m.chatJid = c.jid LEFT JOIN Identity i ON m.senderId = i.id WHERE m.fromMe = 0 ORDER BY m.timestamp DESC",
     "explanation": "Finding all chats where the last message was received, including message details and sender identities."
   }
 }
