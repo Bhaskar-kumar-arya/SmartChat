@@ -52,6 +52,8 @@ declare global {
       onMessageEdited: (callback: (msg: MessageItem) => void) => () => void
       onMessageDeleted: (callback: (update: { id: string, chatJid: string, fromMe: boolean }) => void) => () => void
       markRead: (jid: string) => Promise<boolean>
+      muteChat: (jid: string, durationMs: number) => Promise<boolean>
+      unmuteChat: (jid: string) => Promise<boolean>
       getMyJid: () => Promise<string | null>
       onMessageStatusUpdated: (callback: (update: { id: string, chatJid: string, status: string }) => void) => () => void
       getMessageReceipts: (messageId: string) => Promise<MessageReceiptInfo[]>

@@ -26,7 +26,7 @@ export class ChatService {
     }
     if (update.muteExpiration !== undefined) {
       const mute = update.muteExpiration
-      data.muteExpiration = BigInt(typeof mute === 'number' ? mute : 0)
+      data.muteExpiration = typeof mute === 'bigint' ? mute : BigInt(typeof mute === 'number' ? mute : 0)
     }
     if (update.archived !== undefined) {
       data.isArchived = update.archived === true
@@ -121,6 +121,26 @@ export class ChatService {
       return true
     } catch (err) {
       console.error(`[ChatService] Failed to mark chat ${cleanedJid} as read:`, err)
+      return false
+    }
+  }
+
+  /**
+   * Checks if a chat is currently muted.
+   */
+  async isChatMuted(jid: string): Promise<boolean> {
+    const cleanedJid = cleanJid(jid)
+    if (!cleanedJid) return false
+    try {
+      const chat = await this.prisma.chat.findUnique({
+        where: { jid: cleanedJid },
+        select: { muteExpiration: true }
+      })
+      if (!chat || !chat.muteExpiration) return false
+      const expiration = Number(chat.muteExpiration)
+      return expiration === -1 || expiration * 1000 > Date.now()
+    } catch (err) {
+      console.error(`[ChatService] Failed to check if chat ${cleanedJid} is muted:`, err)
       return false
     }
   }

@@ -96,12 +96,12 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
   }
 
   private async onChatUpdated(event: ChatUpdatedEvent): Promise<void> {
-    // Serialize BigInts before sending over IPC
-    const formatted: Record<string, unknown> = {}
-    for (const [key, val] of Object.entries(event.update)) {
-      formatted[key] = typeof val === 'bigint' ? val.toString() : val
+    try {
+      const sanitized = sanitizeIPCPayload(event.update) as Record<string, unknown>
+      this.send('chat-updated', { jid: event.jid, ...sanitized })
+    } catch (err) {
+      console.error('[UIBroadcastSubscriber] Error serializing chat-updated event:', err)
     }
-    this.send('chat-updated', { jid: event.jid, ...formatted })
   }
 
   private async onPresence(event: PresenceEvent): Promise<void> {
@@ -144,4 +144,52 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     console.log('[UIBroadcastSubscriber] onReactionProcessed:', event.id, 'type:', event.messageType, 'chat:', event.chatJid)
     this.send('new-message', event)
   }
+}
+
+/**
+ * Safely sanitizes arbitrary payloads for Electron IPC serialization.
+ * - Converts BigInt to string.
+ * - Converts Baileys/Long objects to their string representation.
+ * - Omit Buffer/Uint8Array to prevent massive binary transfer or serialization failure.
+ * - Recursively processes arrays and plain objects.
+ */
+function sanitizeIPCPayload(val: unknown): unknown {
+  if (val === null || val === undefined) {
+    return val
+  }
+  if (typeof val === 'number' || typeof val === 'string' || typeof val === 'boolean') {
+    return val
+  }
+  if (typeof val === 'bigint') {
+    return val.toString()
+  }
+  if (Array.isArray(val)) {
+    return val.map(sanitizeIPCPayload)
+  }
+  if (typeof val === 'object') {
+    const obj = val as Record<string, unknown>
+    // Check if it is a Long-like object (Baileys Long format)
+    if ('low' in obj && 'high' in obj && typeof obj.low === 'number' && typeof obj.high === 'number') {
+      const low = obj.low
+      const high = obj.high
+      return (high * 4294967296 + (low >>> 0)).toString()
+    }
+    // Check for Buffer/Uint8Array
+    if (val instanceof Uint8Array || Buffer.isBuffer(val)) {
+      return undefined
+    }
+    // Recursively clean plain objects
+    const cleaned: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === undefined || typeof v === 'function') {
+        continue
+      }
+      const sanitized = sanitizeIPCPayload(v)
+      if (sanitized !== undefined) {
+        cleaned[k] = sanitized
+      }
+    }
+    return cleaned
+  }
+  return undefined
 }

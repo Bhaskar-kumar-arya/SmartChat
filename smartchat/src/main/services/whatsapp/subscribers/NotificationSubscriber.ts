@@ -36,6 +36,10 @@ export class NotificationSubscriber implements IWAEventSubscriber {
     if (fromMe || messageType === 'reactionMessage') return
 
     try {
+      // Silence notifications for muted chats
+      const isMuted = await this.services.chatService.isChatMuted(chatJid)
+      if (isMuted) return
+
       // Resolve sender display name
       const nameMap = await this.services.contactService.batchResolveNames([senderJid], sock)
       const senderName = nameMap.get(senderJid) || senderJid.split('@')[0]

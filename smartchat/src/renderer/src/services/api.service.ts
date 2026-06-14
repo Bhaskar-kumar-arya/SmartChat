@@ -38,6 +38,12 @@ export const api = {
   markRead: (jid: string): Promise<boolean> =>
     window.api.markRead(jid),
 
+  muteChat: (jid: string, durationMs: number): Promise<boolean> =>
+    window.api.muteChat(jid, durationMs),
+
+  unmuteChat: (jid: string): Promise<boolean> =>
+    window.api.unmuteChat(jid),
+
   getMyJid: (): Promise<string | null> =>
     window.api.getMyJid(),
 

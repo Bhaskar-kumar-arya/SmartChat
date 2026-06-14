@@ -99,7 +99,7 @@ export interface MediaSendOptions {
 /** Payload shape for chat update events. */
 export interface ChatUpdatePayload {
   id?: string; name?: string; subject?: string
-  unreadCount?: number; pinned?: number; muteExpiration?: number | bigint
+  unreadCount?: number; pinned?: number; muteExpiration?: number | bigint; muteEndTime?: number | bigint | null
   archived?: boolean; conversationTimestamp?: unknown; timestamp?: unknown
   profilePictureUrl?: string
   isCommunity?: boolean; isParentGroup?: boolean; isAnnounce?: boolean

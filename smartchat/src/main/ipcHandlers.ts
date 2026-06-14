@@ -99,6 +99,22 @@ export function registerIpcHandlers(
     return services.chatService.markRead(jid)
   })
 
+  // ── Mute Chat ────────────────────────────────────────────────────────
+  ipcMain.handle('mute-chat', async (_event, jid: string, durationMs: number) => {
+    const sock = getSock()
+    if (!sock) throw new Error('WhatsApp socket is not connected')
+    await sock.chatModify({ mute: durationMs }, jid)
+    return true
+  })
+
+  // ── Unmute Chat ──────────────────────────────────────────────────────
+  ipcMain.handle('unmute-chat', async (_event, jid: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('WhatsApp socket is not connected')
+    await sock.chatModify({ mute: null }, jid)
+    return true
+  })
+
   // ── Get My JID ───────────────────────────────────────────────────────
   ipcMain.handle('get-my-jid', async () => {
     const me = await prisma.identity.findFirst({ where: { isMe: true } })

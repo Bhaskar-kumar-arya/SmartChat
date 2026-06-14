@@ -198,7 +198,19 @@ export class WAEventHandler {
     for (const update of updates) {
       const jid = cleanJid(update.id)
       if (jid) {
-        await this.bus.emit('chat:updated', { jid, update })
+        const normalizedUpdate: Record<string, unknown> = { ...update }
+        const rawMute = update.muteExpiration !== undefined ? update.muteExpiration : update.muteEndTime
+        if (rawMute !== undefined) {
+          let muteSec = 0
+          if (rawMute !== null) {
+            const num = getNumericValue(rawMute)
+            if (!isNaN(num)) {
+              muteSec = num > 10000000000 ? Math.floor(num / 1000) : num
+            }
+          }
+          normalizedUpdate.muteExpiration = muteSec
+        }
+        await this.bus.emit('chat:updated', { jid, update: normalizedUpdate })
       }
     }
   }
@@ -208,7 +220,18 @@ export class WAEventHandler {
       const jid = cleanJid(chat.id)
       if (jid) {
         // @ts-ignore
-        const raw = { ...chat, ...(chat.metadata || {}) }
+        const raw: Record<string, unknown> = { ...chat, ...(chat.metadata || {}) }
+        const rawMute = raw.muteExpiration !== undefined ? raw.muteExpiration : raw.muteEndTime
+        if (rawMute !== undefined) {
+          let muteSec = 0
+          if (rawMute !== null) {
+            const num = getNumericValue(rawMute)
+            if (!isNaN(num)) {
+              muteSec = num > 10000000000 ? Math.floor(num / 1000) : num
+            }
+          }
+          raw.muteExpiration = muteSec
+        }
         await this.bus.emit('chat:upserted', { jid, raw })
       }
     }
@@ -259,4 +282,20 @@ export class WAEventHandler {
       await AppStateSyncParser.parseAndDispatch(e, sock, this.bus)
     }
   }
+}
+
+function getNumericValue(val: unknown): number {
+  if (val === undefined || val === null) return 0
+  if (typeof val === 'object') {
+    const obj = val as Record<string, unknown>
+    if (typeof obj.toNumber === 'function') {
+      return (obj.toNumber as () => number)()
+    }
+    if ('low' in obj && 'high' in obj) {
+      const low = obj.low as number
+      const high = obj.high as number
+      return high * 4294967296 + (low >>> 0)
+    }
+  }
+  return Number(val)
 }

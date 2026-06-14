@@ -121,6 +121,12 @@ const api = {
   markRead: (jid: string) => {
     return ipcRenderer.invoke('mark-read', jid)
   },
+  muteChat: (jid: string, durationMs: number) => {
+    return ipcRenderer.invoke('mute-chat', jid, durationMs)
+  },
+  unmuteChat: (jid: string) => {
+    return ipcRenderer.invoke('unmute-chat', jid)
+  },
   getMyJid: () => {
     return ipcRenderer.invoke('get-my-jid')
   },

@@ -151,7 +151,10 @@ export class GroupHydrationService {
         if (timestamp !== null) updateObj.timestamp = timestamp  // never zero out an existing timestamp
         if (typeof raw.unreadCount === 'number') updateObj.unreadCount = raw.unreadCount
         if (typeof raw.pinned === 'number') updateObj.pinned = raw.pinned
-        if (raw.muteExpiration !== undefined) updateObj.muteExpiration = BigInt(typeof raw.muteExpiration === 'number' ? raw.muteExpiration : 0)
+        if (raw.muteExpiration !== undefined) {
+          const mute = raw.muteExpiration
+          updateObj.muteExpiration = typeof mute === 'bigint' ? mute : BigInt(typeof mute === 'number' ? mute : 0)
+        }
         if (raw.profilePictureUrl !== undefined) updateObj.profilePictureUrl = raw.profilePictureUrl || null
         chatsToUpdate.push({ jid: cleanedJid, ...updateObj })
       } else {
@@ -161,7 +164,7 @@ export class GroupHydrationService {
           unreadCount: typeof raw.unreadCount === 'number' ? raw.unreadCount : 0,
           timestamp: timestamp ?? BigInt(0),
           pinned: typeof raw.pinned === 'number' ? raw.pinned : 0,
-          muteExpiration: BigInt(typeof raw.muteExpiration === 'number' ? raw.muteExpiration : 0),
+          muteExpiration: typeof raw.muteExpiration === 'bigint' ? raw.muteExpiration : BigInt(typeof raw.muteExpiration === 'number' ? raw.muteExpiration : 0),
           isArchived,
           name: chatName,
           communityId,
