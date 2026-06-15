@@ -7,6 +7,7 @@
 
 import { WAEventBus } from './WAEventBus'
 import { WASocket } from '../../types'
+import { cleanJid } from '../../utils'
 
 export class AppStateSyncParser {
   /**
@@ -49,6 +50,7 @@ export class AppStateSyncParser {
         case 'mute': {
           const chatJid = indexArray[1]
           if (!chatJid) break
+          const cleanChatJid = cleanJid(chatJid)
           const muteAction = value?.muteAction
           const muted = !!muteAction?.muted
           let muteEndTimestamp: bigint | null = null
@@ -56,10 +58,28 @@ export class AppStateSyncParser {
             const val = muteAction.muteEndTimestamp
             muteEndTimestamp = BigInt(typeof val === 'string' ? val : String(val))
           }
+
+          let muteSec = 0n
+          if (muted) {
+            if (muteEndTimestamp !== null && muteEndTimestamp !== undefined) {
+              muteSec = muteEndTimestamp > 10000000000n ? muteEndTimestamp / 1000n : muteEndTimestamp
+              if (muteSec === 0n) muteSec = -1n
+            } else {
+              muteSec = -1n
+            }
+          }
+
           await bus.emit('app-state:mute', {
-            chatJid,
+            chatJid: cleanChatJid,
             muted,
             muteEndTimestamp
+          })
+
+          await bus.emit('chat:updated', {
+            jid: cleanChatJid,
+            update: {
+              muteExpiration: muteSec
+            }
           })
           break
         }

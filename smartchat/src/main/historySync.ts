@@ -134,6 +134,14 @@ export async function handleHistorySync(
       updateData.isArchived = isArchived
       if (raw.name !== undefined) updateData.name = raw.name
 
+      const rawMute = raw.muteExpiration !== undefined ? raw.muteExpiration : raw.muteEndTime
+      if (rawMute !== undefined && rawMute !== null) {
+        const muteVal = parseBaileysTimestamp(rawMute)
+        const muteSec = muteVal > 10000000000n ? muteVal / 1000n : muteVal
+        updateData.muteExpiration = muteSec
+        console.log(`[HistorySync] Chat ${jid} mute status: rawMute=${rawMute}, muteSec=${muteSec}`)
+      }
+
       let type = 'DM'
       let communityId: number | null = null
 
@@ -179,7 +187,8 @@ export async function handleHistorySync(
           isArchived,
           communityId: hasCommunityData ? communityId : null,
           type: hasCommunityData ? type : (jid.endsWith('@g.us') ? 'GROUP' : 'DM'),
-          name: raw.name
+          name: raw.name,
+          muteExpiration: updateData.muteExpiration ?? BigInt(0)
         }
       })
 

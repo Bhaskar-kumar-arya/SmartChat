@@ -105,19 +105,19 @@ export function App() {
     {
       id: 3,
       title: 'Message History Sync',
-      description: syncFullHistory 
-        ? (syncType === 2 ? 'Downloading deep historical message history' : 'Downloading recent messages') 
+      description: syncFullHistory
+        ? (syncType === 2 ? 'Downloading deep historical message history' : 'Downloading recent messages')
         : 'Downloading recent message backlog',
-      status: appState !== 'syncing' || syncType === 0 
-        ? 'pending' 
+      status: appState !== 'syncing' || syncType === 0
+        ? 'pending'
         : (syncType === 3 || syncType === 2 ? 'active' : 'completed')
     },
     {
       id: 4,
       title: 'Hydrating Group Metadata',
       description: 'Resolving group details, settings, and participant roles',
-      status: appState !== 'syncing' || syncType < 6 
-        ? 'pending' 
+      status: appState !== 'syncing' || syncType < 6
+        ? 'pending'
         : (syncType === 6 && syncProgress < 100 ? 'active' : 'completed')
     }
   ], [appState, syncType, syncFullHistory, syncProgress])
