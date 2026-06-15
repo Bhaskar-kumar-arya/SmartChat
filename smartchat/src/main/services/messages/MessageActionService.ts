@@ -5,7 +5,7 @@ import { join } from 'path'
 import { MessageService } from './MessageService'
 import { ChatService } from '../chats/ChatService'
 import { app } from 'electron'
-import { proto } from '@whiskeysockets/baileys'
+import { proto, AnyMessageContent } from '@whiskeysockets/baileys'
 import { WASocket, EnrichedMessage } from '../../types'
 import { unwrapMessage, cleanJid } from '../../utils'
 import type { WAEventBus } from '../whatsapp/WAEventBus'
@@ -297,20 +297,45 @@ export class MessageActionService {
   ): Promise<EnrichedMessage> {
     const targetJid = await this.contactService.resolveLidFromJid(jid)
 
-    let quoted: any = undefined
+    let contextInfo: proto.IContextInfo | undefined = undefined
     if (quotedMsgId) {
       const qm = await this.prisma.message.findUnique({ where: { id: quotedMsgId } })
       if (qm && qm.content) {
         try { 
-          quoted = { key: { id: quotedMsgId, remoteJid: qm.chatJid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
-        } catch (e) {}
+          const rawQuoted = JSON.parse(qm.content)
+          const msgType = Object.keys(rawQuoted)[0]
+          if (msgType && rawQuoted[msgType] && typeof rawQuoted[msgType] === 'object') {
+            delete rawQuoted[msgType].contextInfo
+          }
+          const quotedMessage = proto.Message.fromObject(rawQuoted)
+
+          let participant = qm.participant ? cleanJid(qm.participant) : undefined
+          if (qm.fromMe) {
+            participant = targetJid.endsWith('@lid') && sock.user?.lid 
+              ? cleanJid(sock.user.lid) 
+              : (sock.user?.id ? cleanJid(sock.user.id) : undefined)
+          } else if (!targetJid.endsWith('@g.us')) {
+            participant = targetJid
+          }
+
+          if (participant) {
+            contextInfo = {
+              stanzaId: quotedMsgId,
+              participant: cleanJid(participant),
+              quotedMessage
+            }
+          }
+        } catch (e) {
+          console.error('[sendMessageWorkflow] Failed to construct contextInfo:', e)
+        }
       }
     }
 
-    const messageContent: any = { text }
+    const messageContent: Extract<AnyMessageContent, { text: string }> = { text }
     if (mentions && mentions.length > 0) messageContent.mentions = mentions
+    if (contextInfo) messageContent.contextInfo = contextInfo
 
-    const sentMsg = await sock.sendMessage(targetJid, messageContent, { quoted } as any)
+    const sentMsg = await sock.sendMessage(targetJid, messageContent)
     if (!sentMsg) throw new Error('Failed to send message')
 
     const processed = await this.messageService.processMessage(sentMsg, sock)
@@ -347,13 +372,37 @@ export class MessageActionService {
   ): Promise<EnrichedMessage> {
     const targetJid = await this.contactService.resolveLidFromJid(jid)
 
-    let quoted: any = undefined
+    let contextInfo: proto.IContextInfo | undefined = undefined
     if (quotedMsgId) {
         const qm = await this.prisma.message.findUnique({ where: { id: quotedMsgId } })
         if (qm && qm.content) {
           try { 
-            quoted = { key: { id: quotedMsgId, remoteJid: qm.chatJid, fromMe: qm.fromMe }, message: proto.Message.fromObject(JSON.parse(qm.content)) }
-          } catch (e) {}
+            const rawQuoted = JSON.parse(qm.content)
+            const msgType = Object.keys(rawQuoted)[0]
+            if (msgType && rawQuoted[msgType] && typeof rawQuoted[msgType] === 'object') {
+              delete rawQuoted[msgType].contextInfo
+            }
+            const quotedMessage = proto.Message.fromObject(rawQuoted)
+
+            let participant = qm.participant ? cleanJid(qm.participant) : undefined
+            if (qm.fromMe) {
+              participant = targetJid.endsWith('@lid') && sock.user?.lid 
+                ? cleanJid(sock.user.lid) 
+                : (sock.user?.id ? cleanJid(sock.user.id) : undefined)
+            } else if (!targetJid.endsWith('@g.us')) {
+              participant = targetJid
+            }
+
+            if (participant) {
+              contextInfo = {
+                stanzaId: quotedMsgId,
+                participant: cleanJid(participant),
+                quotedMessage
+              }
+            }
+          } catch (e) {
+            console.error('[sendMediaMessageWorkflow] Failed to construct contextInfo:', e)
+          }
         }
     }
 
@@ -383,8 +432,9 @@ export class MessageActionService {
     const buffer = fs.readFileSync(finalPathToSend)
     const sendOptions = getMediaSendOptions(finalPathToSend, buffer, caption)
     if (mentions && mentions.length > 0) sendOptions.mentions = mentions
+    if (contextInfo) sendOptions.contextInfo = contextInfo
 
-    const sentMsg = await sock.sendMessage(targetJid, sendOptions as any, { quoted } as any)
+    const sentMsg = await sock.sendMessage(targetJid, sendOptions as unknown as AnyMessageContent)
     if (!sentMsg) {
       if (isTempFile) {
         try { fs.unlinkSync(finalPathToSend) } catch (e) {}

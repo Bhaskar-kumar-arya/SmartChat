@@ -1,4 +1,4 @@
-import makeWASocket from '@whiskeysockets/baileys'
+import makeWASocket, { proto } from '@whiskeysockets/baileys'
 
 /** Type alias for the Baileys WhatsApp socket instance. */
 export type WASocket = ReturnType<typeof makeWASocket>
@@ -94,6 +94,7 @@ export interface MediaSendOptions {
   caption?: string; fileName?: string; mimetype?: string; ptt?: boolean
   mentions?: string[]
   gifPlayback?: boolean
+  contextInfo?: proto.IContextInfo
 }
 
 /** Payload shape for chat update events. */
