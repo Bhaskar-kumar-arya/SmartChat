@@ -289,7 +289,11 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     quotedText = q.conversation || q.extendedTextMessage?.text || 'Media'
     quotedMentions = q.extendedTextMessage?.contextInfo?.mentions || q.contextInfo?.mentions || {}
   }
-  const isQuotedMe = !!(ctx?.participant && myJid && (ctx.participant.split('@')[0].split(':')[0] === myJid.split('@')[0].split(':')[0]))
+  const isQuotedMe = !!(ctx?.participant && (
+    (myJid && (ctx.participant.split('@')[0].split(':')[0] === myJid.split('@')[0].split(':')[0])) ||
+    ctx.participantName === 'You' ||
+    ctx.participantName === 'Me'
+  ))
   const quotedSender = isQuotedMe
     ? 'You'
     : (ctx?.participantName || (ctx?.participant ? ctx.participant.split('@')[0] : 'Someone'))

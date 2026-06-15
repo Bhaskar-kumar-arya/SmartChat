@@ -9,6 +9,7 @@ function hasSignalRepository(sock: WASocket | null | undefined): sock is WASocke
 export class ContactService {
   private linkCache = new Set<string>()
   private identityIdCache = new Map<string, number>()
+  private meJidsCache: string[] | null = null
 
   constructor(private prisma: PrismaClient) {}
 
@@ -39,7 +40,38 @@ export class ContactService {
   public clearCaches(): void {
     this.linkCache.clear()
     this.identityIdCache.clear()
+    this.meJidsCache = null
     console.log('[ContactService] Caches cleared')
+  }
+
+  public async getMeJids(sock?: WASocket | null): Promise<string[]> {
+    const jids: string[] = []
+    if (sock?.user) {
+      const myJid = cleanJid(sock.user.id)
+      const myLid = (sock.user as { lid?: string }).lid ? cleanJid((sock.user as { lid?: string }).lid) : null
+      if (myJid) jids.push(myJid)
+      if (myLid) jids.push(myLid)
+    }
+
+    if (this.meJidsCache) {
+      return Array.from(new Set([...jids, ...this.meJidsCache]))
+    }
+
+    try {
+      const meIdent = await this.prisma.identity.findFirst({
+        where: { isMe: true },
+        include: { aliases: true }
+      })
+      if (meIdent) {
+        const dbJids = [meIdent.phoneNumber, ...(meIdent.aliases?.map(a => a.jid) || [])].filter(Boolean).map(cleanJid)
+        this.meJidsCache = dbJids
+        return Array.from(new Set([...jids, ...dbJids]))
+      }
+    } catch (err) {
+      console.error('[ContactService] Failed to fetch me ident for JIDs cache:', err)
+    }
+
+    return jids
   }
 
   public warmLinkCache(cacheKey: string): void {
@@ -76,18 +108,11 @@ export class ContactService {
     }
 
     const nameMap = new Map<string, string>()
-
-    // Check "Me" first if sock is provided
-    let myJid: string | null = null
-    let myLid: string | null = null
-    if (sock?.user) {
-        myJid = cleanJid(sock.user.id)
-        myLid = (sock.user as { lid?: string }).lid ? cleanJid((sock.user as { lid?: string }).lid) : null
-    }
+    const meJids = await this.getMeJids(sock)
 
     for (const jid of uniqueJids) {
       // 1. Is it "Me"?
-      if (myJid && (jid === myJid || jid === myLid)) {
+      if (meJids.includes(jid)) {
         nameMap.set(jid, sock?.user?.name || 'Me')
         continue
       }
@@ -547,5 +572,7 @@ export class ContactService {
         create: { lid: myLid, pn: myJid, source: 'registerMe', lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
       }).catch(() => {});
     }
+
+    this.meJidsCache = null;
   }
 }

@@ -24,7 +24,6 @@ export interface ParsedMessage {
   pushName: string | null
   status?: string
 }
-
 export class MessageService {
   constructor(
     private prisma: PrismaClient,
@@ -33,9 +32,6 @@ export class MessageService {
     private secretMessageService: SecretMessageService,
     private getBus: () => WAEventBus | null
   ) {}
-
-
-
   /**
    * Parses a raw Baileys message object and prepares it for persistence.
    */
@@ -571,7 +567,13 @@ export class MessageService {
 
     if (ctx) {
         if (ctx.participant) {
-            ctx.participantName = nameMap.get(ctx.participant) || ctx.participant.replace(/@.*$/, '')
+            const meJids = await this.contactService.getMeJids(_sock)
+            const cleanParticipant = cleanJid(ctx.participant)
+            if (meJids.includes(cleanParticipant)) {
+                ctx.participantName = 'You'
+            } else {
+                ctx.participantName = nameMap.get(ctx.participant) || ctx.participant.replace(/@.*$/, '')
+            }
         }
         if (ctx.mentionedJid && Array.isArray(ctx.mentionedJid)) {
             ctx.mentions = {}

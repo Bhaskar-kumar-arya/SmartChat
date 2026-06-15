@@ -202,7 +202,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         <div className="reply-preview">
           <div className="reply-preview-content">
             <span className="reply-preview-title">
-              Replying to {replyingTo.participantName || 'someone'}
+              Replying to {replyingTo.fromMe ? 'You' : (replyingTo.participantName || 'someone')}
             </span>
             <p className="reply-preview-text">
               {replyingTo.textContent || 'Media message'}
