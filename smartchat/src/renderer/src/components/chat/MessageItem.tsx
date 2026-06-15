@@ -34,6 +34,41 @@ function unwrapMessage(msg: any): RawMessageContent {
   return unwrapped
 }
 
+/**
+ * Generates a deterministic WhatsApp-like color for a group participant or quote sender.
+ * The combination of chatJid and participantJid ensures the color is group-specific,
+ * matching WhatsApp's behavior.
+ */
+function getSenderColor(chatJid: string, participantJid: string | null | undefined): string {
+  if (!participantJid) return '#22c05e' // Fallback to green
+
+  // Clean JID to avoid device suffixes (e.g. :1)
+  const cleanChat = chatJid.split('@')[0]
+  const cleanParticipant = participantJid.split('@')[0].split(':')[0]
+  const hashKey = `${cleanChat}_${cleanParticipant}`
+
+  // Only the custom color codes requested by the user, including the red from the screenshot
+  const colors = [
+    '#40bcae',
+    '#ff72a1',
+    '#f0c773',
+    '#25d065',
+    '#d38166',
+    '#3fb7aa',
+    '#ea5363'
+  ]
+
+  let hash = 0
+  for (let i = 0; i < hashKey.length; i++) {
+    hash = hashKey.charCodeAt(i) + ((hash << 5) - hash)
+  }
+
+  // Offset the hash by 7 to shuffle the assigned colors
+  const index = (Math.abs(hash)+ 7) % colors.length
+  return colors[index]
+}
+
+
 interface MessageRendererProps {
   msg: IMessageItem
   rawMsg: RawMessageContent
@@ -254,7 +289,17 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     quotedText = q.conversation || q.extendedTextMessage?.text || 'Media'
     quotedMentions = q.extendedTextMessage?.contextInfo?.mentions || q.contextInfo?.mentions || {}
   }
-  const quotedSender = ctx?.participantName || (ctx?.participant ? ctx.participant.split('@')[0] : 'Someone')
+  const isQuotedMe = !!(ctx?.participant && myJid && (ctx.participant.split('@')[0].split(':')[0] === myJid.split('@')[0].split(':')[0]))
+  const quotedSender = isQuotedMe
+    ? 'You'
+    : (ctx?.participantName || (ctx?.participant ? ctx.participant.split('@')[0] : 'Someone'))
+
+  const quoteColor = isQuotedMe
+    ? 'var(--wa-primary)'
+    : getSenderColor(msg.chatJid, ctx?.participant || msg.chatJid)
+
+  const senderColor = getSenderColor(msg.chatJid, msg.participant || (msg.fromMe ? myJid : msg.chatJid))
+
 
   const isImage = (msg.messageType === 'imageMessage' || !!rawMsg?.imageMessage) && !isTemplateMessage
   const isVideo = (msg.messageType === 'videoMessage' || !!rawMsg?.videoMessage || msg.messageType === 'ptvMessage' || !!rawMsg?.ptvMessage) && !isTemplateMessage
@@ -351,15 +396,15 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   return (
     <div className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
       <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${isTemplateMessage ? 'bubble-template' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
-        {!msg.fromMe && msg.participantName && (
-          <span className="message-sender-name">
+        {!msg.fromMe && msg.participantName && msg.chatJid.endsWith('@g.us') && (
+          <span className="message-sender-name" style={{ color: senderColor }}>
             {msg.participantName}
           </span>
         )}
 
         {isReply && (
-          <div className="message-quote">
-            <span className="quote-sender">{quotedSender}</span>
+          <div className="message-quote" style={{ borderLeft: `4px solid ${quoteColor}` }}>
+            <span className="quote-sender" style={{ color: quoteColor }}>{quotedSender}</span>
             <div className="quote-text">
               <TextMessage text={quotedText} mentions={quotedMentions} />
             </div>

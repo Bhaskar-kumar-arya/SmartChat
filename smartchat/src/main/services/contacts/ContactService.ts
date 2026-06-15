@@ -25,13 +25,15 @@ export class ContactService {
     fallback: string = 'Unknown'
   ): string {
     if (!identity) return fallback
-    return (
-      identity.displayName ||
-      identity.verifiedName ||
-      identity.pushName ||
-      identity.phoneNumber?.split('@')[0] ||
-      fallback
-    )
+    if (identity.displayName) return identity.displayName
+    if (identity.verifiedName) return identity.verifiedName
+    if (identity.pushName) {
+      const trimmed = identity.pushName.trim()
+      if (trimmed) {
+        return trimmed.startsWith('~') ? trimmed : `~ ${trimmed}`
+      }
+    }
+    return identity.phoneNumber?.split('@')[0] || fallback
   }
 
   public clearCaches(): void {
