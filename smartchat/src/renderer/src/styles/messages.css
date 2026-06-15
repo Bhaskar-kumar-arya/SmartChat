@@ -105,6 +105,7 @@
 
 .bubble-media {
   padding: 3px !important;
+  width: min-content;
 }
 
 /* Overlay timestamp on top of media messages when there is no text caption */
@@ -128,6 +129,8 @@
 
 .bubble-media-caption {
   padding: 3px 3px 6px 3px !important;
+  width: min-content;
+  min-width: 200px;
 }
 
 .bubble-media-caption .markdown-body {
@@ -151,7 +154,6 @@
   font-size: 0.875rem;
   line-height: 1.5;
   margin: 0;
-  margin-right: 3rem;
 }
 
 .message-unsupported {
@@ -196,12 +198,66 @@
 }
 
 .message-time {
-  float: right;
-  margin-top: 4px;
-  margin-left: 8px;
   font-size: 0.6875rem;
-  color: var(--wa-text-tertiary);
+  color: var(--wa-text-secondary);
   white-space: nowrap;
+}
+
+/* Absolute position timestamp on text messages */
+.message-bubble:not(.bubble-media):not(.bubble-sticker) .message-time {
+  position: absolute;
+  bottom: 4px;
+  right: 8px;
+  float: none;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+
+/* Spacers at the end of text content to reserve space for the absolute-positioned timestamp */
+.message-bubble:not(.bubble-sticker):not(.bubble-media) .markdown-body p:last-child::after,
+.message-bubble:not(.bubble-sticker):not(.bubble-media) .message-text::after {
+  content: "";
+  display: inline-block;
+  height: 10px;
+  margin-left: 6px;
+}
+
+/* Received messages spacer width */
+.bubble-received:not(.bubble-edited) .markdown-body p:last-child::after,
+.bubble-received:not(.bubble-edited) .message-text::after {
+  width: 50px;
+}
+
+.bubble-received.bubble-edited .markdown-body p:last-child::after,
+.bubble-received.bubble-edited .message-text::after {
+  width: 95px;
+}
+
+/* Sent messages spacer width (needs room for status ticks) */
+.bubble-sent:not(.bubble-edited) .markdown-body p:last-child::after,
+.bubble-sent:not(.bubble-edited) .message-text::after {
+  width: 70px;
+}
+
+.bubble-sent.bubble-edited .markdown-body p:last-child::after,
+.bubble-sent.bubble-edited .message-text::after {
+  width: 115px;
+}
+
+/* Non-text message containers without text content need bottom margin for the absolute timestamp */
+.message-bubble:not(.bubble-media):not(.bubble-sticker) .message-document:last-child {
+  margin-bottom: 14px;
+}
+
+.message-bubble:not(.bubble-media):not(.bubble-sticker) .message-audio-container:last-child {
+  margin-bottom: 14px;
+}
+
+.message-bubble:not(.bubble-media):not(.bubble-sticker) .message-deleted-badge:last-child {
+  margin-bottom: 14px;
 }
 
 .message-actions {

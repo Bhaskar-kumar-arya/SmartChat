@@ -395,7 +395,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
 
   return (
     <div className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
-      <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${isTemplateMessage ? 'bubble-template' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
+      <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.isEdited ? 'bubble-edited' : ''} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${isTemplateMessage ? 'bubble-template' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
         {!msg.fromMe && msg.participantName && msg.chatJid.endsWith('@g.us') && (
           <span className="message-sender-name" style={{ color: senderColor }}>
             {msg.participantName}

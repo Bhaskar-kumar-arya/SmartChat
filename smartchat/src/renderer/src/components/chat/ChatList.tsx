@@ -199,7 +199,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
     }
 
     const isGroup = chat.jid.endsWith('@g.us') || !!chat.linkedParentJid
-    const senderPrefix = isGroup && chat.lastMessageSender ? `${chat.lastMessageSender}: ` : ''
+    const senderPrefix = isGroup && chat.lastMessageSender ? `${chat.lastMessageSender}:\u00A0` : ''
 
     if (chat.lastMessageType === 'reactionMessage') {
       const targetType = chat.lastMessageTargetType
@@ -231,8 +231,9 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
     if (icon) {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+          {senderPrefix}
           {icon}
-          {senderPrefix}{chat.lastMessage}
+          {chat.lastMessage}
         </span>
       )
     }
