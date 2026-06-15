@@ -151,14 +151,20 @@ export class MessageService {
         if (targetId) {
             try {
                 if (protocol.type === 0 || protocol.type === 'REVOKE') {
-                    await this.revokeMessageInDb(targetId)
                     return { type: 'protocol', subType: 'revoke', targetId, chatJid: remoteJid, key: protocol.key }
                 } else if (protocol.type === 14 || protocol.type === 'MESSAGE_EDIT') {
                     const editedMsg = protocol.editedMessage
                     const editContent = editedMsg?.conversation || editedMsg?.extendedTextMessage?.text || (editedMsg?.imageMessage?.caption) || (editedMsg?.videoMessage?.caption) || null
                     
-                    await this.editMessageInDb(targetId, editContent, editedMsg)
-                    return { type: 'protocol', subType: 'edit', targetId, chatJid: remoteJid, key: protocol.key }
+                    return { 
+                        type: 'protocol', 
+                        subType: 'edit', 
+                        targetId, 
+                        chatJid: remoteJid, 
+                        key: protocol.key,
+                        editedTextContent: editContent,
+                        editedContent: editedMsg
+                    }
                 }
             } catch (err) {
                 console.error('[MessageService] Error handling protocol message:', err)
@@ -270,7 +276,7 @@ export class MessageService {
    * Marks a message as deleted in the database.
    */
   async revokeMessageInDb(messageId: string): Promise<void> {
-    await this.prisma.message.update({
+    await this.prisma.message.updateMany({
       where: { id: messageId },
       data: { isDeleted: true }
     }).catch((err) => {
@@ -310,7 +316,7 @@ export class MessageService {
     // in sync with the content JSON (renderer uses messageType to pick renderer).
     const newMessageType = editedContent?.extendedTextMessage ? 'extendedTextMessage' : 'conversation'
 
-    await this.prisma.message.update({
+    await this.prisma.message.updateMany({
       where: { id: messageId },
       data: {
         content: JSON.stringify(contentToStore),
