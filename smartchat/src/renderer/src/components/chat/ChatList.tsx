@@ -54,7 +54,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
   const [showIndexConfirm, setShowIndexConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [clearIndexFirst, setClearIndexFirst] = useState(false)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; jid: string; muted: boolean } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; jid: string; muted: boolean; pinned: boolean } | null>(null)
 
   const handleMute = async (jid: string, muteExpirationMs: number) => {
     try {
@@ -69,6 +69,22 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
       await api.unmuteChat(jid)
     } catch (err) {
       console.error('Failed to unmute chat:', err)
+    }
+  }
+
+  const handlePin = async (jid: string) => {
+    try {
+      await api.pinChat(jid)
+    } catch (err) {
+      console.error('Failed to pin chat:', err)
+    }
+  }
+
+  const handleUnpin = async (jid: string) => {
+    try {
+      await api.unpinChat(jid)
+    } catch (err) {
+      console.error('Failed to unpin chat:', err)
     }
   }
 
@@ -379,7 +395,8 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
                         x: e.clientX,
                         y: e.clientY,
                         jid: chat.jid,
-                        muted
+                        muted,
+                        pinned
                       })
                     }}
                   >
@@ -525,6 +542,29 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
           x={contextMenu.x}
           y={contextMenu.y}
           items={[
+            contextMenu.pinned ? {
+              label: 'Unpin Chat',
+              onClick: () => handleUnpin(contextMenu.jid),
+              icon: (
+                <svg className="indicator-icon pin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="2" x2="22" y1="2" y2="22"/>
+                  <line x1="12" x2="12" y1="17" y2="22"/>
+                  <path d="M9 9v1.17a2 2 0 0 1-.78 1.22L5.44 15a2 2 0 0 0-.44 1.24V17h12.5"/>
+                  <path d="M10 4H9.17"/>
+                  <path d="M15 9.17V4a1 1 0 0 0-1-1h-4"/>
+                  <path d="M19 15.76a2 2 0 0 0-.44-1.24l-2.78-3.61A2 2 0 0 1 15 9.17"/>
+                </svg>
+              )
+            } : {
+              label: 'Pin Chat',
+              onClick: () => handlePin(contextMenu.jid),
+              icon: (
+                <svg className="indicator-icon pin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="17" x2="12" y2="22"/>
+                  <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.68V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v4.68a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+                </svg>
+              )
+            },
             contextMenu.muted ? {
               label: 'Unmute Chat',
               onClick: () => handleUnmute(contextMenu.jid),

@@ -127,6 +127,12 @@ const api = {
   unmuteChat: (jid: string) => {
     return ipcRenderer.invoke('unmute-chat', jid)
   },
+  pinChat: (jid: string) => {
+    return ipcRenderer.invoke('pin-chat', jid)
+  },
+  unpinChat: (jid: string) => {
+    return ipcRenderer.invoke('unpin-chat', jid)
+  },
   getMyJid: () => {
     return ipcRenderer.invoke('get-my-jid')
   },

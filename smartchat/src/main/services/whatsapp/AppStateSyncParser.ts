@@ -83,6 +83,23 @@ export class AppStateSyncParser {
           })
           break
         }
+        case 'pin':
+        case 'pin_v1': {
+          const chatJid = indexArray[1]
+          if (!chatJid) break
+          const cleanChatJid = cleanJid(chatJid)
+          const pinAction = value?.pinAction
+          const pinned = !!pinAction?.pinned
+          const pinTimestamp = pinned ? (innerAction?.timestamp ? Number(innerAction.timestamp) : Math.floor(Date.now() / 1000)) : 0
+
+          await bus.emit('chat:updated', {
+            jid: cleanChatJid,
+            update: {
+              pinned: pinTimestamp
+            }
+          })
+          break
+        }
         case 'star': {
           const chatJid = indexArray[1]
           const messageId = indexArray[2]

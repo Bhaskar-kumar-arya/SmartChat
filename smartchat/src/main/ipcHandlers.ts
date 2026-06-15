@@ -115,6 +115,22 @@ export function registerIpcHandlers(
     return true
   })
 
+  // ── Pin Chat ─────────────────────────────────────────────────────────
+  ipcMain.handle('pin-chat', async (_event, jid: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('WhatsApp socket is not connected')
+    await sock.chatModify({ pin: true }, jid)
+    return true
+  })
+
+  // ── Unpin Chat ───────────────────────────────────────────────────────
+  ipcMain.handle('unpin-chat', async (_event, jid: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('WhatsApp socket is not connected')
+    await sock.chatModify({ pin: false }, jid)
+    return true
+  })
+
   // ── Get My JID ───────────────────────────────────────────────────────
   ipcMain.handle('get-my-jid', async () => {
     const me = await prisma.identity.findFirst({ where: { isMe: true } })

@@ -36,7 +36,8 @@ export const useChatHierarchy = (
     const sortableItems = [
       ...standaloneChats.map(chat => ({ 
         chat, 
-        effectiveTimestamp: BigInt(chat.lastMessageTimestamp || chat.timestamp || 0) 
+        effectiveTimestamp: BigInt(chat.lastMessageTimestamp || chat.timestamp || 0),
+        pinned: chat.pinned || 0
       })),
       ...roots.map(root => {
         const children = childrenByParent.get(root.jid) || []
@@ -46,13 +47,20 @@ export const useChatHierarchy = (
         ]
         return { 
           chat: root, 
-          effectiveTimestamp: timestamps.reduce((max, curr) => curr > max ? curr : max, 0n)
+          effectiveTimestamp: timestamps.reduce((max, curr) => curr > max ? curr : max, 0n),
+          pinned: root.pinned || 0
         }
       })
     ]
 
-    // Pass 4: Sort by effective timestamp descending
+    // Pass 4: Sort by pinned desc, then effective timestamp descending
     sortableItems.sort((a, b) => {
+      const pinA = a.pinned || 0
+      const pinB = b.pinned || 0
+      if (pinA > 0 && pinB <= 0) return -1
+      if (pinB > 0 && pinA <= 0) return 1
+      if (pinA > 0 && pinB > 0) return pinB - pinA
+
       if (b.effectiveTimestamp > a.effectiveTimestamp) return 1
       if (b.effectiveTimestamp < a.effectiveTimestamp) return -1
       return 0

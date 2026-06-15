@@ -21,8 +21,8 @@ export class ChatService {
     if (typeof update.unreadCount === 'number') {
       data.unreadCount = update.unreadCount
     }
-    if (typeof update.pinned === 'number') {
-      data.pinned = update.pinned
+    if (update.pinned !== undefined) {
+      data.pinned = update.pinned === null ? 0 : Number(update.pinned)
     }
     if (update.muteExpiration !== undefined) {
       const mute = update.muteExpiration

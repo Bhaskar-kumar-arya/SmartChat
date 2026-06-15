@@ -44,6 +44,12 @@ export const api = {
   unmuteChat: (jid: string): Promise<boolean> =>
     window.api.unmuteChat(jid),
 
+  pinChat: (jid: string): Promise<boolean> =>
+    window.api.pinChat(jid),
+
+  unpinChat: (jid: string): Promise<boolean> =>
+    window.api.unpinChat(jid),
+
   getMyJid: (): Promise<string | null> =>
     window.api.getMyJid(),
 
