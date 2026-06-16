@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { EmbeddingService } from '../search/EmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
@@ -23,6 +24,7 @@ export interface ParsedMessage {
   textContent: string | null
   pushName: string | null
   status?: string
+  isDeleted?: boolean
 }
 export class MessageService {
   constructor(
@@ -226,10 +228,13 @@ export class MessageService {
           }
         }
 
+        const isDeleted = msg.messageStubType === WAMessageStubType.REVOKE || 
+                          (msg.messageStubType === WAMessageStubType.CIPHERTEXT && msg.messageStubParameters?.includes('Message absent from node'))
+
         const status = mapBaileysStatus(msg.status)
         await this.prisma.message.upsert({
             where: { id: key.id },
-            update: { textContent, messageType, content: JSON.stringify(rawMessage || {}), timestamp, senderId, participant: participantString, status },
+            update: { textContent, messageType, content: JSON.stringify(rawMessage || {}), timestamp, senderId, participant: participantString, status, ...(isDeleted ? { isDeleted: true } : {}) },
             create: { 
               id: key.id, 
               chatJid: remoteJid, 
@@ -240,7 +245,8 @@ export class MessageService {
               messageType, 
               content: JSON.stringify(rawMessage || {}), 
               textContent,
-              status
+              status,
+              isDeleted
             }
         })
 
@@ -262,7 +268,7 @@ export class MessageService {
         messageType,
         textContent,
         content: JSON.stringify(rawMessage || {}),
-        isDeleted: false,
+        isDeleted: msg.messageStubType === WAMessageStubType.REVOKE || (msg.messageStubType === WAMessageStubType.CIPHERTEXT && msg.messageStubParameters?.includes('Message absent from node')),
         isEdited: false,
         status: mapBaileysStatus(msg.status)
     }
@@ -393,6 +399,8 @@ export class MessageService {
     // Parse timestamp
     const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
 
+    const isDeleted = msg.messageStubType === WAMessageStubType.REVOKE || 
+                      (msg.messageStubType === WAMessageStubType.CIPHERTEXT && msg.messageStubParameters?.includes('Message absent from node'))
     const status = mapBaileysStatus(msg.status)
     return {
       id: key.id,
@@ -404,7 +412,8 @@ export class MessageService {
       rawMessage,
       textContent,
       pushName: msg.pushName ?? null,
-      status
+      status,
+      isDeleted
     }
   }
 
@@ -452,7 +461,8 @@ export class MessageService {
       messageType: p.messageType,
       content: JSON.stringify(p.rawMessage || {}),
       textContent: p.textContent,
-      status: p.status || 'SENT'
+      status: p.status || 'SENT',
+      isDeleted: p.isDeleted ?? false
     }))
 
     // 5. Pre-fetch existing message IDs

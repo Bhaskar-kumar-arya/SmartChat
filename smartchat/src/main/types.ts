@@ -69,6 +69,8 @@ export interface BaileysMessage {
   messageTimestamp?: number | { low: number; high: number } | null
   pushName?: string | null
   status?: number | null
+  messageStubType?: number | string | null
+  messageStubParameters?: string[] | null
 }
 
 /** Database message row with sender relation included. */
