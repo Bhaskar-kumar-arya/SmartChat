@@ -27,6 +27,8 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
   const prevMessageId = useRef<string | null>(null)
   const isInitialRenderForChat = useRef(true)
   const lastTargetId = useRef<string | null>(null)
+  const prevMessagesLength = useRef(messages.length)
+  const prevLastMessageId = useRef<string | null>(messages.length > 0 ? messages[messages.length - 1].id : null)
 
   // Reset pagination state when switching chats
   useEffect(() => {
@@ -43,6 +45,13 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
 
   // Scroll to bottom on new messages (unless we have a target)
   useEffect(() => {
+    const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null
+    const isNewMessage = messages.length > prevMessagesLength.current && lastMessageId !== prevLastMessageId.current
+
+    // Update refs for subsequent renders
+    prevMessagesLength.current = messages.length
+    prevLastMessageId.current = lastMessageId
+
     // If we have an active target message, skip auto-scroll to bottom
     if (targetMessageId) {
       lastTargetId.current = targetMessageId
@@ -56,14 +65,16 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
       return
     }
 
-    if (bottomRef.current && !loadingMore) {
+    const shouldScroll = isInitialRenderForChat.current || isNewMessage
+
+    if (shouldScroll && bottomRef.current && !loadingMore) {
       const behavior = isInitialRenderForChat.current ? 'auto' : 'smooth'
       bottomRef.current.scrollIntoView({ behavior })
       if (isInitialRenderForChat.current && messages.length > 0) {
         setTimeout(() => { isInitialRenderForChat.current = false }, 100)
       }
     }
-  }, [messages.length, messages, targetMessageId])
+  }, [messages, targetMessageId, loadingMore])
 
   // Scroll to and highlight target message when it's available
   useEffect(() => {
