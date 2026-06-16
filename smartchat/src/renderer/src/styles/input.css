@@ -20,8 +20,32 @@
   transition: var(--wa-transition);
 }
 
+.message-input::-webkit-scrollbar {
+  width: 5px;
+}
+
+.message-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-input::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+.message-input::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
 .message-input::placeholder {
   color: var(--wa-text-secondary);
+}
+
+.message-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--wa-text-secondary);
+  pointer-events: none;
+  display: block;
 }
 
 .message-input:focus {

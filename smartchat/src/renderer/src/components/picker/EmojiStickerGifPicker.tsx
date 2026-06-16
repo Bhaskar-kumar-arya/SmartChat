@@ -1,22 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { Smile, Sticker, Search, Loader2, Compass, Sparkles, Heart, Users, Trees, Utensils, Activity, Lightbulb, Flag } from 'lucide-react'
-import { EMOJI_CATEGORIES, DEFAULT_STICKER_PACKS } from '../../utils/emojiData'
+import { Smile, Sticker, Search, Loader2, Sparkles, Compass } from 'lucide-react'
+import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react'
+import { DEFAULT_STICKER_PACKS } from '../../utils/emojiData'
 import { useAPI } from '../../context/APIContext'
 import { useGiphy } from '../../hooks/useGiphy'
-import { matchEmoji } from '../../utils/emojiKeywords'
 import ConfirmModal from '../common/ConfirmModal'
-
-const categoryIconMap: Record<string, React.ReactNode> = {
-  Recent: <span style={{ fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>🕒</span>,
-  Smileys: <Smile size={18} />,
-  Gestures: <Heart size={18} />,
-  People: <Users size={18} />,
-  Nature: <Trees size={18} />,
-  Food: <Utensils size={18} />,
-  Activities: <Activity size={18} />,
-  Objects: <Lightbulb size={18} />,
-  Symbols: <Flag size={18} />
-}
 
 interface EmojiStickerGifPickerProps {
   onSelectEmoji?: (emoji: string) => void
@@ -43,14 +31,6 @@ export default function EmojiStickerGifPicker({
     clearGifs
   } = useGiphy()
 
-  const [recentEmojis, setRecentEmojis] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('smartchat_recent_emojis') || '[]')
-    } catch (e) {
-      return []
-    }
-  })
-
   const [activeTab, setActiveTab] = useState<'emoji' | 'gif' | 'sticker'>(initialTab)
   const [searchQuery, setSearchQuery] = useState('')
   const [localLoading, setLocalLoading] = useState(false)
@@ -59,22 +39,8 @@ export default function EmojiStickerGifPicker({
   const [favoriteStickers, setFavoriteStickers] = useState<any[]>([])
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const [stickerToRemove, setStickerToRemove] = useState<any | null>(null)
-  const [selectedEmojiCategory, setSelectedEmojiCategory] = useState<string>(
-    recentEmojis.length > 0 ? 'Recent' : 'Smileys'
-  )
 
-  const emojiCategoryRefs = useRef<Record<string, HTMLDivElement | null>>({})
-  const emojiContainerRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
-
-  const recentCategory = {
-    name: 'Recent',
-    icon: '🕒',
-    emojis: recentEmojis
-  }
-  const displayedCategories = recentEmojis.length > 0
-    ? [recentCategory, ...EMOJI_CATEGORIES]
-    : EMOJI_CATEGORIES
 
   // Focus search input on tab change
   useEffect(() => {
@@ -107,39 +73,8 @@ export default function EmojiStickerGifPicker({
     }
   }, [selectedPackIndex, activeTab])
 
-  const handleEmojiScroll = () => {
-    if (!emojiContainerRef.current) return
-    const container = emojiContainerRef.current
-    const containerTop = container.getBoundingClientRect().top
-
-    let currentCategory = displayedCategories[0].name
-    for (const cat of displayedCategories) {
-      const el = emojiCategoryRefs.current[cat.name]
-      if (el) {
-        const rect = el.getBoundingClientRect()
-        if (rect.top - containerTop <= 50) {
-          currentCategory = cat.name
-        }
-      }
-    }
-    setSelectedEmojiCategory(currentCategory)
-  }
-
-  const scrollToEmojiCategory = (categoryName: string) => {
-    const el = emojiCategoryRefs.current[categoryName]
-    if (el && emojiContainerRef.current) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      setSelectedEmojiCategory(categoryName)
-    }
-  }
-
   const handleEmojiClick = (emoji: string) => {
     onSelectEmoji?.(emoji)
-    setRecentEmojis(prev => {
-      const next = [emoji, ...prev.filter(e => e !== emoji)].slice(0, 24)
-      localStorage.setItem('smartchat_recent_emojis', JSON.stringify(next))
-      return next
-    })
   }
 
 
@@ -237,41 +172,28 @@ export default function EmojiStickerGifPicker({
     }
   }
 
-  // Filter emojis based on query
-  const filteredEmojiCategories = EMOJI_CATEGORIES.map(cat => ({
-    ...cat,
-    emojis: cat.emojis.filter(emoji => {
-      if (!searchQuery.trim()) return true
-      return matchEmoji(emoji, searchQuery)
-    })
-  })).filter(cat => cat.emojis.length > 0)
 
-  // Fallback search match: search emojis directly in a flattened way
-  const flattenedEmojis = EMOJI_CATEGORIES.flatMap(cat => cat.emojis)
-  const isSingleEmojiSearch = searchQuery.trim().length > 0 && (
-    flattenedEmojis.includes(searchQuery.trim()) ||
-    filteredEmojiCategories.some(cat => cat.emojis.includes(searchQuery.trim()))
-  )
 
   return (
     <div className="emoji-picker-panel" onClick={e => e.stopPropagation()}>
-      {/* Search Bar */}
-      <div className="picker-search-container">
-        <div className="picker-search-wrapper">
-          <Search size={16} className="picker-search-icon" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            className="picker-search-input"
-            placeholder={
-              activeTab === 'emoji' ? 'Search emojis...' :
-              activeTab === 'gif' ? 'Search GIPHY GIFs...' : 'Search GIPHY Stickers...'
-            }
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
+      {/* Search Bar (Only shown for non-emoji tabs as EmojiPicker has its own) */}
+      {activeTab !== 'emoji' && (
+        <div className="picker-search-container">
+          <div className="picker-search-wrapper">
+            <Search size={16} className="picker-search-icon" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              className="picker-search-input"
+              placeholder={
+                activeTab === 'gif' ? 'Search GIPHY GIFs...' : 'Search GIPHY Stickers...'
+              }
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content Area */}
       <div className="picker-content">
@@ -283,73 +205,14 @@ export default function EmojiStickerGifPicker({
 
         {/* EMOJI TAB VIEW */}
         {activeTab === 'emoji' && (
-          <div className="emoji-tab-container">
-            {/* Category Quick Selector */}
-            <div className="emoji-categories-header">
-              {displayedCategories.map(cat => (
-                <button
-                  key={cat.name}
-                  className={`emoji-cat-btn ${selectedEmojiCategory === cat.name ? 'active' : ''}`}
-                  onClick={() => scrollToEmojiCategory(cat.name)}
-                  title={cat.name}
-                >
-                  {categoryIconMap[cat.name] || cat.icon}
-                </button>
-              ))}
-            </div>
-
-            {/* Emoji Grid list */}
-            <div
-              ref={emojiContainerRef}
-              className="emoji-grid-scrollable"
-              onScroll={handleEmojiScroll}
-            >
-              {searchQuery.trim() && !isSingleEmojiSearch ? (
-                // If the user searches by keyword, search emoji keywords (we fallback to simple regex or basic character checks)
-                <div className="emoji-category-section">
-                  <div className="emoji-category-title">Search Results</div>
-                  <div className="emoji-grid">
-                    {/* Basic emoji search mock: filter standard categories */}
-                    {filteredEmojiCategories.map(cat => 
-                      cat.emojis.map(emoji => (
-                        <button
-                          key={emoji}
-                          className="emoji-item"
-                          onClick={() => handleEmojiClick(emoji)}
-                        >
-                          {emoji}
-                        </button>
-                      ))
-                    )}
-                    {filteredEmojiCategories.length === 0 && (
-                      <div className="no-results">No matching emojis found</div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                displayedCategories.map(cat => (
-                  <div
-                    key={cat.name}
-                    ref={el => { emojiCategoryRefs.current[cat.name] = el }}
-                    className="emoji-category-section"
-                  >
-                    <div className="emoji-category-title">{cat.name}</div>
-                    <div className="emoji-grid">
-                      {cat.emojis.map(emoji => (
-                        <button
-                          key={emoji}
-                          className="emoji-item"
-                          onClick={() => handleEmojiClick(emoji)}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <EmojiPicker
+            width="100%"
+            height="100%"
+            emojiStyle={EmojiStyle.APPLE}
+            theme={Theme.DARK}
+            lazyLoadEmojis={true}
+            onEmojiClick={(emojiData) => handleEmojiClick(emojiData.emoji)}
+          />
         )}
 
         {/* GIF TAB VIEW */}

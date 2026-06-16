@@ -1,4 +1,6 @@
+import { Emoji, EmojiStyle } from 'emoji-picker-react'
 import { ReactionItem } from '../../types'
+import { emojiToUnified } from '../../utils/emojiUtils'
 
 interface ReactionsDisplayProps {
   reactions?: ReactionItem[]
@@ -18,7 +20,9 @@ export default function ReactionsDisplay({ reactions, onClick }: ReactionsDispla
     <div className="message-reactions" onClick={onClick} style={{ cursor: 'pointer' }}>
       <div className="reaction-bubbles-group">
         {uniqueEmojis.slice(0, 3).map((emoji) => (
-          <span key={emoji} className="reaction-bubble-mini">{emoji}</span>
+          <span key={emoji} className="reaction-bubble-mini" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Emoji unified={emojiToUnified(emoji)} size={14} emojiStyle={EmojiStyle.APPLE} />
+          </span>
         ))}
       </div>
       {reactions.length > 0 && <span className="reaction-total-count">{reactions.length}</span>}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { useAPI } from '../../context/APIContext'
+import { EmojiText } from './EmojiText'
 
 interface ProfilePicOverlayProps {
   jid: string
@@ -36,7 +37,7 @@ export const ProfilePicOverlay: React.FC<ProfilePicOverlayProps> = ({
       <div className="relative max-w-2xl w-full mx-4 flex flex-col items-center">
         {/* Header */}
         <div className="absolute -top-12 left-0 right-0 flex justify-between items-center text-white px-2">
-          <span className="text-lg font-medium">{name}</span>
+          <span className="text-lg font-medium"><EmojiText text={name} /></span>
           <button 
             onClick={onClose}
             className="p-1 hover:bg-white/10 rounded-full transition-colors"

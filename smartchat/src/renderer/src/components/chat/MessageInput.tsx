@@ -6,6 +6,15 @@ import MentionMenu from './MentionMenu'
 import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
 import { useAPI } from '../../context/APIContext'
 import { MessageItem } from '../../types'
+import { EmojiText } from '../common/EmojiText'
+import { emojiToUnified } from '../../utils/emojiUtils'
+import {
+  getEditableText,
+  convertTextToHtml,
+  hasRawEmojis,
+  getCaretCharacterOffsetWithin,
+  setCaretPosition
+} from '../../utils/editorUtils'
 
 interface MessageInputProps {
   activeJid: string
@@ -21,7 +30,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const editorRef = useRef<HTMLDivElement>(null)
   const pickerContainerRef = useRef<HTMLDivElement>(null)
   const smileButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -71,26 +80,87 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
   } = useAudioRecorder()
 
   useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = ''
+    }
+    setText('')
+  }, [activeJid])
+
+  useEffect(() => {
     if (replyingTo) {
-      inputRef.current?.focus()
+      editorRef.current?.focus()
     }
   }, [replyingTo])
 
-  const handleSelectEmoji = (emoji: string) => {
-    if (!inputRef.current) return
-    const input = inputRef.current
-    const start = input.selectionStart || 0
-    const end = input.selectionEnd || 0
-    const val = input.value
-    const newVal = val.substring(0, start) + emoji + val.substring(end)
-    setText(newVal)
+  useEffect(() => {
+    editorRef.current?.focus()
+  }, [])
+
+  const handleEditorInput = () => {
+    const editor = editorRef.current
+    if (!editor) return
+
+    let plainText = getEditableText(editor)
     
-    // Restore cursor position
-    setTimeout(() => {
-      input.focus()
-      const newPos = start + emoji.length
-      input.setSelectionRange(newPos, newPos)
-    }, 0)
+    if (plainText === '') {
+      editor.innerHTML = ''
+    } else {
+      if (hasRawEmojis(editor)) {
+        const caretOffset = getCaretCharacterOffsetWithin(editor)
+        editor.innerHTML = convertTextToHtml(plainText)
+        setCaretPosition(editor, caretOffset)
+      }
+    }
+
+    setText(plainText)
+    const caret = getCaretCharacterOffsetWithin(editor)
+    handleInputChange(plainText, caret)
+  }
+
+  const handleSelectEmoji = (emoji: string) => {
+    const editor = editorRef.current
+    if (!editor) return
+
+    editor.focus()
+    const sel = window.getSelection()
+    if (!sel) return
+
+    let range: Range
+    if (sel.rangeCount > 0) {
+      range = sel.getRangeAt(0)
+      if (!editor.contains(range.commonAncestorContainer)) {
+        range = document.createRange()
+        range.selectNodeContents(editor)
+        range.collapse(false)
+      }
+    } else {
+      range = document.createRange()
+      range.selectNodeContents(editor)
+      range.collapse(false)
+    }
+
+    range.deleteContents()
+
+    const unified = emojiToUnified(emoji)
+    const img = document.createElement('img')
+    img.src = `https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/apple/64/${unified}.png`
+    img.alt = emoji
+    img.setAttribute('data-emoji', emoji)
+    img.className = 'inline-emoji'
+    img.style.width = '20px'
+    img.style.height = '20px'
+    img.style.verticalAlign = 'middle'
+    img.style.display = 'inline-block'
+    img.style.margin = '0 1px'
+
+    range.insertNode(img)
+
+    range.setStartAfter(img)
+    range.setEndAfter(img)
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    handleEditorInput()
   }
 
   const handleSelectGif = async (filePath: string) => {
@@ -101,30 +171,27 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     await onSendMedia(filePath, '')
   }
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value
-    setText(val)
-    handleInputChange(val, e.target.selectionStart || 0)
-  }
-
   const handleSelectParticipant = (participant: { jid: string, name: string, isAdmin: boolean, isMe: boolean }) => {
-    const cursor = inputRef.current?.selectionStart || 0
-    const textBeforeCursor = text.slice(0, cursor)
+    const editor = editorRef.current
+    if (!editor) return
+
+    const cursor = getCaretCharacterOffsetWithin(editor)
+    const currentText = getEditableText(editor)
+    const textBeforeCursor = currentText.slice(0, cursor)
     const lastAtPos = textBeforeCursor.lastIndexOf('@')
 
     if (lastAtPos !== -1) {
       const number = participant.jid.split('@')[0]
-      const newText = text.slice(0, lastAtPos) + `@${number} ` + text.slice(cursor)
+      const newText = currentText.slice(0, lastAtPos) + `@${number} ` + currentText.slice(cursor)
+      
+      editor.innerHTML = convertTextToHtml(newText)
       setText(newText)
       addMention(participant)
       
-      // Move cursor after the mention
       setTimeout(() => {
-        if (inputRef.current) {
-          const newPos = lastAtPos + number.length + 2
-          inputRef.current.focus()
-          inputRef.current.setSelectionRange(newPos, newPos)
-        }
+        editor.focus()
+        const newPos = lastAtPos + number.length + 2
+        setCaretPosition(editor, newPos)
       }, 0)
     }
   }
@@ -139,10 +206,13 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     try {
       await onSend(trimmed, mentions)
       setText('')
+      if (editorRef.current) {
+        editorRef.current.innerHTML = ''
+      }
       clearMentions()
     } finally {
       setSending(false)
-      inputRef.current?.focus()
+      editorRef.current?.focus()
     }
   }
 
@@ -180,11 +250,51 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !showMenu) {
       e.preventDefault()
       handleSend()
     }
+  }
+
+  const handleSelect = () => {
+    const editor = editorRef.current
+    if (!editor) return
+    const plainText = getEditableText(editor)
+    const caret = getCaretCharacterOffsetWithin(editor)
+    handleInputChange(plainText, caret)
+  }
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const pastedText = e.clipboardData.getData('text/plain')
+    if (!pastedText) return
+
+    const html = convertTextToHtml(pastedText)
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    range.deleteContents()
+
+    const tempDiv = document.createElement('div')
+    tempDiv.innerHTML = html
+
+    const frag = document.createDocumentFragment()
+    let node
+    let lastInsertedNode
+    while ((node = tempDiv.firstChild)) {
+      lastInsertedNode = frag.appendChild(node)
+    }
+    range.insertNode(frag)
+
+    if (lastInsertedNode) {
+      range.setStartAfter(lastInsertedNode)
+      range.setEndAfter(lastInsertedNode)
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+
+    handleEditorInput()
   }
 
   return (
@@ -202,10 +312,10 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         <div className="reply-preview">
           <div className="reply-preview-content">
             <span className="reply-preview-title">
-              Replying to {replyingTo.fromMe ? 'You' : (replyingTo.participantName || 'someone')}
+              Replying to <EmojiText text={replyingTo.fromMe ? 'You' : (replyingTo.participantName || 'someone')} />
             </span>
             <p className="reply-preview-text">
-              {replyingTo.textContent || 'Media message'}
+              <EmojiText text={replyingTo.textContent || 'Media message'} />
             </p>
           </div>
           <button onClick={onCancelReply} className="reply-preview-close">
@@ -214,8 +324,6 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         </div>
       )}
       
-
-
 
       {showPicker && (
         <div className="picker-popover-container" ref={pickerContainerRef}>
@@ -251,17 +359,22 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
               <Smile size={24} />
             </button>
     
-            <input
-              ref={inputRef}
-              type="text"
+            <div
+              ref={editorRef}
               className="message-input"
-              placeholder="Type a message..."
-              value={text}
-              onChange={handleTextChange}
+              contentEditable={!sending}
+              data-placeholder="Type a message..."
+              onInput={handleEditorInput}
               onKeyDown={handleKeyDown}
-              onSelect={(e) => handleInputChange(text, (e.target as HTMLInputElement).selectionStart || 0)}
-              disabled={sending}
-              autoFocus
+              onSelect={handleSelect}
+              onPaste={handlePaste}
+              style={{
+                maxHeight: '120px',
+                overflowY: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                cursor: 'text'
+              }}
             />
           </>
         ) : (

@@ -14,6 +14,7 @@ import ConfirmModal from '../common/ConfirmModal'
 import SettingsModal from '../common/SettingsModal'
 import { MessageStatusTick } from '../common/MessageStatusTick'
 import { ContextMenu } from '../common/ContextMenu'
+import { EmojiText } from '../common/EmojiText'
 
 interface ChatListProps {
   activeJid: string | null
@@ -210,18 +211,18 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
       if (chat.lastMessageFromMe) {
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-            You reacted {reactionText} to&nbsp;
+            You reacted <EmojiText text={reactionText} /> to&nbsp;
             {icon}
-            {targetText}
+            <EmojiText text={targetText} />
           </span>
         )
       }
 
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-          {senderPrefix}Reacted {reactionText} to&nbsp;
+          {senderPrefix}Reacted <EmojiText text={reactionText} /> to&nbsp;
           {icon}
-          {targetText}
+          <EmojiText text={targetText} />
         </span>
       )
     }
@@ -233,12 +234,12 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
         <span style={{ display: 'inline-flex', alignItems: 'center' }}>
           {senderPrefix}
           {icon}
-          {chat.lastMessage}
+          <EmojiText text={chat.lastMessage || ''} />
         </span>
       )
     }
 
-    return <>{senderPrefix}{chat.lastMessage || 'No messages'}</>
+    return <>{senderPrefix}<EmojiText text={chat.lastMessage || 'No messages'} /></>
   }
 
 
@@ -423,7 +424,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
                               </svg>
                             </button>
                           )}
-                          {chat.name}
+                          <EmojiText text={chat.name} />
                         </span>
                         <span className={`chat-item-time ${hasUnread ? 'unread' : ''}`}>
                           {formatChatTime(chat.lastMessageTimestamp || chat.timestamp)}
@@ -442,7 +443,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
                                 }}
                               >
                                 {child.unreadCount > 0 && <span className="unread-dot" />}
-                                {child.name}
+                                <EmojiText text={child.name} />
                               </span>
                             ))}
                           </div>

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, memo } from 'react'
 import { Smile } from 'lucide-react'
+import { Emoji, EmojiStyle } from 'emoji-picker-react'
 import { MessageItem as IMessageItem, MessageReceiptInfo, RawMessageContent } from '../../types'
 import { formatTime } from '../../utils/formatters'
 import ReactionsDisplay from './ReactionsDisplay'
@@ -11,6 +12,8 @@ import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
 import { useAPI } from '../../context/APIContext'
 import ConfirmModal from '../common/ConfirmModal'
 import { MessageStatusTick } from '../common/MessageStatusTick'
+import { emojiToUnified } from '../../utils/emojiUtils'
+import { EmojiText } from '../common/EmojiText'
 
 /**
  * Utility to unwrap metadata from Baileys messages.
@@ -402,7 +405,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
       <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.isEdited ? 'bubble-edited' : ''} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${isTemplateMessage ? 'bubble-template' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
         {!msg.fromMe && msg.participantName && msg.chatJid.endsWith('@g.us') && (
           <span className="message-sender-name" style={{ color: senderColor }}>
-            {msg.participantName}
+            <EmojiText text={msg.participantName} />
           </span>
         )}
 
@@ -421,7 +424,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
               }
             }}
           >
-            <span className="quote-sender" style={{ color: quoteColor }}>{quotedSender}</span>
+            <span className="quote-sender" style={{ color: quoteColor }}><EmojiText text={quotedSender} /></span>
             <div className="quote-text">
               <TextMessage text={quotedText} mentions={quotedMentions} />
             </div>
@@ -466,7 +469,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
                     className={`quick-reaction-btn ${isMyReaction ? 'active' : ''}`}
                     onClick={() => handleReactClick(emoji)}
                   >
-                    {emoji}
+                    <Emoji unified={emojiToUnified(emoji)} size={22} emojiStyle={EmojiStyle.APPLE} />
                   </button>
                 )
               })}
@@ -482,7 +485,10 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
                 <div className="reaction-full-picker-popover">
                   <EmojiStickerGifPicker
                     initialTab="emoji"
-                    onSelectEmoji={handleReactClick}
+                    onSelectEmoji={(emoji) => {
+                      handleReactClick(emoji)
+                      setShowFullEmojiPicker(false)
+                    }}
                     onClose={() => setShowFullEmojiPicker(false)}
                   />
                 </div>

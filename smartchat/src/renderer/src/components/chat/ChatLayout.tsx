@@ -14,6 +14,7 @@ import { useDragAndDrop } from '../../hooks/useDragAndDrop'
 import { useMultiFileQueue } from '../../hooks/useMultiFileQueue'
 import DragDropOverlay from './DragDropOverlay'
 import MultiFilePreview from './MultiFilePreview'
+import { EmojiText } from '../common/EmojiText'
 
 export default function ChatLayout() {
   const api = useAPI()
@@ -193,7 +194,7 @@ export default function ChatLayout() {
                 onClick={handleHeaderProfileClick}
               />
               <div className="chat-header-info">
-                <h2 className="chat-header-name">{activeName}</h2>
+                <h2 className="chat-header-name"><EmojiText text={activeName} /></h2>
                 {activePresenceText && (
                   <p className={`chat-header-status ${activePresenceText === 'online' ? '' : 'presence-typing'}`}>
                     {activePresenceText}

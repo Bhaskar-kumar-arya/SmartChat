@@ -1,6 +1,9 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Emoji, EmojiStyle } from 'emoji-picker-react'
+import emojiRegex from 'emoji-regex'
 import { TextMessageProps } from '../../../types'
+import { emojiToUnified } from '../../../utils/emojiUtils'
 
 /**
  * Renders text with highlighted mentions.
@@ -58,7 +61,7 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
         if (!name && /^\d+$/.test(rawContent)) {
           name = normalizedMentions[`${rawContent}@s.whatsapp.net`] || normalizedMentions[`${rawContent}@lid`]
         }
-
+ 
         if (!name) {
           const foundKey = Object.keys(normalizedMentions).find(k => k.startsWith(rawContent))
           if (foundKey) name = normalizedMentions[foundKey]
@@ -73,9 +76,26 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
     }).join('')
   }
 
-  const formattedText = convertWhatsAppToMarkdown(text)
-  const markdownText = preprocessMentionsToMarkdown(formattedText)
+  // Preprocess Unicode emojis outside of code blocks to markdown links.
+  const preprocessEmojisToMarkdown = (rawText: string) => {
+    if (!rawText) return ''
+    const parts = rawText.split(/(```[\s\S]+?```|`[^`\n]+?`)/g)
+    const regex = emojiRegex()
 
+    return parts.map(part => {
+      if (part.startsWith('```') || part.startsWith('`')) {
+        return part
+      }
+      return part.replace(regex, (match) => {
+        const unified = emojiToUnified(match)
+        return `[emoji](https://emoji.local/${unified})`
+      })
+    }).join('')
+  }
+
+  const formattedText = convertWhatsAppToMarkdown(text)
+  const textWithMentions = preprocessMentionsToMarkdown(formattedText)
+  const markdownText = preprocessEmojisToMarkdown(textWithMentions)
 
   return (
     <div className="markdown-body">
@@ -87,6 +107,14 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
               return (
                 <span className="message-mention" style={{ color: 'var(--primary, #00a884)', fontWeight: 600 }}>
                   {children}
+                </span>
+              )
+            }
+            if (href && href.startsWith('https://emoji.local/')) {
+              const unified = href.replace('https://emoji.local/', '')
+              return (
+                <span className="emoji-inline-wrapper" style={{ display: 'inline-block', verticalAlign: 'middle', margin: '0 2px', lineHeight: 1 }}>
+                  <Emoji unified={unified} size={18} emojiStyle={EmojiStyle.APPLE} />
                 </span>
               )
             }

@@ -519,3 +519,49 @@
   transform: scale(1.15);
   background: #f44336 !important;
 }
+
+/* Custom styling overrides for emoji-picker-react to match dark theme */
+.emoji-picker-panel .EmojiPickerReact,
+.reaction-full-picker-popover .EmojiPickerReact {
+  --epr-bg-color: #161616 !important;
+  --epr-border-color: transparent !important;
+  --epr-search-input-bg-color: #222222 !important;
+  --epr-search-input-border-color: transparent !important;
+  --epr-search-input-bg-color-active: #1a1a1a !important;
+  --epr-search-input-border-color-active: #00e676 !important;
+  --epr-category-navigation-button-active-color: #00e676 !important;
+  --epr-category-label-bg-color: #161616 !important;
+  --epr-category-label-text-color: #8696a0 !important;
+  --epr-text-color: #ffffff !important;
+  --epr-emoji-hover-color: rgba(255, 255, 255, 0.08) !important;
+  --epr-preview-border-color: rgba(255, 255, 255, 0.08) !important;
+  border: none !important;
+  font-family: inherit !important;
+}
+
+.emoji-picker-panel .EmojiPickerReact .epr-search-container input:focus,
+.reaction-full-picker-popover .EmojiPickerReact .epr-search-container input:focus {
+  border-color: #00e676 !important;
+}
+
+/* Custom scrollbars inside emoji-picker-react library categories/grid container */
+.emoji-picker-panel .EmojiPickerReact .epr-body::-webkit-scrollbar,
+.reaction-full-picker-popover .EmojiPickerReact .epr-body::-webkit-scrollbar {
+  width: 5px !important;
+}
+
+.emoji-picker-panel .EmojiPickerReact .epr-body::-webkit-scrollbar-track,
+.reaction-full-picker-popover .EmojiPickerReact .epr-body::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.emoji-picker-panel .EmojiPickerReact .epr-body::-webkit-scrollbar-thumb,
+.reaction-full-picker-popover .EmojiPickerReact .epr-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-radius: 3px !important;
+}
+
+.emoji-picker-panel .EmojiPickerReact .epr-body::-webkit-scrollbar-thumb:hover,
+.reaction-full-picker-popover .EmojiPickerReact .epr-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22) !important;
+}

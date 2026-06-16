@@ -1,5 +1,6 @@
 import { MessageReceiptInfo } from '../../types'
 import { formatReceiptTime, formatReceiptDate } from '../../utils/formatters'
+import { EmojiText } from '../common/EmojiText'
 
 interface MessageInfoModalProps {
   receipts: MessageReceiptInfo[]
@@ -27,7 +28,7 @@ export default function MessageInfoModal({ receipts, onClose }: MessageInfoModal
               {receipts.map((receipt) => (
                 <div className="receipt-item" key={receipt.userJid}>
                   <div className="receipt-item-details">
-                    <span className="receipt-item-name">{receipt.name}</span>
+                    <span className="receipt-item-name"><EmojiText text={receipt.name} /></span>
                     <span className="receipt-item-jid">{receipt.userJid.split('@')[0]}</span>
                   </div>
                   <div className="receipt-item-status">

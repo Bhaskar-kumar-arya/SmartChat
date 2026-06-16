@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
+import { Emoji, EmojiStyle } from 'emoji-picker-react'
 import { MessageItem as IMessageItem } from '../../types'
 import { formatDate } from '../../utils/formatters'
 import MessageItem from './MessageItem'
+import { emojiToUnified } from '../../utils/emojiUtils'
 
 interface MessageViewProps {
   messages: IMessageItem[]
@@ -237,7 +239,9 @@ function ReactionDetailsModal({ message, onClose }: { message: IMessageItem, onC
                   <span className="user-jid-mini">{r.senderId.split('@')[0]}</span>
                 </div>
               </div>
-              <span className="reaction-modal-emoji">{r.text}</span>
+              <span className="reaction-modal-emoji" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Emoji unified={emojiToUnified(r.text)} size={20} emojiStyle={EmojiStyle.APPLE} />
+              </span>
             </div>
           ))}
         </div>
