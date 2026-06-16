@@ -107,7 +107,7 @@ export class MessageService {
     const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
 
     // 5. Ingest metadata (PushName, AltJID)
-    if (msg.pushName && participantString) {
+    if (!key.fromMe && msg.pushName && participantString) {
       await this.contactService.upsertContact({ id: participantString, name: msg.pushName, notify: msg.pushName }, { overwriteName: false }).catch(() => {})
     }
 
@@ -268,7 +268,7 @@ export class MessageService {
         messageType,
         textContent,
         content: JSON.stringify(rawMessage || {}),
-        isDeleted: msg.messageStubType === WAMessageStubType.REVOKE || (msg.messageStubType === WAMessageStubType.CIPHERTEXT && msg.messageStubParameters?.includes('Message absent from node')),
+        isDeleted: msg.messageStubType === WAMessageStubType.REVOKE || (msg.messageStubType === WAMessageStubType.CIPHERTEXT && (msg.messageStubParameters?.includes('Message absent from node') ?? false)),
         isEdited: false,
         status: mapBaileysStatus(msg.status)
     }
@@ -400,7 +400,7 @@ export class MessageService {
     const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
 
     const isDeleted = msg.messageStubType === WAMessageStubType.REVOKE || 
-                      (msg.messageStubType === WAMessageStubType.CIPHERTEXT && msg.messageStubParameters?.includes('Message absent from node'))
+                      (msg.messageStubType === WAMessageStubType.CIPHERTEXT && (msg.messageStubParameters?.includes('Message absent from node') ?? false))
     const status = mapBaileysStatus(msg.status)
     return {
       id: key.id,
