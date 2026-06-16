@@ -235,19 +235,60 @@ export async function handleHistorySync(
         const timestamp = parseBaileysTimestamp(m.messageTimestamp ?? 0)
 
         const remoteJid = cleanJid(String(key.remoteJid ?? ''))
-        const participantRaw = key.participant ? String(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
-        const participantString = participantRaw ? cleanJid(participantRaw) : null
         
+        let finalId = String(key.id)
+        let finalMessageType = getMessageType(message)
+        let finalContent = JSON.stringify(message ?? {})
+        let finalTextContent = extractTextContent(message)
+        let finalFromMe = key.fromMe === true
+        let finalParticipantRaw = key.participant ? String(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
+        let finalParticipant = finalParticipantRaw ? cleanJid(finalParticipantRaw) : null
+        let isEdited = false
+        let isDeleted = false
+
+        const protocolMessage = message?.protocolMessage as Record<string, any> | undefined
+        if (protocolMessage) {
+          const targetKey = protocolMessage.key as Record<string, any> | undefined
+          if (targetKey && targetKey.id) {
+            const isEdit = protocolMessage.type === 14 || protocolMessage.type === 'MESSAGE_EDIT'
+            const isRevoke = protocolMessage.type === 0 || protocolMessage.type === 'REVOKE'
+
+            if (isEdit) {
+              const editedMessage = protocolMessage.editedMessage as Record<string, any> | undefined
+              if (editedMessage) {
+                finalId = String(targetKey.id)
+                finalMessageType = getMessageType(editedMessage)
+                finalContent = JSON.stringify(editedMessage)
+                finalTextContent = extractTextContent(editedMessage)
+                finalFromMe = targetKey.fromMe === true
+                
+                const targetRemoteJid = cleanJid(String(targetKey.remoteJid ?? remoteJid))
+                const targetParticipantRaw = targetKey.participant ? String(targetKey.participant) : (targetRemoteJid.endsWith('@g.us') ? null : targetRemoteJid)
+                finalParticipant = targetParticipantRaw ? cleanJid(targetParticipantRaw) : null
+                isEdited = true
+              }
+            } else if (isRevoke) {
+              finalId = String(targetKey.id)
+              finalFromMe = targetKey.fromMe === true
+              
+              const targetRemoteJid = cleanJid(String(targetKey.remoteJid ?? remoteJid))
+              const targetParticipantRaw = targetKey.participant ? String(targetKey.participant) : (targetRemoteJid.endsWith('@g.us') ? null : targetRemoteJid)
+              finalParticipant = targetParticipantRaw ? cleanJid(targetParticipantRaw) : null
+              isDeleted = true
+            }
+          }
+        }
+
         let senderId: number | null = null
-        if (!key.fromMe && participantString) {
-          if (identityCache.has(participantString)) {
-            senderId = identityCache.get(participantString)!
+        if (!finalFromMe && finalParticipant) {
+          if (identityCache.has(finalParticipant)) {
+            senderId = identityCache.get(finalParticipant)!
           } else {
-            await contactService.upsertContact({ id: participantString }).catch(() => {})
-            const newId = await contactService.getIdentityIdByJid(participantString)
+            await contactService.upsertContact({ id: finalParticipant }).catch(() => {})
+            const newId = await contactService.getIdentityIdByJid(finalParticipant)
             if (newId) {
               senderId = newId
-              identityCache.set(participantString, newId)
+              identityCache.set(finalParticipant, newId)
             }
           }
         }
@@ -264,16 +305,18 @@ export async function handleHistorySync(
         }
 
         messageData.push({
-          id: String(key.id),
+          id: finalId,
           chatJid: remoteJid,
-          fromMe: key.fromMe === true,
+          fromMe: finalFromMe,
           senderId,
-          participant: participantString,
+          participant: finalParticipant,
           timestamp,
-          messageType: getMessageType(message),
-          content: JSON.stringify(message ?? {}),
-          textContent: extractTextContent(message),
-          status: mapBaileysStatus(m.status as number | null | undefined)
+          messageType: finalMessageType,
+          content: finalContent,
+          textContent: finalTextContent,
+          status: mapBaileysStatus(m.status as number | null | undefined),
+          isEdited,
+          isDeleted
         })
       }
 
@@ -404,6 +447,8 @@ export async function handleHistorySync(
 
               if (msg.textContent !== null) update.textContent = msg.textContent
               update.fromMe = msg.fromMe
+              if (msg.isEdited !== undefined) update.isEdited = msg.isEdited
+              if (msg.isDeleted !== undefined) update.isDeleted = msg.isDeleted
               return prisma.message.update({
                 where: { id: msg.id },
                 data: update
