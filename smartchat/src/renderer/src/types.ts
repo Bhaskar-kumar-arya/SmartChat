@@ -135,6 +135,7 @@ export interface ContextInfo {
   participant?: string
   participantName?: string
   mentions?: Record<string, string> | string[]
+  stanzaId?: string
 }
 
 export interface ImageMessageContent {

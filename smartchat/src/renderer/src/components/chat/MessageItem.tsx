@@ -398,7 +398,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     : ''
 
   return (
-    <div className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
+    <div id={`msg-${msg.id}`} className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
       <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.isEdited ? 'bubble-edited' : ''} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${isTemplateMessage ? 'bubble-template' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
         {!msg.fromMe && msg.participantName && msg.chatJid.endsWith('@g.us') && (
           <span className="message-sender-name" style={{ color: senderColor }}>
@@ -407,7 +407,20 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
         )}
 
         {isReply && (
-          <div className="message-quote" style={{ borderLeft: `4px solid ${quoteColor}` }}>
+          <div
+            className="message-quote"
+            style={{ borderLeft: `4px solid ${quoteColor}`, cursor: ctx?.stanzaId ? 'pointer' : 'default' }}
+            onClick={() => {
+              if (ctx?.stanzaId) {
+                const el = document.getElementById(`msg-${ctx.stanzaId}`)
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  el.classList.add('highlight-pulse')
+                  setTimeout(() => el.classList.remove('highlight-pulse'), 2000)
+                }
+              }
+            }}
+          >
             <span className="quote-sender" style={{ color: quoteColor }}>{quotedSender}</span>
             <div className="quote-text">
               <TextMessage text={quotedText} mentions={quotedMentions} />
