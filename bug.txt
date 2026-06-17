@@ -1,0 +1,2 @@
+reactions are lost in history sync
+// when editing a replied message , context is lost

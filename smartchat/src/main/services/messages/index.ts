@@ -1,3 +1,6 @@
 export * from './MessageService'
 export * from './MessageActionService'
 export * from './MediaService'
+export * from './MessageParser'
+export * from './MessageRepository'
+export * from './MessageEnricher'

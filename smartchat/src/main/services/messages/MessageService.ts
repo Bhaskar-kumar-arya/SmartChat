@@ -1,80 +1,95 @@
 import { PrismaClient } from '@prisma/client'
-import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
+import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { EmbeddingService } from '../search/EmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
-import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils'
-import { WASocket, BaileysMessage, ProcessedMessage, ProtocolResult, DBMessageWithSender, EnrichedMessage, BaileysReactionUpdate } from '../../types'
+import { cleanJid, parseBaileysTimestamp, unwrapMessage } from '../../utils'
+import {
+  WASocket,
+  BaileysMessage,
+  ProcessedMessage,
+  ProtocolResult,
+  DBMessageWithSender,
+  EnrichedMessage,
+  BaileysReactionUpdate
+} from '../../types'
 import { WAEventBus } from '../whatsapp/WAEventBus'
 import { resolveExtension } from './MediaHelper'
+import { MessageParser, ParsedMessage } from './MessageParser'
+import { MessageRepository } from './MessageRepository'
+import { MessageEnricher } from './MessageEnricher'
+
+// Re-export ParsedMessage so existing consumers don't break
+export type { ParsedMessage }
 
 /**
- * Plain data object produced by parseMessageSync().
- * Contains everything needed for DB persistence, with zero side-effects during construction.
+ * MessageService — Application Service / Orchestrator.
+ *
+ * Coordinates the three single-responsibility collaborators:
+ *  - MessageParser:     pure parse/classify logic (no I/O)
+ *  - MessageRepository: all Prisma read/write operations
+ *  - MessageEnricher:   UI display-name resolution
+ *
+ * This class owns:
+ *  - The high-level processing pipeline (processMessage, bulkPersistMessages)
+ *  - Identity side-effects (contact upserts, LID↔PN linking)
+ *  - Event-bus notifications
  */
-export interface ParsedMessage {
-  id: string
-  chatJid: string
-  fromMe: boolean
-  participantString: string | null
-  timestamp: bigint
-  messageType: string
-  rawMessage: any
-  textContent: string | null
-  pushName: string | null
-  status?: string
-  isDeleted?: boolean
-}
 export class MessageService {
+  private readonly parser: MessageParser
+  private readonly repository: MessageRepository
+  private readonly enricher: MessageEnricher
+
   constructor(
-    private prisma: PrismaClient,
-    private contactService: ContactService,
-    private embeddingService: EmbeddingService,
-    private secretMessageService: SecretMessageService,
-    private getBus: () => WAEventBus | null
-  ) {}
+    private readonly prisma: PrismaClient,
+    private readonly contactService: ContactService,
+    private readonly embeddingService: EmbeddingService,
+    private readonly secretMessageService: SecretMessageService,
+    private readonly getBus: () => WAEventBus | null
+  ) {
+    this.parser = new MessageParser()
+    this.repository = new MessageRepository(prisma)
+    this.enricher = new MessageEnricher(contactService)
+  }
+
+  // ─── Public API ─────────────────────────────────────────────────────────────
+
   /**
-   * Parses a raw Baileys message object and prepares it for persistence.
+   * Processes a single incoming Baileys message: parses, resolves identity,
+   * persists to DB, triggers semantic indexing, and returns a ProcessedMessage.
    */
-  async processMessage(msg: BaileysMessage, _sock: WASocket | null): Promise<ProcessedMessage | ProtocolResult | null> {
+  async processMessage(
+    msg: BaileysMessage,
+    _sock: WASocket | null
+  ): Promise<ProcessedMessage | ProtocolResult | null> {
     const key = msg.key
     if (!key?.id) return null
 
-    // Intercept and handle secret encrypted messages or encrypted reactions
+    // Route secret/encrypted messages to their dedicated handler
     if (msg.message?.secretEncryptedMessage || msg.message?.encReactionMessage) {
       return this.secretMessageService.handleSecretMessage(msg, _sock)
     }
 
-    // 1. Unwrap and safely JSON-ify
-    let rawMessage: any = null
-    if (msg.message) {
-      try {
-        rawMessage = JSON.parse(JSON.stringify(msg.message))
-      } catch (err) {
-        // Safe stringify for potential circular deps or Proto-buffers
-        const safeStringify = (obj: any) => JSON.stringify(obj, (_key, value) => {
-          if (value && typeof value === 'object' && typeof value.toJSON === 'function') {
-            try { return value.toJSON() } 
-            catch (e) { 
-              const copy: any = {}
-              for (const k in value) { if (typeof value[k] !== 'function') copy[k] = value[k] }
-              return copy
-            }
-          }
-          return value
-        })
-        rawMessage = JSON.parse(safeStringify(msg.message))
-      }
-    }
+    const rawMessage = this.parser['_safeSerialize'](msg.message)
 
-    const remoteJid = cleanJid(key.remoteJid || '')
-    let participantString = key.participant ? cleanJid(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
+    const remoteJid = cleanJid(key.remoteJid ?? '')
+    let participantString = key.participant
+      ? cleanJid(key.participant)
+      : remoteJid.endsWith('@g.us')
+      ? null
+      : remoteJid
+
+    // Resolve "me" participant JID
     if (key.fromMe) {
       if (_sock?.user) {
-        const myJid = _sock.user.id || ''
-        const myLid = (_sock.user as { lid?: string })?.lid || ''
-        participantString = myLid ? myLid.split(':')[0] + '@lid' : (myJid ? myJid.split(':')[0] + '@s.whatsapp.net' : participantString)
+        const myJid = _sock.user.id ?? ''
+        const myLid = (_sock.user as { lid?: string })?.lid ?? ''
+        participantString = myLid
+          ? myLid.split(':')[0] + '@lid'
+          : myJid
+          ? myJid.split(':')[0] + '@s.whatsapp.net'
+          : participantString
       } else {
         const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
         if (meIdent?.phoneNumber) {
@@ -83,61 +98,55 @@ export class MessageService {
       }
     }
 
-    // 2. Extract text content & Unwrap
-    let textContent: string | null = null
+    // Extract text content
     const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
-    
-    if (unwrapped) {
-      if (typeof unwrapped.conversation === 'string') {
-        textContent = unwrapped.conversation
-      } else if (unwrapped.extendedTextMessage?.text) {
-        textContent = unwrapped.extendedTextMessage.text
-      } else {
-        const mediaMsg = unwrapped.imageMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage || unwrapped.ptvMessage
-        if (mediaMsg && typeof mediaMsg.caption === 'string') {
-          textContent = mediaMsg.caption
-        }
-      }
-    }
+    const textContent = this.parser.extractTextContent(unwrapped)
 
-    // 3. Determine message type
-    const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
+    // Determine message type
+    const messageType = unwrapped
+      ? (unwrapped
+          ? Object.keys(unwrapped).find(k => k !== 'messageContextInfo') ?? 'unknown'
+          : 'unknown')
+      : 'unknown'
 
-    // 4. Parse Timestamp
     const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
 
-    // 5. Ingest metadata (PushName, AltJID)
+    // Side-effect: upsert contact for push name
     if (!key.fromMe && msg.pushName && participantString) {
-      await this.contactService.upsertContact({ id: participantString, name: msg.pushName, notify: msg.pushName }, { overwriteName: false }).catch((err) => {
-        console.error('[MessageService] Failed to upsert contact for pushName:', err)
-      })
+      await this.contactService
+        .upsertContact(
+          { id: participantString, name: msg.pushName, notify: msg.pushName },
+          { overwriteName: false }
+        )
+        .catch((err: unknown) => {
+          console.error('[MessageService] Failed to upsert contact for pushName:', err)
+        })
     }
 
-    // Opportunistic Identity Extraction (AddressingMode Aware)
-    // We check all possible sender-related identifiers for any LID-PN pairs.
-    const senderPrimary = participantString || remoteJid;
+    // Opportunistic LID↔PN identity extraction
+    const senderPrimary = participantString ?? remoteJid
     const keyRefined = key as unknown as { participantAlt?: string; remoteJidAlt?: string; senderPn?: string }
-    const altJid = keyRefined.participantAlt || keyRefined.remoteJidAlt;
-    const senderPn = keyRefined.senderPn;
+    const altJid = keyRefined.participantAlt ?? keyRefined.remoteJidAlt
+    const senderPn = keyRefined.senderPn
+    const potentialIds = [senderPrimary, altJid, senderPn].filter(Boolean) as string[]
 
-    const potentialIds = [senderPrimary, altJid, senderPn].filter(Boolean) as string[];
-    let discoveredLid: string | null = null;
-    let discoveredPn: string | null = null;
-
+    let discoveredLid: string | null = null
+    let discoveredPn: string | null = null
     for (const id of potentialIds) {
       if (typeof id === 'string') {
-        if (id.includes('@lid')) discoveredLid = id;
-        if (id.includes('@s.whatsapp.net')) discoveredPn = id;
+        if (id.includes('@lid')) discoveredLid = id
+        if (id.includes('@s.whatsapp.net')) discoveredPn = id
       }
     }
-
     if (discoveredLid && discoveredPn) {
-      await this.contactService.linkLidAndPn(discoveredLid, discoveredPn, 'message.upsert').catch((err) => {
-        console.error('[MessageService] Failed to link LID and PN:', err)
-      });
+      await this.contactService
+        .linkLidAndPn(discoveredLid, discoveredPn, 'message.upsert')
+        .catch((err: unknown) => {
+          console.error('[MessageService] Failed to link LID and PN:', err)
+        })
     }
 
-    // 6. Resolve Identity ID
+    // Resolve sender identity ID
     let senderId: number | null = null
     if (!key.fromMe && participantString) {
       senderId = await this.contactService.getIdentityIdByJid(participantString)
@@ -147,141 +156,121 @@ export class MessageService {
       }
     }
 
-    // 7. Handle Protocol Messages (Revoke/Edit) separately before persisting
+    // Route protocol messages (revoke / edit) without persisting them
     if (messageType === 'protocolMessage' && unwrapped) {
-        const protocol = unwrapped.protocolMessage
-        const targetId = protocol?.key?.id
-        if (targetId) {
-            try {
-                if (protocol.type === 0 || protocol.type === 'REVOKE') {
-                    return { type: 'protocol', subType: 'revoke', targetId, chatJid: remoteJid, key: protocol.key }
-                } else if (protocol.type === 14 || protocol.type === 'MESSAGE_EDIT') {
-                    const editedMsg = protocol.editedMessage
-                    const editContent = editedMsg?.conversation || editedMsg?.extendedTextMessage?.text || (editedMsg?.imageMessage?.caption) || (editedMsg?.videoMessage?.caption) || null
-                    
-                    return { 
-                        type: 'protocol', 
-                        subType: 'edit', 
-                        targetId, 
-                        chatJid: remoteJid, 
-                        key: protocol.key,
-                        editedTextContent: editContent,
-                        editedContent: editedMsg
-                    }
-                }
-            } catch (err) {
-                console.error('[MessageService] Error handling protocol message:', err)
+      const protocol = unwrapped.protocolMessage as Record<string, unknown> | undefined
+      const targetId = (protocol?.key as { id?: string } | undefined)?.id
+      if (targetId && protocol) {
+        try {
+          const type = protocol.type
+          if (type === 0 || type === 'REVOKE') {
+            return {
+              type: 'protocol',
+              subType: 'revoke',
+              targetId,
+              chatJid: remoteJid,
+              key: protocol.key as import('@whiskeysockets/baileys').proto.IMessageKey
             }
+          } else if (type === 14 || type === 'MESSAGE_EDIT') {
+            const editedMsg = protocol.editedMessage as Record<string, unknown> | undefined
+            const editContent =
+              (editedMsg?.conversation as string | undefined) ??
+              ((editedMsg?.extendedTextMessage as Record<string, unknown> | undefined)?.text as string | undefined) ??
+              ((editedMsg?.imageMessage as Record<string, unknown> | undefined)?.caption as string | undefined) ??
+              ((editedMsg?.videoMessage as Record<string, unknown> | undefined)?.caption as string | undefined) ??
+              null
+            return {
+              type: 'protocol',
+              subType: 'edit',
+              targetId,
+              chatJid: remoteJid,
+              key: protocol.key as import('@whiskeysockets/baileys').proto.IMessageKey,
+              editedTextContent: editContent,
+              editedContent: editedMsg as import('@whiskeysockets/baileys').proto.IMessage | null
+            }
+          }
+        } catch (err: unknown) {
+          console.error('[MessageService] Error handling protocol message:', err)
         }
-        return null // Don't save the protocol message itself
+      }
+      return null
     }
 
     // Ensure chat exists
     const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-    await this.prisma.chat.upsert({
-      where: { jid: remoteJid },
-      update: {},
-      create: { jid: remoteJid, type: chatType }
-    } as unknown as { where: { jid: string }; update: Record<string, unknown>; create: { jid: string; type: 'GROUP' | 'DM' } }).catch((err) => {
-      console.error('[MessageService] Failed to upsert chat:', err)
-    })
+    await this.prisma.chat
+      .upsert({
+        where: { jid: remoteJid },
+        update: {},
+        create: { jid: remoteJid, type: chatType }
+      } as unknown as { where: { jid: string }; update: Record<string, unknown>; create: { jid: string; type: 'GROUP' | 'DM' } })
+      .catch((err: unknown) => {
+        console.error('[MessageService] Failed to upsert chat:', err)
+      })
 
-    // 8. Persist to DB
-    if (messageType === 'reactionMessage') {
-        const targetId = rawMessage.reactionMessage?.key?.id
-        const emoji = rawMessage.reactionMessage?.text
-        let reactorId = senderId
+    // Handle reaction messages via repository
+    if (messageType === 'reactionMessage' && rawMessage) {
+      const reactionMsg = rawMessage.reactionMessage as Record<string, unknown> | undefined
+      const targetId = (reactionMsg?.key as { id?: string } | undefined)?.id
+      const emoji = reactionMsg?.text as string | undefined
 
-        if (key.fromMe) {
-          // If fromMe, we need our own identity
-          const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
-          if (meIdent) reactorId = meIdent.id
-        }
+      let reactorId = senderId
+      if (key.fromMe) {
+        const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
+        if (meIdent) reactorId = meIdent.id
+      }
 
-        if (targetId && reactorId) {
-            if (!emoji) {
-                await this.prisma.reaction.deleteMany({
-                    where: { messageId: targetId, senderId: reactorId }
-                }).catch((err) => {
-                    console.error('[MessageService] Failed to delete reaction:', err)
-                })
-            } else {
-                await this.prisma.reaction.upsert({
-                    where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
-                    update: { text: emoji, timestamp },
-                    create: { messageId: targetId, senderId: reactorId, text: emoji, timestamp }
-                }).catch((err) => {
-                    console.error('[MessageService] Failed to upsert reaction:', err)
-                })
-            }
-        }
+      if (targetId && reactorId !== null) {
+        await this.repository.upsertReaction(targetId, reactorId, emoji ?? null, timestamp)
+      }
     } else {
-        // Try to preserve existing localURI if message already exists
-        const existing = await this.prisma.message.findUnique({
-          where: { id: key.id },
-          select: { content: true }
-        })
-        if (existing && existing.content && rawMessage) {
-          try {
-            const existingContent = JSON.parse(existing.content)
-            const existingUnwrapped = unwrapMessage(existingContent)
-            const existingMediaMsg = existingUnwrapped?.imageMessage || existingUnwrapped?.stickerMessage || existingUnwrapped?.videoMessage || existingUnwrapped?.documentMessage || existingUnwrapped?.audioMessage
-            
-            if (existingMediaMsg && existingMediaMsg.localURI) {
-              const currentUnwrapped = unwrapMessage(rawMessage)
-              const currentMediaMsg = currentUnwrapped?.imageMessage || currentUnwrapped?.stickerMessage || currentUnwrapped?.videoMessage || currentUnwrapped?.documentMessage || currentUnwrapped?.audioMessage
-              if (currentMediaMsg) {
-                currentMediaMsg.localURI = existingMediaMsg.localURI
-              }
-            }
-          } catch (e) {
-            console.error('[MessageService] Failed to preserve localURI on upsert:', e)
-          }
-        }
+      // Standard message persistence
+      const isDeleted =
+        msg.messageStubType === WAMessageStubType.REVOKE ||
+        (msg.messageStubType === WAMessageStubType.CIPHERTEXT &&
+          msg.messageStubParameters?.includes('Message absent from node'))
+      const status = mapBaileysStatus(msg.status)
 
-        const isDeleted = msg.messageStubType === WAMessageStubType.REVOKE || 
-                          (msg.messageStubType === WAMessageStubType.CIPHERTEXT && msg.messageStubParameters?.includes('Message absent from node'))
-
-        const status = mapBaileysStatus(msg.status)
-        await this.prisma.message.upsert({
-            where: { id: key.id },
-            update: { textContent, messageType, content: JSON.stringify(rawMessage || {}), timestamp, senderId, participant: participantString, status, ...(isDeleted ? { isDeleted: true } : {}) },
-            create: { 
-              id: key.id, 
-              chatJid: remoteJid, 
-              fromMe: key.fromMe === true, 
-              senderId, 
-              participant: participantString,
-              timestamp, 
-              messageType, 
-              content: JSON.stringify(rawMessage || {}), 
-              textContent,
-              status,
-              isDeleted
-            }
-        })
-
-        // Auto-index new text messages for semantic search (fire-and-forget)
-        if (textContent && messageType !== 'reactionMessage') {
-            this.embeddingService.indexMessage(key.id, textContent).catch(err => {
-                console.error('[MessageService] real-time indexing failed:', err)
-            })
-        }
-    }
-
-    return {
+      await this.repository.upsertMessage({
         id: key.id,
         chatJid: remoteJid,
         fromMe: key.fromMe === true,
         senderId,
-        participant: participantString, // passing it up for UI/IPC enriched handling
+        participant: participantString,
         timestamp,
         messageType,
+        content: JSON.stringify(rawMessage ?? {}),
         textContent,
-        content: JSON.stringify(rawMessage || {}),
-        isDeleted: msg.messageStubType === WAMessageStubType.REVOKE || (msg.messageStubType === WAMessageStubType.CIPHERTEXT && (msg.messageStubParameters?.includes('Message absent from node') ?? false)),
-        isEdited: false,
-        status: mapBaileysStatus(msg.status)
+        status: status ?? null,
+        isDeleted: isDeleted ?? false
+      })
+
+      // Fire-and-forget semantic search indexing
+      if (textContent && messageType !== 'reactionMessage') {
+        this.embeddingService.indexMessage(key.id, textContent).catch((err: unknown) => {
+          console.error('[MessageService] real-time indexing failed:', err)
+        })
+      }
+    }
+
+    const isDeleted =
+      msg.messageStubType === WAMessageStubType.REVOKE ||
+      (msg.messageStubType === WAMessageStubType.CIPHERTEXT &&
+        (msg.messageStubParameters?.includes('Message absent from node') ?? false))
+
+    return {
+      id: key.id,
+      chatJid: remoteJid,
+      fromMe: key.fromMe === true,
+      senderId,
+      participant: participantString,
+      timestamp,
+      messageType,
+      textContent,
+      content: JSON.stringify(rawMessage ?? {}),
+      isDeleted,
+      isEdited: false,
+      status: mapBaileysStatus(msg.status)
     }
   }
 
@@ -289,159 +278,48 @@ export class MessageService {
    * Marks a message as deleted in the database.
    */
   async revokeMessageInDb(messageId: string): Promise<void> {
-    await this.prisma.message.updateMany({
-      where: { id: messageId },
-      data: { isDeleted: true }
-    }).catch((err) => {
-      console.warn(`[MessageService] Failed to mark message ${messageId} as deleted:`, err)
-    })
+    await this.repository.revokeMessage(messageId)
   }
 
   /**
    * Updates a message's content and marks it as edited in the database.
-   *
-   * Preserves the original messageContextInfo (which contains messageSecret)
-   * so that subsequent edits or encrypted actions on this message can still
-   * be decrypted by SecretMessageService.
    */
-  async editMessageInDb(messageId: string, textContent: string | null, editedContent: any): Promise<void> {
-    // Read the existing record first to salvage messageContextInfo
-    let originalContextInfo: Record<string, any> | null = null
-    try {
-      const existing = await this.prisma.message.findUnique({
-        where: { id: messageId },
-        select: { content: true }
-      })
-      if (existing?.content) {
-        const parsed = JSON.parse(existing.content)
-        originalContextInfo = parsed.messageContextInfo ?? null
-      }
-    } catch {
-      // Non-fatal — proceed without preserving the secret
-    }
-
-    const contentToStore = {
-      ...(editedContent || {}),
-      ...(originalContextInfo ? { messageContextInfo: originalContextInfo } : {})
-    }
-
-    // Derive the new messageType from editedContent so the DB column stays
-    // in sync with the content JSON (renderer uses messageType to pick renderer).
-    const newMessageType = editedContent?.extendedTextMessage ? 'extendedTextMessage' : 'conversation'
-
-    await this.prisma.message.updateMany({
-      where: { id: messageId },
-      data: {
-        content: JSON.stringify(contentToStore),
-        textContent: textContent,
-        messageType: newMessageType,
-        isEdited: true
-      }
-    }).catch((err) => {
-      console.warn(`[MessageService] Failed to update edited message ${messageId}:`, err)
-    })
+  async editMessageInDb(
+    messageId: string,
+    textContent: string | null,
+    editedContent: Record<string, unknown> | null
+  ): Promise<void> {
+    await this.repository.editMessage(messageId, textContent, editedContent)
   }
 
   /**
-   * Checks if a message is a protocol, reaction, or secret encrypted message
-   * that requires special per-message handling instead of simple bulk persistence.
+   * Returns true for message types that require special per-message handling.
    */
   isSpecialMessage(msg: BaileysMessage): boolean {
-    let rawMessage: any = null
-    if (msg.message) {
-      try {
-        rawMessage = JSON.parse(JSON.stringify(msg.message))
-      } catch {
-        rawMessage = null
-      }
-    }
-    const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
-    const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
-    return (
-      messageType === 'protocolMessage' ||
-      messageType === 'reactionMessage' ||
-      messageType === 'secretEncryptedMessage' ||
-      messageType === 'encReactionMessage'
-    )
+    return this.parser.isSpecialMessage(msg)
   }
 
   /**
-   * Synchronously parses a raw Baileys message into a plain data object (ParsedMessage).
+   * Synchronously parses a raw Baileys message into a plain data object.
    * Zero DB calls, zero side-effects — safe to call on large batches.
-   * Returns null for messages that cannot or should not be bulk-persisted
-   * (missing key, protocol/reaction messages which need per-message handling).
    */
   parseMessageSync(msg: BaileysMessage): ParsedMessage | null {
-    const key = msg.key
-    if (!key?.id) return null
-
-    if (this.isSpecialMessage(msg)) return null
-
-    let rawMessage: any = null
-    if (msg.message) {
-      try {
-        rawMessage = JSON.parse(JSON.stringify(msg.message))
-      } catch {
-        rawMessage = null
-      }
-    }
-
-    const remoteJid = cleanJid(key.remoteJid || '')
-    const participantString = key.participant ? cleanJid(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
-
-    const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
-    const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
-
-    // Extract text content
-    let textContent: string | null = null
-    if (unwrapped) {
-      if (typeof unwrapped.conversation === 'string') {
-        textContent = unwrapped.conversation
-      } else if (unwrapped.extendedTextMessage?.text) {
-        textContent = unwrapped.extendedTextMessage.text
-      } else {
-        const mediaMsg = unwrapped.imageMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage || unwrapped.ptvMessage
-        if (mediaMsg && typeof mediaMsg.caption === 'string') {
-          textContent = mediaMsg.caption
-        }
-      }
-    }
-
-    // Parse timestamp
-    const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
-
-    const isDeleted = msg.messageStubType === WAMessageStubType.REVOKE || 
-                      (msg.messageStubType === WAMessageStubType.CIPHERTEXT && (msg.messageStubParameters?.includes('Message absent from node') ?? false))
-    const status = mapBaileysStatus(msg.status)
-    return {
-      id: key.id,
-      chatJid: remoteJid,
-      fromMe: key.fromMe === true,
-      participantString,
-      timestamp,
-      messageType,
-      rawMessage,
-      textContent,
-      pushName: msg.pushName ?? null,
-      status,
-      isDeleted
-    }
+    return this.parser.parseMessageSync(msg)
   }
 
   /**
-   * Bulk-persists a batch of historical (append) messages efficiently.
+   * Bulk-persists a batch of historical messages efficiently.
    */
   async bulkPersistMessages(msgs: BaileysMessage[]): Promise<void> {
     if (msgs.length === 0) return
 
-    // 1. Parse all (pure CPU — no DB)
     const parsed = msgs
-      .map(m => this.parseMessageSync(m))
+      .map(m => this.parser.parseMessageSync(m))
       .filter((p): p is ParsedMessage => p !== null)
 
     if (parsed.length === 0) return
 
-    // 2. Ensure all referenced chats exist.
+    // Ensure all referenced chats exist
     const uniqueJids = Array.from(new Set(parsed.map(p => p.chatJid)))
     const existingChats = await this.prisma.chat.findMany({
       where: { jid: { in: uniqueJids } },
@@ -455,13 +333,12 @@ export class MessageService {
       await this.prisma.chat.createMany({ data: newChats }).catch(() => {})
     }
 
-    // 3. Batch-resolve sender identity IDs
+    // Batch-resolve sender identity IDs
     const participantJids = Array.from(
       new Set(parsed.filter(p => !p.fromMe && p.participantString).map(p => p.participantString!))
     )
     const identityMap = await this.contactService.batchGetIdentityIds(participantJids)
 
-    // 4. Build all candidate rows
     const allRows = parsed.map(p => ({
       id: p.id,
       chatJid: p.chatJid,
@@ -470,30 +347,26 @@ export class MessageService {
       participant: p.participantString,
       timestamp: p.timestamp,
       messageType: p.messageType,
-      content: JSON.stringify(p.rawMessage || {}),
+      content: JSON.stringify(p.rawMessage ?? {}),
       textContent: p.textContent,
-      status: p.status || 'SENT',
+      status: p.status ?? 'SENT',
       isDeleted: p.isDeleted ?? false
     }))
 
-    // 5. Pre-fetch existing message IDs
-    const allIds = allRows.map(r => r.id)
-    const existingMsgs = await this.prisma.message.findMany({
-      where: { id: { in: allIds } },
-      select: { id: true }
-    })
-    const existingMsgIds = new Set(existingMsgs.map(m => m.id))
-    const newRows = allRows.filter(r => !existingMsgIds.has(r.id))
+    const existingIds = await this.repository.findExistingIds(allRows.map(r => r.id))
+    const newRows = allRows.filter(r => !existingIds.has(r.id))
 
     if (newRows.length > 0) {
-      await this.prisma.message.createMany({ data: newRows })
+      await this.repository.bulkCreateMessages(newRows)
     }
 
-    console.log(`[MessageService] bulkPersistMessages: persisted ${newRows.length}/${allRows.length} messages (${allRows.length - newRows.length} already existed)`)
+    console.log(
+      `[MessageService] bulkPersistMessages: persisted ${newRows.length}/${allRows.length} messages`
+    )
   }
 
   /**
-   * Retrieves messages for a chat, resolves mentions and reactions, and returns enriched records.
+   * Retrieves messages for a chat with enriched display names and reactions.
    */
   async getChatMessages(
     jid: string,
@@ -514,115 +387,88 @@ export class MessageService {
       include: { sender: true }
     })
 
-    // We still need to parse contextInfo for mentions
+    // Collect JIDs needed for name resolution
     const additionalJids = new Set<string>()
     messages.forEach(m => {
       try {
         const content = JSON.parse(m.content)
         const unwrapped = unwrapMessage(content)
-        const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.contextInfo
+        const ctx = (
+          (unwrapped?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo ??
+          (unwrapped?.contextInfo as Record<string, unknown> | undefined)
+        ) as Record<string, unknown> | undefined
         if (ctx) {
-          if (ctx.participant) additionalJids.add(ctx.participant)
-          if (ctx.mentionedJid) ctx.mentionedJid.forEach((j: string) => additionalJids.add(j))
+          if (ctx.participant) additionalJids.add(ctx.participant as string)
+          if (ctx.mentionedJid)
+            (ctx.mentionedJid as string[]).forEach(j => additionalJids.add(j))
           if (ctx.quotedMessage) {
-            const q = unwrapMessage(ctx.quotedMessage)
-            const qCtx = q?.extendedTextMessage?.contextInfo || q?.contextInfo
-            if (qCtx && qCtx.mentionedJid) qCtx.mentionedJid.forEach((j: string) => additionalJids.add(j))
+            const q = unwrapMessage(ctx.quotedMessage as Record<string, unknown>)
+            const qCtx = (
+              (q?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo ??
+              (q?.contextInfo as Record<string, unknown> | undefined)
+            ) as Record<string, unknown> | undefined
+            if (qCtx?.mentionedJid)
+              (qCtx.mentionedJid as string[]).forEach(j => additionalJids.add(j))
           }
         }
-      } catch (e) {}
+      } catch {
+        // Non-fatal: malformed content
+      }
     })
 
-    const nameMap = await this.contactService.batchResolveNames(Array.from(additionalJids), sock)
+    const nameMap = await this.contactService.batchResolveNames(
+      Array.from(additionalJids),
+      sock
+    )
 
-    let allReactions: any[] = []
+    let allReactions: Array<{
+      messageId: string
+      text: string
+      timestamp: bigint
+      senderId: number
+      sender: { displayName?: string | null; pushName?: string | null; phoneNumber?: string | null }
+    }> = []
     if (includeReactions && messages.length > 0) {
-      const messageIds = messages.map((m) => m.id)
+      const messageIds = messages.map(m => m.id)
       allReactions = await this.prisma.reaction.findMany({
         where: { messageId: { in: messageIds } },
         include: { sender: true }
       })
     }
 
-    const messagesWithNames = await Promise.all(
-      messages.map(async (m) => {
-        const enriched = await this.enrichMessage(m, sock, nameMap)
-        if (!includeReactions) {
-          return enriched
-        }
-        const msgReactions = allReactions.filter((r) => r.messageId === m.id)
-        
+    const enriched = await Promise.all(
+      messages.map(async m => {
+        const enrichedMsg = await this.enricher.enrichMessage(m, sock, nameMap)
+        if (!includeReactions) return enrichedMsg
+        const msgReactions = allReactions.filter(r => r.messageId === m.id)
         return {
-          ...enriched,
-          reactions: msgReactions.map((r) => ({ 
-            ...r, 
-            senderId: r.sender.phoneNumber || '',
-            timestamp: r.timestamp.toString(),
-            senderName: r.sender.displayName || r.sender.pushName || r.sender.phoneNumber?.split('@')[0] || 'Unknown'
-          }))
+          ...enrichedMsg,
+          reactions: this.enricher.enrichReactions(msgReactions)
         }
       })
     )
 
-    return messagesWithNames.reverse()
+    return enriched.reverse()
   }
 
   /**
-   * Enrich a message object with contact names and other metadata for UI display.
+   * Enrich a single message for UI display. Delegates to MessageEnricher.
    */
-  async enrichMessage(msg: DBMessageWithSender, _sock: WASocket | null, nameMap: Map<string, string>): Promise<EnrichedMessage> {
-    let participantName = 'Unknown'
-    if (msg.fromMe) {
-      participantName = 'Me'
-    } else if (msg.sender) {
-      participantName = ContactService.getDisplayName(msg.sender, 'Unknown')
-    } else if (msg.participant) { // fallback
-      participantName = nameMap.get(msg.participant) || msg.participant.replace(/@.*$/, '')
-    }
-
-    let finalContent: any = {}
-    try { finalContent = JSON.parse(msg.content) } catch (e) {}
-
-    const unwrapped = unwrapMessage(finalContent)
-    const ctx = unwrapped?.extendedTextMessage?.contextInfo || unwrapped?.imageMessage?.contextInfo || unwrapped?.videoMessage?.contextInfo || unwrapped?.documentMessage?.contextInfo || unwrapped?.audioMessage?.contextInfo || unwrapped?.contextInfo
-
-    if (ctx) {
-        if (ctx.participant) {
-            const meJids = await this.contactService.getMeJids(_sock)
-            const cleanParticipant = cleanJid(ctx.participant)
-            if (meJids.includes(cleanParticipant)) {
-                ctx.participantName = 'You'
-            } else {
-                ctx.participantName = nameMap.get(ctx.participant) || ctx.participant.replace(/@.*$/, '')
-            }
-        }
-        if (ctx.mentionedJid && Array.isArray(ctx.mentionedJid)) {
-            ctx.mentions = {}
-            for (const jid of ctx.mentionedJid) {
-                ctx.mentions[jid] = nameMap.get(jid) || jid.replace(/@.*$/, '')
-            }
-        }
-        if (ctx.quotedMessage) {
-            const q = unwrapMessage(ctx.quotedMessage)
-            const qCtx = q?.extendedTextMessage?.contextInfo || q?.imageMessage?.contextInfo || q?.videoMessage?.contextInfo || q?.documentMessage?.contextInfo || q?.audioMessage?.contextInfo || q?.contextInfo
-            if (qCtx && qCtx.mentionedJid && Array.isArray(qCtx.mentionedJid)) {
-                qCtx.mentions = {}
-                for (const jid of qCtx.mentionedJid) {
-                    qCtx.mentions[jid] = nameMap.get(jid) || jid.replace(/@.*$/, '')
-                }
-            }
-        }
-    }
-
-    return {
-        ...msg,
-        participantName,
-        timestamp: msg.timestamp.toString(),
-        content: JSON.stringify(finalContent)
-    }
+  async enrichMessage(
+    msg: DBMessageWithSender,
+    sock: WASocket | null,
+    nameMap: Map<string, string>
+  ): Promise<EnrichedMessage> {
+    return this.enricher.enrichMessage(msg, sock, nameMap)
   }
 
-  async processReaction(reactionUpdate: BaileysReactionUpdate, sock: WASocket | null): Promise<void> {
+  /**
+   * Process an incoming reaction update event.
+   */
+  async processReaction(
+    reactionUpdate: BaileysReactionUpdate,
+    sock: WASocket | null
+  ): Promise<void> {
     const targetId = reactionUpdate.key?.id
     const reactionKey = reactionUpdate.reaction?.key
     const text = reactionUpdate.reaction?.text
@@ -630,10 +476,10 @@ export class MessageService {
 
     if (!targetId || !reactionKey) return
 
-    // 1. Reconcile Linked ID (LID) and Phone Number (PN)
-    const refinedKey = reactionKey as proto.IMessageKey & { participantAlt?: string }
-    const lid = refinedKey.participant || refinedKey.participantAlt
-    const pn = refinedKey.participantAlt || refinedKey.participant
+    // LID ↔ PN reconciliation
+    const refinedKey = reactionKey as import('@whiskeysockets/baileys').proto.IMessageKey & { participantAlt?: string }
+    const lid = refinedKey.participant ?? refinedKey.participantAlt
+    const pn = refinedKey.participantAlt ?? refinedKey.participant
 
     let callLid: string | null = null
     let callPn: string | null = null
@@ -648,33 +494,37 @@ export class MessageService {
       await this.contactService.linkLidAndPn(callLid, callPn, 'messages.reaction').catch(() => {})
     }
 
-    // 2. Parse reaction timestamp
+    // Parse reaction timestamp
     let timestamp = parseBaileysTimestamp(
       typeof ts === 'object' && ts !== null && 'low' in (ts as Record<string, unknown>)
         ? ts
-        : (ts || Math.floor(Date.now() / 1000))
+        : ts ?? Math.floor(Date.now() / 1000)
     )
     if (timestamp > 9999999999n) {
       timestamp = timestamp / 1000n
     }
 
-    // 3. Resolve reactor JID and Identity ID
-    let reactorJid = refinedKey.participant || (refinedKey.remoteJid?.endsWith('@g.us') ? null : refinedKey.remoteJid)
+    // Resolve reactor JID
+    let reactorJid: string | null | undefined =
+      refinedKey.participant ??
+      (refinedKey.remoteJid?.endsWith('@g.us') ? null : refinedKey.remoteJid)
     if (refinedKey.fromMe) {
       if (sock?.user) {
-        const myRawJid = sock.user.id || ''
-        const myLid = (sock.user as unknown as { lid?: string })?.lid || ''
-        reactorJid = myLid ? myLid.split(':')[0] + '@lid' : (myRawJid ? myRawJid.split(':')[0] + '@s.whatsapp.net' : reactorJid)
+        const myRawJid = sock.user.id ?? ''
+        const myLid = (sock.user as unknown as { lid?: string })?.lid ?? ''
+        reactorJid = myLid
+          ? myLid.split(':')[0] + '@lid'
+          : myRawJid
+          ? myRawJid.split(':')[0] + '@s.whatsapp.net'
+          : reactorJid
       } else {
         const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
-        if (meIdent?.phoneNumber) {
-          reactorJid = meIdent.phoneNumber
-        }
+        if (meIdent?.phoneNumber) reactorJid = meIdent.phoneNumber
       }
     }
 
+    // Resolve reactor identity ID
     let reactorId: number | null = null
-
     if (reactionKey.fromMe) {
       const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
       if (meIdent) {
@@ -685,7 +535,7 @@ export class MessageService {
         if (myJidClean) {
           reactorId = await this.contactService.getIdentityIdByJid(myJidClean)
           if (!reactorId) {
-            const myLid = (sock?.user as any)?.lid?.split(':')[0]
+            const myLid = (sock?.user as unknown as { lid?: string })?.lid?.split(':')[0]
             if (myLid) reactorId = await this.contactService.getIdentityIdByJid(myLid)
           }
         }
@@ -693,50 +543,33 @@ export class MessageService {
     } else if (reactorJid) {
       reactorId = await this.contactService.getIdentityIdByJid(reactorJid)
       if (!reactorId) {
-        await this.contactService.upsertContact({ id: reactorJid }).catch((err) => {
+        await this.contactService.upsertContact({ id: reactorJid }).catch((err: unknown) => {
           console.error('[MessageService] Failed to upsert reactor contact:', err)
         })
         reactorId = await this.contactService.getIdentityIdByJid(reactorJid)
       }
     }
 
-    // 4. Update the DB reaction record
+    // Persist via repository
     if (reactorId) {
-      if (!text) {
-        await this.prisma.reaction.deleteMany({
-          where: { messageId: targetId, senderId: reactorId }
-        }).catch((err) => {
-          console.error('[MessageService] Failed to delete reaction:', err)
-        })
-      } else {
-        await this.prisma.reaction.upsert({
-          where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
-          update: { text, timestamp },
-          create: { messageId: targetId, senderId: reactorId, text, timestamp }
-        }).catch((err) => {
-          console.error('[MessageService] Failed to upsert reaction:', err)
-        })
-      }
+      await this.repository.upsertReaction(targetId, reactorId, text ?? null, timestamp)
     }
 
-    // Fetch target message details for enrichment
+    // Fetch target message for enriched event payload
     const targetMsg = await this.prisma.message.findUnique({
       where: { id: targetId },
-      select: {
-        messageType: true,
-        textContent: true
-      }
+      select: { messageType: true, textContent: true }
     })
 
-    // 5. Notify the frontend to update UI reactively via event bus
-    const reactorJidString = reactorJid || (reactionKey.remoteJid || '')
+    // Notify frontend via event bus
+    const reactorJidString = reactorJid ?? reactionKey.remoteJid ?? ''
     const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock)
-    const reactorName = nameMap.get(reactorJidString) || reactorJidString.replace(/@.*$/, '')
+    const reactorName = nameMap.get(reactorJidString) ?? reactorJidString.replace(/@.*$/, '')
 
     await this.getBus()?.emit('reaction:processed', {
-      id: reactionKey.id || targetId,
-      chatJid: cleanJid(reactionKey.remoteJid || ''),
-      remoteJid: reactionKey.remoteJid || '',
+      id: reactionKey.id ?? targetId,
+      chatJid: cleanJid(reactionKey.remoteJid ?? ''),
+      remoteJid: reactionKey.remoteJid ?? '',
       fromMe: reactionKey.fromMe === true,
       senderId: reactorId,
       participant: reactorJidString,
@@ -746,31 +579,36 @@ export class MessageService {
       targetMessageType: targetMsg?.messageType,
       targetTextContent: targetMsg?.textContent,
       content: JSON.stringify({
-        reactionMessage: {
-          key: { id: targetId },
-          text: text || ''
-        },
-        targetMessage: targetMsg ? {
-          messageType: targetMsg.messageType,
-          textContent: targetMsg.textContent
-        } : null
+        reactionMessage: { key: { id: targetId }, text: text ?? '' },
+        targetMessage: targetMsg
+          ? { messageType: targetMsg.messageType, textContent: targetMsg.textContent }
+          : null
       })
     })
   }
 
+  /**
+   * Build a safe, deduplication-friendly filename for a downloaded media file.
+   */
   getSafeMediaFileName(msgId: string, mediaType: string, mediaMsg: unknown): string {
     const ext = resolveExtension(mediaType, mediaMsg)
-    
-    // Attempt to resolve fileSha256 hash for deduplication
+
     let fileHash: string | null = null
     const mediaObj = mediaMsg as Record<string, unknown> | null | undefined
-    if (mediaObj && mediaObj.fileSha256) {
+    if (mediaObj?.fileSha256) {
       const sha = mediaObj.fileSha256
       if (typeof sha === 'string') {
         fileHash = sha.replace(/[/\\?%*:|"<>+]/g, '-').substring(0, 64)
       } else if (Buffer.isBuffer(sha)) {
         fileHash = sha.toString('hex')
-      } else if (sha && typeof sha === 'object' && 'type' in sha && sha.type === 'Buffer' && 'data' in sha && Array.isArray((sha as { data: unknown }).data)) {
+      } else if (
+        sha &&
+        typeof sha === 'object' &&
+        'type' in sha &&
+        (sha as { type: unknown }).type === 'Buffer' &&
+        'data' in sha &&
+        Array.isArray((sha as { data: unknown }).data)
+      ) {
         fileHash = Buffer.from((sha as { data: number[] }).data).toString('hex')
       } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
         fileHash = Buffer.from(sha as Uint8Array).toString('hex')
@@ -778,18 +616,15 @@ export class MessageService {
     }
 
     if (mediaType === 'document' && mediaObj && typeof mediaObj.fileName === 'string') {
-        const originalName = mediaObj.fileName.includes('.') 
-            ? mediaObj.fileName.substring(0, mediaObj.fileName.lastIndexOf('.'))
-            : mediaObj.fileName
-        const safeName = originalName.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 80)
-        const suffix = fileHash ? fileHash.substring(0, 12) : msgId.substring(0, 8)
-        return `${safeName}_${suffix}.${ext}`
+      const originalName = mediaObj.fileName.includes('.')
+        ? mediaObj.fileName.substring(0, mediaObj.fileName.lastIndexOf('.'))
+        : mediaObj.fileName
+      const safeName = originalName.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 80)
+      const suffix = fileHash ? fileHash.substring(0, 12) : msgId.substring(0, 8)
+      return `${safeName}_${suffix}.${ext}`
     }
-    
-    if (fileHash) {
-      return `hash_${fileHash}.${ext}`
-    }
-    
+
+    if (fileHash) return `hash_${fileHash}.${ext}`
     return `${msgId}.${ext}`
   }
 }

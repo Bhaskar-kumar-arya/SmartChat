@@ -13,7 +13,7 @@ This document tracks the features required to bring **smartChat** to complete fe
 - [ ] **Message Lifecycle**
   - [x] **Edit Messages**: Support for editing sent messages (IPC + UI).
   - [x] **Message Revocation**: "Delete for Everyone" and "Delete for Me" logic.
-  - [ ] **Read Receipts**: Visual update for Blue Ticks sync.
+  - [x] **Read Receipts**: Visual update for Blue Ticks sync.
 - [ ] **Starred Messages**
   - [ ] Capability to "Star" messages.
   - [ ] A dedicated "Starred Messages" view.
@@ -68,5 +68,11 @@ This document tracks the features required to bring **smartChat** to complete fe
 - [ ] **Two-Step Verification**
   - [ ] Integration with WA's 2SV (PIN) flow if required.
 
+
+. documentMessage.contactVcard
+.  locationMessage / liveLocationMessage
+. pollCreationMessage / pollUpdates
+. groups.update & groupFetchAllParticipating:result : group creation, owner, desc (description)
+. emoji , stickers and giphy
 ---
 *Note: This list focuses strictly on matching standard WhatsApp features and does not include existing AI-enhanced features unique to smartChat.*

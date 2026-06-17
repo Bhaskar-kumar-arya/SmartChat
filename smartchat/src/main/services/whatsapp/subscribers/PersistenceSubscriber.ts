@@ -99,7 +99,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
       await this.services.messageService.editMessageInDb(
         event.messageId,
         event.editedTextContent,
-        event.editedContent
+        event.editedContent as unknown as Record<string, unknown> | null
       )
     } catch (err) {
       console.error('[PersistenceSubscriber] Error updating DB for edited message:', err)

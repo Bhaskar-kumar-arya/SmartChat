@@ -23,9 +23,10 @@ This skill provides the AI agent with a rigorous framework to audit, review, and
 
 When reviewing or refactoring code, enforce the following five object-oriented and functional design principles:
 
-### 1. Single Responsibility Principle (SRP)
+- **Single Responsibility Principle (SRP)**
 - **Rule:** A module, class, or function should have one, and only one, reason to change.
 - **Application:** 
+  - **Proactive File Splitting:** Monitor file size and cohesion heuristics. If a review shows that code modifications or new features will cause a file to grow significantly or take on unrelated concerns, recommend that the developer split the logic proactively into separate files/modules in the same session.
   - Extract database queries out of API routing/controllers into dedicated **Repositories** or **Services**.
   - Separate UI rendering markup from state management. Use custom hooks (e.g., `useDataFetch.ts`) for complex side-effects, keeping the UI component focused on rendering.
   - Avoid "God files" or helper files (like a general `utils.ts` that grows indefinitely). Split them into domain-specific utilities (e.g., `dateUtils.ts`, `validationUtils.ts`).
@@ -56,20 +57,14 @@ When reviewing or refactoring code, enforce the following five object-oriented a
 
 ---
 
-## Pillar 2: Strict Type Safety
+## Pillar 2: Strict Type Safety & Error Handling
 
 TypeScript should act as a compile-time shield. Do not bypass the type compiler.
 
-- **No `any` or `as any`:** The use of `any` is a critical safety bypass. If a type is genuinely unknown, use `unknown` and narrow it down with runtime **Type Guards** (`is` predicate) or assertion functions.
-- **Type Discrimination:** Use Discriminated Unions for state management and API responses:
-  ```typescript
-  type AsyncState<T> =
-    | { status: 'idle' }
-    | { status: 'loading' }
-    | { status: 'success'; data: T }
-    | { status: 'error'; error: Error };
-  ```
+- **No `any` or `as any`:** The use of `any` or `as any` is a critical safety bypass. If a type is complex or unknown, use `unknown` and narrow it down with runtime **Type Guards** (`is` predicate) or assertion functions. Do not allow type casting to bypass warnings.
+- **Type Discrimination:** Use Discriminated Unions for state management and API responses.
 - **Avoid Non-Null Assertions (`!`):** Do not override the compiler with `object!.property`. Use optional chaining (`object?.property`) or nullish coalescing default fallbacks (`object?.property ?? defaultValue`).
+- **No Swallowed Errors/Promises:** Inspect catch blocks and Promise `.catch()` handlers. Verify that no failures are swallowed silently via empty catches like `.catch(() => {})` or empty `catch(e) {}`. All errors must be logged or handled.
 - **Exhaustiveness Checks:** Ensure all branches are handled in switch-cases by assigning the fallthrough case to `never`:
   ```typescript
   function handleAction(action: Action) {
@@ -137,9 +132,10 @@ Ensure the application implements a clean, layered architectural design:
 
 When reviewing code, ask yourself:
 
-- [ ] **SRP:** Does this class/function do more than one thing? If yes, split it.
+- [ ] **SRP & Proactive Splitting:** Does this class/function do more than one thing? If edits or features make a file grow significantly or lose cohesion, has the logic been proactively split into separate files in the same session?
 - [ ] **DIP:** Is this service hardcoding a concrete class instantiation? Can it be injected?
-- [ ] **Any-Free:** Are there instances of `any` or forced type casting (`as SomeType`) that can be replaced with proper type definitions or type guards?
+- [ ] **Any-Free:** Are there instances of `any` or forced type casting (`as any`) that can be replaced with proper type definitions or type guards?
+- [ ] **Error Handling:** Are there any empty try-catch blocks or Promise `.catch(() => {})` handlers swallowing errors?
 - [ ] **Location:** Is this new file placed in the correct domain/layer directory?
 - [ ] **Clean Boundary:** Does the UI code call backend libraries directly, or does it properly route through the IPC bridge/preload?
 - [ ] **Pipeline & Design Check:** Is the current processing pipeline or design pattern the most optimal, or is there a better architectural alternative to solve this problem?
