@@ -1030,6 +1030,7 @@
 
 .markdown-body p {
   margin: 0 0 8px 0;
+  white-space: pre-wrap;
 }
 .markdown-body p:last-child {
   margin: 0;
