@@ -91,6 +91,12 @@ function ensureBuffer(val: any): Buffer | null {
 // ─── service ────────────────────────────────────────────────────────────────
 
 export class MediaService {
+  private favoriteStickerQueue: Array<{ msgId: string; sock: WASocket }> = []
+  private activeDownloadsCount = 0
+  private concurrencyLimit = 2
+  private isProcessingQueue = false
+  private queuePaused = false
+
   constructor(
     private prisma: PrismaClient,
     private messageService: MessageService,
@@ -98,9 +104,65 @@ export class MediaService {
     private favoriteStickerService: FavoriteStickerService
   ) { }
 
+  setFavoriteStickerQueuePaused(paused: boolean): void {
+    this.queuePaused = paused
+    if (!paused) {
+      this.processQueue().catch((err) => {
+        console.error('[MediaService] Error resuming favorite sticker queue:', err)
+      })
+    }
+  }
+
+  clearFavoriteStickerQueue(): void {
+    this.favoriteStickerQueue = []
+    this.activeDownloadsCount = 0
+    this.isProcessingQueue = false
+  }
+
+  private queueFavoriteStickerDownload(msgId: string, sock: WASocket): void {
+    if (!this.favoriteStickerQueue.some(item => item.msgId === msgId)) {
+      this.favoriteStickerQueue.push({ msgId, sock })
+    }
+    this.processQueue().catch((err) => {
+      console.error('[MediaService] Error processing favorite sticker queue:', err)
+    })
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.queuePaused || this.isProcessingQueue) return
+    this.isProcessingQueue = true
+
+    try {
+      while (this.favoriteStickerQueue.length > 0 && !this.queuePaused) {
+        if (this.activeDownloadsCount >= this.concurrencyLimit) {
+          break
+        }
+
+        const item = this.favoriteStickerQueue.shift()
+        if (!item) continue
+
+        this.activeDownloadsCount++
+        this.downloadAndCacheMedia(item.msgId, item.sock)
+          .catch((err) => {
+            console.error(`[MediaService] Background download of favorite sticker failed for msg ${item.msgId}:`, err)
+          })
+          .finally(() => {
+            this.activeDownloadsCount--
+            this.processQueue().catch((err) => {
+              console.error('[MediaService] Error running processQueue in finally block:', err)
+            })
+          })
+      }
+    } finally {
+      this.isProcessingQueue = false
+    }
+  }
+
   async downloadFavoriteStickersFromSync(messages: Message[], sock: WASocket | null): Promise<void> {
     if (!sock) return
 
+    // 1. Gather all unique sticker SHA hashes and map them to their corresponding messages
+    const shaToMsgMap = new Map<string, Message[]>()
     for (const msg of messages) {
       if (msg.messageType === 'stickerMessage') {
         try {
@@ -121,21 +183,43 @@ export class MediaService {
             }
 
             if (shaStr) {
-              const favRecord = await this.prisma.favoriteSticker.findUnique({
-                where: { fileSha256: shaStr }
-              })
-              if (favRecord) {
-                console.log(`[MediaService] Detected matching favorite sticker message: ${msg.id} (SHA: ${shaStr}), triggering auto-download...`)
-                this.downloadAndCacheMedia(msg.id, sock).catch((err) => {
-                  console.error(`[MediaService] Failed to auto-download favorite sticker for msg ${msg.id}:`, err)
-                })
+              let list = shaToMsgMap.get(shaStr)
+              if (!list) {
+                list = []
+                shaToMsgMap.set(shaStr, list)
               }
+              list.push(msg)
             }
           }
         } catch (err) {
           console.error('[MediaService] Error checking sticker for sync auto-download:', err)
         }
       }
+    }
+
+    if (shaToMsgMap.size === 0) return
+
+    // 2. Query all matching favorite stickers in a single DB query
+    try {
+      const favRecords = await this.prisma.favoriteSticker.findMany({
+        where: {
+          fileSha256: {
+            in: Array.from(shaToMsgMap.keys())
+          }
+        }
+      })
+
+      // 3. For each match, queue the download
+      for (const fav of favRecords) {
+        const msgs = shaToMsgMap.get(fav.fileSha256)
+        if (msgs) {
+          for (const msg of msgs) {
+            this.queueFavoriteStickerDownload(msg.id, sock)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[MediaService] Failed to query favorite stickers in batch:', err)
     }
   }
 

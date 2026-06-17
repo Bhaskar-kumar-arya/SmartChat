@@ -46,11 +46,13 @@ export class HistorySyncManager {
       clearTimeout(this.syncTimeout)
       this.syncTimeout = null
     }
+    this.services.mediaService.clearFavoriteStickerQueue()
   }
 
   async handleSyncChunk(data: unknown, syncFullHistory: boolean, sock: WASocket): Promise<void> {
     try {
       this.services.embeddingService.setPaused(true)
+      this.services.mediaService.setFavoriteStickerQueuePaused(true)
       this.isInitialSyncInProgress = true
       this.syncChunkCount++
       const rawData = data as Record<string, unknown>
@@ -153,6 +155,7 @@ export class HistorySyncManager {
 
     // Unpause embedding service now that all syncing and deduplication are complete
     this.services.embeddingService.setPaused(false)
+    this.services.mediaService.setFavoriteStickerQueuePaused(false)
 
     // Persist the completed history sync status in AuthState
     await this.prisma.authState.upsert({
