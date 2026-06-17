@@ -1,5 +1,5 @@
 import { PrismaClient, Message } from '@prisma/client'
-import { WAMessageStubType } from '@whiskeysockets/baileys'
+import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { ContactService } from './services/contacts/ContactService'
 import { mapBaileysStatus } from './services/whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from './utils'
@@ -29,6 +29,10 @@ export async function handleHistorySync(
   prisma: PrismaClient,
   contactService: ContactService
 ): Promise<HistorySyncResult> {
+
+  const meJids = await contactService.getMeJids()
+  const meJid = meJids[0] ?? null
+  const meIdentityId = meJid ? await contactService.getIdentityIdByJid(meJid) : null
 
   const { chats, contacts, messages, lidPnMappings, phoneNumberToLidMappings, progress, isLatest } = data
 
@@ -227,6 +231,7 @@ export async function handleHistorySync(
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE)
       const messageData: any[] = []
+      const pendingReactions: { targetId: string; reactorId: number; emoji: string; timestamp: bigint }[] = []
 
       for (const m of batch) {
         const key = m.key as Record<string, unknown> | undefined
@@ -237,10 +242,11 @@ export async function handleHistorySync(
 
         const remoteJid = cleanJid(String(key.remoteJid ?? ''))
         
+        const unwrappedMessage = message ? unwrapMessage(message) : null
         let finalId = String(key.id)
-        let finalMessageType = getMessageType(message)
+        let finalMessageType = getMessageType(unwrappedMessage)
         let finalContent = JSON.stringify(message ?? {})
-        let finalTextContent = extractTextContent(message)
+        let finalTextContent = extractTextContent(unwrappedMessage)
         let finalFromMe = key.fromMe === true
         let finalParticipantRaw = key.participant ? String(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
         let finalParticipant = finalParticipantRaw ? cleanJid(finalParticipantRaw) : null
@@ -286,13 +292,64 @@ export async function handleHistorySync(
         let senderId: number | null = null
         if (!finalFromMe && finalParticipant) {
           if (identityCache.has(finalParticipant)) {
-            senderId = identityCache.get(finalParticipant)!
+            senderId = identityCache.get(finalParticipant) ?? null
           } else {
-            await contactService.upsertContact({ id: finalParticipant }).catch(() => {})
+            await contactService.upsertContact({ id: finalParticipant }).catch(err => console.error('[HistorySync] Failed to upsert participant contact:', err))
             const newId = await contactService.getIdentityIdByJid(finalParticipant)
             if (newId) {
               senderId = newId
               identityCache.set(finalParticipant, newId)
+            }
+          }
+        }
+
+        // Process nested reactions if present on the raw message info
+        const reactions = m.reactions as proto.IReaction[] | null | undefined
+        if (reactions && reactions.length > 0) {
+          for (const r of reactions) {
+            const reactionKey = r.key
+            const emoji = r.text
+            const ts = r.senderTimestampMs
+
+            if (!emoji || !reactionKey) continue
+
+            let reactorJidRaw = reactionKey.participant || (reactionKey.remoteJid?.endsWith('@g.us') ? null : reactionKey.remoteJid)
+            if (reactionKey.fromMe && meJid) {
+              reactorJidRaw = meJid
+            }
+
+            const reactorJid = reactorJidRaw ? cleanJid(reactorJidRaw) : null
+            let reactorId: number | null = null
+
+            if (reactorJid) {
+              if (identityCache.has(reactorJid)) {
+                reactorId = identityCache.get(reactorJid) ?? null
+              } else {
+                await contactService.upsertContact({ id: reactorJid }).catch(err => console.error('[HistorySync] Failed to upsert reactor contact:', err))
+                const newId = await contactService.getIdentityIdByJid(reactorJid)
+                if (newId) {
+                  reactorId = newId
+                  identityCache.set(reactorJid, newId)
+                }
+              }
+            }
+
+            if (reactorId) {
+              let timestamp = parseBaileysTimestamp(
+                typeof ts === 'object' && ts !== null && 'low' in (ts as unknown as Record<string, unknown>)
+                  ? ts
+                  : (ts || Math.floor(Date.now() / 1000))
+              )
+              if (timestamp > 9999999999n) {
+                timestamp = timestamp / 1000n
+              }
+
+              pendingReactions.push({
+                targetId: finalId,
+                reactorId,
+                emoji,
+                timestamp
+              })
             }
           }
         }
@@ -326,7 +383,6 @@ export async function handleHistorySync(
 
       if (messageData.length > 0) {
         const msgOps: any[] = []
-        const reactionOps: any[] = []
 
         for (const msg of messageData) {
           if (msg.messageType === 'reactionMessage') {
@@ -338,27 +394,22 @@ export async function handleHistorySync(
                 const emoji = reaction.text
                 
                 let reactorId = msg.senderId
-                if (msg.fromMe) {
-                  const meIdent = await prisma.identity.findFirst({ where: { isMe: true } })
-                  if (meIdent) reactorId = meIdent.id
+                if (msg.fromMe && meIdentityId) {
+                  reactorId = meIdentityId
                 }
 
                 if (emoji && reactorId) {
-                  reactionOps.push(
-                    prisma.reaction.upsert({
-                      where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
-                      update: { text: emoji, timestamp: msg.timestamp },
-                      create: {
-                        messageId: targetId,
-                        senderId: reactorId,
-                        text: emoji,
-                        timestamp: msg.timestamp
-                      }
-                    })
-                  )
+                  pendingReactions.push({
+                    targetId,
+                    reactorId,
+                    emoji,
+                    timestamp: msg.timestamp
+                  })
                 }
               }
-            } catch (e) {}
+            } catch (e: any) {
+              console.error('[HistorySync] Failed to parse reaction message JSON:', e.message)
+            }
           } else {
             const update: Record<string, unknown> = {}
             if (msg.chatJid) update.chatJid = msg.chatJid
@@ -462,8 +513,74 @@ export async function handleHistorySync(
           }
         }
         
-        if (reactionOps.length > 0) {
-          await prisma.$transaction(reactionOps).catch(err => console.error('[HistorySync] Reaction transaction failed:', err))
+        // Deduplicate reactions to keep only the latest one per (targetId, reactorId)
+        const uniqueReactionsMap = new Map<string, typeof pendingReactions[0]>()
+        for (const r of pendingReactions) {
+          const key = `${r.targetId}_${r.reactorId}`
+          const existing = uniqueReactionsMap.get(key)
+          if (!existing || r.timestamp > existing.timestamp) {
+            uniqueReactionsMap.set(key, r)
+          }
+        }
+        const uniqueReactions = Array.from(uniqueReactionsMap.values())
+
+        if (uniqueReactions.length > 0) {
+          // Filter out reactions where the target message ID does not exist in either:
+          // 1. The current batch of messages being synced.
+          // 2. The database (external messages).
+          const currentBatchMessageIds = new Set(messageData.map(m => m.id))
+          const externalTargetIds = Array.from(new Set(
+            uniqueReactions
+              .map(r => r.targetId)
+              .filter(id => !currentBatchMessageIds.has(id))
+          ))
+
+          const existingExternalIds = new Set<string>()
+          if (externalTargetIds.length > 0) {
+            const existingMsgs = await prisma.message.findMany({
+              where: { id: { in: externalTargetIds } },
+              select: { id: true }
+            })
+            for (const msg of existingMsgs) {
+              existingExternalIds.add(msg.id)
+            }
+          }
+
+          const validReactions = uniqueReactions.filter(r =>
+            currentBatchMessageIds.has(r.targetId) || existingExternalIds.has(r.targetId)
+          )
+
+          if (validReactions.length > 0) {
+            const reactionOps = validReactions.map(r =>
+              prisma.reaction.upsert({
+                where: { messageId_senderId: { messageId: r.targetId, senderId: r.reactorId } },
+                update: { text: r.emoji, timestamp: r.timestamp },
+                create: {
+                  messageId: r.targetId,
+                  senderId: r.reactorId,
+                  text: r.emoji,
+                  timestamp: r.timestamp
+                }
+              })
+            )
+            await prisma.$transaction(reactionOps).catch(async (err) => {
+              console.warn('[HistorySync] Reaction transaction failed, falling back to individual upserts:', err.message)
+              for (const r of validReactions) {
+                await prisma.reaction.upsert({
+                  where: { messageId_senderId: { messageId: r.targetId, senderId: r.reactorId } },
+                  update: { text: r.emoji, timestamp: r.timestamp },
+                  create: {
+                    messageId: r.targetId,
+                    senderId: r.reactorId,
+                    text: r.emoji,
+                    timestamp: r.timestamp
+                  }
+                }).catch((opErr: any) => {
+                  console.error(`[HistorySync] Failed to upsert reaction for message ${r.targetId}:`, opErr.message)
+                })
+              }
+            })
+          }
         }
 
         importedMessages.push(...standardMessages)
