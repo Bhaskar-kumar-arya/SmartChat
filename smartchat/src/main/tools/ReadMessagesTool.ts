@@ -2,6 +2,7 @@ import { AITool } from '../services/ai/AIToolService';
 import { prisma } from '../auth';
 import { WASocket } from '../types';
 import { unwrapMessage, getMessageType } from '../utils';
+import { MessageFormatterRegistry } from '../services/messages/formatters/MessageFormatterRegistry';
 
 // Keywords that are never allowed anywhere in the query
 const FORBIDDEN_KEYWORDS = [
@@ -71,7 +72,10 @@ FORMATTING BEHAVIOR:
     }
   };
 
-  constructor(_getSock: () => WASocket | null) {}
+  constructor(
+    _getSock: () => WASocket | null,
+    private readonly formatterRegistry: MessageFormatterRegistry
+  ) {}
 
   async execute(args: any) {
     const {
@@ -435,24 +439,14 @@ FORMATTING BEHAVIOR:
     if (quotedMessage) {
       const qUnwrapped = unwrapMessage(quotedMessage);
       const qType = getMessageType(qUnwrapped);
-      if (qType === 'conversation') {
-        quotedText = qUnwrapped.conversation || '';
-      } else if (qType === 'extendedTextMessage') {
-        quotedText = qUnwrapped.extendedTextMessage?.text || '';
-      } else if (qType === 'imageMessage') {
-        quotedText = qUnwrapped.imageMessage?.caption ? `[Photo] "${qUnwrapped.imageMessage.caption}"` : '[Photo]';
-      } else if (qType === 'videoMessage' || qType === 'ptvMessage') {
-        const vid = qUnwrapped.videoMessage || qUnwrapped.ptvMessage;
-        quotedText = vid?.caption ? `[Video] "${vid.caption}"` : '[Video]';
-      } else if (qType === 'stickerMessage' || qType === 'lottieStickerMessage') {
-        quotedText = '[Sticker]';
-      } else if (qType === 'documentMessage') {
-        quotedText = `[File: ${qUnwrapped.documentMessage?.fileName || 'unnamed'}]`;
-      } else if (qType === 'audioMessage') {
-        quotedText = '[Audio]';
-      } else {
-        quotedText = `[${qType}]`;
-      }
+      quotedText = this.formatterRegistry.format(
+        qUnwrapped,
+        {
+          messageType: qType,
+          textContent: qUnwrapped?.conversation || qUnwrapped?.extendedTextMessage?.text || null
+        },
+        'transcript'
+      );
     }
 
     return {
@@ -486,84 +480,14 @@ FORMATTING BEHAVIOR:
   }
 
   private formatMessageContent(m: any, unwrapped: any): string {
-    if (m.isDeleted) {
-      return '(Message deleted)';
-    }
-
-    const type = m.messageType;
-
-    if (type === 'conversation' || type === 'extendedTextMessage') {
-      const text = m.textContent || '';
-      if (type === 'extendedTextMessage' && unwrapped.extendedTextMessage) {
-        const canonicalUrl = unwrapped.extendedTextMessage.canonicalUrl;
-        if (canonicalUrl) {
-          return `${text} [Link: ${canonicalUrl}]`;
-        }
-      }
-      return text;
-    }
-
-    if (type === 'imageMessage') {
-      const caption = unwrapped.imageMessage?.caption || m.textContent || '';
-      return caption ? `[Photo] "${caption}"` : '[Photo]';
-    }
-
-    if (type === 'videoMessage' || type === 'ptvMessage') {
-      const vid = unwrapped.videoMessage || unwrapped.ptvMessage;
-      const caption = vid?.caption || m.textContent || '';
-      return caption ? `[Video] "${caption}"` : '[Video]';
-    }
-
-    if (type === 'stickerMessage' || type === 'lottieStickerMessage') {
-      return '[Sticker]';
-    }
-
-    if (type === 'documentMessage') {
-      const doc = unwrapped.documentMessage;
-      if (doc) {
-        const fileName = doc.fileName || 'unnamed';
-        const caption = doc.caption || m.textContent || '';
-        return caption ? `[File: ${fileName}] "${caption}"` : `[File: ${fileName}]`;
-      }
-      return '[File]';
-    }
-
-    if (type === 'audioMessage') {
-      const audio = unwrapped.audioMessage;
-      const seconds = audio?.seconds ? `${audio.seconds}s` : '';
-      return seconds ? `[Audio: ${seconds}]` : '[Audio]';
-    }
-
-    if (type === 'contactMessage') {
-      const card = unwrapped.contactMessage;
-      return card?.displayName ? `[Contact Card: ${card.displayName}]` : '[Contact Card]';
-    }
-
-    if (type === 'contactsArrayMessage') {
-      return '[Multiple Contacts]';
-    }
-
-    if (type === 'locationMessage' || type === 'liveLocationMessage') {
-      return '[Location]';
-    }
-
-    if (type === 'pollCreationMessage') {
-      const poll = unwrapped.pollCreationMessage;
-      if (poll) {
-        const options = poll.options ? poll.options.map((o: any) => o.optionName).join(', ') : '';
-        return `[Poll: ${poll.name}] Options: (${options})`;
-      }
-      return '[Poll]';
-    }
-
-    if (type === 'pollUpdateMessage') {
-      return '[Poll Vote]';
-    }
-
-    if (type === 'reactionMessage') {
-      return `[Reaction: ${unwrapped.reactionMessage?.text || ''}]`;
-    }
-
-    return m.textContent || `[${type}]`;
+    return this.formatterRegistry.format(
+      unwrapped,
+      {
+        textContent: m.textContent,
+        messageType: m.messageType,
+        isDeleted: m.isDeleted
+      },
+      'transcript'
+    );
   }
 }

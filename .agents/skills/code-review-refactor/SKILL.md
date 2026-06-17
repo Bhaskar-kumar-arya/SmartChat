@@ -4,7 +4,7 @@ description: |
   Enforces clean code architecture, SOLID principles, strict type safety,
   proper file/folder organization, and sound software design patterns during code review and refactoring.
   Use when analyzing project structures, introducing new components, refactoring legacy code, or auditing type systems.
-version: 1.0.0
+version: 2.0.0
 tags:
   - architecture
   - solid
@@ -12,133 +12,284 @@ tags:
   - clean-code
 ---
 
-# Clean Code, SOLID & Architectural Principles Skill
+# Code Review & Refactoring Guidelines
 
 ## Overview
-This skill provides the AI agent with a rigorous framework to audit, review, and design codebases according to modern software engineering principles. It prioritizes decoupled architectures, strict compile-time safety, modular file layouts, and strict adherence to SOLID design patterns.
+
+This skill defines a **mandatory, structured audit workflow** for reviewing and refactoring code. The goal is not only to identify existing violations but to produce a prioritized, phased remediation plan that eliminates the root causes of technical debt — preventing future large-scale refactors.
+
+> [!CAUTION]
+> **YOU MUST COMPLETE THE FULL AUDIT (Sections 1–2) BEFORE PROPOSING ANY CHANGES.**
+> Do not jump straight to writing code. Surface all violations first, classify their severity, then produce a phased plan.
 
 ---
 
-## Pillar 1: SOLID Principles in Practice
+## Section 1 — Audit Scope & Entry Point
 
-When reviewing or refactoring code, enforce the following five object-oriented and functional design principles:
+Before reviewing any code, define the audit scope explicitly:
 
-- **Single Responsibility Principle (SRP)**
-- **Rule:** A module, class, or function should have one, and only one, reason to change.
-- **Application:** 
-  - **Proactive File Splitting:** Monitor file size and cohesion heuristics. If a review shows that code modifications or new features will cause a file to grow significantly or take on unrelated concerns, recommend that the developer split the logic proactively into separate files/modules in the same session.
-  - Extract database queries out of API routing/controllers into dedicated **Repositories** or **Services**.
-  - Separate UI rendering markup from state management. Use custom hooks (e.g., `useDataFetch.ts`) for complex side-effects, keeping the UI component focused on rendering.
-  - Avoid "God files" or helper files (like a general `utils.ts` that grows indefinitely). Split them into domain-specific utilities (e.g., `dateUtils.ts`, `validationUtils.ts`).
+1. **Which files/folders are in scope?** List them.
+2. **What triggered this review?** (New feature integration, bug investigation, size threshold breach, routine audit, etc.)
+3. **What layers does this code touch?** Infrastructure / Domain / Presentation — or multiple?
 
-### 2. Open/Closed Principle (OCP)
-- **Rule:** Software entities should be open for extension, but closed for modification.
-- **Application:**
-  - Avoid switch-case tables or if-else chains that must be updated every time a new feature or type is added.
-  - Use **polymorphism** or **strategy/factory patterns**. For instance, if supporting multiple payment processors (e.g., Stripe, PayPal), define an `IPaymentProcessor` interface. Adding a new processor should mean writing a new class implementing the interface, not modifying the core transaction engine.
-
-### 3. Liskov Substitution Principle (LSP)
-- **Rule:** Objects of a superclass should be replaceable with objects of its subclasses without breaking the application.
-- **Application:**
-  - Avoid throwing `UnsupportedOperationException` in derived implementations. If a subclass cannot implement all methods of an interface, the interface is too broad (violates ISP).
-  - Favor **composition over inheritance** to prevent subclasses from inheriting behavior they do not need.
-
-### 4. Interface Segregation Principle (ISP)
-- **Rule:** Clients should not be forced to depend on methods they do not use.
-- **Application:**
-  - Design small, cohesive, role-specific interfaces rather than large, general-purpose ones.
-  - In TypeScript, prefer dividing a giant database model interface into smaller sub-interfaces or utility types (e.g., `Pick<User, 'id' | 'email'>`, `Omit<User, 'password'>`) for specific function parameters.
-
-### 5. Dependency Inversion Principle (DIP)
-- **Rule:** Depend on abstractions (interfaces), not on concretions (implementations).
-- **Application:**
-  - High-level business logic services must not directly instantiate database clients (like a raw Prisma instance) or external SDKs. Instead, inject the dependencies through constructor parameters or function arguments.
-  - This decoupling allows for mock implementations during unit testing.
+Then run the following audits in order.
 
 ---
 
-## Pillar 2: Strict Type Safety & Error Handling
+## Section 2 — Violation Detection Checklist
 
-TypeScript should act as a compile-time shield. Do not bypass the type compiler.
+Work through each category and record every violation found. Do not fix anything yet — audit first, fix second.
 
-- **No `any` or `as any`:** The use of `any` or `as any` is a critical safety bypass. If a type is complex or unknown, use `unknown` and narrow it down with runtime **Type Guards** (`is` predicate) or assertion functions. Do not allow type casting to bypass warnings.
-- **Type Discrimination:** Use Discriminated Unions for state management and API responses.
-- **Avoid Non-Null Assertions (`!`):** Do not override the compiler with `object!.property`. Use optional chaining (`object?.property`) or nullish coalescing default fallbacks (`object?.property ?? defaultValue`).
-- **No Swallowed Errors/Promises:** Inspect catch blocks and Promise `.catch()` handlers. Verify that no failures are swallowed silently via empty catches like `.catch(() => {})` or empty `catch(e) {}`. All errors must be logged or handled.
-- **Exhaustiveness Checks:** Ensure all branches are handled in switch-cases by assigning the fallthrough case to `never`:
+### 2.1 — SRP & File Cohesion Audit
+
+Run through each file in scope and flag:
+
+| Signal | Severity |
+|---|---|
+| File exceeds **300 lines** | 🔴 Critical |
+| File exceeds **200 lines** and has multiple unrelated concerns | 🟠 High |
+| A function/method exceeds **40 lines** | 🟠 High |
+| A class has more than **3 public methods** doing unrelated things | 🟠 High |
+| A file's purpose requires the word "and" to describe (e.g., parses *and* saves, renders *and* fetches) | 🟠 High |
+| A Service file directly contains DB queries or raw I/O operations | 🔴 Critical |
+| A general `utils.ts` or `helpers.ts` has grown beyond a single concern | 🟡 Medium |
+| Business logic lives inside a controller, route handler, or IPC handler | 🔴 Critical |
+
+### 2.2 — Type Safety Audit
+
+Grep the files in scope for the following patterns and record every occurrence:
+
+```
+as any
+: any
+catch (() => {})
+catch (_e) {}
+catch (e) {}    ← with empty body
+!.              ← non-null assertion
+```
+
+| Pattern | Severity |
+|---|---|
+| `as any` or `: any` | 🔴 Critical |
+| Non-null assertion (`!.`) | 🟠 High |
+| Empty catch block | 🔴 Critical |
+| `.catch(() => {})` silent swallow | 🔴 Critical |
+| Missing return types on public functions | 🟡 Medium |
+| `unknown` used without a type guard narrowing it | 🟡 Medium |
+
+### 2.3 — Layer Boundary Audit
+
+For each file, check its import statements and flag:
+
+| Violation | Severity |
+|---|---|
+| A Service file imports a DB client or ORM directly | 🔴 Critical |
+| A Repository file contains business logic or event bus calls | 🔴 Critical |
+| A UI/Renderer file imports from server/main-process modules | 🔴 Critical |
+| A Domain file imports raw I/O libraries (`fs`, `path`, sockets, HTTP clients) directly | 🔴 Critical |
+| A file imports from more than **2 architectural layers** | 🟠 High |
+| A class instantiates its own dependencies (`new X()` inside the body) instead of receiving them via constructor | 🟠 High |
+
+**Standard architectural layers:**
+
+| Layer | Files Belong Here | Must NOT Import |
+|---|---|---|
+| **Infrastructure** | `*Repository.ts`, `*Adapter.ts`, storage clients | Domain services, UI/transport |
+| **Domain / Service** | `*Service.ts`, `*Handler.ts`, `*Workflow.ts` | Raw DB clients, `fs`, sockets directly |
+| **Presentation / Transport** | Controllers, route handlers, IPC bridges, UI components | Domain internals, DB clients directly |
+
+### 2.4 — OCP / Extensibility Audit
+
+Flag the following patterns:
+
+| Pattern | Severity |
+|---|---|
+| A `switch` or `if-else` chain that must be modified to add a new type / provider / format | 🟠 High |
+| A hardcoded list of types or strategies inside a core service | 🟠 High |
+| Adding a new variant requires editing more than **1 existing file** | 🟠 High |
+| No interface/abstraction exists for something with multiple (or future) implementations | 🟡 Medium |
+
+### 2.5 — Dependency Injection Audit
+
+| Pattern | Severity |
+|---|---|
+| `private dep = new ConcreteClass()` inside a class body | 🔴 Critical |
+| Class constructor takes no parameters but uses external services internally | 🔴 Critical |
+| No interface defined for an injected dependency | 🟡 Medium |
+
+---
+
+## Section 3 — Phased Refactoring Plan Output
+
+After the audit, produce a refactoring plan in this exact structure. Do not collapse all work into a single phase.
+
+### Phase 1 — Type Safety & Error Visibility (Immediate, No Structural Risk)
+- Replace all `as any` / `: any` with proper types or `unknown` + type guards.
+- Replace all empty `.catch(() => {})` with logged error handlers using a `[ContextName]` prefix.
+- Add missing return types to all public functions.
+- Replace all `!.` non-null assertions with `?.` optional chaining + `??` fallbacks.
+
+**Why first:** These changes are low-risk (no structural movement), immediately improve runtime safety, and unblock accurate analysis of structural issues in Phase 2.
+
+---
+
+### Phase 2 — SRP Decoupling & File Splitting (Medium Risk, High Impact)
+- Split every file flagged in the SRP audit.
+- Each split must follow the layered structure:
+  ```
+  *Repository.ts   ← DB/storage only
+  *Parser.ts       ← pure data transformation, no side effects
+  *Enricher.ts     ← display/formatting logic
+  *Service.ts      ← orchestration only, imports the above
+  *Adapter.ts      ← raw I/O (fs, sockets, external APIs)
+  ```
+- Move business logic out of controllers, route handlers, and IPC bridges.
+- Introduce constructor injection wherever a class instantiates its own dependencies.
+
+**Why second:** Requires Phase 1 to be complete so types are clean before files are restructured.
+
+---
+
+### Phase 3 — OCP & Extensibility (Lower Risk, Future-Proofing)
+- Replace hardcoded `switch`/`if-else` type chains with a **strategy registry pattern**:
   ```typescript
-  function handleAction(action: Action) {
-    switch (action.type) {
-      case 'SEND': return send();
-      case 'RECEIVE': return receive();
-      default: {
-        const _exhaustiveCheck: never = action;
-        return _exhaustiveCheck;
-      }
-    }
+  export interface ItemHandler {
+    supports(type: string): boolean;
+    handle(payload: unknown): void;
+  }
+
+  // Registry — closed to modification, open to extension
+  const handlers: ItemHandler[] = [
+    new TypeAHandler(),
+    new TypeBHandler(),
+    new TypeCHandler(),
+  ];
+
+  export function resolveHandler(type: string): ItemHandler | undefined {
+    return handlers.find(h => h.supports(type));
   }
   ```
+- Define interfaces for all services that have or will have multiple implementations.
+- Register strategies in a dedicated registry file — never inline in a service.
+
+**Why third:** Requires clean types (Phase 1) and correct structure (Phase 2) before abstraction layers are meaningful.
 
 ---
 
-## Pillar 3: File & Folder Organization
+## Section 4 — Required Replacement Patterns
 
-A project's directory structure should reflect its architectural boundaries and domain model.
+### 4.1 — Type Safety
 
-### 1. Domain-Driven / Feature-Based Layout
-- Group files by feature/domain (e.g., `billing`, `inventory`, `users`, `auth`) rather than organizing entirely by technical type (`controllers`, `models`, `views`).
-- **Standard Feature Folder Layout:**
-  ```
-  src/
-  ├── core/                  # Core domain logic
-  │   └── services/
-  │       ├── billing/
-  │       │   ├── BillingService.ts
-  │       │   ├── BillingRepository.ts
-  │       │   └── types.ts
-  └── ui/                    # UI presentation layer
-      └── components/
-          └── billing/
-              ├── InvoiceCard.tsx
-              ├── InvoiceCard.css
-              └── useInvoice.ts
-  ```
+```typescript
+// ❌ FORBIDDEN
+const data = rawPayload as any;
+function process(input: any) {}
 
-### 2. Architecture Boundary Isolation
-- **IPC Segregation:** Keep a strict boundary between the Main (node environment) and Renderer (browser environment) processes. 
-- Renderer components must *never* import main process files or directly interact with database modules (e.g., database clients or ORMs). All data fetch/mutation requests must go through typed IPC bridges (via a preload script).
+// ✅ REQUIRED — narrow unknown at the system boundary
+function isExpectedShape(payload: unknown): payload is MyType {
+  return !!payload && typeof payload === 'object' && 'id' in payload;
+}
+```
 
-### 3. Barrel Files (`index.ts`)
-- Use `index.ts` files to export public interfaces of a directory, keeping implementation details private.
-- **Warning:** Avoid circular dependencies caused by cross-importing barrel files. Only import what is needed from specific source files if circular chains are detected.
+```typescript
+// ❌ FORBIDDEN
+const value = obj!.property;
+
+// ✅ REQUIRED
+const value = obj?.property ?? defaultValue;
+```
+
+### 4.2 — Error Handling
+
+```typescript
+// ❌ FORBIDDEN — silently discards failures
+await operation().catch(() => {});
+try { await op(); } catch (e) {}
+
+// ✅ REQUIRED — always log with context prefix
+await operation().catch((err: unknown) => {
+  logger.error('[ServiceName] operationName failed:', err);
+});
+
+try {
+  await riskyOperation();
+} catch (err: unknown) {
+  logger.error('[ServiceName] riskyOperation failed:', err);
+  throw err; // or handle explicitly
+}
+```
+
+### 4.3 — Dependency Injection
+
+```typescript
+// ❌ FORBIDDEN — tight coupling, untestable
+class OrderService {
+  private repo = new OrderRepository();
+  private mailer = new SmtpMailer();
+}
+
+// ✅ REQUIRED — injected, testable, swappable
+class OrderService {
+  constructor(
+    private readonly repo: IOrderRepository,
+    private readonly mailer: IMailer,
+  ) {}
+}
+```
+
+### 4.4 — Layer Boundaries
+
+```typescript
+// ❌ FORBIDDEN — Service importing a DB client directly
+import { db } from '@/db/client';
+class UserService {
+  async save(user: User) {
+    await db.user.upsert({ ... }); // ← belongs in a Repository
+  }
+}
+
+// ✅ REQUIRED — Service delegates to Repository
+class UserService {
+  constructor(private readonly repo: IUserRepository) {}
+  async save(user: User): Promise<void> {
+    await this.repo.upsert(user);
+  }
+}
+```
 
 ---
 
-## Pillar 4: Architecture & Design Patterns
+## Section 5 — Post-Refactor Verification Checklist
 
-Ensure the application implements a clean, layered architectural design:
+After every refactoring session, verify all of the following before closing:
 
-1.  **Presentation Layer (UI/Client):** User interface components. Handles rendering, user interaction, and component-local state.
-2.  **Application Service Layer:** Orchestrates business logic, use cases, and coordinates calls to database layers, services, and third-party integrations.
-3.  **Infrastructure Layer:** Adapters for database clients (ORMs), file systems, network requests, and external APIs (e.g., SMS gateways, cloud storage providers).
+- [ ] **Zero `any` types** — grep confirms no `as any` or `: any` remains in changed files.
+- [ ] **Zero empty catches** — grep confirms no `.catch(() => {})` or empty `catch` bodies remain.
+- [ ] **No file exceeds 300 lines** — all splits are complete and happened in the same session.
+- [ ] **No Service file imports a DB client, `fs`, or raw I/O libraries directly.**
+- [ ] **All dependencies are injected via constructor**, not instantiated inside the class body.
+- [ ] **All new public functions have explicit return types.**
+- [ ] **TypeScript compiles with zero errors** (`tsc --noEmit` or `npm run build`).
+- [ ] **All new strategies/handlers are registered in a registry file**, not inlined in a service.
+- [ ] **All barrel `index.ts` files export only interfaces/types**, not concrete implementations.
+- [ ] **The phased plan is updated** to reflect what was done and what remains.
 
-### 4. Pipeline & Design Evaluation
-- **Critical Evaluation:** Do not just verify that code compiles or runs. Critically analyze the design, pipeline, or pattern selected to achieve the task.
-- **Architectural Match:** Determine if there is a more appropriate architectural pattern or data pipeline (e.g. event streams, queues, state machines, pub/sub, provider strategies) that would make the implementation cleaner, more decoupled, or more robust.
+> [!IMPORTANT]
+> If ANY item above is not green, the session is not complete. Fix the violation before finalizing.
 
 ---
 
-## Verification & Auditing Checklist
+## Section 6 — Anti-Patterns That Cause Massive Refactors
 
-When reviewing code, ask yourself:
+These are the exact patterns that lead to large-scale, painful refactors. Flag them immediately and never introduce them:
 
-- [ ] **SRP & Proactive Splitting:** Does this class/function do more than one thing? If edits or features make a file grow significantly or lose cohesion, has the logic been proactively split into separate files in the same session?
-- [ ] **DIP:** Is this service hardcoding a concrete class instantiation? Can it be injected?
-- [ ] **Any-Free:** Are there instances of `any` or forced type casting (`as any`) that can be replaced with proper type definitions or type guards?
-- [ ] **Error Handling:** Are there any empty try-catch blocks or Promise `.catch(() => {})` handlers swallowing errors?
-- [ ] **Location:** Is this new file placed in the correct domain/layer directory?
-- [ ] **Clean Boundary:** Does the UI code call backend libraries directly, or does it properly route through the IPC bridge/preload?
-- [ ] **Pipeline & Design Check:** Is the current processing pipeline or design pattern the most optimal, or is there a better architectural alternative to solve this problem?
-
-## Actionable recommendations & Refactoring Plan 
-after auditing , include a phase split Refactoring plan which includes all the issues fix possible
+| Anti-Pattern | Why It's Dangerous |
+|---|---|
+| God file / God function (500+ lines, multiple concerns) | Impossible to unit-test, change, or reason about in isolation |
+| `as any` on third-party payloads | Runtime crashes when external schemas change; no compile-time guard |
+| `.catch(() => {})` everywhere | Failures are invisible; bugs accumulate silently |
+| Business logic in controllers or transport handlers | Can't be tested, reused, or decoupled from the transport layer |
+| Direct DB client in a Service layer | Swapping DB or mocking for tests becomes a full rewrite |
+| Hardcoded type `if-else` chains | Every new type requires touching and risking multiple existing files |
+| `new Dependency()` inside class body | Impossible to inject mocks or swap implementations |
+| Mixing layers in one file | One change cascades into unrelated concerns; no clean boundaries |

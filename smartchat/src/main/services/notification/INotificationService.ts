@@ -5,6 +5,7 @@ export interface NotificationOptions {
   messageType?: string
   textContent?: string
   profilePicUrl?: string
+  content?: string
 }
 
 export interface NotificationPreferences {

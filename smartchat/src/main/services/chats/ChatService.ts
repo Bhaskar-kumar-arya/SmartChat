@@ -2,11 +2,13 @@ import { PrismaClient } from '@prisma/client'
 import { cleanJid, parseCommunityMetadata } from '../../utils'
 import { ContactService } from '../contacts/ContactService'
 import { ChatListItem, ChatUpdatePayload, WASocket } from '../../types'
+import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
 
 export class ChatService {
   constructor(
     private prisma: PrismaClient,
-    private contactService: ContactService
+    private contactService: ContactService,
+    private readonly formatterRegistry: MessageFormatterRegistry
   ) {}
 
   /**
@@ -424,29 +426,26 @@ export class ChatService {
           }
         }
 
-        const getPreview = (type: string | null, text: string | null) => {
-          if (!type) return ''
-          if (type === 'stickerMessage' || type === 'lottieStickerMessage') return 'Sticker'
-          if (type === 'imageMessage') return text || 'Photo'
-          if (type === 'videoMessage' || type === 'ptvMessage') return text || 'Video'
-          if (type === 'documentMessage') return text || 'Document'
-          if (type === 'audioMessage') return 'Audio'
-          return text || ''
-        }
-
         let lastMessageText = ''
         if (isReactionNewer && lastReaction) {
-          const targetPreview = getPreview(lastReaction.message.messageType, lastReaction.message.textContent)
+          const targetPreview = this.formatterRegistry.format(
+            null,
+            {
+              textContent: lastReaction.message.textContent,
+              messageType: lastReaction.message.messageType
+            },
+            'chatListReaction'
+          )
           lastMessageText = `Reacted ${lastReaction.text} to ${targetPreview || 'message'}`
         } else if (lastMsg) {
-          lastMessageText = lastMsg.messageType === 'stickerMessage' ? 'Sticker' :
-                            lastMsg.messageType === 'lottieStickerMessage' ? 'Sticker' :
-                            lastMsg.messageType === 'imageMessage' ? 'Photo' :
-                            lastMsg.messageType === 'videoMessage' ? 'Video' :
-                            lastMsg.messageType === 'ptvMessage' ? 'Video' :
-                            lastMsg.messageType === 'documentMessage' ? 'Document' :
-                            lastMsg.messageType === 'audioMessage' ? 'Audio' :
-                            (lastMsg.textContent ?? '')
+          lastMessageText = this.formatterRegistry.format(
+            null,
+            {
+              textContent: lastMsg.textContent,
+              messageType: lastMsg.messageType
+            },
+            'chatList'
+          )
         }
 
         return {
@@ -468,7 +467,14 @@ export class ChatService {
           lastMessageFromMe: isReactionNewer ? (lastReaction?.sender.isMe ?? false) : (lastMsg?.fromMe || false),
           lastMessageId: isReactionNewer ? (lastReaction?.message.id ?? null) : (lastMsg?.id || null),
           lastMessageTargetType: isReactionNewer ? (lastReaction?.message.messageType || null) : null,
-          lastMessageTargetText: isReactionNewer ? (getPreview(lastReaction?.message.messageType || null, lastReaction?.message.textContent || null) || 'message') : null,
+          lastMessageTargetText: isReactionNewer ? (this.formatterRegistry.format(
+            null,
+            {
+              messageType: lastReaction?.message.messageType || 'unknown',
+              textContent: lastReaction?.message.textContent || null
+            },
+            'chatListReaction'
+          ) || 'message') : null,
           lastMessageReactionText: isReactionNewer ? (lastReaction?.text || null) : null
         }
       })

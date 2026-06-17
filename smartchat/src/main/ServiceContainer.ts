@@ -21,24 +21,48 @@ import { FavoriteStickerService } from './services/messages/FavoriteStickerServi
 import { GroupHydrationService } from './services/chats/GroupHydrationService'
 
 import type { WAEventBus } from './services/whatsapp/WAEventBus'
+import { MessageFormatterRegistry } from './services/messages/formatters/MessageFormatterRegistry'
+import { ConversationFormatter } from './services/messages/formatters/ConversationFormatter'
+import { ImageFormatter } from './services/messages/formatters/ImageFormatter'
+import { VideoFormatter } from './services/messages/formatters/VideoFormatter'
+import { StickerFormatter } from './services/messages/formatters/StickerFormatter'
+import { DocumentFormatter } from './services/messages/formatters/DocumentFormatter'
+import { AudioFormatter } from './services/messages/formatters/AudioFormatter'
+import { ContactFormatter } from './services/messages/formatters/ContactFormatter'
+import { LocationFormatter } from './services/messages/formatters/LocationFormatter'
+import { PollFormatter } from './services/messages/formatters/PollFormatter'
+import { ReactionFormatter } from './services/messages/formatters/ReactionFormatter'
 
 export function createServices(
   prisma: PrismaClient,
   getMainWindow: () => BrowserWindow | null,
   getBus: () => WAEventBus | null
 ) {
+  // 0. Formatting services
+  const messageFormatterRegistry = new MessageFormatterRegistry()
+  messageFormatterRegistry.registerFormatter(new ConversationFormatter())
+  messageFormatterRegistry.registerFormatter(new ImageFormatter())
+  messageFormatterRegistry.registerFormatter(new VideoFormatter())
+  messageFormatterRegistry.registerFormatter(new StickerFormatter())
+  messageFormatterRegistry.registerFormatter(new DocumentFormatter())
+  messageFormatterRegistry.registerFormatter(new AudioFormatter())
+  messageFormatterRegistry.registerFormatter(new ContactFormatter())
+  messageFormatterRegistry.registerFormatter(new LocationFormatter())
+  messageFormatterRegistry.registerFormatter(new PollFormatter())
+  messageFormatterRegistry.registerFormatter(new ReactionFormatter())
+
   // 1. Foundation services (no service dependencies)
   const contactService = new ContactService(prisma)
   const embeddingService = new EmbeddingService(prisma)
   const dataWipeService = new DataWipeService(prisma)
   const receiptService = new ReceiptService(prisma, contactService, getBus)
-  const notificationService = new NotificationService(getMainWindow)
+  const notificationService = new NotificationService(getMainWindow, messageFormatterRegistry)
   const secretMessageService = new SecretMessageService(prisma)
   secretMessageService.registerStrategy(new MessageReactionStrategy(getBus))
   const favoriteStickerService = new FavoriteStickerService(prisma)
 
   // 2. Services with service dependencies
-  const chatService = new ChatService(prisma, contactService)
+  const chatService = new ChatService(prisma, contactService, messageFormatterRegistry)
   const groupHydrationService = new GroupHydrationService(prisma, contactService)
   const messageService = new MessageService(prisma, contactService, embeddingService, secretMessageService, getBus)
   const messageActionService = new MessageActionService(prisma, contactService, messageService, chatService, getBus)
@@ -70,7 +94,8 @@ export function createServices(
     secretMessageService,
     favoriteStickerService,
     identityReconciliationService,
-    profileSyncService
+    profileSyncService,
+    messageFormatterRegistry
   }
 }
 

@@ -4,6 +4,8 @@ import fs from 'fs'
 import { INotificationService, NotificationOptions, NotificationPreferences } from './INotificationService'
 import { INotificationProvider } from './INotificationProvider'
 import { ElectronNotificationProvider } from './ElectronNotificationProvider'
+import { unwrapMessage } from '../../utils'
+import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
 
 const preferencesPath = join(app.getPath('userData'), 'notification_preferences.json')
 
@@ -11,7 +13,10 @@ export class NotificationService implements INotificationService {
   private activeChatJid: string | null = null
   private provider: INotificationProvider
 
-  constructor(private getMainWindow: () => BrowserWindow | null) {
+  constructor(
+    private getMainWindow: () => BrowserWindow | null,
+    private readonly formatterRegistry: MessageFormatterRegistry
+  ) {
     this.provider = new ElectronNotificationProvider()
     this.initPreferences()
   }
@@ -97,7 +102,24 @@ export class NotificationService implements INotificationService {
     let title = ''
     let body = ''
 
-    const contentPreview = this.getMessagePreviewText(options.messageType, options.textContent)
+    let unwrapped = null
+    if (options.content) {
+      try {
+        unwrapped = unwrapMessage(JSON.parse(options.content))
+      } catch (err) {
+        console.error('[NotificationService] Failed to parse message content:', err)
+      }
+    }
+
+    const contentPreview = this.formatterRegistry.format(
+      unwrapped,
+      {
+        textContent: options.textContent,
+        messageType: options.messageType || 'unknown',
+        isDeleted: false
+      },
+      'notification'
+    )
 
     if (isGroup) {
       title = options.chatName
@@ -154,36 +176,7 @@ export class NotificationService implements INotificationService {
     }
   }
 
-  private getMessagePreviewText(type?: string, text?: string): string {
-    if (!type) return text || ''
-    switch (type) {
-      case 'conversation':
-      case 'extendedTextMessage':
-        return text || ''
-      case 'imageMessage':
-        return text ? `📷 ${text}` : '📷 Photo'
-      case 'videoMessage':
-      case 'ptvMessage':
-        return text ? `📹 ${text}` : '📹 Video'
-      case 'audioMessage':
-        return '🎤 Voice message'
-      case 'documentMessage':
-      case 'documentWithCaptionMessage':
-        return text ? `📄 ${text}` : '📄 Document'
-      case 'stickerMessage':
-        return '👾 Sticker'
-      case 'contactMessage':
-      case 'contactsArrayMessage':
-        return '👤 Contact info'
-      case 'locationMessage':
-      case 'liveLocationMessage':
-        return '📍 Location'
-      case 'pollCreationMessage':
-        return text ? `📊 Poll: ${text}` : '📊 Poll'
-      default:
-        return text || 'New message'
-    }
-  }
+
 
   private readPreferences(): NotificationPreferences {
     const defaultPrefs: NotificationPreferences = {

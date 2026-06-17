@@ -64,7 +64,8 @@ export class NotificationSubscriber implements IWAEventSubscriber {
         senderName,
         messageType,
         textContent: textContent || undefined,
-        profilePicUrl: profilePicUrl || undefined
+        profilePicUrl: profilePicUrl || undefined,
+        content: event.processed?.content
       })
     } catch (err) {
       console.error('[NotificationSubscriber] Error sending notification:', err)
