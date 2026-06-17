@@ -28,6 +28,7 @@ export class ProfileSyncService {
         if (url) this.imageCache.set(jid, url)
         return url || null
       } catch (e) {
+        console.warn(`[ProfileSyncService] Failed to fetch full profile picture for ${jid}:`, e)
         return null
       }
     }
@@ -56,19 +57,24 @@ export class ProfileSyncService {
           await this.prisma.chat.update({
             where: { jid },
             data: { profilePictureUrl: url }
-          }).catch(() => {})
+          }).catch((err) => {
+            console.error('[ProfileSyncService] Failed to update chat profilePictureUrl:', err)
+          })
         } else {
           const identityId = await this.contactService.getIdentityIdByJid(jid)
           if (identityId) {
             await this.prisma.identity.update({
               where: { id: identityId },
               data: { profilePictureUrl: url }
-            }).catch(() => {})
+            }).catch((err) => {
+              console.error('[ProfileSyncService] Failed to update identity profilePictureUrl:', err)
+            })
           }
         }
       }
       return url || null
     } catch (e) {
+      // console.warn(`[ProfileSyncService] Failed to fetch preview profile picture for ${jid}:`, e)
       return null
     }
   }

@@ -1,4 +1,4 @@
-import { downloadContentFromMessage } from '@whiskeysockets/baileys'
+import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
 import { PrismaClient, Message } from '@prisma/client'
 import { app, shell } from 'electron'
 import { join } from 'path'
@@ -13,17 +13,33 @@ import { unwrapMessage } from '../../utils'
 
 type MediaType = 'image' | 'sticker' | 'video' | 'document' | 'audio'
 
+interface HydratedTemplate {
+  imageMessage?: unknown
+  stickerMessage?: unknown
+  videoMessage?: unknown
+  documentMessage?: unknown
+  audioMessage?: unknown
+}
+
+interface InteractiveTemplate {
+  header?: {
+    imageMessage?: unknown
+    videoMessage?: unknown
+    documentMessage?: unknown
+  }
+}
+
 /** Resolve the correct Baileys media type string, with HKDF override for
  *  audio files that arrived inside a documentMessage wrapper. */
 function resolveMediaType(
-  unwrapped: Record<string, any>
-): { mediaType: MediaType; mediaMsg: Record<string, any> } | null {
+  unwrapped: Record<string, unknown>
+): { mediaType: MediaType; mediaMsg: Record<string, unknown> } | null {
   let target = unwrapped
 
   if (unwrapped.templateMessage) {
-    const tmpl = unwrapped.templateMessage
-    const hydrated = tmpl.hydratedFourRowTemplate || tmpl.hydratedTemplate
-    const interactive = tmpl.interactiveMessageTemplate
+    const tmpl = unwrapped.templateMessage as Record<string, unknown>
+    const hydrated = (tmpl.hydratedFourRowTemplate || tmpl.hydratedTemplate) as HydratedTemplate | undefined
+    const interactive = tmpl.interactiveMessageTemplate as InteractiveTemplate | undefined
     target = {
       imageMessage: hydrated?.imageMessage || interactive?.header?.imageMessage,
       stickerMessage: hydrated?.stickerMessage,
@@ -33,16 +49,16 @@ function resolveMediaType(
     }
   }
 
-  if (target.imageMessage) return { mediaType: 'image', mediaMsg: target.imageMessage }
-  if (target.stickerMessage) return { mediaType: 'sticker', mediaMsg: target.stickerMessage }
-  if (target.videoMessage) return { mediaType: 'video', mediaMsg: target.videoMessage }
-  if (target.ptvMessage) return { mediaType: 'video', mediaMsg: target.ptvMessage }
-  if (target.audioMessage) return { mediaType: 'audio', mediaMsg: target.audioMessage }
+  if (target.imageMessage) return { mediaType: 'image', mediaMsg: target.imageMessage as Record<string, unknown> }
+  if (target.stickerMessage) return { mediaType: 'sticker', mediaMsg: target.stickerMessage as Record<string, unknown> }
+  if (target.videoMessage) return { mediaType: 'video', mediaMsg: target.videoMessage as Record<string, unknown> }
+  if (target.ptvMessage) return { mediaType: 'video', mediaMsg: target.ptvMessage as Record<string, unknown> }
+  if (target.audioMessage) return { mediaType: 'audio', mediaMsg: target.audioMessage as Record<string, unknown> }
   if (target.documentMessage) {
     // HKDF label correction: an audio file sent as a generic document must be
     // downloaded with type='audio' so the key-derivation uses "WhatsApp Audio Keys"
     // instead of "WhatsApp Document Keys".
-    const doc = target.documentMessage
+    const doc = target.documentMessage as Record<string, unknown>
     const effectiveType: MediaType =
       typeof doc.mimetype === 'string' && doc.mimetype.startsWith('audio/')
         ? 'audio'
@@ -67,7 +83,7 @@ async function streamToBuffer(stream: AsyncIterable<Buffer>): Promise<Buffer> {
 
 /** Robustly ensures the value is converted back to a Buffer.
  *  Handles string (base64/hex), Uint8Array, { type: 'Buffer', data: [...] }, and Buffer. */
-function ensureBuffer(val: any): Buffer | null {
+function ensureBuffer(val: unknown): Buffer | null {
   if (!val) return null
   if (Buffer.isBuffer(val)) return val
   if (val instanceof Uint8Array) return Buffer.from(val.buffer, val.byteOffset, val.byteLength)
@@ -78,8 +94,9 @@ function ensureBuffer(val: any): Buffer | null {
     return Buffer.from(val, 'base64')
   }
   if (typeof val === 'object') {
-    if (val.type === 'Buffer' && Array.isArray(val.data)) {
-      return Buffer.from(val.data)
+    const obj = val as Record<string, unknown>
+    if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+      return Buffer.from(obj.data)
     }
     if (Array.isArray(val)) {
       return Buffer.from(val)
@@ -166,7 +183,7 @@ export class MediaService {
     for (const msg of messages) {
       if (msg.messageType === 'stickerMessage') {
         try {
-          const rawMessage = JSON.parse(msg.content)
+          const rawMessage = JSON.parse(msg.content) as Record<string, unknown>
           const unwrapped = unwrapMessage(rawMessage)
           const stickerMsg = unwrapped.stickerMessage
           if (stickerMsg && stickerMsg.fileSha256) {
@@ -176,10 +193,10 @@ export class MediaService {
               shaStr = sha
             } else if (Buffer.isBuffer(sha)) {
               shaStr = sha.toString('base64')
-            } else if (sha && typeof sha === 'object' && sha.type === 'Buffer' && Array.isArray(sha.data)) {
-              shaStr = Buffer.from(sha.data).toString('base64')
+            } else if (sha && typeof sha === 'object' && 'type' in sha && sha.type === 'Buffer' && 'data' in sha && Array.isArray((sha as { data: unknown }).data)) {
+              shaStr = Buffer.from((sha as { data: number[] }).data).toString('base64')
             } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
-              shaStr = Buffer.from(sha).toString('base64')
+              shaStr = Buffer.from(sha as Uint8Array).toString('base64')
             }
 
             if (shaStr) {
@@ -229,7 +246,7 @@ export class MediaService {
     const dbMsg = await this.prisma.message.findUnique({ where: { id: msgId } })
     if (!dbMsg || !dbMsg.content) throw new Error('Message not found')
 
-    const rawMessage = JSON.parse(dbMsg.content)
+    const rawMessage = JSON.parse(dbMsg.content) as Record<string, unknown>
     const unwrapped = unwrapMessage(rawMessage)
 
     const resolved = resolveMediaType(unwrapped)
@@ -261,10 +278,10 @@ export class MediaService {
             shaStr = sha
           } else if (Buffer.isBuffer(sha)) {
             shaStr = sha.toString('base64')
-          } else if (sha && typeof sha === 'object' && sha.type === 'Buffer' && Array.isArray(sha.data)) {
-            shaStr = Buffer.from(sha.data).toString('base64')
+          } else if (sha && typeof sha === 'object' && 'type' in sha && sha.type === 'Buffer' && 'data' in sha && Array.isArray((sha as { data: unknown }).data)) {
+            shaStr = Buffer.from((sha as { data: number[] }).data).toString('base64')
           } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
-            shaStr = Buffer.from(sha).toString('base64')
+            shaStr = Buffer.from(sha as Uint8Array).toString('base64')
           }
         }
 
@@ -298,8 +315,8 @@ export class MediaService {
     msgId: string,
     sock: WASocket,
     dbMsg: { id: string; chatJid: string; fromMe: boolean; participant: string | null },
-    rawMessage: any,
-    mediaMsg: Record<string, any>,
+    rawMessage: unknown,
+    mediaMsg: Record<string, unknown>,
     mediaType: MediaType,
     filePath: string
   ): Promise<void> {
@@ -308,21 +325,22 @@ export class MediaService {
     // downloadContentFromMessage already falls back to directPath internally if the
     // URL is not a valid mmg.whatsapp.net link — so we don't need a manual rewrite.
     try {
-      const stream = await downloadContentFromMessage(mediaMsg as any, mediaType as any)
+      const stream = await downloadContentFromMessage(mediaMsg as unknown as Parameters<typeof downloadContentFromMessage>[0], mediaType as unknown as Parameters<typeof downloadContentFromMessage>[1])
       const buffer = await streamToBuffer(stream)
       if (buffer.length === 0) throw new Error('Downloaded stream was 0 bytes')
       fs.writeFileSync(filePath, buffer)
       return
-    } catch (primaryErr: any) {
+    } catch (primaryErr: unknown) {
+      const primaryErrObj = primaryErr as Record<string, any> | null | undefined
       const statusCode: number | undefined =
-        primaryErr?.output?.statusCode ?? primaryErr?.statusCode
+        primaryErrObj?.output?.statusCode ?? primaryErrObj?.statusCode
 
       // Only retry on known recoverable CDN errors
       if (statusCode !== 403 && statusCode !== 404 && statusCode !== 410) {
         throw primaryErr
       }
 
-      const isDirectStream = (primaryErr?.data?.url as string | undefined)?.includes('/o1/')
+      const isDirectStream = (primaryErrObj?.data?.url as string | undefined)?.includes('/o1/')
       console.warn(
         `[MediaService] Primary download failed (HTTP ${statusCode}${isDirectStream ? ', direct-stream /o1/' : ''}) for msg ${msgId} — attempting updateMediaMessage re-upload`
       )
@@ -346,12 +364,13 @@ export class MediaService {
       // Synthesize a standard media message structure if the media is nested inside a templateMessage.
       // This is because Baileys' updateMediaMessage depends on assertMediaContent, which lacks support
       // for extracting media from newer template schemas like interactiveMessageTemplate.
-      const isTemplate = !!rawMessage.templateMessage
+      const rawMessageObj = rawMessage as Record<string, unknown>
+      const isTemplate = !!rawMessageObj.templateMessage
       const updatePayload = isTemplate
         ? { [`${mediaType}Message`]: mediaMsg }
-        : rawMessage
+        : rawMessageObj
 
-      const updatedMsg = await sock.updateMediaMessage({
+      const updatedMsg = (await sock.updateMediaMessage({
         key: {
           id: dbMsg.id,
           remoteJid: dbMsg.chatJid,
@@ -361,16 +380,16 @@ export class MediaService {
             : undefined
         },
         message: updatePayload
-      } as any)
+      } as unknown as Parameters<typeof sock.updateMediaMessage>[0])) as proto.IWebMessageInfo
 
       // Extract the updated media metadata back
-      let updatedMediaMsg: any = null
+      let updatedMediaMsg: Record<string, unknown> | null = null
       let updatedMediaType = mediaType
 
       if (isTemplate) {
-        updatedMediaMsg = updatedMsg.message?.[`${mediaType}Message`]
+        updatedMediaMsg = updatedMsg.message?.[`${mediaType}Message`] as Record<string, unknown> | undefined || null
       } else {
-        const updatedUnwrapped = unwrapMessage(updatedMsg.message)
+        const updatedUnwrapped = unwrapMessage(updatedMsg.message as Record<string, unknown>)
         const updatedResolved = resolveMediaType(updatedUnwrapped)
         if (updatedResolved) {
           updatedMediaMsg = updatedResolved.mediaMsg
@@ -383,8 +402,8 @@ export class MediaService {
       }
 
       const stream = await downloadContentFromMessage(
-        updatedMediaMsg as any,
-        updatedMediaType as any
+        updatedMediaMsg as unknown as Parameters<typeof downloadContentFromMessage>[0],
+        updatedMediaType as unknown as Parameters<typeof downloadContentFromMessage>[1]
       )
       const buffer = await streamToBuffer(stream)
       if (buffer.length === 0) throw new Error('Re-uploaded stream was 0 bytes')
@@ -393,14 +412,16 @@ export class MediaService {
       // Merge the refreshed media metadata back so callers see the new URL
       Object.assign(mediaMsg, updatedMediaMsg)
 
-    } catch (retryErr: any) {
+    } catch (retryErr: unknown) {
+      const retryErrObj = retryErr as Record<string, any> | null | undefined
+      const errMsg = retryErrObj?.message && typeof retryErrObj.message === 'string' ? retryErrObj.message : ''
       const isDecryptErr =
-        retryErr?.message?.includes('authenticate') ||
-        retryErr?.message?.includes('Unsupported state')
+        errMsg.includes('authenticate') ||
+        errMsg.includes('Unsupported state')
 
       const hint = isDecryptErr
         ? `mediaKey is present but failed AES-GCM decryption — this message was likely synced as a stub during history sync and its key is invalid.`
-        : `updateMediaMessage request failed: ${retryErr?.message ?? retryErr}`
+        : `updateMediaMessage request failed: ${errMsg || retryErr}`
 
       throw new Error(`[MediaService] Cannot download media for msg ${msgId}: ${hint}`)
     }

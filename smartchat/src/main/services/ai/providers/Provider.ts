@@ -27,8 +27,8 @@ export interface AIProvider {
    */
   generateResponseStream(
     prompt: string,
-    history: any[],
-    options: any,
+    history: Array<{ role: string; content: string; isSystem?: boolean }>,
+    options: { model?: string; [key: string]: any },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void>;
@@ -38,8 +38,8 @@ export interface AIProvider {
    */
   generateResponse(
     prompt: string,
-    history: any[],
-    options: any,
+    history: Array<{ role: string; content: string; isSystem?: boolean }>,
+    options: { model?: string; [key: string]: any },
     signal?: AbortSignal
   ): Promise<string>;
 

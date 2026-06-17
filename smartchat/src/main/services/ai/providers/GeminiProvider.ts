@@ -4,7 +4,7 @@ import { toolRegistry } from '../AIToolService'
 import { aiKeyService } from '../AIKeyService'
 
 export class GeminiProvider implements AIProvider {
-  private ai: any;
+  private ai: GoogleGenAI;
   private fetchedModelIds = new Set<string>();
   constructor() {
     const key = aiKeyService.getKey('gemini');
@@ -24,10 +24,10 @@ export class GeminiProvider implements AIProvider {
     return `[${label}]: ${content}`;
   }
 
-  private formatHistory(history: any[]) {
+  private formatHistory(history: Array<{ role: string; content: string; isSystem?: boolean }>) {
     return (history || []).map(msg => {
-      const isMsgSystem = (msg as any).isSystem === true;
-      const role = (msg as any).role === 'user' ? 'user' : 'model';
+      const isMsgSystem = msg.isSystem === true;
+      const role = msg.role === 'user' ? 'user' : 'model';
       // Note: Full prompt building is still handled in AIService before calling provider
       return {
         role,
@@ -44,7 +44,12 @@ export class GeminiProvider implements AIProvider {
     // Gemini handles cleanup on its end
   }
 
-  async generateResponse(prompt: string, history: any[], options: any, signal?: AbortSignal): Promise<string> {
+  async generateResponse(
+    prompt: string,
+    history: Array<{ role: string; content: string; isSystem?: boolean }>,
+    options: { model?: string; useThinkMode?: boolean; isSystem?: boolean; signal?: AbortSignal },
+    _signal?: AbortSignal
+  ): Promise<string> {
     const formattedHistory = this.formatHistory(history);
     const isPromptSystem = options?.isSystem === true;
     const finalPrompt = this.wrapWithRole(prompt, isPromptSystem, 'user');
@@ -55,13 +60,11 @@ export class GeminiProvider implements AIProvider {
     // Prepare contents including history and current prompt
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
     
-    const actualSignal = options?.signal || signal;
     const rawModel = (options?.model || "gemini:gemma-4-31b-it").replace(/^gemini:/, '');
     const response = await this.ai.models.generateContent({
       model: rawModel,
       contents,
       config: systemInstructions ? { systemInstruction: systemInstructions } : undefined,
-      signal: actualSignal
     });
 
     return response.text || '';
@@ -69,8 +72,8 @@ export class GeminiProvider implements AIProvider {
 
   async generateResponseStream(
     prompt: string,
-    history: any[],
-    options: any,
+    history: Array<{ role: string; content: string; isSystem?: boolean }>,
+    options: { model?: string; useThinkMode?: boolean; isSystem?: boolean; signal?: AbortSignal },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void> {
@@ -90,7 +93,6 @@ export class GeminiProvider implements AIProvider {
       model: rawModel,
       contents,
       config: systemInstructions ? { systemInstruction: systemInstructions } : undefined,
-      signal: actualSignal
     });
 
     for await (const chunk of responseStream) {
@@ -106,7 +108,7 @@ export class GeminiProvider implements AIProvider {
       const list = await this.ai.models.list();
       const models: ModelInfo[] = [];
       for await (const m of list) {
-        if (m.supportedActions && m.supportedActions.includes('generateContent')) {
+        if (m.name && m.supportedActions && m.supportedActions.includes('generateContent')) {
           const strippedId = m.name.replace(/^models\//, '');
           const prefixedId = `gemini:${strippedId}`;
           this.fetchedModelIds.add(prefixedId);

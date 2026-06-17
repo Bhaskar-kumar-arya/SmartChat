@@ -68,7 +68,9 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onChatUpdated(event: ChatUpdatedEvent): Promise<void> {
     try {
-      await this.services.chatService.upsertChat(event.jid, event.update).catch(() => {})
+      await this.services.chatService.upsertChat(event.jid, event.update).catch((err) => {
+        console.error('[PersistenceSubscriber] Failed to upsert chat in onChatUpdated:', err)
+      })
     } catch (err) {
       console.error('[PersistenceSubscriber] Error upserting chat from update:', err)
     }
@@ -76,7 +78,9 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onChatUpserted(event: ChatUpsertedEvent): Promise<void> {
     try {
-      await this.services.chatService.upsertChat(event.jid, event.raw).catch(() => {})
+      await this.services.chatService.upsertChat(event.jid, event.raw).catch((err) => {
+        console.error('[PersistenceSubscriber] Failed to upsert chat in onChatUpserted:', err)
+      })
     } catch (err) {
       console.error('[PersistenceSubscriber] Error upserting chat:', err)
     }

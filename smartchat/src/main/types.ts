@@ -57,15 +57,15 @@ export interface ProtocolResult {
   subType: 'revoke' | 'edit'
   targetId: string
   chatJid?: string
-  key: any
+  key: proto.IMessageKey
   editedTextContent?: string | null
-  editedContent?: any
+  editedContent?: proto.IMessage | null
 }
 
 /** Raw Baileys message as received from events. */
 export interface BaileysMessage {
-  key: { id?: string | null; remoteJid?: string | null; fromMe?: boolean | null; participant?: string | null }
-  message?: any
+  key: proto.IMessageKey
+  message?: proto.IMessage | null
   messageTimestamp?: number | { low: number; high: number } | null
   pushName?: string | null
   status?: number | null
@@ -101,14 +101,14 @@ export interface MediaSendOptions {
 
 /** Payload shape for chat update events. */
 export interface ChatUpdatePayload {
-  id?: string; name?: string; subject?: string
-  unreadCount?: number; pinned?: number; muteExpiration?: number | bigint; muteEndTime?: number | bigint | null
-  archived?: boolean; conversationTimestamp?: unknown; timestamp?: unknown
-  profilePictureUrl?: string
-  isCommunity?: boolean; isParentGroup?: boolean; isAnnounce?: boolean
-  isCommunityAnnounce?: boolean; isDefaultSubgroup?: boolean
-  linkedParentJid?: string; linkedParent?: string; parentGroupId?: string
-  owner?: string; ownerPn?: string; descOwner?: string; descOwnerPn?: string
+  id?: string | null; name?: string | null; subject?: string | null
+  unreadCount?: number | null; pinned?: number | null; muteExpiration?: unknown; muteEndTime?: unknown
+  archived?: boolean | null; conversationTimestamp?: unknown; timestamp?: unknown
+  profilePictureUrl?: string | null
+  isCommunity?: boolean | null; isParentGroup?: boolean | null; isAnnounce?: boolean | null
+  isCommunityAnnounce?: boolean | null; isDefaultSubgroup?: boolean | null
+  linkedParentJid?: string | null; linkedParent?: string | null; parentGroupId?: string | null
+  owner?: string | null; ownerPn?: string | null; descOwner?: string | null; descOwnerPn?: string | null
 }
 
 /** Processed message returned by processMessage. */
@@ -129,26 +129,20 @@ export interface ProcessedMessage {
 
 /** Payload shape for message status receipt updates. */
 export interface MessageReceiptUpdate {
-  key: { id: string; remoteJid?: string; fromMe?: boolean; participant?: string }
+  key: proto.IMessageKey
   receipt: {
-    userJid?: string
-    readTimestamp?: number | bigint | null
-    receiptTimestamp?: number | bigint | null
-    deliveredTimestamp?: number | bigint | null
+    userJid?: string | null
+    readTimestamp?: unknown
+    receiptTimestamp?: unknown
+    deliveredTimestamp?: unknown
   }
 }
 
 /** Raw Baileys reaction update event structure. */
 export interface BaileysReactionUpdate {
-  key: { id: string }
+  key: proto.IMessageKey
   reaction?: {
-    key: {
-      id?: string
-      remoteJid?: string
-      fromMe?: boolean
-      participant?: string
-      participantAlt?: string
-    }
+    key?: proto.IMessageKey | null
     text?: string | null
     senderTimestampMs?: number | { low: number; high: number } | null
   }
@@ -159,7 +153,7 @@ export interface BaileysCall {
   id: string
   from: string
   status: string
-  timestamp: number | bigint
+  timestamp?: number | bigint | null
   callerPn?: string
   callerLid?: string
   content?: {
@@ -170,7 +164,7 @@ export interface BaileysCall {
 
 /** Baileys Contact structure from Baileys events */
 export interface BaileysContact {
-  id: string
+  id?: string | null
   name?: string | null
   notify?: string | null
   verifiedName?: string | null
@@ -182,7 +176,7 @@ export interface BaileysContact {
 
 /** Baileys Group Update structure representing group metadata updates */
 export interface BaileysGroupUpdate {
-  id: string
+  id?: string
   subject?: string
   participants?: Array<{ id?: string; userJid?: string; [key: string]: any }>
   [key: string]: any

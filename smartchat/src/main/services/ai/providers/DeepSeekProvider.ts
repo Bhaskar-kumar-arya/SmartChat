@@ -125,8 +125,12 @@ WhatsApp messages are generally very small, so don't hesitate from fetching larg
     // No local resources to unload
   }
 
-  private formatMessages(prompt: string, history: any[], systemPrompt: string): any[] {
-    const messages: any[] = [];
+  private formatMessages(
+    prompt: string,
+    history: Array<{ role: string; content: string }>,
+    systemPrompt: string
+  ): OpenAI.Chat.ChatCompletionMessageParam[] {
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
     }
@@ -157,8 +161,8 @@ WhatsApp messages are generally very small, so don't hesitate from fetching larg
 
   async generateResponse(
     prompt: string,
-    history: any[],
-    options: any,
+    history: Array<{ role: string; content: string }>,
+    options: { model?: string; useThinkMode?: boolean; signal?: AbortSignal },
     signal?: AbortSignal
   ): Promise<string> {
     const rawModel = this.stripPrefix(options?.model || 'deepseek-v4-pro');
@@ -183,7 +187,8 @@ WhatsApp messages are generally very small, so don't hesitate from fetching larg
     let finalResponse = message?.content || '';
 
     // If there is reasoning content returned natively, we can prepend it
-    const reasoningContent = (message as any)?.reasoning_content;
+    const msgWithReasoning = message as OpenAI.Chat.Completions.ChatCompletionMessage & { reasoning_content?: string };
+    const reasoningContent = msgWithReasoning?.reasoning_content;
     if (reasoningContent) {
       finalResponse = `<think>\n${reasoningContent}\n</think>\n\n` + finalResponse;
     }
@@ -209,8 +214,8 @@ WhatsApp messages are generally very small, so don't hesitate from fetching larg
 
   async generateResponseStream(
     prompt: string,
-    history: any[],
-    options: any,
+    history: Array<{ role: string; content: string }>,
+    options: { model?: string; useThinkMode?: boolean; signal?: AbortSignal },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void> {
@@ -232,14 +237,18 @@ WhatsApp messages are generally very small, so don't hesitate from fetching larg
       stream: true
     }, { signal: actualSignal });
 
-    const toolCalls: any[] = [];
+    const toolCalls: Array<{
+      id: string
+      type: 'function'
+      function: { name: string; arguments: string }
+    }> = [];
     let hasEmittedReasoningStart = false;
     let hasEmittedReasoningEnd = false;
 
     for await (const chunk of stream) {
       if (actualSignal?.aborted) break;
 
-      const delta = chunk.choices[0]?.delta as any;
+      const delta = chunk.choices[0]?.delta as OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & { reasoning_content?: string };
       if (!delta) continue;
 
       // Handle DeepSeek reasoning_content streaming natively

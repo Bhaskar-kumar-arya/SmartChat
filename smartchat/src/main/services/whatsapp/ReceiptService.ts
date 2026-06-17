@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { cleanJid } from '../../utils'
+import { cleanJid, parseBaileysTimestamp } from '../../utils'
 import { WASocket, MessageReceiptUpdate, BaileysMessage } from '../../types'
 import { ContactService } from '../contacts/ContactService'
 import { WAEventBus } from './WAEventBus'
@@ -103,7 +103,7 @@ export class ReceiptService {
 
       // Always save detailed individual receipt (especially for groups, but also useful for DMs)
       if (userJid) {
-        const ts = receipt?.readTimestamp || receipt?.receiptTimestamp || Math.floor(Date.now() / 1000)
+        const ts = parseBaileysTimestamp(receipt?.readTimestamp || receipt?.receiptTimestamp || Math.floor(Date.now() / 1000))
         await this.prisma.messageReceipt.upsert({
           where: {
             messageId_userJid: {
@@ -113,13 +113,13 @@ export class ReceiptService {
           },
           update: {
             status,
-            timestamp: BigInt(ts)
+            timestamp: ts
           },
           create: {
             messageId,
             userJid,
             status,
-            timestamp: BigInt(ts)
+            timestamp: ts
           }
         }).catch((e) => {
           console.error('[ReceiptService] Failed to upsert MessageReceipt:', e)

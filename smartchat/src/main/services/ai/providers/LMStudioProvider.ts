@@ -4,7 +4,7 @@ import { toolRegistry } from '../AIToolService'
 
 export class LMStudioProvider implements AIProvider {
   private client: LMStudioClient;
-  private loadedModels: Map<string, { model: any, contextLength: number }> = new Map();
+  private loadedModels: Map<string, { model: Awaited<ReturnType<LMStudioClient['llm']['load']>>, contextLength: number }> = new Map();
 
   constructor() {
     this.client = new LMStudioClient();
@@ -181,7 +181,12 @@ CRITICAL TOOL RULES:
     };
   }
 
-  async generateResponse(prompt: string, history: any[], options: any, signal?: AbortSignal): Promise<string> {
+  async generateResponse(
+    prompt: string,
+    history: Array<{ role: string; content: string }>,
+    options: { model?: string; contextLength?: number; useThinkMode?: boolean; signal?: AbortSignal },
+    signal?: AbortSignal
+  ): Promise<string> {
     const modelKey = options?.model;
     if (!modelKey) throw new Error('No model specified for LM Studio');
 
@@ -218,17 +223,17 @@ CRITICAL TOOL RULES:
          }
       },
       onToolCallRequestEnd: (_callId, info) => {
-         const req = info.toolCallRequest as any;
-         let argsObj = req.arguments || {};
-         try {
-             if (typeof argsObj === 'string') {
-                 argsObj = JSON.parse(argsObj);
-             }
-         } catch (e) {}
-         const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
-         finalResponse += xml;
+          const req = info.toolCallRequest as { name: string; arguments?: string | Record<string, unknown> };
+          let argsObj = req.arguments || {};
+          try {
+              if (typeof argsObj === 'string') {
+                  argsObj = JSON.parse(argsObj);
+              }
+          } catch (e) {}
+          const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
+          finalResponse += xml;
       },
-    });
+    } as any);
 
     await prediction;
     return finalResponse;
@@ -236,8 +241,8 @@ CRITICAL TOOL RULES:
 
   async generateResponseStream(
     prompt: string,
-    history: any[],
-    options: any,
+    history: Array<{ role: string; content: string }>,
+    options: { model?: string; contextLength?: number; useThinkMode?: boolean; signal?: AbortSignal },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void> {
@@ -273,17 +278,17 @@ CRITICAL TOOL RULES:
          }
       },
       onToolCallRequestEnd: (_callId, info) => {
-         const req = info.toolCallRequest as any;
-         let argsObj = req.arguments || {};
-         try {
-             if (typeof argsObj === 'string') {
-                 argsObj = JSON.parse(argsObj);
-             }
-         } catch (e) {}
-         const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
-         onChunk(xml);
+          const req = info.toolCallRequest as { name: string; arguments?: string | Record<string, unknown> };
+          let argsObj = req.arguments || {};
+          try {
+              if (typeof argsObj === 'string') {
+                  argsObj = JSON.parse(argsObj);
+              }
+          } catch (e) {}
+          const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
+          onChunk(xml);
       }
-    });
+    } as any);
 
     await prediction;
   }

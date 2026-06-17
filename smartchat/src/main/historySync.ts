@@ -56,7 +56,9 @@ export async function handleHistorySync(
         await new Promise(r => setImmediate(r))
       }
       if (mapping.lid && mapping.pn) {
-        await contactService.linkLidAndPn(mapping.lid, mapping.pn, 'history.sync').catch(() => {})
+        await contactService.linkLidAndPn(mapping.lid, mapping.pn, 'history.sync').catch((err) => {
+          console.error('[HistorySync] linkLidAndPn (lidPnMappings) failed:', err)
+        })
       }
     }
   }
@@ -68,7 +70,9 @@ export async function handleHistorySync(
         await new Promise(r => setImmediate(r))
       }
       if (mapping.lidJid && mapping.pnJid) {
-        await contactService.linkLidAndPn(mapping.lidJid, mapping.pnJid, 'history.sync.ph').catch(() => {})
+        await contactService.linkLidAndPn(mapping.lidJid, mapping.pnJid, 'history.sync.ph').catch((err) => {
+          console.error('[HistorySync] linkLidAndPn (phoneNumberToLidMappings) failed:', err)
+        })
       }
     }
   }
@@ -95,11 +99,15 @@ export async function handleHistorySync(
         phoneNumber: c.phoneNumber ? cleanJid(c.phoneNumber) : undefined
       }
 
-      await contactService.upsertContact(contactToUpsert).catch(() => {})
+      await contactService.upsertContact(contactToUpsert).catch((err) => {
+        console.error('[HistorySync] upsertContact failed:', err)
+      })
 
       // If the contact carries both a PN id and a separate lid, link them now
       if (!cleanedId.endsWith('@lid') && c.lid) {
-        await contactService.linkLidAndPn(cleanJid(c.lid), cleanedId, 'history.sync.contact').catch(() => {})
+        await contactService.linkLidAndPn(cleanJid(c.lid), cleanedId, 'history.sync.contact').catch((err) => {
+          console.error('[HistorySync] linkLidAndPn (contact lid) failed:', err)
+        })
       }
     }
     contactCount = contacts.length
@@ -114,11 +122,27 @@ export async function handleHistorySync(
         await new Promise(r => setImmediate(r))
       }
       const jid = cleanJid(String(c.id))
-      const raw = c as any
+      const raw = c as {
+        accountLid?: string
+        isCommunity?: boolean
+        isParentGroup?: boolean
+        isAnnounce?: boolean
+        isCommunityAnnounce?: boolean
+        isDefaultSubgroup?: boolean
+        linkedParentJid?: string
+        linkedParent?: string
+        parentGroupId?: string
+        name?: string
+        muteExpiration?: number | bigint
+        muteEndTime?: number | bigint
+        participant?: Array<{ userJid?: string; id?: string; lid?: string; phoneNumberJid?: string; phoneNumber?: string }>
+      }
 
       // If the chat object carries a linked accountLid, register the mapping immediately
       if (raw.accountLid && jid && !jid.endsWith('@lid') && jid.includes('@s.whatsapp.net')) {
-        await contactService.linkLidAndPn(cleanJid(raw.accountLid), jid, 'history.sync.chat.accountLid').catch(() => {})
+        await contactService.linkLidAndPn(cleanJid(raw.accountLid), jid, 'history.sync.chat.accountLid').catch((err) => {
+          console.error('[HistorySync] linkLidAndPn (chat accountLid) failed:', err)
+        })
       }
       const hasCommunityData = raw.isCommunity !== undefined || 
                                raw.isParentGroup !== undefined || 
@@ -134,7 +158,14 @@ export async function handleHistorySync(
 
       const isArchived = ('archived' in c || 'isArchived' in c) ? (c.archived === true || c.isArchived === true) : false
 
-      const updateData: any = {}
+      const updateData: {
+        timestamp?: bigint
+        isArchived?: boolean
+        name?: string | null
+        muteExpiration?: bigint
+        type?: string
+        communityId?: number | null
+      } = {}
       if (timestamp !== BigInt(0)) updateData.timestamp = timestamp
       updateData.isArchived = isArchived
       if (raw.name !== undefined) updateData.name = raw.name
@@ -176,7 +207,9 @@ export async function handleHistorySync(
             await prisma.community.update({
               where: { id: communityId },
               data: { announceJid: jid }
-            }).catch(() => {})
+            }).catch((err) => {
+              console.error('[HistorySync] community announce update failed:', err)
+            })
           }
         }
         updateData.communityId = communityId
@@ -208,7 +241,9 @@ export async function handleHistorySync(
             const cleanLid = cleanJid(String(lid))
             const cleanPn = cleanJid(String(pn))
             if (cleanLid.includes('@lid') && cleanPn.includes('@s.whatsapp.net')) {
-              await contactService.linkLidAndPn(cleanLid, cleanPn, 'history.sync.participant').catch(() => {})
+              await contactService.linkLidAndPn(cleanLid, cleanPn, 'history.sync.participant').catch((err) => {
+                console.error('[HistorySync] participant linkLidAndPn failed:', err)
+              })
             }
           }
         }
@@ -230,19 +265,33 @@ export async function handleHistorySync(
 
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE)
-      const messageData: any[] = []
+      const messageData: {
+        id: string
+        chatJid: string
+        fromMe: boolean
+        senderId: number | null
+        participant: string | null
+        timestamp: bigint
+        messageType: string
+        content: string
+        textContent: string | null
+        status: string | null
+        isEdited: boolean
+        isDeleted: boolean
+      }[] = []
       const pendingReactions: { targetId: string; reactorId: number; emoji: string; timestamp: bigint }[] = []
 
       for (const m of batch) {
-        const key = m.key as Record<string, unknown> | undefined
+        const mTyped = m as unknown as proto.IWebMessageInfo
+        const key = mTyped.key
         if (!key || !key.id) continue
 
-        const message = m.message as Record<string, unknown> | null | undefined
-        const timestamp = parseBaileysTimestamp(m.messageTimestamp ?? 0)
+        const message = mTyped.message
+        const timestamp = parseBaileysTimestamp(mTyped.messageTimestamp ?? 0)
 
         const remoteJid = cleanJid(String(key.remoteJid ?? ''))
         
-        const unwrappedMessage = message ? unwrapMessage(message) : null
+        const unwrappedMessage = message ? unwrapMessage(message) as Record<string, unknown> : null
         let finalId = String(key.id)
         let finalMessageType = getMessageType(unwrappedMessage)
         let finalContent = JSON.stringify(message ?? {})
@@ -251,25 +300,27 @@ export async function handleHistorySync(
         let finalParticipantRaw = key.participant ? String(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
         let finalParticipant = finalParticipantRaw ? cleanJid(finalParticipantRaw) : null
         let isEdited = false
-        const stubType = m.messageStubType as number | string | null | undefined
-        const stubParams = m.messageStubParameters as string[] | null | undefined
+        const stubType = mTyped.messageStubType
+        const stubParams = mTyped.messageStubParameters
         let isDeleted = stubType === WAMessageStubType.REVOKE ||
                         (stubType === WAMessageStubType.CIPHERTEXT && (stubParams?.includes('Message absent from node') ?? false))
 
-        const protocolMessage = message?.protocolMessage as Record<string, any> | undefined
+        const protocolMessage = message?.protocolMessage
         if (protocolMessage) {
-          const targetKey = protocolMessage.key as Record<string, any> | undefined
+          const targetKey = protocolMessage.key
           if (targetKey && targetKey.id) {
-            const isEdit = protocolMessage.type === 14 || protocolMessage.type === 'MESSAGE_EDIT'
-            const isRevoke = protocolMessage.type === 0 || protocolMessage.type === 'REVOKE'
+            const typeVal = protocolMessage.type as unknown
+            const isEdit = typeVal === 14 || typeVal === 'MESSAGE_EDIT'
+            const isRevoke = typeVal === 0 || typeVal === 'REVOKE'
 
             if (isEdit) {
-              const editedMessage = protocolMessage.editedMessage as Record<string, any> | undefined
+              const editedMessage = protocolMessage.editedMessage
               if (editedMessage) {
+                const editedMessageUnwrapped = unwrapMessage(editedMessage) as Record<string, unknown>
                 finalId = String(targetKey.id)
-                finalMessageType = getMessageType(editedMessage)
+                finalMessageType = getMessageType(editedMessageUnwrapped)
                 finalContent = JSON.stringify(editedMessage)
-                finalTextContent = extractTextContent(editedMessage)
+                finalTextContent = extractTextContent(editedMessageUnwrapped)
                 finalFromMe = targetKey.fromMe === true
                 
                 const targetRemoteJid = cleanJid(String(targetKey.remoteJid ?? remoteJid))
@@ -304,7 +355,7 @@ export async function handleHistorySync(
         }
 
         // Process nested reactions if present on the raw message info
-        const reactions = m.reactions as proto.IReaction[] | null | undefined
+        const reactions = mTyped.reactions
         if (reactions && reactions.length > 0) {
           for (const r of reactions) {
             const reactionKey = r.key
@@ -361,7 +412,9 @@ export async function handleHistorySync(
             where: { jid: remoteJid },
             update: {},
             create: { jid: remoteJid, type: chatType }
-          }).catch(() => {})
+          }).catch((err) => {
+            console.error('[HistorySync] chat upsert failed:', err)
+          })
           processedChats.add(remoteJid)
         }
 
@@ -375,15 +428,13 @@ export async function handleHistorySync(
           messageType: finalMessageType,
           content: finalContent,
           textContent: finalTextContent,
-          status: mapBaileysStatus(m.status as number | null | undefined),
+          status: mapBaileysStatus(mTyped.status),
           isEdited,
           isDeleted
         })
       }
 
       if (messageData.length > 0) {
-        const msgOps: any[] = []
-
         for (const msg of messageData) {
           if (msg.messageType === 'reactionMessage') {
             try {
@@ -410,24 +461,6 @@ export async function handleHistorySync(
             } catch (e: any) {
               console.error('[HistorySync] Failed to parse reaction message JSON:', e.message)
             }
-          } else {
-            const update: Record<string, unknown> = {}
-            if (msg.chatJid) update.chatJid = msg.chatJid
-            if (msg.senderId !== undefined) update.senderId = msg.senderId
-            if (msg.participant !== undefined) update.participant = msg.participant
-            if (msg.timestamp) update.timestamp = msg.timestamp
-            if (msg.messageType !== 'unknown') update.messageType = msg.messageType
-            if (msg.content !== '{}') update.content = msg.content
-            if (msg.textContent !== null) update.textContent = msg.textContent
-            update.fromMe = msg.fromMe
-
-            msgOps.push(
-              prisma.message.upsert({
-                where: { id: msg.id },
-                update,
-                create: msg
-              })
-            )
           }
         }
 

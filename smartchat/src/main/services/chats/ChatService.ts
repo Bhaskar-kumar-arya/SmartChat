@@ -16,7 +16,17 @@ export class ChatService {
     const cleanedJid = cleanJid(jid)
     if (!cleanedJid) return
 
-    const data: Record<string, any> = {}
+    const data: {
+      unreadCount?: number
+      pinned?: number
+      muteExpiration?: bigint
+      isArchived?: boolean
+      name?: string | null
+      profilePictureUrl?: string | null
+      timestamp?: bigint
+      type?: 'DM' | 'GROUP' | 'COMMUNITY' | 'SUBGROUP' | 'ANNOUNCE'
+      communityId?: number | null
+    } = {}
 
     if (typeof update.unreadCount === 'number') {
       data.unreadCount = update.unreadCount
@@ -42,7 +52,9 @@ export class ChatService {
     const ts = update.conversationTimestamp ?? update.timestamp
     if (ts) {
       data.timestamp = BigInt(
-        typeof ts === 'object' && ts !== null && 'low' in ts ? (ts as any).low : (ts as any)
+        typeof ts === 'object' && ts !== null && 'low' in ts 
+          ? (ts as unknown as { low: number }).low 
+          : (ts as unknown as number | bigint)
       )
     }
 
@@ -59,19 +71,23 @@ export class ChatService {
         const cleanOwner = cleanJid(update.owner)
         const cleanOwnerPn = cleanJid(update.ownerPn)
         if (cleanOwner.includes('@lid') && cleanOwnerPn.includes('@s.whatsapp.net')) {
-          await this.contactService.linkLidAndPn(cleanOwner, cleanOwnerPn, 'group.metadata.owner').catch(() => {})
+          await this.contactService.linkLidAndPn(cleanOwner, cleanOwnerPn, 'group.metadata.owner').catch((err) => {
+            console.error('[ChatService] Failed to link owner LID and PN:', err)
+          })
         }
       }
       if (update.descOwner && update.descOwnerPn) {
         const cleanDescOwner = cleanJid(update.descOwner)
         const cleanDescOwnerPn = cleanJid(update.descOwnerPn)
         if (cleanDescOwner.includes('@lid') && cleanDescOwnerPn.includes('@s.whatsapp.net')) {
-          await this.contactService.linkLidAndPn(cleanDescOwner, cleanDescOwnerPn, 'group.metadata.descOwner').catch(() => {})
+          await this.contactService.linkLidAndPn(cleanDescOwner, cleanDescOwnerPn, 'group.metadata.descOwner').catch((err) => {
+            console.error('[ChatService] Failed to link descOwner LID and PN:', err)
+          })
         }
       }
 
       if (rootJid) {
-        const updateData: any = {}
+        const updateData: { name?: string } = {}
         if (commInfo.isCommunity && chatName) updateData.name = chatName
 
         // Ensure Community exists
@@ -220,7 +236,9 @@ export class ChatService {
 
       // 1. If we have both LID and phone number, link them.
       if (p.lid && p.pn) {
-        await this.contactService.linkLidAndPn(p.lid, p.pn, 'group.participant').catch(() => {})
+        await this.contactService.linkLidAndPn(p.lid, p.pn, 'group.participant').catch((err) => {
+          console.error('[ChatService] Failed to link group participant LID and PN:', err)
+        })
       }
 
       // 2. Look up identity (pre-fetched or cached)
@@ -237,7 +255,9 @@ export class ChatService {
       // 3. Still not found — create a minimal contact
       if (!identityId) {
         const contactId = p.pn ?? p.lid ?? p.id
-        await this.contactService.upsertContact({ id: contactId, ...(p.lid && p.pn ? { lid: p.lid } : {}) }).catch(() => {})
+        await this.contactService.upsertContact({ id: contactId, ...(p.lid && p.pn ? { lid: p.lid } : {}) }).catch((err) => {
+          console.error('[ChatService] Failed to upsert group participant contact:', err)
+        })
         identityId = p.pn
           ? await this.contactService.getIdentityIdByJid(p.pn)
           : await this.contactService.getIdentityIdByJid(p.id)
@@ -249,7 +269,9 @@ export class ChatService {
           where: { chatJid_identityId: { chatJid: cleanedChatJid, identityId } },
           update: { role },
           create: { chatJid: cleanedChatJid, identityId, role }
-        }).catch(() => {})
+        }).catch((err) => {
+          console.error('[ChatService] Failed to upsert chat member:', err)
+        })
       }
     }
   }
@@ -465,9 +487,10 @@ export class ChatService {
     if (!sock || !jid.endsWith('@g.us')) return []
     try {
       const metadata = await sock.groupMetadata(jid)
-      const jids = metadata.participants.map((p: any) => p.id)
+      const participants = metadata.participants as Array<{ id: string; admin?: 'admin' | 'superadmin' | null }>
+      const jids = participants.map(p => p.id)
       const nameMap = await this.contactService.batchResolveNames(jids, sock)
-      return metadata.participants.map((p: any) => ({
+      return participants.map(p => ({
         jid: p.id,
         name: nameMap.get(p.id) || p.id.split('@')[0],
         isAdmin: !!p.admin,

@@ -104,7 +104,9 @@ export class IdentityReconciliationService {
         if (!keep.verifiedName && stub.verifiedName) enrichUpdate.verifiedName = stub.verifiedName
         if (!keep.profilePictureUrl && stub.profilePictureUrl) enrichUpdate.profilePictureUrl = stub.profilePictureUrl
         if (Object.keys(enrichUpdate).length > 0) {
-          await this.prisma.identity.update({ where: { id: keepId }, data: enrichUpdate }).catch(() => {})
+          await this.prisma.identity.update({ where: { id: keepId }, data: enrichUpdate }).catch((err) => {
+            console.error(`[deduplicateIdentities] Failed to enrich identity ${keepId} during merge:`, err)
+          })
         }
 
         // 6. Delete the now-empty stub

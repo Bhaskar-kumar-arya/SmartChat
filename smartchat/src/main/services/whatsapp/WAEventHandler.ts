@@ -185,10 +185,17 @@ export class WAEventHandler {
     await this.bus.emit('contact:updated', { contacts })
   }
 
-  async handleLidMappingUpdate(mappings: any[]): Promise<void> {
-    const parsed = mappings
-      .filter(m => m.lid && m.pn)
-      .map(m => ({ lid: m.lid as string, pn: m.pn as string }))
+  async handleLidMappingUpdate(mappings: unknown): Promise<void> {
+    const arr = Array.isArray(mappings) ? mappings : [mappings]
+    const parsed: { lid: string; pn: string }[] = []
+    for (const m of arr) {
+      if (m && typeof m === 'object' && 'lid' in m && 'pn' in m) {
+        const item = m as { lid: unknown; pn: unknown }
+        if (typeof item.lid === 'string' && typeof item.pn === 'string') {
+          parsed.push({ lid: item.lid, pn: item.pn })
+        }
+      }
+    }
     await this.bus.emit('lid:mapped', { mappings: parsed })
   }
 
@@ -243,10 +250,19 @@ export class WAEventHandler {
     await this.bus.emit('group:updated', { updates })
   }
 
-  async handleGroupParticipantsUpdate(data: { id: string; participants: string[]; action: string }): Promise<void> {
+  async handleGroupParticipantsUpdate(data: { id: string; participants: unknown[]; action: string }): Promise<void> {
+    const participants = data.participants.map(p => {
+      if (typeof p === 'string') return p
+      if (p && typeof p === 'object' && 'id' in p) {
+        const item = p as { id: unknown }
+        if (typeof item.id === 'string') return item.id
+      }
+      return ''
+    }).filter(Boolean)
+
     await this.bus.emit('group:participants', {
       id: data.id,
-      participants: data.participants,
+      participants,
       action: data.action
     })
   }

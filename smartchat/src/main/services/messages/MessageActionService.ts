@@ -55,7 +55,9 @@ export class MessageActionService {
       messageId,
       chatJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error('[MessageActionService] Failed to emit message:deleted event:', err)
+    });
 
     return {
       success: true,
@@ -123,7 +125,9 @@ export class MessageActionService {
       editedTextContent: newText,
       editedContent: updatedContent as proto.IMessage,
       sock
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error('[MessageActionService] Failed to emit message:edited event:', err)
+    });
 
     return enriched;
   }
@@ -186,9 +190,11 @@ export class MessageActionService {
         textContent: processed.textContent,
         fromMe: enriched.fromMe,
         timestamp: BigInt(enriched.timestamp),
-        processed: enriched as any,
+        processed: processed,
         sock
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error('[MessageActionService] Failed to emit message:incoming event:', err)
+      });
 
       results.push({
         jid: resolvedDest,
@@ -247,7 +253,7 @@ export class MessageActionService {
       if (myJidClean) {
         reactorId = await this.contactService.getIdentityIdByJid(myJidClean);
         if (!reactorId) {
-          const myLid = (sock?.user as { lid?: string })?.lid?.split(':')[0];
+          const myLid = (sock?.user as unknown as { lid?: string })?.lid?.split(':')[0];
           if (myLid) reactorId = await this.contactService.getIdentityIdByJid(myLid);
         }
       }
@@ -263,14 +269,18 @@ export class MessageActionService {
       // Remove reaction
       await this.prisma.reaction.deleteMany({
         where: { messageId, senderId: reactorId }
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error('[MessageActionService] Failed to delete reaction:', err)
+      });
     } else {
       // Upsert reaction
       await this.prisma.reaction.upsert({
         where: { messageId_senderId: { messageId, senderId: reactorId } },
         update: { text: reaction, timestamp },
         create: { messageId, senderId: reactorId, text: reaction, timestamp }
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error('[MessageActionService] Failed to upsert reaction:', err)
+      });
     }
 
     // Reactions are fully handled by ReceiptSubscriber via the reaction:update bus event.
@@ -353,9 +363,11 @@ export class MessageActionService {
       textContent: processed.textContent,
       fromMe: enriched.fromMe,
       timestamp: BigInt(enriched.timestamp),
-      processed: enriched as any,
+      processed: processed,
       sock
-    }).catch(() => {})
+    }).catch((err) => {
+      console.error('[MessageActionService] Failed to emit message:incoming event:', err)
+    })
     return enriched
   }
 
@@ -437,7 +449,9 @@ export class MessageActionService {
     const sentMsg = await sock.sendMessage(targetJid, sendOptions as unknown as AnyMessageContent)
     if (!sentMsg) {
       if (isTempFile) {
-        try { fs.unlinkSync(finalPathToSend) } catch (e) {}
+        try { fs.unlinkSync(finalPathToSend) } catch (e) {
+          console.warn('[MessageActionService] Failed to unlink temp file:', e)
+        }
       }
       throw new Error('Failed to send media message')
     }
@@ -445,7 +459,9 @@ export class MessageActionService {
     const processed = await this.messageService.processMessage(sentMsg, sock)
     if (!processed || 'type' in processed) {
       if (isTempFile) {
-        try { fs.unlinkSync(finalPathToSend) } catch (e) {}
+        try { fs.unlinkSync(finalPathToSend) } catch (e) {
+          console.warn('[MessageActionService] Failed to unlink temp file:', e)
+        }
       }
       throw new Error('Failed to process sent message')
     }
@@ -486,7 +502,9 @@ export class MessageActionService {
     }
 
     if (isTempFile) {
-      try { fs.unlinkSync(finalPathToSend) } catch (e) {}
+      try { fs.unlinkSync(finalPathToSend) } catch (e) {
+        console.warn('[MessageActionService] Failed to unlink temp file:', e)
+      }
     }
 
     await this.chatService.updateTimestamp(targetJid, processed.timestamp)
@@ -500,9 +518,11 @@ export class MessageActionService {
       textContent: processed.textContent,
       fromMe: enriched.fromMe,
       timestamp: BigInt(enriched.timestamp),
-      processed: enriched as any,
+      processed: processed,
       sock
-    }).catch(() => {})
+    }).catch((err) => {
+      console.error('[MessageActionService] Failed to emit message:incoming event:', err)
+    })
     return enriched
   }
 

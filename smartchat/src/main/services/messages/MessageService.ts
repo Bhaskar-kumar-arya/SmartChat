@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { WAMessageStubType } from '@whiskeysockets/baileys'
+import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { EmbeddingService } from '../search/EmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
@@ -108,14 +108,17 @@ export class MessageService {
 
     // 5. Ingest metadata (PushName, AltJID)
     if (!key.fromMe && msg.pushName && participantString) {
-      await this.contactService.upsertContact({ id: participantString, name: msg.pushName, notify: msg.pushName }, { overwriteName: false }).catch(() => {})
+      await this.contactService.upsertContact({ id: participantString, name: msg.pushName, notify: msg.pushName }, { overwriteName: false }).catch((err) => {
+        console.error('[MessageService] Failed to upsert contact for pushName:', err)
+      })
     }
 
     // Opportunistic Identity Extraction (AddressingMode Aware)
     // We check all possible sender-related identifiers for any LID-PN pairs.
     const senderPrimary = participantString || remoteJid;
-    const altJid = (key as any).participantAlt || (key as any).remoteJidAlt;
-    const senderPn = (key as any).senderPn;
+    const keyRefined = key as unknown as { participantAlt?: string; remoteJidAlt?: string; senderPn?: string }
+    const altJid = keyRefined.participantAlt || keyRefined.remoteJidAlt;
+    const senderPn = keyRefined.senderPn;
 
     const potentialIds = [senderPrimary, altJid, senderPn].filter(Boolean) as string[];
     let discoveredLid: string | null = null;
@@ -129,7 +132,9 @@ export class MessageService {
     }
 
     if (discoveredLid && discoveredPn) {
-      await this.contactService.linkLidAndPn(discoveredLid, discoveredPn, 'message.upsert').catch(() => {});
+      await this.contactService.linkLidAndPn(discoveredLid, discoveredPn, 'message.upsert').catch((err) => {
+        console.error('[MessageService] Failed to link LID and PN:', err)
+      });
     }
 
     // 6. Resolve Identity ID
@@ -174,10 +179,12 @@ export class MessageService {
     // Ensure chat exists
     const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
     await this.prisma.chat.upsert({
-      where: { remoteJid },
+      where: { jid: remoteJid },
       update: {},
       create: { jid: remoteJid, type: chatType }
-    } as any).catch(() => {})
+    } as unknown as { where: { jid: string }; update: Record<string, unknown>; create: { jid: string; type: 'GROUP' | 'DM' } }).catch((err) => {
+      console.error('[MessageService] Failed to upsert chat:', err)
+    })
 
     // 8. Persist to DB
     if (messageType === 'reactionMessage') {
@@ -195,13 +202,17 @@ export class MessageService {
             if (!emoji) {
                 await this.prisma.reaction.deleteMany({
                     where: { messageId: targetId, senderId: reactorId }
-                }).catch(() => {})
+                }).catch((err) => {
+                    console.error('[MessageService] Failed to delete reaction:', err)
+                })
             } else {
                 await this.prisma.reaction.upsert({
                     where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
                     update: { text: emoji, timestamp },
                     create: { messageId: targetId, senderId: reactorId, text: emoji, timestamp }
-                }).catch(() => {})
+                }).catch((err) => {
+                    console.error('[MessageService] Failed to upsert reaction:', err)
+                })
             }
         }
     } else {
@@ -620,8 +631,9 @@ export class MessageService {
     if (!targetId || !reactionKey) return
 
     // 1. Reconcile Linked ID (LID) and Phone Number (PN)
-    const lid = reactionKey.participant || reactionKey.participantAlt
-    const pn = reactionKey.participantAlt || reactionKey.participant
+    const refinedKey = reactionKey as proto.IMessageKey & { participantAlt?: string }
+    const lid = refinedKey.participant || refinedKey.participantAlt
+    const pn = refinedKey.participantAlt || refinedKey.participant
 
     let callLid: string | null = null
     let callPn: string | null = null
@@ -647,11 +659,11 @@ export class MessageService {
     }
 
     // 3. Resolve reactor JID and Identity ID
-    let reactorJid = reactionKey.participant || (reactionKey.remoteJid?.endsWith('@g.us') ? null : reactionKey.remoteJid)
-    if (reactionKey.fromMe) {
+    let reactorJid = refinedKey.participant || (refinedKey.remoteJid?.endsWith('@g.us') ? null : refinedKey.remoteJid)
+    if (refinedKey.fromMe) {
       if (sock?.user) {
         const myRawJid = sock.user.id || ''
-        const myLid = (sock.user as any)?.lid || ''
+        const myLid = (sock.user as unknown as { lid?: string })?.lid || ''
         reactorJid = myLid ? myLid.split(':')[0] + '@lid' : (myRawJid ? myRawJid.split(':')[0] + '@s.whatsapp.net' : reactorJid)
       } else {
         const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
@@ -681,7 +693,9 @@ export class MessageService {
     } else if (reactorJid) {
       reactorId = await this.contactService.getIdentityIdByJid(reactorJid)
       if (!reactorId) {
-        await this.contactService.upsertContact({ id: reactorJid }).catch(() => {})
+        await this.contactService.upsertContact({ id: reactorJid }).catch((err) => {
+          console.error('[MessageService] Failed to upsert reactor contact:', err)
+        })
         reactorId = await this.contactService.getIdentityIdByJid(reactorJid)
       }
     }
@@ -691,13 +705,17 @@ export class MessageService {
       if (!text) {
         await this.prisma.reaction.deleteMany({
           where: { messageId: targetId, senderId: reactorId }
-        }).catch(() => {})
+        }).catch((err) => {
+          console.error('[MessageService] Failed to delete reaction:', err)
+        })
       } else {
         await this.prisma.reaction.upsert({
           where: { messageId_senderId: { messageId: targetId, senderId: reactorId } },
           update: { text, timestamp },
           create: { messageId: targetId, senderId: reactorId, text, timestamp }
-        }).catch(() => {})
+        }).catch((err) => {
+          console.error('[MessageService] Failed to upsert reaction:', err)
+        })
       }
     }
 
@@ -740,28 +758,29 @@ export class MessageService {
     })
   }
 
-  getSafeMediaFileName(msgId: string, mediaType: string, mediaMsg: any): string {
+  getSafeMediaFileName(msgId: string, mediaType: string, mediaMsg: unknown): string {
     const ext = resolveExtension(mediaType, mediaMsg)
     
     // Attempt to resolve fileSha256 hash for deduplication
     let fileHash: string | null = null
-    if (mediaMsg && mediaMsg.fileSha256) {
-      const sha = mediaMsg.fileSha256
+    const mediaObj = mediaMsg as Record<string, unknown> | null | undefined
+    if (mediaObj && mediaObj.fileSha256) {
+      const sha = mediaObj.fileSha256
       if (typeof sha === 'string') {
         fileHash = sha.replace(/[/\\?%*:|"<>+]/g, '-').substring(0, 64)
       } else if (Buffer.isBuffer(sha)) {
         fileHash = sha.toString('hex')
-      } else if (sha && typeof sha === 'object' && sha.type === 'Buffer' && Array.isArray(sha.data)) {
-        fileHash = Buffer.from(sha.data).toString('hex')
+      } else if (sha && typeof sha === 'object' && 'type' in sha && sha.type === 'Buffer' && 'data' in sha && Array.isArray((sha as { data: unknown }).data)) {
+        fileHash = Buffer.from((sha as { data: number[] }).data).toString('hex')
       } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
-        fileHash = Buffer.from(sha).toString('hex')
+        fileHash = Buffer.from(sha as Uint8Array).toString('hex')
       }
     }
 
-    if (mediaType === 'document' && mediaMsg.fileName) {
-        const originalName = mediaMsg.fileName.includes('.') 
-            ? mediaMsg.fileName.substring(0, mediaMsg.fileName.lastIndexOf('.'))
-            : mediaMsg.fileName
+    if (mediaType === 'document' && mediaObj && typeof mediaObj.fileName === 'string') {
+        const originalName = mediaObj.fileName.includes('.') 
+            ? mediaObj.fileName.substring(0, mediaObj.fileName.lastIndexOf('.'))
+            : mediaObj.fileName
         const safeName = originalName.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 80)
         const suffix = fileHash ? fileHash.substring(0, 12) : msgId.substring(0, 8)
         return `${safeName}_${suffix}.${ext}`

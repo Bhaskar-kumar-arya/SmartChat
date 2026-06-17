@@ -2,6 +2,30 @@ import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
 import { cleanJid, parseBaileysTimestamp, parseCommunityMetadata } from '../../utils'
 
+export interface BaileysGroupMetadata {
+  id?: string
+  name?: string
+  subject?: string
+  conversationTimestamp?: number | bigint
+  timestamp?: number | bigint
+  archived?: boolean
+  isArchived?: boolean
+  unreadCount?: number
+  pinned?: number
+  muteExpiration?: number | bigint
+  profilePictureUrl?: string | null
+  owner?: string
+  ownerPn?: string
+  descOwner?: string
+  descOwnerPn?: string
+  participants?: Array<{
+    id: string
+    lid?: string | null
+    phoneNumber?: string | null
+    admin?: 'admin' | 'superadmin' | null
+  }>
+}
+
 export class GroupHydrationService {
   constructor(
     private prisma: PrismaClient,
@@ -13,7 +37,7 @@ export class GroupHydrationService {
    * Reports progress using the provided callback.
    */
   async hydrateGroups(
-    groups: Record<string, any>,
+    groups: Record<string, BaileysGroupMetadata>,
     onProgress?: (progress: number, status: string) => void
   ): Promise<void> {
     const groupKeys = Object.keys(groups)
@@ -41,7 +65,7 @@ export class GroupHydrationService {
     }
   }
 
-  private async hydrateBatch(groups: Record<string, any>): Promise<void> {
+  private async hydrateBatch(groups: Record<string, BaileysGroupMetadata>): Promise<void> {
     const groupKeys = Object.keys(groups)
     const allGroupJids = groupKeys.map(cleanJid).filter(Boolean)
     if (allGroupJids.length === 0) return
@@ -94,7 +118,7 @@ export class GroupHydrationService {
         communityJidToIdMap.set(c.jid, c.id)
       }
 
-      const commAnnounceUpdates: any[] = []
+      const commAnnounceUpdates: Array<ReturnType<typeof this.prisma.community.update>> = []
       for (const update of announceUpdates) {
         const commId = communityJidToIdMap.get(update.rootJid)
         if (commId) {
@@ -107,7 +131,9 @@ export class GroupHydrationService {
         }
       }
       if (commAnnounceUpdates.length > 0) {
-        await this.prisma.$transaction(commAnnounceUpdates).catch(() => {})
+        await this.prisma.$transaction(commAnnounceUpdates).catch((err) => {
+          console.error('[GroupHydrationService] Failed to transaction-update community announce JIDs:', err)
+        })
       }
     }
 
@@ -117,8 +143,30 @@ export class GroupHydrationService {
     })
     const existingChatsMap = new Map(existingChats.map(c => [c.jid, c]))
 
-    const chatsToInsert: any[] = []
-    const chatsToUpdate: any[] = []
+    const chatsToInsert: Array<{
+      jid: string
+      type: string
+      unreadCount: number
+      timestamp: bigint
+      pinned: number
+      muteExpiration: bigint
+      isArchived: boolean
+      name: string | null
+      communityId: number | null
+      profilePictureUrl: string | null
+    }> = []
+    const chatsToUpdate: Array<{
+      jid: string
+      type: string
+      isArchived: boolean
+      communityId: number | null
+      name?: string | null
+      timestamp?: bigint
+      unreadCount?: number
+      pinned?: number
+      muteExpiration?: bigint
+      profilePictureUrl?: string | null
+    }> = []
 
     for (const jid of groupKeys) {
       const raw = groups[jid]
@@ -146,7 +194,17 @@ export class GroupHydrationService {
 
       if (existing) {
         // Only overwrite fields that the payload actually provides
-        const updateObj: Record<string, any> = { type, isArchived, communityId }
+        const updateObj: {
+          type: string
+          isArchived: boolean
+          communityId: number | null
+          name?: string | null
+          timestamp?: bigint
+          unreadCount?: number
+          pinned?: number
+          muteExpiration?: bigint
+          profilePictureUrl?: string | null
+        } = { type, isArchived, communityId }
         if (chatName) updateObj.name = chatName  // never blank out an existing name
         if (timestamp !== null) updateObj.timestamp = timestamp  // never zero out an existing timestamp
         if (typeof raw.unreadCount === 'number') updateObj.unreadCount = raw.unreadCount
@@ -263,7 +321,7 @@ export class GroupHydrationService {
       }
     })
 
-    const identityMap = new Map<number, any>()
+    const identityMap = new Map<number, typeof identities[number]>()
     const pnToIdentityIdMap = new Map<string, number>()
     for (const iden of identities) {
       identityMap.set(iden.id, iden)

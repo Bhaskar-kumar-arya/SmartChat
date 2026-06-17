@@ -8,6 +8,10 @@ import { AIToolInitializer } from './services/ai/AIToolInitializer'
 import { audioTranscoderService } from './services/audio/AudioTranscoderService'
 import { WASocket } from './types'
 import { WhatsAppConnectionManager } from './services/whatsapp'
+import { AIChatContext, AIHistoryMessage, AIMention } from './services/ai/AIService'
+import { AIChatMessageInput } from './services/ai/AIChatSessionService'
+import { ExportSession, ExportMessage } from './services/ai/AIChatExportService'
+import { NotificationPreferences } from './services/notification/INotificationService'
 
 export function registerIpcHandlers(
   prisma: PrismaClient,
@@ -70,7 +74,7 @@ export function registerIpcHandlers(
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
 
     const filePath = join(tempDir, fileName)
-    const data = buffer instanceof Uint8Array ? buffer : Buffer.from(buffer as any)
+    const data = buffer instanceof Uint8Array ? buffer : Buffer.from(buffer)
     fs.writeFileSync(filePath, data)
 
     if (fileName.startsWith('voice_') && fileName.endsWith('.ogg')) {
@@ -266,7 +270,7 @@ export function registerIpcHandlers(
     })
   })
 
-  ipcMain.handle('execute-tool', async (_event, toolName: string, args: any) => {
+  ipcMain.handle('execute-tool', async (_event, toolName: string, args: Record<string, unknown> | undefined) => {
     const tool = toolRegistry.getTool(toolName);
     if (!tool) throw new Error(`Tool ${toolName} not found`);
     return await tool.execute(args || {});
@@ -280,9 +284,19 @@ export function registerIpcHandlers(
     }));
   });
 
-  ipcMain.handle('ai-chat', async (_event, prompt: string, contextChats?: any[], history?: any[], mentions?: any[], options?: any) => {
-    return await services.aiService.generateResponse(prompt, contextChats, history, mentions, options);
-  })
+  ipcMain.handle(
+    'ai-chat',
+    async (
+      _event,
+      prompt: string,
+      contextChats?: AIChatContext[],
+      history?: AIHistoryMessage[],
+      mentions?: AIMention[],
+      options?: { model?: string; useThinkMode?: boolean; isSystem?: boolean; requestId?: string }
+    ) => {
+      return await services.aiService.generateResponse(prompt, contextChats, history, mentions, options);
+    }
+  )
 
   ipcMain.handle('get-ai-models', async () => {
     return await services.aiService.getAvailableModels();
@@ -296,18 +310,33 @@ export function registerIpcHandlers(
     return services.aiService.setProviderKey(provider, key);
   })
 
-  ipcMain.on('ai-chat-stream', async (event, args) => {
+  ipcMain.on('ai-chat-stream', async (event, args: {
+    channelId: string;
+    prompt: string;
+    contextChats?: AIChatContext[];
+    history?: AIHistoryMessage[];
+    mentions?: AIMention[];
+    options?: { model?: string; useThinkMode?: boolean; isSystem?: boolean; requestId?: string };
+  }) => {
     const { channelId, prompt, contextChats, history, mentions, options } = args;
     try {
-      await services.aiService.generateResponseStream(prompt, contextChats, history, mentions, { ...options, requestId: channelId }, (chunk) => {
-        event.sender.send(`${channelId}-chunk`, chunk);
-      });
+      await services.aiService.generateResponseStream(
+        prompt,
+        contextChats,
+        history,
+        mentions,
+        { ...options, requestId: channelId },
+        (chunk) => {
+          event.sender.send(`${channelId}-chunk`, chunk);
+        }
+      );
       event.sender.send(`${channelId}-end`);
-    } catch (err: any) {
-      if (err.name === 'AbortError' || err.message?.includes('abort')) {
+    } catch (err) {
+      const errorVal = err as Error;
+      if (errorVal.name === 'AbortError' || errorVal.message?.includes('abort')) {
         event.sender.send(`${channelId}-end`); // Treat abort as normal end for the frontend
       } else {
-        event.sender.send(`${channelId}-error`, err.message || String(err));
+        event.sender.send(`${channelId}-error`, errorVal.message || String(errorVal));
       }
     }
   });
@@ -346,7 +375,7 @@ export function registerIpcHandlers(
     return await services.aiChatSessionService.cloneSession(id);
   });
 
-  ipcMain.handle('ai-session-save-messages', async (_event, sessionId: string, messages: any[]) => {
+  ipcMain.handle('ai-session-save-messages', async (_event, sessionId: string, messages: AIChatMessageInput[]) => {
     return await services.aiChatSessionService.saveMessages(sessionId, messages);
   });
 
@@ -362,11 +391,11 @@ export function registerIpcHandlers(
     return await services.aiChatSessionService.getAIOptions();
   });
 
-  ipcMain.handle('set-ai-options', async (_event, options: any) => {
+  ipcMain.handle('set-ai-options', async (_event, options: Record<string, unknown>) => {
     return await services.aiChatSessionService.setAIOptions(options);
   });
 
-  ipcMain.handle('export-ai-chat', async (_event, session: any, messages: any[]) => {
+  ipcMain.handle('export-ai-chat', async (_event, session: ExportSession, messages: ExportMessage[]) => {
     return await services.aiChatExportService.exportChat(session, messages)
   })
 
@@ -386,7 +415,7 @@ export function registerIpcHandlers(
     return services.notificationService.getPreferences()
   })
 
-  ipcMain.handle('set-notification-preferences', async (_event, prefs: any) => {
+  ipcMain.handle('set-notification-preferences', async (_event, prefs: Partial<NotificationPreferences>) => {
     return services.notificationService.setPreferences(prefs)
   })
 

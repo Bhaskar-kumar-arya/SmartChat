@@ -3,14 +3,16 @@ import { app } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 
+import { AIChatContext, AIMention } from './AIService'
+
 // Path for storing simple preferences like auto-save
 const preferencesPath = join(app.getPath('userData'), 'ai_preferences.json')
 
-interface AIChatMessageInput {
+export interface AIChatMessageInput {
   role: 'user' | 'ai'
   content: string
-  contexts?: any[]
-  mentions?: any[]
+  contexts?: AIChatContext[]
+  mentions?: AIMention[]
   isHidden?: boolean
   isSystem?: boolean
   toolResult?: string
@@ -167,7 +169,7 @@ export class AIChatSessionService {
     return { autoSaveChats: true } // Default true as requested
   }
 
-  private writePreferences(prefs: any) {
+  private writePreferences(prefs: Record<string, unknown>) {
     try {
       fs.writeFileSync(preferencesPath, JSON.stringify(prefs, null, 2))
     } catch (e) {
@@ -175,7 +177,7 @@ export class AIChatSessionService {
     }
   }
 
-  async getAIOptions(): Promise<any> {
+  async getAIOptions(): Promise<{ useThinkMode: boolean; model: string; contextLength: number; autoSaveChats: boolean }> {
     const prefs = this.readPreferences()
     return {
       useThinkMode: prefs.useThinkMode !== false,
@@ -185,7 +187,7 @@ export class AIChatSessionService {
     }
   }
 
-  async setAIOptions(options: any): Promise<void> {
+  async setAIOptions(options: Record<string, unknown>): Promise<void> {
     const prefs = this.readPreferences()
     const updated = { ...prefs, ...options }
     this.writePreferences(updated)

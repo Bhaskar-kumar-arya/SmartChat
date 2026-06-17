@@ -14,7 +14,9 @@ export class DataWipeService {
         for (const file of files) {
           try {
             fs.unlinkSync(path.join(favsDir, file))
-          } catch (err) {}
+          } catch (err) {
+            console.error('[DataWipeService] Failed to unlink favourite file:', err)
+          }
         }
       }
     } catch (e) {
@@ -33,7 +35,9 @@ export class DataWipeService {
     await this.prisma.identityAlias.deleteMany()
     await this.prisma.identity.deleteMany()
     await this.prisma.authState.deleteMany()
-    await this.prisma.favoriteSticker.deleteMany().catch(() => {})
+    await this.prisma.favoriteSticker.deleteMany().catch((err) => {
+      console.error('[DataWipeService] Failed to wipe favoriteSticker:', err)
+    })
     this.wipeFavouritesFolder()
     console.log('[DataWipeService] All database tables cleared (including AuthState).')
   }
@@ -48,7 +52,9 @@ export class DataWipeService {
     await this.prisma.community.deleteMany()
     await this.prisma.identityAlias.deleteMany()
     await this.prisma.identity.deleteMany()
-    await this.prisma.favoriteSticker.deleteMany().catch(() => {})
+    await this.prisma.favoriteSticker.deleteMany().catch((err) => {
+      console.error('[DataWipeService] Failed to wipe user favoriteSticker:', err)
+    })
     this.wipeFavouritesFolder()
     console.log('[DataWipeService] User data tables cleared (AuthState preserved).')
   }

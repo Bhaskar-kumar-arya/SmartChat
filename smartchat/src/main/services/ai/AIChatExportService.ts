@@ -2,14 +2,38 @@ import fs from 'fs'
 import { join } from 'path'
 
 
+export interface ExportSession {
+  id: string
+  title: string
+  modelId?: string | null
+}
+
+export interface ExportMessage {
+  role: string
+  content: string
+  timestamp?: string | number | null
+}
+
+export interface ExportedChatData {
+  sessionId: string
+  title: string
+  model?: string | null
+  exportedAt: string
+  messages: Array<{
+    role: string
+    content: string
+    timestamp: string | number
+  }>
+}
+
 export class AIChatExportService {
   private getExportPath(): string {
     return join(process.cwd(), 'ai_chats_export.json')
   }
 
-  async exportChat(session: any, messages: any[]): Promise<void> {
+  async exportChat(session: ExportSession, messages: ExportMessage[]): Promise<void> {
     const filePath = this.getExportPath()
-    let exports: any[] = []
+    let exports: ExportedChatData[] = []
 
     if (fs.existsSync(filePath)) {
       try {
@@ -21,7 +45,7 @@ export class AIChatExportService {
     }
 
     // Check if session already exists in exports to update it, or append
-    const existingIndex = exports.findIndex((e: any) => e.sessionId === session.id)
+    const existingIndex = exports.findIndex((e) => e.sessionId === session.id)
     
     const exportData = {
       sessionId: session.id,
@@ -50,8 +74,8 @@ export class AIChatExportService {
 
     try {
       const content = fs.readFileSync(filePath, 'utf8')
-      let exports = JSON.parse(content)
-      exports = exports.filter((e: any) => e.sessionId !== sessionId)
+      let exports: ExportedChatData[] = JSON.parse(content)
+      exports = exports.filter((e) => e.sessionId !== sessionId)
       fs.writeFileSync(filePath, JSON.stringify(exports, null, 2), 'utf8')
     } catch (e) {
       console.error('Failed to delete exported chat', e)
@@ -64,11 +88,11 @@ export class AIChatExportService {
 
     try {
       const content = fs.readFileSync(filePath, 'utf8')
-      let exports = JSON.parse(content)
-      const target = exports.find((e: any) => e.sessionId === sessionId)
+      const exports: ExportedChatData[] = JSON.parse(content)
+      const target = exports.find((e) => e.sessionId === sessionId)
       
       if (target) {
-        const copy = JSON.parse(JSON.stringify(target))
+        const copy: ExportedChatData = JSON.parse(JSON.stringify(target))
         copy.sessionId = `copy-${Date.now()}`
         copy.title = `${copy.title} (Copy)`
         copy.exportedAt = new Date().toISOString()

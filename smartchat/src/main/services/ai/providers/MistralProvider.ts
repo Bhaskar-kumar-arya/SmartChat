@@ -126,8 +126,12 @@ WhatsApp messages are generally very small, so don't hesitate from fetching larg
     // No local resources to unload
   }
 
-  private formatMessages(prompt: string, history: any[], systemPrompt: string): any[] {
-    const messages: any[] = [];
+  private formatMessages(
+    prompt: string,
+    history: Array<{ role: string; content: string }>,
+    systemPrompt: string
+  ): Array<{ role: 'user' | 'assistant' | 'system'; content: string }> {
+    const messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [];
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
     }
@@ -158,8 +162,8 @@ WhatsApp messages are generally very small, so don't hesitate from fetching larg
 
   async generateResponse(
     prompt: string,
-    history: any[],
-    options: any,
+    history: Array<{ role: string; content: string }>,
+    options: { model?: string; useThinkMode?: boolean; signal?: AbortSignal },
     signal?: AbortSignal
   ): Promise<string> {
     const rawModel = this.stripPrefix(options?.model || 'mistral-large-latest');
@@ -201,8 +205,8 @@ WhatsApp messages are generally very small, so don't hesitate from fetching larg
 
   async generateResponseStream(
     prompt: string,
-    history: any[],
-    options: any,
+    history: Array<{ role: string; content: string }>,
+    options: { model?: string; useThinkMode?: boolean; signal?: AbortSignal },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void> {
@@ -222,7 +226,11 @@ WhatsApp messages are generally very small, so don't hesitate from fetching larg
       stream: true
     }, { signal: actualSignal });
 
-    const toolCalls: any[] = [];
+    const toolCalls: Array<{
+      id: string
+      type: 'function'
+      function: { name: string; arguments: string }
+    }> = [];
 
     for await (const chunk of stream) {
       if (actualSignal?.aborted) break;

@@ -6,7 +6,7 @@ import {
   makeCacheableSignalKeyStore,
   proto
 } from "@whiskeysockets/baileys";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { join } from "path";
 import { app } from "electron";
@@ -64,7 +64,7 @@ const adapter = new Proxy(baseAdapter, {
   get(target, prop, receiver) {
     const value = Reflect.get(target, prop, receiver);
     if (prop === "connect" || prop === "connectToShadowDb") {
-      return async (...args: any[]) => {
+      return async (...args: unknown[]) => {
         const conn = await (value as Function).apply(target, args);
         if (conn && conn.client) {
           try {
@@ -108,8 +108,9 @@ export const initVectorDb = async (embeddingService?: EmbeddingService) => {
         `SELECT count(*) FROM vec_messages WHERE vector MATCH ? AND k=1`,
         dummyVector
       );
-    } catch (e: any) {
-      if (e.message.includes("Dimension mismatch")) {
+    } catch (e) {
+      const errorVal = e as Error;
+      if (errorVal.message.includes("Dimension mismatch")) {
         console.warn("[VectorDB] Dimension mismatch detected. Recreating table with 768 dims...");
         await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS vec_messages`);
         await prisma.$executeRawUnsafe(`
@@ -124,7 +125,7 @@ export const initVectorDb = async (embeddingService?: EmbeddingService) => {
     console.log("[VectorDB] sqlite-vec table initialized successfully (768 dims)");
 
     // 3. Check if we need to sync existing vectors from MessageVector to vec_messages
-    const vecCountRaw = await prisma.$queryRawUnsafe<any[]>(
+    const vecCountRaw = await prisma.$queryRawUnsafe<Array<{ count: bigint | number }>>(
       `SELECT count(*) as count FROM vec_messages`
     );
     const vecCount = Number(vecCountRaw[0]?.count || 0);
@@ -160,7 +161,7 @@ export const usePrismaAuthState = async (): Promise<{
     }
   };
 
-  const writeData = async (data: any, id: string) => {
+  const writeData = async (data: unknown, id: string) => {
     try {
       const serialized = JSON.stringify(data, BufferJSON.replacer);
       await prisma.authState.upsert({
@@ -176,8 +177,8 @@ export const usePrismaAuthState = async (): Promise<{
   const creds: AuthenticationCreds =
     (await readData("creds")) || initAuthCreds();
   const baseKeyStore = {
-    get: async (type, ids) => {
-      const data: { [key: string]: any } = {};
+    get: async (type: string, ids: string[]): Promise<{ [id: string]: any }> => {
+      const data: Record<string, unknown> = {};
       await Promise.all(
         ids.map(async (id) => {
           let value = await readData(`${type}-${id}`);
@@ -187,13 +188,13 @@ export const usePrismaAuthState = async (): Promise<{
           data[id] = value;
         })
       );
-      return data as any;
+      return data as { [id: string]: any };
     },
-    set: async (data) => {
+    set: async (data: { [category: string]: { [id: string]: any } }): Promise<void> => {
       // Aggregate ALL key mutations into a single prisma.$transaction() call.
       // This replaces N individual SQLite lock/write/unlock cycles with ONE,
       // which is the primary fix for the slow 1-5 message trickle on reconnect.
-      const ops: any[] = [];
+      const ops: Prisma.PrismaPromise<any>[] = [];
       for (const category in data) {
         for (const id in data[category as keyof typeof data]) {
           const value = data[category as keyof typeof data]?.[id];

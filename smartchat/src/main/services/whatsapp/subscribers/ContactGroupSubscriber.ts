@@ -48,7 +48,9 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
         lid: contact.lid ? cleanJid(contact.lid) : undefined,
         phoneNumber: contact.phoneNumber ? cleanJid(contact.phoneNumber) : undefined
       }
-      await this.services.contactService.upsertContact(cleanContact).catch(() => {})
+      await this.services.contactService.upsertContact(cleanContact).catch((err) => {
+        console.error('[ContactGroupSubscriber] Failed to upsert contact in onContactUpserted:', err)
+      })
 
       if (
         contact.lid &&
@@ -58,7 +60,9 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
       ) {
         await this.services.contactService
           .linkLidAndPn(cleanJid(contact.lid), cleanJid(contact.id), 'contacts.upsert')
-          .catch(() => {})
+          .catch((err) => {
+            console.error('[ContactGroupSubscriber] Failed to link LID and PN in onContactUpserted:', err)
+          })
       }
     }
   }
@@ -73,7 +77,9 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
       }
       await this.services.contactService
         .upsertContact(cleanContact, { overwriteName: true })
-        .catch(() => {})
+        .catch((err) => {
+          console.error('[ContactGroupSubscriber] Failed to upsert contact in onContactUpdated:', err)
+        })
     }
   }
 
@@ -82,7 +88,9 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
       if (lid && pn) {
         await this.services.contactService
           .linkLidAndPn(cleanJid(lid), cleanJid(pn), 'lid-mapping.update')
-          .catch(() => {})
+          .catch((err) => {
+            console.error('[ContactGroupSubscriber] Failed to link LID and PN in onLidMapped:', err)
+          })
       }
     }
   }
@@ -94,7 +102,9 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
 
       await this.services.chatService
          .upsertChat(cleanGroupId, { ...update, id: cleanGroupId })
-         .catch(() => {})
+         .catch((err) => {
+           console.error('[ContactGroupSubscriber] Failed to upsert chat in onGroupUpdated:', err)
+         })
 
       if (update.participants && update.participants.length > 0) {
         const cleanParticipants = update.participants.map((p) => ({
@@ -120,7 +130,9 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
       let identityId = await this.services.contactService.getIdentityIdByJid(cleanUserJid)
 
       if (!identityId) {
-        await this.services.contactService.upsertContact({ id: cleanUserJid }).catch(() => {})
+        await this.services.contactService.upsertContact({ id: cleanUserJid }).catch((err) => {
+          console.error('[ContactGroupSubscriber] Failed to upsert contact in onGroupParticipants:', err)
+        })
         identityId = await this.services.contactService.getIdentityIdByJid(cleanUserJid)
       }
 
@@ -132,11 +144,15 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
           where: { chatJid_identityId: { chatJid: cleanGroupId, identityId } },
           update: { role },
           create: { chatJid: cleanGroupId, identityId, role }
-        }).catch(() => {})
+        }).catch((err) => {
+          console.error('[ContactGroupSubscriber] Failed to upsert ChatMember in onGroupParticipants:', err)
+        })
       } else if (action === 'remove') {
         await this.prisma.chatMember.delete({
           where: { chatJid_identityId: { chatJid: cleanGroupId, identityId } }
-        }).catch(() => {})
+        }).catch((err) => {
+          console.error('[ContactGroupSubscriber] Failed to delete ChatMember in onGroupParticipants:', err)
+        })
       }
     }
   }

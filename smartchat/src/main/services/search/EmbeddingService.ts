@@ -24,7 +24,7 @@ export interface IEmbeddingService {
 export class EmbeddingService implements IEmbeddingService {
   private worker: Worker | null = null
   private workerJobCounter = 0
-  private pendingJobs = new Map<number, { resolve: (v: any) => void; reject: (e: any) => void }>()
+  private pendingJobs = new Map<number, { resolve: (v: number[]) => void; reject: (e: Error) => void }>()
   private initPromise: Promise<void> | null = null
   private isPaused = false
   private modelName = 'Xenova/all-MiniLM-L6-v2'
@@ -76,31 +76,46 @@ export class EmbeddingService implements IEmbeddingService {
         console.log(`[EmbeddingService] Starting worker from: ${workerPath}`)
         this.worker = new Worker(workerPath)
 
-        this.worker.on('message', (msg) => {
+        interface WorkerMessage {
+          type: 'init_done' | 'progress' | 'embed_done' | 'error' | string
+          id: number | null
+          payload: {
+            status?: string
+            file?: string
+            loaded?: number
+            total?: number
+            vector?: number[]
+            error?: string
+          }
+        }
+
+        this.worker.on('message', (msg: WorkerMessage) => {
           if (msg.type === 'init_done') {
             console.log('[EmbeddingService] Worker initialized.')
             resolve()
           } else if (msg.type === 'progress') {
             const p = msg.payload
-            if (p.status === 'progress') {
+            if (p.status === 'progress' && p.file && p.loaded !== undefined && p.total !== undefined) {
               console.log(`[EmbeddingService] Worker Download: ${p.file} (${Math.round((p.loaded / p.total) * 100)}%)`)
             }
           } else if (msg.type === 'embed_done') {
-            const job = this.pendingJobs.get(msg.id)
-            if (job) {
-              job.resolve(msg.payload.vector)
-              this.pendingJobs.delete(msg.id)
+            if (msg.id !== null && msg.id !== undefined) {
+              const job = this.pendingJobs.get(msg.id)
+              if (job && msg.payload.vector) {
+                job.resolve(msg.payload.vector)
+                this.pendingJobs.delete(msg.id)
+              }
             }
           } else if (msg.type === 'error') {
-            if (msg.id !== null) {
+            if (msg.id !== null && msg.id !== undefined) {
               const job = this.pendingJobs.get(msg.id)
               if (job) {
-                job.reject(new Error(msg.payload.error))
+                job.reject(new Error(msg.payload.error || 'Unknown worker error'))
                 this.pendingJobs.delete(msg.id)
               }
             } else {
               console.error('[EmbeddingService] Worker Global Error:', msg.payload.error)
-              reject(new Error(msg.payload.error))
+              reject(new Error(msg.payload.error || 'Unknown worker error'))
             }
           }
         })
@@ -231,7 +246,7 @@ export class EmbeddingService implements IEmbeddingService {
     await this.ensureWorker()
 
     const indexed = await this.prisma.messageVector.findMany({ select: { messageId: true } })
-    const indexedSet = new Set<string>(indexed.map((v: any) => v.messageId))
+    const indexedSet = new Set<string>(indexed.map((v) => v.messageId))
 
     const messages = await this.prisma.message.findMany({
       where: { textContent: { not: null } },
@@ -297,7 +312,9 @@ export class EmbeddingService implements IEmbeddingService {
         const parsed = JSON.parse(v.vector)
         if (Array.isArray(parsed) && parsed.length !== 768) {
           console.warn(`[EmbeddingService] Dimension mismatch for message ${v.messageId} (expected 768, got ${parsed.length}). Deleting stale vector.`)
-          await this.prisma.messageVector.delete({ where: { messageId: v.messageId } }).catch(() => {})
+          await this.prisma.messageVector.delete({ where: { messageId: v.messageId } }).catch((err) => {
+            console.error(`[EmbeddingService] Failed to delete stale vector for ${v.messageId}:`, err)
+          })
           continue
         }
         await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, v.messageId)

@@ -95,9 +95,20 @@ export class ContactService {
     const uniqueJids = Array.from(new Set(jids.filter(Boolean).map(cleanJid)))
     if (uniqueJids.length === 0) return new Map()
 
-    const BATCH_SIZE = 250
-    const aliases: any[] = []
+    const aliases: Array<{
+      jid: string
+      identityId: number
+      identity: {
+        id: number
+        phoneNumber: string | null
+        displayName: string | null
+        pushName: string | null
+        verifiedName: string | null
+        isMe: boolean
+      } | null
+    }> = []
     
+    const BATCH_SIZE = 250
     for (let i = 0; i < uniqueJids.length; i += BATCH_SIZE) {
       const chunk = uniqueJids.slice(i, i + BATCH_SIZE)
       const res = await this.prisma.identityAlias.findMany({
@@ -132,7 +143,9 @@ export class ContactService {
           if (pn) {
             resolvedFromCache = true;
             // Async fire-and-forget to link them
-            this.linkLidAndPn(jid, pn, 'runtime.cache').catch(() => {});
+            this.linkLidAndPn(jid, pn, 'runtime.cache').catch((err) => {
+              console.error('[ContactService] Failed to link LID and PN in runtime cache:', err)
+            });
             
             // Re-check aliases just in case PN is known
             const pnAlias = aliases.find(a => a.jid === pn);
@@ -331,7 +344,9 @@ export class ContactService {
       where: { lid: cleanLid },
       update: { pn: cleanPn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
       create: { lid: cleanLid, pn: cleanPn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
-    }).catch(() => {})
+    }).catch((err) => {
+      console.error('[ContactService] Failed to upsert lidMap entry:', err)
+    })
 
     // 2. Relational Identity Sync
     // Find identities for both
@@ -368,7 +383,9 @@ export class ContactService {
           this.prisma.reaction.count({ where: { senderId: orphanId } })
         ])
         if (aliasCount === 0 && msgCount === 0 && memberCount === 0 && reactionCount === 0) {
-          await this.prisma.identity.delete({ where: { id: orphanId } }).catch(() => {})
+          await this.prisma.identity.delete({ where: { id: orphanId } }).catch((err) => {
+            console.error('[ContactService] Failed to delete orphaned identity:', err)
+          })
         }
       }
     } else if (lidAlias) {
@@ -570,7 +587,9 @@ export class ContactService {
         where: { lid: myLid },
         update: { pn: myJid, source: 'registerMe', lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
         create: { lid: myLid, pn: myJid, source: 'registerMe', lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error('[ContactService] Failed to upsert me lidMap entry:', err)
+      });
     }
 
     this.meJidsCache = null;

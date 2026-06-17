@@ -1,6 +1,9 @@
 import { BrowserWindow } from 'electron'
-import baileys, { DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys'
-const makeWASocket = (baileys as any).default || baileys;
+import makeWASocketImport, { DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys'
+
+const makeWASocket = (typeof makeWASocketImport === 'function'
+  ? makeWASocketImport
+  : (makeWASocketImport as any).default) as typeof makeWASocketImport
 import { Boom } from '@hapi/boom'
 import NodeCache from 'node-cache'
 import { usePrismaAuthState } from '../../auth'
@@ -64,7 +67,8 @@ export class WhatsAppConnectionManager {
     if (this.currentSock) {
       console.log('[Connection] Cleaning up previous socket instance before reconnecting...')
       try {
-        (this.currentSock.ev as any).removeAllListeners()
+        const ev = this.currentSock.ev as unknown as { removeAllListeners?: () => void }
+        ev.removeAllListeners?.()
         this.currentSock.end(new Error('Replaced by new socket instance'))
       } catch (err) {
         console.warn('[Connection] Error cleaning up old socket:', err)
@@ -84,7 +88,9 @@ export class WhatsAppConnectionManager {
       this.isFreshLogin = true
       await this.prisma.authState.deleteMany({
         where: { id: 'history_sync_completed' }
-      }).catch(() => {})
+      }).catch((err) => {
+        console.error('[WhatsAppConnectionManager] failed to delete history_sync_completed flag:', err)
+      })
 
       const orphanChats = await this.prisma.chat.count()
       if (orphanChats > 0) {
@@ -95,12 +101,12 @@ export class WhatsAppConnectionManager {
     }
 
     const { state, saveCreds } = await usePrismaAuthState()
-    let version = [2, 3000, 1035194821]
+    let version: [number, number, number] = [2, 3000, 1035194821]
     let isLatest = false
     try {
       console.log('[Connection] Fetching latest WhatsApp version from Baileys...')
       const latest = await fetchLatestBaileysVersion()
-      version = latest.version
+      version = latest.version as [number, number, number]
       isLatest = latest.isLatest
       console.log(`[Connection] Successfully fetched WA v${version.join('.')}, isLatest: ${isLatest}`)
     } catch (err) {
@@ -110,12 +116,17 @@ export class WhatsAppConnectionManager {
     if (this.isFreshLogin) {
       await this.prisma.authState.deleteMany({
         where: { id: 'history_sync_completed' }
-      }).catch(() => {})
+      }).catch((err) => {
+        console.error('[WhatsAppConnectionManager] fresh login authState deletion failed:', err)
+      })
     }
 
     const syncCompletedRow = await this.prisma.authState.findUnique({
       where: { id: 'history_sync_completed' }
-    }).catch(() => null)
+    }).catch((err) => {
+      console.error('[WhatsAppConnectionManager] find history_sync_completed failed:', err)
+      return null
+    })
     const isHistorySyncCompleted = syncCompletedRow?.data === 'true'
 
     // Clear HistorySyncManager for this connection
@@ -126,7 +137,10 @@ export class WhatsAppConnectionManager {
 
     const fullHistoryRow = await this.prisma.authState.findUnique({
       where: { id: 'sync_full_history' }
-    }).catch(() => null)
+    }).catch((err) => {
+      console.error('[WhatsAppConnectionManager] find sync_full_history failed:', err)
+      return null
+    })
     const syncFullHistory = fullHistoryRow?.data === 'true'
 
     const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
@@ -158,10 +172,14 @@ export class WhatsAppConnectionManager {
 
     // Prevent MaxListenersExceededWarning
     try {
-      if ((sock.ev as any).target?.setMaxListeners) {
-        (sock.ev as any).target.setMaxListeners(100)
-      } else if ((sock.ev as any).setMaxListeners) {
-        (sock.ev as any).setMaxListeners(100)
+      const evTarget = sock.ev as unknown as {
+        target?: { setMaxListeners?: (n: number) => void }
+        setMaxListeners?: (n: number) => void
+      }
+      if (evTarget.target?.setMaxListeners) {
+        evTarget.target.setMaxListeners(100)
+      } else if (evTarget.setMaxListeners) {
+        evTarget.setMaxListeners(100)
       }
     } catch (err) {
       console.warn('[Connection] Failed to set max listeners:', err)
@@ -194,7 +212,7 @@ export class WhatsAppConnectionManager {
 
         if (connection === 'close') {
           const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
-          const errorData = (lastDisconnect?.error as any)?.data
+          const errorData = (lastDisconnect?.error as unknown as { data?: { tag?: string } })?.data
           const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
           const isRestartRequired = statusCode === DisconnectReason.restartRequired
           const shouldReconnect = (statusCode !== DisconnectReason.loggedOut && !isConflict) || isRestartRequired
@@ -233,7 +251,10 @@ export class WhatsAppConnectionManager {
             if (!this.isFreshLogin && !isInitialSyncInProgress) {
               const syncCompletedRow = await this.prisma.authState.findUnique({
                 where: { id: 'history_sync_completed' }
-              }).catch(() => null)
+              }).catch((err) => {
+                console.error('[WhatsAppConnectionManager] find history_sync_completed on reconnect failed:', err)
+                return null
+              })
               const isHistorySyncCompleted = syncCompletedRow?.data === 'true'
 
               if (isHistorySyncCompleted) {
@@ -329,7 +350,7 @@ export class WhatsAppConnectionManager {
       // ── App State Sync ────────────────────────────────────────────────────
       if (events['app-state.sync']) {
         const syncEvent = events['app-state.sync']
-        const syncEvents = Array.isArray(syncEvent) ? (syncEvent as any[]) : [syncEvent]
+        const syncEvents = Array.isArray(syncEvent) ? (syncEvent as unknown[]) : [syncEvent]
         // for (const e of syncEvents) {
         //   waEventLogger.log('app-state.sync', e)
         // }

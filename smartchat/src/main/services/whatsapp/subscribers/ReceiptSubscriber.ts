@@ -41,7 +41,9 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
   private async onMessageStatus(event: MessageStatusEvent): Promise<void> {
     await this.services.receiptService
       .processMessageStatusUpdate(event.key, event.baileysStatus)
-      .catch(() => {})
+      .catch((err) => {
+        console.error('[ReceiptSubscriber] Failed to process message status update:', err)
+      })
   }
 
   private async onReceipt(event: ReceiptEvent): Promise<void> {
@@ -57,7 +59,9 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
       )
       await this.services.receiptService
         .processMessageReceipt(update, event.sock)
-        .catch(() => {})
+        .catch((err) => {
+          console.error('[ReceiptSubscriber] Failed to process message receipt:', err)
+        })
     }
   }
 
@@ -92,7 +96,9 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
         if (callLid && callPn) {
           await this.services.contactService
             .linkLidAndPn(callLid, callPn, 'call.event')
-            .catch(() => {})
+            .catch((err) => {
+              console.error('[ReceiptSubscriber] Failed to link LID and PN in call event:', err)
+            })
         }
       } catch (err) {
         console.error('[ReceiptSubscriber] Error processing call event:', err)
