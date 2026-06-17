@@ -67,7 +67,7 @@ function getSenderColor(chatJid: string, participantJid: string | null | undefin
   }
 
   // Offset the hash by 7 to shuffle the assigned colors
-  const index = (Math.abs(hash)+ 7) % colors.length
+  const index = (Math.abs(hash) + 7) % colors.length
   return colors[index]
 }
 

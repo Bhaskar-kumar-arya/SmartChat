@@ -1,4 +1,5 @@
 import { PrismaClient, Message } from '@prisma/client'
+import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { ContactService } from './services/contacts/ContactService'
 import { mapBaileysStatus } from './services/whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from './utils'
@@ -244,7 +245,10 @@ export async function handleHistorySync(
         let finalParticipantRaw = key.participant ? String(key.participant) : (remoteJid.endsWith('@g.us') ? null : remoteJid)
         let finalParticipant = finalParticipantRaw ? cleanJid(finalParticipantRaw) : null
         let isEdited = false
-        let isDeleted = false
+        const stubType = m.messageStubType as number | string | null | undefined
+        const stubParams = m.messageStubParameters as string[] | null | undefined
+        let isDeleted = stubType === WAMessageStubType.REVOKE ||
+                        (stubType === WAMessageStubType.CIPHERTEXT && (stubParams?.includes('Message absent from node') ?? false))
 
         const protocolMessage = message?.protocolMessage as Record<string, any> | undefined
         if (protocolMessage) {
