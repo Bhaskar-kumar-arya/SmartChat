@@ -1,4 +1,4 @@
-import { WAMessageStubType } from '@whiskeysockets/baileys'
+import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils'
 import { BaileysMessage } from '../../types'
@@ -102,24 +102,25 @@ export class MessageParser {
    *
    * Returns `null` when no text is present (e.g. sticker, audio-only messages).
    */
-  extractTextContent(unwrapped: Record<string, unknown> | null | undefined): string | null {
+  extractTextContent(unwrapped: proto.IMessage | Record<string, unknown> | null | undefined): string | null {
     if (!unwrapped) return null
 
-    if (typeof unwrapped.conversation === 'string') {
-      return unwrapped.conversation
+    const rawMsg = unwrapped as Record<string, unknown>
+    if (typeof rawMsg.conversation === 'string') {
+      return rawMsg.conversation
     }
 
-    const extMsg = unwrapped.extendedTextMessage as Record<string, unknown> | undefined
+    const extMsg = rawMsg.extendedTextMessage as Record<string, unknown> | undefined
     if (extMsg?.text && typeof extMsg.text === 'string') {
       return extMsg.text
     }
 
     const mediaMsg =
-      (unwrapped.imageMessage as Record<string, unknown> | undefined) ??
-      (unwrapped.videoMessage as Record<string, unknown> | undefined) ??
-      (unwrapped.documentMessage as Record<string, unknown> | undefined) ??
-      (unwrapped.audioMessage as Record<string, unknown> | undefined) ??
-      (unwrapped.ptvMessage as Record<string, unknown> | undefined)
+      (rawMsg.imageMessage as Record<string, unknown> | undefined) ??
+      (rawMsg.videoMessage as Record<string, unknown> | undefined) ??
+      (rawMsg.documentMessage as Record<string, unknown> | undefined) ??
+      (rawMsg.audioMessage as Record<string, unknown> | undefined) ??
+      (rawMsg.ptvMessage as Record<string, unknown> | undefined)
 
     if (mediaMsg && typeof mediaMsg.caption === 'string') {
       return mediaMsg.caption

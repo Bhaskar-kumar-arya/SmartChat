@@ -4,7 +4,7 @@ import { pathToFileURL } from 'url'
 import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { WhatsAppConnectionManager } from './services/whatsapp'
+import { WhatsAppConnectionManager } from './services/whatsapp/WhatsAppConnectionManager'
 import { prisma, initVectorDb } from './auth'
 import { registerIpcHandlers } from './ipcHandlers'
 import { createServices } from './ServiceContainer'
@@ -178,8 +178,13 @@ app.whenReady().then(() => {
   )
   trayService.init()
 
-  waConnectionManager = new WhatsAppConnectionManager(services, prisma)
-  registerIpcHandlers(prisma, services, getSock, waConnectionManager)
+  waConnectionManager = new WhatsAppConnectionManager(
+    services,
+    prisma,
+    services.historySyncManager,
+    services.waEventWiringService
+  )
+  registerIpcHandlers(services, getSock, waConnectionManager)
   initVectorDb(services.embeddingService)
 
   ipcMain.on('wa-skip-sync', () => {

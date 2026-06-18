@@ -1,17 +1,20 @@
-import { PrismaClient } from '@prisma/client'
 import { cleanJid } from '../../utils'
-import { WASocket, WASocketWithSignalRepository } from '../../types'
-
-function hasSignalRepository(sock: WASocket | null | undefined): sock is WASocket & WASocketWithSignalRepository {
-  return !!sock && typeof sock === 'object' && 'signalRepository' in sock
-}
+import { WASocket } from '../../types'
+import { ContactRepository } from './ContactRepository'
+import { LidPnLinker } from './LidPnLinker'
+import { ContactNameResolver } from './ContactNameResolver'
+import { Identity } from '@prisma/client'
 
 export class ContactService {
   private linkCache = new Set<string>()
   private identityIdCache = new Map<string, number>()
   private meJidsCache: string[] | null = null
 
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private readonly repository: ContactRepository,
+    private readonly lidPnLinker: LidPnLinker,
+    private readonly nameResolver: ContactNameResolver
+  ) {}
 
   /**
    * Formats display name from an Identity object.
@@ -25,16 +28,7 @@ export class ContactService {
     } | null | undefined,
     fallback: string = 'Unknown'
   ): string {
-    if (!identity) return fallback
-    if (identity.displayName) return identity.displayName
-    if (identity.verifiedName) return identity.verifiedName
-    if (identity.pushName) {
-      const trimmed = identity.pushName.trim()
-      if (trimmed) {
-        return trimmed.startsWith('~') ? trimmed : `~ ${trimmed}`
-      }
-    }
-    return identity.phoneNumber?.split('@')[0] || fallback
+    return ContactNameResolver.getDisplayName(identity, fallback)
   }
 
   public clearCaches(): void {
@@ -58,10 +52,7 @@ export class ContactService {
     }
 
     try {
-      const meIdent = await this.prisma.identity.findFirst({
-        where: { isMe: true },
-        include: { aliases: true }
-      })
+      const meIdent = await this.repository.findMeIdentity()
       if (meIdent) {
         const dbJids = [meIdent.phoneNumber, ...(meIdent.aliases?.map(a => a.jid) || [])].filter(Boolean).map(cleanJid)
         this.meJidsCache = dbJids
@@ -92,94 +83,27 @@ export class ContactService {
     jids: string[],
     sock?: WASocket | null
   ): Promise<Map<string, string>> {
-    const uniqueJids = Array.from(new Set(jids.filter(Boolean).map(cleanJid)))
-    if (uniqueJids.length === 0) return new Map()
-
-    const aliases: Array<{
-      jid: string
-      identityId: number
-      identity: {
-        id: number
-        phoneNumber: string | null
-        displayName: string | null
-        pushName: string | null
-        verifiedName: string | null
-        isMe: boolean
-      } | null
-    }> = []
-    
-    const BATCH_SIZE = 250
-    for (let i = 0; i < uniqueJids.length; i += BATCH_SIZE) {
-      const chunk = uniqueJids.slice(i, i + BATCH_SIZE)
-      const res = await this.prisma.identityAlias.findMany({
-        where: { jid: { in: chunk } },
-        include: { identity: true }
-      })
-      aliases.push(...res)
-    }
-
-    const nameMap = new Map<string, string>()
     const meJids = await this.getMeJids(sock)
-
-    for (const jid of uniqueJids) {
-      // 1. Is it "Me"?
-      if (meJids.includes(jid)) {
-        nameMap.set(jid, sock?.user?.name || 'Me')
-        continue
-      }
-
-      // 2. Find matching alias
-      const alias = aliases.find(a => a.jid === jid)
-      
-      if (alias && alias.identity) {
-        const ident = alias.identity
-        const finalName = ContactService.getDisplayName(ident, jid.split('@')[0])
-        nameMap.set(jid, finalName)
-      } else {
-        // Tier 3: Runtime Cache Query
-        let resolvedFromCache = false;
-        if (jid.includes('@lid') && hasSignalRepository(sock) && sock.signalRepository?.lidMapping?.getPNForLID) {
-          const pn = cleanJid(sock.signalRepository.lidMapping.getPNForLID(jid));
-          if (pn) {
-            resolvedFromCache = true;
-            // Async fire-and-forget to link them
-            this.linkLidAndPn(jid, pn, 'runtime.cache').catch((err) => {
-              console.error('[ContactService] Failed to link LID and PN in runtime cache:', err)
-            });
-            
-            // Re-check aliases just in case PN is known
-            const pnAlias = aliases.find(a => a.jid === pn);
-            if (pnAlias && pnAlias.identity) {
-              const ident = pnAlias.identity;
-              const finalName = ContactService.getDisplayName(ident, pn.split('@')[0])
-              nameMap.set(jid, finalName);
-            } else {
-              nameMap.set(jid, pn.split('@')[0]);
-            }
-          }
-        }
-        
-        if (!resolvedFromCache) {
-          nameMap.set(jid, jid.split('@')[0])
-        }
-      }
-    }
-
-    return nameMap
+    return this.nameResolver.batchResolveNames(
+      jids,
+      meJids,
+      (lid, pn, src) => this.linkLidAndPn(lid, pn, src),
+      sock
+    )
   }
 
   /**
    * Resolves a single JID into a display name.
    */
   async resolveName(jid: string, chatName: string | null, sock?: WASocket | null): Promise<string> {
-    const cleaned = cleanJid(jid)
-    const map = await this.batchResolveNames([cleaned], sock)
-    const resolved = map.get(cleaned)
-    // If it's just the raw number (fallback), and we have a chatName, use the chatName
-    if (resolved === cleaned.split('@')[0] && chatName) {
-      return chatName
-    }
-    return resolved || chatName || cleaned.split('@')[0]
+    const meJids = await this.getMeJids(sock)
+    return this.nameResolver.resolveName(
+      jid,
+      chatName,
+      meJids,
+      (lid, pn, src) => this.linkLidAndPn(lid, pn, src),
+      sock
+    )
   }
 
   /**
@@ -214,7 +138,7 @@ export class ContactService {
       if (this.identityIdCache.has(phoneNumber)) {
         identityId = this.identityIdCache.get(phoneNumber)!
       } else {
-        const existingById = await this.prisma.identity.findUnique({ where: { phoneNumber } })
+        const existingById = await this.repository.findIdentityByPhoneNumber(phoneNumber)
         if (existingById) {
           identityId = existingById.id
           this.identityIdCache.set(phoneNumber, identityId)
@@ -228,7 +152,7 @@ export class ContactService {
       if (this.identityIdCache.has(searchLid)) {
         identityId = this.identityIdCache.get(searchLid)!
       } else {
-        const existingByAlias = await this.prisma.identityAlias.findUnique({ where: { jid: searchLid } })
+        const existingByAlias = await this.repository.findIdentityAlias(searchLid)
         if (existingByAlias) {
           identityId = existingByAlias.identityId
           this.identityIdCache.set(searchLid, identityId)
@@ -241,7 +165,7 @@ export class ContactService {
       if (this.identityIdCache.has(id)) {
         identityId = this.identityIdCache.get(id)!
       } else {
-        const existingByAlias = await this.prisma.identityAlias.findUnique({ where: { jid: id } })
+        const existingByAlias = await this.repository.findIdentityAlias(id)
         if (existingByAlias) {
           identityId = existingByAlias.identityId
           this.identityIdCache.set(id, identityId)
@@ -252,9 +176,9 @@ export class ContactService {
     // 4. Check LidMap: if this is a PN JID, a LID stub may already exist for this number.
     //    Reuse that stub instead of creating a duplicate PN identity.
     if (!identityId && phoneNumber) {
-      const lidMapEntry = await this.prisma.lidMap.findFirst({ where: { pn: phoneNumber } })
+      const lidMapEntry = await this.repository.findLidMap(phoneNumber)
       if (lidMapEntry) {
-        const lidAlias = await this.prisma.identityAlias.findUnique({ where: { jid: lidMapEntry.lid } })
+        const lidAlias = await this.repository.findIdentityAlias(lidMapEntry.lid)
         if (lidAlias) {
           identityId = lidAlias.identityId
           this.identityIdCache.set(phoneNumber, identityId)
@@ -264,13 +188,11 @@ export class ContactService {
 
     // Create the Identity if it doesn't exist
     if (!identityId) {
-      const newIdentity = await this.prisma.identity.create({
-        data: {
-          phoneNumber: phoneNumber,
-          displayName: newName,
-          pushName: newNotify,
-          verifiedName: newVerifiedName
-        }
+      const newIdentity = await this.repository.createIdentity({
+        phoneNumber: phoneNumber,
+        displayName: newName,
+        pushName: newNotify,
+        verifiedName: newVerifiedName
       })
       identityId = newIdentity.id
       if (phoneNumber) this.identityIdCache.set(phoneNumber, identityId)
@@ -292,20 +214,13 @@ export class ContactService {
       }
 
       if (Object.keys(updateData).length > 0) {
-        await this.prisma.identity.update({
-          where: { id: identityId },
-          data: updateData
-        })
+        await this.repository.updateIdentity(identityId, updateData)
       }
     }
 
     // 2. Ensure Aliases are created and pointing to the correct identity
     const ensureAlias = async (jid: string, type: string) => {
-      await this.prisma.identityAlias.upsert({
-        where: { jid },
-        update: { identityId: identityId as number },
-        create: { jid, type, identityId: identityId as number }
-      })
+      await this.repository.upsertIdentityAlias(jid, type, identityId as number)
       this.identityIdCache.set(jid, identityId as number)
     }
 
@@ -330,89 +245,7 @@ export class ContactService {
    * Links a LID to a PN explicitly (e.g., from lid-mapping.update events).
    */
   async linkLidAndPn(lid: string, pn: string, source: string = 'unknown'): Promise<void> {
-    const cleanLid = cleanJid(lid)
-    const cleanPn = cleanJid(pn)
-    if (!cleanLid || !cleanPn) return
-
-    const cacheKey = `${cleanLid}->${cleanPn}`
-    if (this.linkCache.has(cacheKey)) {
-      return
-    }
-
-    // 1. High-Performance Mapping Ledger
-    await this.prisma.lidMap.upsert({
-      where: { lid: cleanLid },
-      update: { pn: cleanPn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
-      create: { lid: cleanLid, pn: cleanPn, source, lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
-    }).catch((err) => {
-      console.error('[ContactService] Failed to upsert lidMap entry:', err)
-    })
-
-    // 2. Relational Identity Sync
-    // Find identities for both
-    const lidAlias = await this.prisma.identityAlias.findUnique({ where: { jid: cleanLid } })
-    let pnIdentity = await this.prisma.identity.findUnique({ where: { phoneNumber: cleanPn } })
-    
-    if (!pnIdentity) {
-      // Look for PN alias
-      const pnAlias = await this.prisma.identityAlias.findUnique({ where: { jid: cleanPn } })
-      if (pnAlias) {
-        pnIdentity = await this.prisma.identity.findUnique({ where: { id: pnAlias.identityId } })
-      }
-    }
-
-    let identityId: number
-
-    if (pnIdentity) {
-      identityId = pnIdentity.id
-      const orphanId = lidAlias && lidAlias.identityId !== identityId ? lidAlias.identityId : null
-
-      // Re-point the LID alias to the canonical PN identity
-      await this.prisma.identityAlias.upsert({
-        where: { jid: cleanLid },
-        update: { identityId },
-        create: { jid: cleanLid, type: 'LID', identityId }
-      })
-
-      // Delete the old LID-only stub if nothing else references it
-      if (orphanId) {
-        const [aliasCount, msgCount, memberCount, reactionCount] = await Promise.all([
-          this.prisma.identityAlias.count({ where: { identityId: orphanId } }),
-          this.prisma.message.count({ where: { senderId: orphanId } }),
-          this.prisma.chatMember.count({ where: { identityId: orphanId } }),
-          this.prisma.reaction.count({ where: { senderId: orphanId } })
-        ])
-        if (aliasCount === 0 && msgCount === 0 && memberCount === 0 && reactionCount === 0) {
-          await this.prisma.identity.delete({ where: { id: orphanId } }).catch((err) => {
-            console.error('[ContactService] Failed to delete orphaned identity:', err)
-          })
-        }
-      }
-    } else if (lidAlias) {
-      identityId = lidAlias.identityId
-      // Update the identity to have the phone number
-      await this.prisma.identity.update({
-        where: { id: identityId },
-        data: { phoneNumber: cleanPn }
-      })
-      await this.prisma.identityAlias.upsert({
-        where: { jid: cleanPn },
-        update: { identityId },
-        create: { jid: cleanPn, type: 'PN', identityId }
-      })
-    } else {
-      // Neither exists, create a new identity and both aliases
-      const newId = await this.prisma.identity.create({
-        data: { phoneNumber: cleanPn }
-      })
-      identityId = newId.id
-      await this.prisma.identityAlias.create({ data: { jid: cleanPn, type: 'PN', identityId } })
-      await this.prisma.identityAlias.create({ data: { jid: cleanLid, type: 'LID', identityId } })
-    }
-
-    this.identityIdCache.set(cleanLid, identityId)
-    this.identityIdCache.set(cleanPn, identityId)
-    this.linkCache.add(cacheKey)
+    return this.lidPnLinker.linkLidAndPn(lid, pn, source, this.linkCache, this.identityIdCache)
   }
 
   /**
@@ -439,10 +272,7 @@ export class ContactService {
       const CHUNK = 500
       for (let i = 0; i < missing.length; i += CHUNK) {
         const chunk = missing.slice(i, i + CHUNK)
-        const aliases = await this.prisma.identityAlias.findMany({
-          where: { jid: { in: chunk } },
-          select: { jid: true, identityId: true }
-        })
+        const aliases = await this.repository.findIdentityAliasesMinimal(chunk)
         for (const alias of aliases) {
           result.set(alias.jid, alias.identityId)
           this.identityIdCache.set(alias.jid, alias.identityId)
@@ -471,7 +301,7 @@ export class ContactService {
       return this.identityIdCache.get(cleaned)!
     }
 
-    const alias = await this.prisma.identityAlias.findUnique({ where: { jid: cleaned } })
+    const alias = await this.repository.findIdentityAlias(cleaned)
     if (alias) {
       this.identityIdCache.set(cleaned, alias.identityId)
       return alias.identityId
@@ -479,7 +309,7 @@ export class ContactService {
     
     // Fallback: search identity by phone number directly
     if (cleaned.endsWith('@s.whatsapp.net')) {
-      const ident = await this.prisma.identity.findUnique({ where: { phoneNumber: cleaned } })
+      const ident = await this.repository.findIdentityByPhoneNumber(cleaned)
       if (ident) {
         this.identityIdCache.set(cleaned, ident.id)
         return ident.id
@@ -500,17 +330,11 @@ export class ContactService {
 
     try {
       // Find matching identity alias
-      const alias = await this.prisma.identityAlias.findUnique({
-        where: { jid: cleaned },
-        select: { identityId: true }
-      });
+      const alias = await this.repository.findIdentityAlias(cleaned)
 
       if (alias) {
         // Find the LID alias for this identity
-        const lidAlias = await this.prisma.identityAlias.findFirst({
-          where: { identityId: alias.identityId, type: 'LID' },
-          select: { jid: true }
-        });
+        const lidAlias = await this.repository.findLidAliasByIdentityId(alias.identityId)
         if (lidAlias) {
           return lidAlias.jid;
         }
@@ -537,13 +361,13 @@ export class ContactService {
     let identityId: number | null = null;
 
     // 1. Try to find existing identity alias
-    const existingJidAlias = await this.prisma.identityAlias.findUnique({ where: { jid: myJid } });
+    const existingJidAlias = await this.repository.findIdentityAlias(myJid)
     if (existingJidAlias) {
       identityId = existingJidAlias.identityId;
     }
 
     if (!identityId && myLid) {
-      const existingLidAlias = await this.prisma.identityAlias.findUnique({ where: { jid: myLid } });
+      const existingLidAlias = await this.repository.findIdentityAlias(myLid)
       if (existingLidAlias) {
         identityId = existingLidAlias.identityId;
       }
@@ -551,47 +375,47 @@ export class ContactService {
 
     // 2. Upsert the Identity row with isMe = true
     if (!identityId) {
-      const newIdentity = await this.prisma.identity.create({
-        data: {
-          phoneNumber: myJid,
-          displayName: name,
-          isMe: true
-        }
+      const newIdentity = await this.repository.createIdentity({
+        phoneNumber: myJid,
+        displayName: name,
+        isMe: true
       });
       identityId = newIdentity.id;
     } else {
-      await this.prisma.identity.update({
-        where: { id: identityId },
-        data: {
-          phoneNumber: myJid,
-          isMe: true
-        }
+      await this.repository.updateIdentity(identityId, {
+        phoneNumber: myJid,
+        isMe: true
       });
     }
 
     // 3. Ensure aliases are pointing to the isMe identity
-    await this.prisma.identityAlias.upsert({
-      where: { jid: myJid },
-      update: { identityId, type: 'PN' },
-      create: { jid: myJid, type: 'PN', identityId }
-    });
+    await this.repository.upsertIdentityAlias(myJid, 'PN', identityId)
 
     if (myLid) {
-      await this.prisma.identityAlias.upsert({
-        where: { jid: myLid },
-        update: { identityId, type: 'LID' },
-        create: { jid: myLid, type: 'LID', identityId }
-      });
+      await this.repository.upsertIdentityAlias(myLid, 'LID', identityId)
 
-      await this.prisma.lidMap.upsert({
-        where: { lid: myLid },
-        update: { pn: myJid, source: 'registerMe', lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) },
-        create: { lid: myLid, pn: myJid, source: 'registerMe', lastSeenDateTime: BigInt(Math.floor(Date.now() / 1000)) }
-      }).catch((err) => {
+      await this.repository.upsertLidMap(myLid, myJid, 'registerMe').catch((err: unknown) => {
         console.error('[ContactService] Failed to upsert me lidMap entry:', err)
       });
     }
 
     this.meJidsCache = null;
+  }
+
+  /**
+   * Find a single identity by ID.
+   */
+  public async findIdentityById(id: number): Promise<Identity | null> {
+    return this.repository.findIdentityById(id)
+  }
+
+  /**
+   * Resolves the logged-in user's phone number JID.
+   */
+  public async getMePhoneNumberJid(sock?: WASocket | null): Promise<string | null> {
+    const meJids = await this.getMeJids(sock)
+    const pnJid = meJids.find(jid => jid.endsWith('@s.whatsapp.net'))
+    if (pnJid) return pnJid
+    return meJids[0] || null
   }
 }

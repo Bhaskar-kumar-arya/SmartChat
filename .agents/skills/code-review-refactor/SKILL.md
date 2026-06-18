@@ -54,6 +54,9 @@ Run through each file in scope and flag:
 | A Service file directly contains DB queries or raw I/O operations | 🔴 Critical |
 | A general `utils.ts` or `helpers.ts` has grown beyond a single concern | 🟡 Medium |
 | Business logic lives inside a controller, route handler, or IPC handler | 🔴 Critical |
+| 3+ files in a domain folder share a sub-concern but are not grouped into a sub-folder | 🟡 Medium |
+| A sub-folder exists with only 1–2 files (premature nesting) | 🟡 Medium |
+| Folder nesting exceeds 2 levels below `src/` | 🟠 High |
 
 ### 2.2 — Type Safety Audit
 
@@ -137,14 +140,38 @@ After the audit, produce a refactoring plan in this exact structure. Do not coll
 - Split every file flagged in the SRP audit.
 - Each split must follow the layered structure:
   ```
-  *Repository.ts   ← DB/storage only
-  *Parser.ts       ← pure data transformation, no side effects
-  *Enricher.ts     ← display/formatting logic
-  *Service.ts      ← orchestration only, imports the above
-  *Adapter.ts      ← raw I/O (fs, sockets, external APIs)
+  services/<domain>/
+    *Repository.ts   ← DB/storage only
+    *Parser.ts       ← pure data transformation, no side effects
+    *Enricher.ts     ← display/formatting logic
+    *Service.ts      ← orchestration only, imports the above
+    *Adapter.ts      ← raw I/O (fs, sockets, external APIs)
   ```
 - Move business logic out of controllers, route handlers, and IPC bridges.
 - Introduce constructor injection wherever a class instantiates its own dependencies.
+
+#### Sub-Folder Rules (apply during this phase)
+
+Create a sub-folder **only** when all three conditions are met:
+1. **3 or more files** share the same sub-concern within a domain (e.g., all are formatters, all are validators, all are event handlers).
+2. The sub-concern has a **clear, single name** that describes all of them.
+3. The sub-folder would not cross domain boundaries.
+
+```
+services/<domain>/
+  <Domain>Service.ts
+  <Domain>Repository.ts
+  formatters/               ← created only when 3+ formatters exist
+    index.ts                ← exports ONLY the interface + resolver fn, not each class
+    <Domain>Formatter.ts    ← shared interface / base type
+    TypeAFormatter.ts
+    TypeBFormatter.ts
+    TypeCFormatter.ts
+```
+
+- The `index.ts` inside a sub-folder must export **only the shared interface and registry/resolver** — never re-export each concrete class. Callers depend on the abstraction.
+- **Maximum nesting depth: 2 levels** below `src/` (e.g., `services/orders/formatters/`). Deeper nesting signals the domain itself needs to be split into separate top-level domains.
+- Do **not** create a sub-folder for 1–2 files — keep them flat in the domain folder.
 
 **Why second:** Requires Phase 1 to be complete so types are clean before files are restructured.
 
@@ -259,7 +286,7 @@ class UserService {
 
 ---
 
-## Section 5 — Post-Refactor Verification Checklist
+## Section 5 — Post-Refactor Verification Checklist(part of the Task artifact)
 
 After every refactoring session, verify all of the following before closing:
 

@@ -1,7 +1,9 @@
-import { PrismaClient, Message } from '@prisma/client'
+import { Message } from '@prisma/client'
 import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { MessageRepository, MessageUpsertData } from '../messages/MessageRepository'
+import { ContactRepository } from '../contacts/ContactRepository'
+import { ChatRepository } from '../chats/ChatRepository'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from '../../utils'
 
@@ -29,14 +31,12 @@ export interface SyncMessageRow extends MessageUpsertData {
  * `MessageRepository.bulkSyncMessages` and `MessageRepository.bulkSyncReactions`.
  */
 export class SyncMessagesHandler {
-  private readonly repository: MessageRepository
-
   constructor(
-    private readonly prisma: PrismaClient,
+    private readonly repository: MessageRepository,
+    private readonly contactRepository: ContactRepository,
+    private readonly chatRepository: ChatRepository,
     private readonly contactService: ContactService
-  ) {
-    this.repository = new MessageRepository(prisma)
-  }
+  ) {}
 
   /**
    * Process all messages from the sync payload in batches.
@@ -57,7 +57,7 @@ export class SyncMessagesHandler {
     }
 
     // Build an in-memory JID -> identityId cache to avoid repeated DB round-trips
-    const aliasRows = await this.prisma.identityAlias.findMany()
+    const aliasRows = await this.contactRepository.findAllAliases()
     const identityCache = new Map<string, number>()
     for (const row of aliasRows) {
       identityCache.set(row.jid, row.identityId)
@@ -209,9 +209,8 @@ export class SyncMessagesHandler {
 
       // Ensure Chat row exists for messages whose chat wasn't in the sync payload
       if (!processedChats.has(remoteJid)) {
-        const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-        await this.prisma.chat
-          .upsert({ where: { jid: remoteJid }, update: {}, create: { jid: remoteJid, type: chatType } })
+        await this.chatRepository
+          .upsertChat(remoteJid, {})
           .catch((err: unknown) => console.error('[SyncMessagesHandler] chat upsert failed:', err))
         processedChats.add(remoteJid)
       }

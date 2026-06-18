@@ -110,7 +110,9 @@ export class StickerMetadataService {
     if (processedPath !== inputPath && fs.existsSync(processedPath)) {
       try {
         fs.unlinkSync(processedPath)
-      } catch (e) {}
+      } catch (e: unknown) {
+        console.warn('[StickerMetadataService] Failed to clean up processed temp file:', e)
+      }
     }
 
     // Check size limit on the final file

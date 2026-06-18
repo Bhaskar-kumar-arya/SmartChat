@@ -1,8 +1,12 @@
 import { AITool } from '../services/ai/AIToolService';
-import { prisma } from '../auth';
+import { MessageRepository } from '../services/messages/MessageRepository';
+import { ContactRepository } from '../services/contacts/ContactRepository';
+import { ChatRepository } from '../services/chats/ChatRepository';
 import { WASocket } from '../types';
 import { unwrapMessage, getMessageType } from '../utils';
 import { MessageFormatterRegistry } from '../services/messages/formatters/MessageFormatterRegistry';
+import { Message } from '@prisma/client';
+import { proto } from '@whiskeysockets/baileys';
 
 // Keywords that are never allowed anywhere in the query
 const FORBIDDEN_KEYWORDS = [
@@ -74,20 +78,21 @@ FORMATTING BEHAVIOR:
 
   constructor(
     _getSock: () => WASocket | null,
-    private readonly formatterRegistry: MessageFormatterRegistry
+    private readonly formatterRegistry: MessageFormatterRegistry,
+    private readonly messageRepository: MessageRepository,
+    private readonly contactRepository: ContactRepository,
+    private readonly chatRepository: ChatRepository
   ) {}
 
-  async execute(args: any) {
-    const {
-      jid,
-      limit,
-      messages,
-      sql,
-      params,
-      groupByChat
-    } = args;
+  async execute(args: Record<string, unknown>): Promise<string> {
+    const jid = args.jid as string | undefined;
+    const limit = args.limit as number | undefined;
+    const messages = args.messages as Message[] | undefined;
+    const sql = args.sql as string | undefined;
+    const params = args.params as unknown[] | undefined;
+    const groupByChat = args.groupByChat as boolean | undefined;
 
-    let messagesToFormat: any[] = [];
+    let messagesToFormat: Message[] = [];
     let isJidMode = false;
     let hasMore = false;
     let finalLimit = 100;
@@ -97,11 +102,7 @@ FORMATTING BEHAVIOR:
       isJidMode = true;
       finalLimit = limit !== undefined ? Math.min(Math.max(1, limit), 20000) : 100;
 
-      const fetched = await prisma.message.findMany({
-        where: { chatJid: jid },
-        orderBy: { timestamp: 'desc' },
-        take: finalLimit + 1
-      });
+      const fetched = await this.messageRepository.findMessagesByChat(jid, finalLimit + 1);
 
       hasMore = fetched.length > finalLimit;
       const resultMessages = hasMore ? fetched.slice(0, finalLimit) : fetched;
@@ -130,22 +131,20 @@ FORMATTING BEHAVIOR:
       }
 
       // Execute SQL. The query must return rows with an "id" field.
-      const rows = await prisma.$queryRawUnsafe<any[]>(trimmed, ...(Array.isArray(params) ? params : []));
+      const rows = await this.messageRepository.queryMessageIdsBySql(trimmed, Array.isArray(params) ? params : []);
       
-      if (rows.length > 0 && !rows.some((r: any) => r.id !== undefined && r.id !== null)) {
+      if (rows.length > 0 && !rows.some((r) => r.id !== undefined && r.id !== null)) {
         throw new Error('Query rejected: The SQL query must return a column named "id" containing the message IDs.');
       }
 
-      const msgIds = rows.map((r: any) => r.id).filter(Boolean);
+      const msgIds = rows.map((r) => r.id as string).filter(Boolean);
 
       if (msgIds.length > 0) {
-        const fetched = await prisma.message.findMany({
-          where: { id: { in: msgIds } }
-        });
+        const fetched = await this.messageRepository.findMessagesByIds(msgIds);
 
         // Re-order fetched messages to preserve original query sorting order
         const idToMsg = new Map(fetched.map(m => [m.id, m]));
-        messagesToFormat = msgIds.map(id => idToMsg.get(id)).filter(Boolean);
+        messagesToFormat = msgIds.map(id => idToMsg.get(id)).filter((m): m is Message => m !== undefined);
       } else {
         messagesToFormat = [];
       }
@@ -163,18 +162,27 @@ FORMATTING BEHAVIOR:
     // ── Group By Chat (pre-sort) ───────────────────────────────────────────────
     if (groupByChat && !isJidMode) {
       // Bucket messages by chatJid, preserving chronological order within each chat
-      const buckets = new Map<string, any[]>();
+      const buckets = new Map<string, Message[]>();
       for (const m of messagesToFormat) {
         const key = m.chatJid || 'unknown_chat';
-        if (!buckets.has(key)) buckets.set(key, []);
-        buckets.get(key)!.push(m);
+        let bucket = buckets.get(key);
+        if (!bucket) {
+          bucket = [];
+          buckets.set(key, bucket);
+        }
+        bucket.push(m);
       }
 
       // Sort buckets by chatJid alphabetically, then sort messages within each bucket by timestamp
       const sortedKeys = Array.from(buckets.keys()).sort();
-      messagesToFormat = sortedKeys.flatMap(key =>
-        buckets.get(key)!.sort((a, b) => Number(a.timestamp) - Number(b.timestamp))
-      );
+      messagesToFormat = sortedKeys.flatMap(key => {
+        const bucket = buckets.get(key);
+        if (bucket) {
+          bucket.sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+          return bucket;
+        }
+        return [];
+      });
     }
 
     // ── Resolve Display Names & Chats ──────────────────────────────────────────
@@ -200,8 +208,8 @@ FORMATTING BEHAVIOR:
       if (messagesToFormat.length > 0) {
         const oldest = messagesToFormat[0];
         const newest = messagesToFormat[messagesToFormat.length - 1];
-        formattedResponse += `Newest Message ID: ${newest.id} (${formatDateTime(newest.timestamp)})\n`;
-        formattedResponse += `Oldest Message ID: ${oldest.id} (${formatDateTime(oldest.timestamp)})\n`;
+        formattedResponse += `Newest Message ID: ${newest.id} (${formatDateTime(Number(newest.timestamp))})\n`;
+        formattedResponse += `Oldest Message ID: ${oldest.id} (${formatDateTime(Number(oldest.timestamp))})\n`;
       }
       formattedResponse += `\n`;
       if (hasMore) {
@@ -218,7 +226,7 @@ FORMATTING BEHAVIOR:
       chatName: string;
       chatType: string;
       isDM: boolean;
-      messages: any[];
+      messages: Message[];
     }
 
     const chatRuns: ChatRun[] = [];
@@ -250,12 +258,14 @@ FORMATTING BEHAVIOR:
         // Run of exactly 1 message: print on a single line
         for (const m of run.messages) {
           const senderLabel = this.getSenderLabel(m, run.isDM, nameMap);
-          const dateTimeStr = formatDateTime(m.timestamp);
+          const dateTimeStr = formatDateTime(Number(m.timestamp));
           
-          let contentObj: any = null;
+          let contentObj: Record<string, unknown> | null = null;
           try {
-            contentObj = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
-          } catch (e) {}
+            contentObj = typeof m.content === 'string' ? JSON.parse(m.content) as Record<string, unknown> : m.content as Record<string, unknown>;
+          } catch (e: unknown) {
+            console.warn('[ReadMessagesTool] Failed to parse message content:', e);
+          }
           const unwrapped = unwrapMessage(contentObj);
           
           const formattedContent = this.formatMessageContent(m, unwrapped);
@@ -270,14 +280,14 @@ FORMATTING BEHAVIOR:
         // Group messages within this run by date first
         interface DateGroup {
           dateStr: string;
-          messages: any[];
+          messages: Message[];
         }
 
         const dateGroups: DateGroup[] = [];
         let currentDateGroup: DateGroup | null = null;
 
         for (const m of run.messages) {
-          const dateStr = formatDateOnly(m.timestamp);
+          const dateStr = formatDateOnly(Number(m.timestamp));
           if (!currentDateGroup || currentDateGroup.dateStr !== dateStr) {
             currentDateGroup = {
               dateStr,
@@ -295,7 +305,7 @@ FORMATTING BEHAVIOR:
           // Group consecutive messages within this date group by sender
           interface SenderRun {
             senderLabel: string;
-            messages: any[];
+            messages: Message[];
           }
 
           const senderRuns: SenderRun[] = [];
@@ -322,10 +332,12 @@ FORMATTING BEHAVIOR:
             for (const m of sRun.messages) {
               const timeStr = new Date(Number(m.timestamp) * 1000).toLocaleTimeString();
               
-              let contentObj: any = null;
+              let contentObj: Record<string, unknown> | null = null;
               try {
-                contentObj = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
-              } catch (e) {}
+                contentObj = typeof m.content === 'string' ? JSON.parse(m.content) as Record<string, unknown> : m.content as Record<string, unknown>;
+              } catch (e: unknown) {
+                console.warn('[ReadMessagesTool] Failed to parse message content:', e);
+              }
               const unwrapped = unwrapMessage(contentObj);
               
               const formattedContent = this.formatMessageContent(m, unwrapped);
@@ -343,55 +355,51 @@ FORMATTING BEHAVIOR:
   }
 
   // ── Helper Resolvers ────────────────────────────────────────────────────────
-  private async resolveNamesAndChats(messages: any[]) {
+  private async resolveNamesAndChats(messages: Message[]) {
     const uniqueJids = new Set<string>();
     for (const m of messages) {
       if (m.chatJid) uniqueJids.add(m.chatJid);
       if (m.participant) uniqueJids.add(m.participant);
       
-      try {
-        if (m.content) {
-          const contentObj = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
+      if (m.content) {
+        try {
+          const contentObj = typeof m.content === 'string' ? JSON.parse(m.content) as Record<string, unknown> : m.content as Record<string, unknown>;
           const unwrapped = unwrapMessage(contentObj);
           const quoted = this.getQuotedMessageContext(unwrapped);
           if (quoted && quoted.participant) {
             uniqueJids.add(quoted.participant);
           }
+        } catch (e: unknown) {
+          console.warn('[ReadMessagesTool] Failed to resolve name context:', e);
         }
-      } catch (e) {}
+      }
     }
 
     const nameMap = new Map<string, string>();
 
     // Pre-populate Me aliases
-    const meIdent = await prisma.identity.findFirst({
-      where: { isMe: true },
-      include: { aliases: true }
-    });
+    const meIdent = await this.contactRepository.findMeIdentity();
     if (meIdent) {
       for (const alias of meIdent.aliases) {
         nameMap.set(alias.jid, 'Me');
       }
     }
 
-    const aliases = await prisma.identityAlias.findMany({
-      where: { jid: { in: Array.from(uniqueJids) } },
-      include: { identity: true }
-    });
+    const aliases = await this.contactRepository.findIdentityAliases(Array.from(uniqueJids));
 
     for (const alias of aliases) {
       const ident = alias.identity;
-      if (ident.isMe) {
-        nameMap.set(alias.jid, 'Me');
-      } else if (!nameMap.has(alias.jid)) {
-        const name = ident.displayName || ident.pushName || ident.verifiedName || alias.jid.split('@')[0];
-        nameMap.set(alias.jid, name);
+      if (ident) {
+        if (ident.isMe) {
+          nameMap.set(alias.jid, 'Me');
+        } else if (!nameMap.has(alias.jid)) {
+          const name = ident.displayName || ident.pushName || ident.verifiedName || alias.jid.split('@')[0];
+          nameMap.set(alias.jid, name);
+        }
       }
     }
 
-    const chats = await prisma.chat.findMany({
-      where: { jid: { in: Array.from(uniqueJids) } }
-    });
+    const chats = await this.chatRepository.findChatsByJids(Array.from(uniqueJids));
 
     const chatInfoMap = new Map<string, { name: string; type: string }>();
     for (const c of chats) {
@@ -407,7 +415,7 @@ FORMATTING BEHAVIOR:
     return { nameMap, chatInfoMap };
   }
 
-  private getSenderLabel(m: any, isDM: boolean, nameMap: Map<string, string>): string {
+  private getSenderLabel(m: Message, isDM: boolean, nameMap: Map<string, string>): string {
     const participant = m.participant;
     if (m.fromMe || (participant && nameMap.get(participant) === 'Me')) {
       return 'Me';
@@ -417,22 +425,24 @@ FORMATTING BEHAVIOR:
     return nameMap.get(participant) || participant.split('@')[0];
   }
 
-  private getQuotedMessageContext(unwrapped: any): { quotedMsgId: string; participant: string; quotedText: string } | null {
+  private getQuotedMessageContext(unwrapped: proto.IMessage | null | undefined): { quotedMsgId: string; participant: string; quotedText: string } | null {
     if (!unwrapped) return null;
-    let contextInfo: any = null;
-    for (const key of Object.keys(unwrapped)) {
-      if (unwrapped[key] && typeof unwrapped[key] === 'object' && unwrapped[key].contextInfo) {
-        contextInfo = unwrapped[key].contextInfo;
+    let contextInfo: proto.IContextInfo | null | undefined = null;
+    const rawMsg = unwrapped as Record<string, unknown>;
+    for (const key of Object.keys(rawMsg)) {
+      const val = rawMsg[key];
+      if (val && typeof val === 'object' && 'contextInfo' in val) {
+        contextInfo = (val as { contextInfo?: proto.IContextInfo }).contextInfo;
         break;
       }
     }
-    if (!contextInfo && unwrapped.contextInfo) {
-      contextInfo = unwrapped.contextInfo;
+    if (!contextInfo && rawMsg.contextInfo) {
+      contextInfo = rawMsg.contextInfo as proto.IContextInfo;
     }
     if (!contextInfo || !contextInfo.stanzaId) return null;
 
     const quotedMsgId = contextInfo.stanzaId;
-    const participant = contextInfo.participant;
+    const participant = contextInfo.participant || '';
     const quotedMessage = contextInfo.quotedMessage;
 
     let quotedText = '';
@@ -456,7 +466,7 @@ FORMATTING BEHAVIOR:
     };
   }
 
-  private getReplyContextString(unwrapped: any, nameMap: Map<string, string>, isDM: boolean): string {
+  private getReplyContextString(unwrapped: proto.IMessage | null | undefined, nameMap: Map<string, string>, isDM: boolean): string {
     const quoted = this.getQuotedMessageContext(unwrapped);
     if (!quoted) return '';
 
@@ -479,9 +489,9 @@ FORMATTING BEHAVIOR:
     return `(Reply to ${sender}: "${shortText}") `;
   }
 
-  private formatMessageContent(m: any, unwrapped: any): string {
+  private formatMessageContent(m: Message, unwrapped: proto.IMessage | null | undefined): string {
     return this.formatterRegistry.format(
-      unwrapped,
+      unwrapped || null,
       {
         textContent: m.textContent,
         messageType: m.messageType,

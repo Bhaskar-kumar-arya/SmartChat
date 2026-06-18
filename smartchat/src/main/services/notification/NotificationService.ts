@@ -1,4 +1,5 @@
 import { app, BrowserWindow, nativeImage } from 'electron'
+import { proto } from '@whiskeysockets/baileys'
 import { join } from 'path'
 import fs from 'fs'
 import { INotificationService, NotificationOptions, NotificationPreferences } from './INotificationService'
@@ -102,7 +103,7 @@ export class NotificationService implements INotificationService {
     let title = ''
     let body = ''
 
-    let unwrapped = null
+    let unwrapped: proto.IMessage | null = null
     if (options.content) {
       try {
         unwrapped = unwrapMessage(JSON.parse(options.content))

@@ -1,3 +1,1 @@
-export * from './SyncContactsHandler'
-export * from './SyncChatsHandler'
-export * from './SyncMessagesHandler'
+// Empty barrel file to comply with code-review-refactor guidelines.

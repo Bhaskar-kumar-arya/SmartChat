@@ -1,7 +1,9 @@
-import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
 import { EmbeddingService } from './EmbeddingService'
 import { WASocket } from '../../types'
+import { ChatRepository } from '../chats/ChatRepository'
+import { MessageRepository } from '../messages/MessageRepository'
+import { ContactRepository } from '../contacts/ContactRepository'
 
 export interface SearchResultItem {
   type: 'chat' | 'message'
@@ -53,9 +55,11 @@ function buildMessageWhereClause(filters?: SearchFilters, extraWhere: Record<str
 
 export class SearchService implements ISearchService {
   constructor(
-    private prisma: PrismaClient,
-    private contactService: ContactService,
-    private embeddingService: EmbeddingService
+    private readonly chatRepository: ChatRepository,
+    private readonly messageRepository: MessageRepository,
+    private readonly contactRepository: ContactRepository,
+    private readonly contactService: ContactService,
+    private readonly embeddingService: EmbeddingService
   ) {}
 
   async searchAll(
@@ -68,9 +72,7 @@ export class SearchService implements ISearchService {
     if (!q) return { chats: [], messages: [] }
 
     // ── 1. Search chats ────────────────────────────────────────────────────────
-    const allChats = await this.prisma.chat.findMany(
-      filters?.jids?.length ? { where: { jid: { in: filters.jids } } } : undefined
-    )
+    const allChats = await this.chatRepository.findChats(filters?.jids)
     
     // We only need to resolve names for DMs that lack a name
     const jidsToResolve = allChats.filter(c => !c.name && c.type === 'DM').map(c => c.jid)
@@ -87,11 +89,7 @@ export class SearchService implements ISearchService {
     const chatResults: SearchResultItem[] = await Promise.all(
       matchingChats.map(async (chat) => {
         const name = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0]
-        const lastMsg = await this.prisma.message.findFirst({
-          where: { chatJid: chat.jid },
-          orderBy: { timestamp: 'desc' },
-          select: { textContent: true, messageType: true, timestamp: true }
-        })
+        const lastMsg = await this.messageRepository.findLastMessage(chat.jid)
         return {
           type: 'chat' as const,
           jid: chat.jid,
@@ -127,12 +125,7 @@ export class SearchService implements ISearchService {
       textContent: { contains: q }
     })
 
-    const messages = await this.prisma.message.findMany({
-      where,
-      orderBy: { timestamp: 'desc' },
-      take: 30,
-      include: { chat: true, sender: true }
-    })
+    const messages = await this.messageRepository.findMessagesWithChatAndSender(where, 30)
 
     return messages.map((msg: any) => {
         let name = msg.chat?.name
@@ -160,42 +153,20 @@ export class SearchService implements ISearchService {
     const queryVector = await this.embeddingService.embed(q)
     const queryVectorJson = JSON.stringify(queryVector)
 
-    let filterSql = ''
-    const params: any[] = [queryVectorJson]
+    let candidateIds: string[] | undefined = undefined
 
     const hasFilters = !!(filters?.jids?.length || filters?.fromDate || filters?.toDate)
     if (hasFilters) {
-      const candidateMessages = await this.prisma.message.findMany({
-        where: buildMessageWhereClause(filters),
-        select: { id: true }
-      })
-      if (candidateMessages.length === 0) return []
-      const ids = candidateMessages.map((m) => m.id)
-
-      if (ids.length < 2000) {
-        filterSql = `AND messageId IN (${ids.map(() => '?').join(',')})`
-        params.push(...ids)
-      }
+      candidateIds = await this.messageRepository.findMessageIdsOnly(buildMessageWhereClause(filters))
+      if (candidateIds.length === 0) return []
     }
 
-    const sql = `
-      SELECT messageId, distance
-      FROM vec_messages
-      WHERE vector MATCH ?
-      ${filterSql}
-      AND k = 30
-      ORDER BY distance ASC
-    `
-
     try {
-      const scoredResults = await this.prisma.$queryRawUnsafe<any[]>(sql, ...params)
+      const scoredResults = await this.messageRepository.searchVectorMatch(queryVectorJson, candidateIds)
       if (scoredResults.length === 0) return []
 
       const scoredIds = scoredResults.map((r) => r.messageId)
-      const messages = await this.prisma.message.findMany({
-        where: { id: { in: scoredIds } },
-        include: { chat: true, sender: true }
-      })
+      const messages = await this.messageRepository.findMessagesByIdsWithChatAndSender(scoredIds)
 
       const msgMap = new Map(messages.map((m: any) => [m.id, m]))
 
@@ -232,37 +203,10 @@ export class SearchService implements ISearchService {
     if (!q) return []
 
     // 1. Search Identities (contacts/people)
-    const identities = await this.prisma.identity.findMany({
-      where: {
-        OR: [
-          { displayName: { contains: q } },
-          { pushName: { contains: q } },
-          { verifiedName: { contains: q } },
-          { phoneNumber: { contains: q } }
-        ]
-      },
-      include: {
-        aliases: true
-      },
-      take: 20
-    })
+    const identities = await this.contactRepository.searchIdentities(q, 20)
 
     // 2. Search Chats (group chats, DMs, communities, subgroups)
-    const chats = await this.prisma.chat.findMany({
-      where: {
-        OR: [
-          { name: { contains: q } },
-          { jid: { contains: q } }
-        ]
-      },
-      select: {
-        jid: true,
-        name: true,
-        type: true,
-        profilePictureUrl: true
-      },
-      take: 20
-    })
+    const chats = await this.chatRepository.searchChats(q, 20)
 
     const seenJids = new Set<string>()
     const results: any[] = []
@@ -307,7 +251,7 @@ export class SearchService implements ISearchService {
       if (chat.type === 'DM') {
         const identId = await this.contactService.getIdentityIdByJid(chat.jid)
         if (identId) {
-          const ident = await this.prisma.identity.findUnique({ where: { id: identId } })
+          const ident = await this.contactService.findIdentityById(identId)
           if (ident) {
             if (!name) name = ContactService.getDisplayName(ident, chat.jid.split('@')[0])
             pushName = ident.pushName

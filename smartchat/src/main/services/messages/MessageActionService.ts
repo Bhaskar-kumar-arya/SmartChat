@@ -4,7 +4,7 @@ import { join } from 'path'
 import { MessageService } from './MessageService'
 import { ChatService } from '../chats/ChatService'
 import { proto, AnyMessageContent } from '@whiskeysockets/baileys'
-import { WASocket, EnrichedMessage } from '../../types'
+import { WASocket, EnrichedMessage, MediaMessageWithLocalUri } from '../../types'
 import { unwrapMessage, cleanJid } from '../../utils'
 import type { WAEventBus } from '../whatsapp/WAEventBus'
 import { stickerMetadataService } from './StickerMetadataService'
@@ -476,7 +476,7 @@ export class MessageActionService {
 
         this.fileStorage.copyFile(finalPathToSend, cachedFilePath)
 
-        mediaMsg.localURI = `app://media/${fileName}`
+        ;(mediaMsg as MediaMessageWithLocalUri).localURI = `app://media/${fileName}`
 
         const updatedContent = JSON.stringify(parsedContent)
         await this.prisma.message.update({

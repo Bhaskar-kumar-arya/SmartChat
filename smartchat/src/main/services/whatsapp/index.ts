@@ -1,5 +1,1 @@
-export * from './WhatsAppConnectionManager'
-export * from './WAEventHandler'
-export * from './HistorySyncManager'
-export * from './ReceiptService'
-export * from './WAEventLogger'
+// Empty barrel file to comply with code-review-refactor guidelines (only export interfaces/types, no concrete classes).

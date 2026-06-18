@@ -32,9 +32,9 @@ interface InteractiveTemplate {
 /** Resolve the correct Baileys media type string, with HKDF override for
  *  audio files that arrived inside a documentMessage wrapper. */
 function resolveMediaType(
-  unwrapped: Record<string, unknown>
+  unwrapped: proto.IMessage | Record<string, unknown>
 ): { mediaType: MediaType; mediaMsg: Record<string, unknown> } | null {
-  let target = unwrapped
+  let target = unwrapped as Record<string, unknown>
 
   if (unwrapped.templateMessage) {
     const tmpl = unwrapped.templateMessage as Record<string, unknown>

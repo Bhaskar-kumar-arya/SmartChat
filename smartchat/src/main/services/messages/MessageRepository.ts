@@ -1,5 +1,6 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Message } from '@prisma/client'
 import { unwrapMessage } from '../../utils'
+import { MediaMessageWithLocalUri } from '../../types'
 
 export interface MessageUpsertData {
   id: string
@@ -43,22 +44,24 @@ export class MessageRepository {
       try {
         const existingContent = JSON.parse(existing.content)
         const existingUnwrapped = unwrapMessage(existingContent)
-        const existingMediaMsg =
+        const existingMediaMsg = (
           existingUnwrapped?.imageMessage ??
           existingUnwrapped?.stickerMessage ??
           existingUnwrapped?.videoMessage ??
           existingUnwrapped?.documentMessage ??
           existingUnwrapped?.audioMessage
+        ) as MediaMessageWithLocalUri | undefined
 
         if (existingMediaMsg && existingMediaMsg.localURI) {
           const currentParsed = JSON.parse(data.content)
           const currentUnwrapped = unwrapMessage(currentParsed)
-          const currentMediaMsg =
+          const currentMediaMsg = (
             currentUnwrapped?.imageMessage ??
             currentUnwrapped?.stickerMessage ??
             currentUnwrapped?.videoMessage ??
             currentUnwrapped?.documentMessage ??
             currentUnwrapped?.audioMessage
+          ) as MediaMessageWithLocalUri | undefined
           if (currentMediaMsg) {
             currentMediaMsg.localURI = existingMediaMsg.localURI
             contentToStore = JSON.stringify(currentParsed)
@@ -283,21 +286,23 @@ export class MessageRepository {
           try {
             const existingParsed = JSON.parse(existingJson)
             const existingUnwrapped = unwrapMessage(existingParsed)
-            const existingMedia =
+            const existingMedia = (
               existingUnwrapped?.imageMessage ??
               existingUnwrapped?.stickerMessage ??
               existingUnwrapped?.videoMessage ??
               existingUnwrapped?.documentMessage ??
               existingUnwrapped?.audioMessage
+            ) as MediaMessageWithLocalUri | undefined
             if (existingMedia?.localURI) {
               const currentParsed = JSON.parse(msg.content)
               const currentUnwrapped = unwrapMessage(currentParsed)
-              const currentMedia =
+              const currentMedia = (
                 currentUnwrapped?.imageMessage ??
                 currentUnwrapped?.stickerMessage ??
                 currentUnwrapped?.videoMessage ??
                 currentUnwrapped?.documentMessage ??
                 currentUnwrapped?.audioMessage
+              ) as MediaMessageWithLocalUri | undefined
               if (currentMedia) {
                 currentMedia.localURI = existingMedia.localURI
                 finalContent = JSON.stringify(currentParsed)
@@ -333,7 +338,7 @@ export class MessageRepository {
    */
   async bulkSyncReactions(
     pendingReactions: Array<{ targetId: string; reactorId: number; emoji: string; timestamp: bigint }>,
-    currentBatchIds: Set<string>
+    _currentBatchIds: Set<string>
   ): Promise<void> {
     if (pendingReactions.length === 0) return
 
@@ -348,21 +353,30 @@ export class MessageRepository {
     }
     const unique = Array.from(uniqueMap.values())
 
-    // Verify external target IDs exist in the DB
-    const externalIds = Array.from(
-      new Set(unique.map(r => r.targetId).filter(id => !currentBatchIds.has(id)))
-    )
-    const existingExternalIds = new Set<string>()
-    if (externalIds.length > 0) {
+    // Verify target message IDs exist in the DB
+    const allTargetIds = Array.from(new Set(unique.map(r => r.targetId)))
+    const existingMessageIds = new Set<string>()
+    if (allTargetIds.length > 0) {
       const found = await this.prisma.message.findMany({
-        where: { id: { in: externalIds } },
+        where: { id: { in: allTargetIds } },
         select: { id: true }
       })
-      for (const m of found) existingExternalIds.add(m.id)
+      for (const m of found) existingMessageIds.add(m.id)
+    }
+
+    // Verify reactor identity IDs exist in the DB
+    const allReactorIds = Array.from(new Set(unique.map(r => r.reactorId)))
+    const existingReactorIds = new Set<number>()
+    if (allReactorIds.length > 0) {
+      const foundIdentities = await this.prisma.identity.findMany({
+        where: { id: { in: allReactorIds } },
+        select: { id: true }
+      })
+      for (const ident of foundIdentities) existingReactorIds.add(ident.id)
     }
 
     const valid = unique.filter(
-      r => currentBatchIds.has(r.targetId) || existingExternalIds.has(r.targetId)
+      r => existingMessageIds.has(r.targetId) && existingReactorIds.has(r.reactorId)
     )
     if (valid.length === 0) return
 
@@ -390,4 +404,156 @@ export class MessageRepository {
       }
     })
   }
+
+  /**
+   * Performs the native vector MATCH query against the vec_messages table.
+   */
+  async searchVectorMatch(
+    queryVectorJson: string,
+    candidateIds?: string[]
+  ): Promise<Array<{ messageId: string; distance: number }>> {
+    let filterSql = ''
+    const params: any[] = [queryVectorJson]
+
+    if (candidateIds && candidateIds.length > 0) {
+      if (candidateIds.length < 2000) {
+        filterSql = `AND messageId IN (${candidateIds.map(() => '?').join(',')})`
+        params.push(...candidateIds)
+      }
+    }
+
+    const sql = `
+      SELECT messageId, distance
+      FROM vec_messages
+      WHERE vector MATCH ?
+      ${filterSql}
+      AND k = 30
+      ORDER BY distance ASC
+    `
+    return this.prisma.$queryRawUnsafe<Array<{ messageId: string; distance: number }>>(sql, ...params)
+  }
+
+  /**
+   * Fetch the most recent message for preview in a chat.
+   */
+  async findLastMessage(chatJid: string): Promise<any> {
+    return this.prisma.message.findFirst({
+      where: { chatJid },
+      orderBy: { timestamp: 'desc' },
+      select: {
+        id: true,
+        textContent: true,
+        messageType: true,
+        timestamp: true,
+        fromMe: true,
+        participant: true,
+        status: true,
+        sender: {
+          select: {
+            displayName: true,
+            pushName: true,
+            verifiedName: true,
+            phoneNumber: true
+          }
+        }
+      }
+    })
+  }
+
+  /**
+   * Fetch the most recent reaction for a chat.
+   */
+  async findLastReaction(chatJid: string): Promise<any> {
+    return this.prisma.reaction.findFirst({
+      where: {
+        message: {
+          chatJid
+        }
+      },
+      orderBy: { timestamp: 'desc' },
+      select: {
+        text: true,
+        timestamp: true,
+        sender: {
+          select: {
+            displayName: true,
+            pushName: true,
+            verifiedName: true,
+            phoneNumber: true,
+            isMe: true
+          }
+        },
+        message: {
+          select: {
+            id: true,
+            messageType: true,
+            textContent: true
+          }
+        }
+      }
+    })
+  }
+
+  /**
+   * Batch-find multiple messages with chat and sender details.
+   */
+  async findMessagesByIdsWithChatAndSender(ids: string[]): Promise<any[]> {
+    if (ids.length === 0) return []
+    return this.prisma.message.findMany({
+      where: { id: { in: ids } },
+      include: { chat: true, sender: true }
+    })
+  }
+
+  /**
+   * Find only the message IDs matching a where clause.
+   */
+  async findMessageIdsOnly(where: any): Promise<string[]> {
+    const rows = await this.prisma.message.findMany({
+      where,
+      select: { id: true }
+    })
+    return rows.map(r => r.id)
+  }
+
+  /**
+   * Find messages matching a where clause, with chat and sender details.
+   */
+  async findMessagesWithChatAndSender(where: any, take?: number): Promise<any[]> {
+    return this.prisma.message.findMany({
+      where,
+      orderBy: { timestamp: 'desc' },
+      take,
+      include: { chat: true, sender: true }
+    })
+  }
+
+  /**
+   * Find messages in a chat, ordered descending by timestamp.
+   */
+  async findMessagesByChat(chatJid: string, limit: number): Promise<Message[]> {
+    return this.prisma.message.findMany({
+      where: { chatJid },
+      orderBy: { timestamp: 'desc' },
+      take: limit
+    })
+  }
+
+  /**
+   * Executes a read-only query and returns the matching message ID rows.
+   */
+  async queryMessageIdsBySql(sql: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
+    return this.prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql, ...params)
+  }
+
+  /**
+   * Batch-find multiple messages by their IDs.
+   */
+  async findMessagesByIds(ids: string[]): Promise<Message[]> {
+    if (ids.length === 0) return []
+    return this.prisma.message.findMany({
+      where: { id: { in: ids } }
+    })
+  }
 }
+

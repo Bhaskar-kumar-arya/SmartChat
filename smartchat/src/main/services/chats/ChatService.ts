@@ -1,14 +1,14 @@
-import { PrismaClient } from '@prisma/client'
 import { cleanJid, parseCommunityMetadata } from '../../utils'
 import { ContactService } from '../contacts/ContactService'
 import { ChatListItem, ChatUpdatePayload, WASocket } from '../../types'
-import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
+import { ChatRepository } from './ChatRepository'
+import { ChatListEnricher } from './ChatListEnricher'
 
 export class ChatService {
   constructor(
-    private prisma: PrismaClient,
-    private contactService: ContactService,
-    private readonly formatterRegistry: MessageFormatterRegistry
+    private readonly chatRepository: ChatRepository,
+    private readonly contactService: ContactService,
+    private readonly chatListEnricher: ChatListEnricher
   ) {}
 
   /**
@@ -89,41 +89,20 @@ export class ChatService {
       }
 
       if (rootJid) {
-        const updateData: { name?: string } = {}
-        if (commInfo.isCommunity && chatName) updateData.name = chatName
-
         // Ensure Community exists
-        const comm = await this.prisma.community.upsert({
-          where: { jid: rootJid },
-          update: updateData,
-          create: { jid: rootJid, name: commInfo.isCommunity ? chatName : null }
-        })
+        const comm = await this.chatRepository.upsertCommunity(rootJid, commInfo.isCommunity ? (chatName ?? null) : null)
         communityId = comm.id
         
         // Update announce channel if known
         if (commInfo.isAnnounce && rootJid) {
-          await this.prisma.community.update({
-            where: { id: communityId },
-            data: { announceJid: cleanedJid }
-          })
+          await this.chatRepository.updateCommunityAnnounceJid(communityId, cleanedJid)
         }
       }
       data.communityId = communityId
     }
 
-    if (Object.keys(data).length > 0) {
-      const createType = data.type || (cleanedJid.endsWith('@g.us') ? 'GROUP' : 'DM')
-      await this.prisma.chat.upsert({
-        where: { jid: cleanedJid },
-        update: data,
-        create: { 
-          jid: cleanedJid, 
-          type: createType, 
-          communityId: data.communityId || null, 
-          ...data 
-        }
-      })
-    }
+    // Always upsert the chat to guarantee it exists in the database
+    await this.chatRepository.upsertChat(cleanedJid, data)
   }
 
   /**
@@ -132,10 +111,7 @@ export class ChatService {
   async markRead(jid: string): Promise<boolean> {
     const cleanedJid = cleanJid(jid)
     try {
-      await this.prisma.chat.update({
-        where: { jid: cleanedJid },
-        data: { unreadCount: 0 }
-      })
+      await this.chatRepository.updateChatUnreadCount(cleanedJid, 0)
       return true
     } catch (err) {
       console.error(`[ChatService] Failed to mark chat ${cleanedJid} as read:`, err)
@@ -150,10 +126,7 @@ export class ChatService {
     const cleanedJid = cleanJid(jid)
     if (!cleanedJid) return false
     try {
-      const chat = await this.prisma.chat.findUnique({
-        where: { jid: cleanedJid },
-        select: { muteExpiration: true }
-      })
+      const chat = await this.chatRepository.findChatMuteExpiration(cleanedJid)
       if (!chat || !chat.muteExpiration) return false
       const expiration = Number(chat.muteExpiration)
       return expiration === -1 || expiration * 1000 > Date.now()
@@ -168,12 +141,7 @@ export class ChatService {
    */
   async incrementUnread(jid: string, timestamp: bigint): Promise<void> {
     const cleanedJid = cleanJid(jid)
-    const type = cleanedJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-    await this.prisma.chat.upsert({
-      where: { jid: cleanedJid },
-      update: { unreadCount: { increment: 1 }, timestamp },
-      create: { jid: cleanedJid, type, unreadCount: 1, timestamp }
-    })
+    await this.chatRepository.incrementUnread(cleanedJid, timestamp)
   }
 
   /**
@@ -181,12 +149,7 @@ export class ChatService {
    */
   async updateTimestamp(jid: string, timestamp: bigint): Promise<void> {
     const cleanedJid = cleanJid(jid)
-    const type = cleanedJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-    await this.prisma.chat.upsert({
-      where: { jid: cleanedJid },
-      update: { timestamp },
-      create: { jid: cleanedJid, type, unreadCount: 0, timestamp }
-    })
+    await this.chatRepository.updateTimestamp(cleanedJid, timestamp)
   }
 
   /**
@@ -267,11 +230,7 @@ export class ChatService {
 
       if (identityId) {
         const role = p.admin === 'superadmin' ? 'SUPERADMIN' : (p.admin === 'admin' ? 'ADMIN' : 'MEMBER')
-        await this.prisma.chatMember.upsert({
-          where: { chatJid_identityId: { chatJid: cleanedChatJid, identityId } },
-          update: { role },
-          create: { chatJid: cleanedChatJid, identityId, role }
-        }).catch((err) => {
+        await this.chatRepository.upsertChatMember(cleanedChatJid, identityId, role).catch((err) => {
           console.error('[ChatService] Failed to upsert chat member:', err)
         })
       }
@@ -282,205 +241,7 @@ export class ChatService {
    * Retrieves the chat list (paginated).
    */
   async getChatList(page: number = 1, pageSize: number = 50): Promise<ChatListItem[]> {
-    const skip = (page - 1) * pageSize
-    const chats = await this.prisma.chat.findMany({
-      orderBy: [
-        { pinned: 'desc' },
-        { timestamp: 'desc' }
-      ],
-      select: {
-        jid: true,
-        name: true,
-        unreadCount: true,
-        timestamp: true,
-        pinned: true,
-        muteExpiration: true,
-        type: true,
-        communityId: true,
-        community: {
-          select: {
-            jid: true
-          }
-        },
-        profilePictureUrl: true
-      },
-      skip,
-      take: pageSize
-    })
-    
-    // Auto-inject missing root communities so the frontend can properly nest subgroups
-    const fetchedJids = new Set(chats.map(c => c.jid))
-    const missingCommunityJids = new Set<string>()
-    for (const chat of chats) {
-      if ((chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') && chat.community?.jid) {
-        if (!fetchedJids.has(chat.community.jid)) {
-          missingCommunityJids.add(chat.community.jid)
-        }
-      }
-    }
-
-    if (missingCommunityJids.size > 0) {
-      const missingCommunities = await this.prisma.chat.findMany({
-        where: { jid: { in: Array.from(missingCommunityJids) } },
-        select: {
-          jid: true, name: true, unreadCount: true, timestamp: true,
-          pinned: true, muteExpiration: true, type: true, communityId: true,
-          community: { select: { jid: true } }, profilePictureUrl: true
-        }
-      })
-      chats.push(...missingCommunities)
-    }
-
-    // Fallback if chat.name is missing for a DM: resolve it dynamically
-    const enriched = await Promise.all(
-      chats.map(async (chat) => {
-        let name = chat.name
-        if (!name) {
-          if (chat.type === 'DM') {
-            const identId = await this.contactService.getIdentityIdByJid(chat.jid)
-            if (identId) {
-              const ident = await this.prisma.identity.findUnique({ where: { id: identId } })
-              if (ident) name = ident.displayName || ident.pushName || ident.verifiedName || ident.phoneNumber?.split('@')[0] || null
-            }
-          }
-          if (!name) name = chat.jid.split('@')[0]
-        }
-
-        // Fetch the most recent message for preview
-        const lastMsg = await this.prisma.message.findFirst({
-          where: { chatJid: chat.jid },
-          orderBy: { timestamp: 'desc' },
-          select: {
-            id: true,
-            textContent: true,
-            messageType: true,
-            timestamp: true,
-            fromMe: true,
-            participant: true,
-            status: true,
-            sender: {
-              select: {
-                displayName: true,
-                pushName: true,
-                verifiedName: true,
-                phoneNumber: true
-              }
-            }
-          }
-        })
-
-        // Fetch the most recent reaction for the chat
-        const lastReaction = await this.prisma.reaction.findFirst({
-          where: {
-            message: {
-              chatJid: chat.jid
-            }
-          },
-          orderBy: { timestamp: 'desc' },
-          select: {
-            text: true,
-            timestamp: true,
-            sender: {
-              select: {
-                displayName: true,
-                pushName: true,
-                verifiedName: true,
-                phoneNumber: true,
-                isMe: true
-              }
-            },
-            message: {
-              select: {
-                id: true,
-                messageType: true,
-                textContent: true
-              }
-            }
-          }
-        })
-
-        const reactionTs = lastReaction?.timestamp ?? 0n
-        const msgTs = lastMsg?.timestamp ?? 0n
-        const isReactionNewer = !!(lastReaction && (reactionTs > msgTs || lastMsg?.messageType === 'reactionMessage'))
-
-        const effectiveTimestamp = isReactionNewer ? reactionTs : msgTs
-
-        let lastMessageSender: string | null = null
-        if (isReactionNewer && lastReaction) {
-          if (lastReaction.sender.isMe) {
-            lastMessageSender = 'You'
-          } else {
-            lastMessageSender = ContactService.getDisplayName(
-              lastReaction.sender,
-              lastReaction.sender.phoneNumber?.split('@')[0] || 'Someone'
-            )
-          }
-        } else if (lastMsg) {
-          if (lastMsg.fromMe) {
-            lastMessageSender = 'You'
-          } else {
-            lastMessageSender = ContactService.getDisplayName(
-              lastMsg.sender,
-              lastMsg.participant?.split('@')[0] || 'Someone'
-            )
-          }
-        }
-
-        let lastMessageText = ''
-        if (isReactionNewer && lastReaction) {
-          const targetPreview = this.formatterRegistry.format(
-            null,
-            {
-              textContent: lastReaction.message.textContent,
-              messageType: lastReaction.message.messageType
-            },
-            'chatListReaction'
-          )
-          lastMessageText = `Reacted ${lastReaction.text} to ${targetPreview || 'message'}`
-        } else if (lastMsg) {
-          lastMessageText = this.formatterRegistry.format(
-            null,
-            {
-              textContent: lastMsg.textContent,
-              messageType: lastMsg.messageType
-            },
-            'chatList'
-          )
-        }
-
-        return {
-          jid: chat.jid,
-          name,
-          unreadCount: chat.unreadCount,
-          timestamp: effectiveTimestamp.toString(),
-          lastMessage: lastMessageText,
-          lastMessageType: isReactionNewer ? 'reactionMessage' : (lastMsg?.messageType || null),
-          lastMessageTimestamp: effectiveTimestamp.toString(),
-          pinned: chat.pinned,
-          muteExpiration: chat.muteExpiration.toString(),
-          profilePictureUrl: chat.profilePictureUrl,
-          isCommunity: chat.type === 'COMMUNITY',
-          isAnnounce: chat.type === 'ANNOUNCE',
-          linkedParentJid: (chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') ? (chat.community?.jid ?? null) : null,
-          lastMessageSender,
-          lastMessageStatus: isReactionNewer ? null : (lastMsg?.status || null),
-          lastMessageFromMe: isReactionNewer ? (lastReaction?.sender.isMe ?? false) : (lastMsg?.fromMe || false),
-          lastMessageId: isReactionNewer ? (lastReaction?.message.id ?? null) : (lastMsg?.id || null),
-          lastMessageTargetType: isReactionNewer ? (lastReaction?.message.messageType || null) : null,
-          lastMessageTargetText: isReactionNewer ? (this.formatterRegistry.format(
-            null,
-            {
-              messageType: lastReaction?.message.messageType || 'unknown',
-              textContent: lastReaction?.message.textContent || null
-            },
-            'chatListReaction'
-          ) || 'message') : null,
-          lastMessageReactionText: isReactionNewer ? (lastReaction?.text || null) : null
-        }
-      })
-    )
-
-    return enriched
+    return this.chatListEnricher.getChatList(page, pageSize)
   }
 
   /**

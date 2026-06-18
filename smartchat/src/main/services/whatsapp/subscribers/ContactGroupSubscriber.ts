@@ -7,7 +7,7 @@
  * Single responsibility: contact/group data management only.
  */
 
-import { PrismaClient } from '@prisma/client'
+
 import type { WAEventBus } from '../WAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type {
@@ -22,8 +22,7 @@ import { cleanJid } from '../../../utils'
 
 export class ContactGroupSubscriber implements IWAEventSubscriber {
   constructor(
-    private services: ServiceContainer,
-    private prisma: PrismaClient
+    private services: ServiceContainer
   ) {}
 
   register(bus: WAEventBus): void {
@@ -140,17 +139,11 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
 
       if (action === 'add' || action === 'promote' || action === 'demote') {
         const role = action === 'promote' ? 'ADMIN' : 'MEMBER'
-        await this.prisma.chatMember.upsert({
-          where: { chatJid_identityId: { chatJid: cleanGroupId, identityId } },
-          update: { role },
-          create: { chatJid: cleanGroupId, identityId, role }
-        }).catch((err) => {
+        await this.services.chatRepository.upsertChatMember(cleanGroupId, identityId, role).catch((err) => {
           console.error('[ContactGroupSubscriber] Failed to upsert ChatMember in onGroupParticipants:', err)
         })
       } else if (action === 'remove') {
-        await this.prisma.chatMember.delete({
-          where: { chatJid_identityId: { chatJid: cleanGroupId, identityId } }
-        }).catch((err) => {
+        await this.services.chatRepository.deleteChatMember(cleanGroupId, identityId).catch((err) => {
           console.error('[ContactGroupSubscriber] Failed to delete ChatMember in onGroupParticipants:', err)
         })
       }

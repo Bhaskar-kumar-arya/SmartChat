@@ -1,12 +1,15 @@
 import { PrismaClient } from '@prisma/client'
 import { BrowserWindow } from 'electron'
 import { ContactService } from './services/contacts/ContactService'
+import { LidPnLinker } from './services/contacts/LidPnLinker'
+import { ContactNameResolver } from './services/contacts/ContactNameResolver'
 import { IdentityReconciliationService } from './services/contacts/IdentityReconciliationService'
 import { ProfileSyncService } from './services/contacts/ProfileSyncService'
 import { EmbeddingService } from './services/search/EmbeddingService'
 import { DataWipeService } from './services/DataWipeService'
 import { ReceiptService } from './services/whatsapp/ReceiptService'
 import { ChatService } from './services/chats/ChatService'
+import { ChatListEnricher } from './services/chats/ChatListEnricher'
 import { MessageService } from './services/messages/MessageService'
 import { MessageActionService } from './services/messages/MessageActionService'
 import { MediaService } from './services/messages/MediaService'
@@ -19,40 +22,45 @@ import { SecretMessageService } from './services/whatsapp/secret/SecretMessageSe
 import { MessageReactionStrategy } from './services/whatsapp/secret/MessageReactionStrategy'
 import { FavoriteStickerService } from './services/messages/FavoriteStickerService'
 import { GroupHydrationService } from './services/chats/GroupHydrationService'
+import { CommunitySyncHandler } from './services/chats/sync/CommunitySyncHandler'
+import { ChatSyncHandler } from './services/chats/sync/ChatSyncHandler'
+import { MembershipSyncHandler } from './services/chats/sync/MembershipSyncHandler'
+
+import { ContactRepository } from './services/contacts/ContactRepository'
+import { ChatRepository } from './services/chats/ChatRepository'
+import { MessageRepository } from './services/messages/MessageRepository'
+import { SyncRepository } from './services/sync/SyncRepository'
+import { AuthStateRepository } from './services/auth/AuthStateRepository'
+import { AuthSettingsService } from './services/auth/AuthSettingsService'
 
 import type { WAEventBus } from './services/whatsapp/WAEventBus'
-import { MessageFormatterRegistry } from './services/messages/formatters/MessageFormatterRegistry'
-import { ConversationFormatter } from './services/messages/formatters/ConversationFormatter'
-import { ImageFormatter } from './services/messages/formatters/ImageFormatter'
-import { VideoFormatter } from './services/messages/formatters/VideoFormatter'
-import { StickerFormatter } from './services/messages/formatters/StickerFormatter'
-import { DocumentFormatter } from './services/messages/formatters/DocumentFormatter'
-import { AudioFormatter } from './services/messages/formatters/AudioFormatter'
-import { ContactFormatter } from './services/messages/formatters/ContactFormatter'
-import { LocationFormatter } from './services/messages/formatters/LocationFormatter'
-import { PollFormatter } from './services/messages/formatters/PollFormatter'
-import { ReactionFormatter } from './services/messages/formatters/ReactionFormatter'
+import { createMessageFormatterRegistry, MessageFormatterRegistry } from './services/messages/formatters'
+
+import { HistorySyncManager } from './services/whatsapp/HistorySyncManager'
+import { WAEventWiringService } from './services/whatsapp/WAEventWiringService'
 
 export function createServices(
   prisma: PrismaClient,
   getMainWindow: () => BrowserWindow | null,
   getBus: () => WAEventBus | null
-) {
+): ServiceContainer {
+  const services = {} as unknown as ServiceContainer
+
   // 0. Formatting services
-  const messageFormatterRegistry = new MessageFormatterRegistry()
-  messageFormatterRegistry.registerFormatter(new ConversationFormatter())
-  messageFormatterRegistry.registerFormatter(new ImageFormatter())
-  messageFormatterRegistry.registerFormatter(new VideoFormatter())
-  messageFormatterRegistry.registerFormatter(new StickerFormatter())
-  messageFormatterRegistry.registerFormatter(new DocumentFormatter())
-  messageFormatterRegistry.registerFormatter(new AudioFormatter())
-  messageFormatterRegistry.registerFormatter(new ContactFormatter())
-  messageFormatterRegistry.registerFormatter(new LocationFormatter())
-  messageFormatterRegistry.registerFormatter(new PollFormatter())
-  messageFormatterRegistry.registerFormatter(new ReactionFormatter())
+  const messageFormatterRegistry = createMessageFormatterRegistry()
+
+  // Repositories
+  const contactRepository = new ContactRepository(prisma)
+  const chatRepository = new ChatRepository(prisma)
+  const messageRepository = new MessageRepository(prisma)
+  const syncRepository = new SyncRepository(prisma)
+  const authStateRepository = new AuthStateRepository(prisma)
+  const authSettingsService = new AuthSettingsService(authStateRepository)
 
   // 1. Foundation services (no service dependencies)
-  const contactService = new ContactService(prisma)
+  const lidPnLinker = new LidPnLinker(contactRepository)
+  const contactNameResolver = new ContactNameResolver(contactRepository)
+  const contactService = new ContactService(contactRepository, lidPnLinker, contactNameResolver)
   const embeddingService = new EmbeddingService(prisma)
   const dataWipeService = new DataWipeService(prisma)
   const receiptService = new ReceiptService(prisma, contactService, getBus)
@@ -62,12 +70,20 @@ export function createServices(
   const favoriteStickerService = new FavoriteStickerService(prisma)
 
   // 2. Services with service dependencies
-  const chatService = new ChatService(prisma, contactService, messageFormatterRegistry)
-  const groupHydrationService = new GroupHydrationService(prisma, contactService)
+  const chatListEnricher = new ChatListEnricher(chatRepository, messageRepository, contactService, messageFormatterRegistry)
+  const chatService = new ChatService(chatRepository, contactService, chatListEnricher)
+  const communitySyncHandler = new CommunitySyncHandler(syncRepository)
+  const chatSyncHandler = new ChatSyncHandler(syncRepository)
+  const membershipSyncHandler = new MembershipSyncHandler(syncRepository, contactService)
+  const groupHydrationService = new GroupHydrationService(
+    communitySyncHandler,
+    chatSyncHandler,
+    membershipSyncHandler
+  )
   const messageService = new MessageService(prisma, contactService, embeddingService, secretMessageService, getBus)
   const messageActionService = new MessageActionService(prisma, contactService, messageService, chatService, getBus)
   const mediaService = new MediaService(prisma, messageService, contactService, favoriteStickerService)
-  const searchService = new SearchService(prisma, contactService, embeddingService)
+  const searchService = new SearchService(chatRepository, messageRepository, contactRepository, contactService, embeddingService)
   const identityReconciliationService = new IdentityReconciliationService(prisma)
   const profileSyncService = new ProfileSyncService(prisma, contactService)
 
@@ -76,7 +92,16 @@ export function createServices(
   const aiChatSessionService = new AIChatSessionService(prisma)
   const aiChatExportService = new AIChatExportService()
 
-  return {
+  // 4. WhatsApp Event Lifecycle & Sync Services
+  const historySyncManager = new HistorySyncManager(services, getMainWindow, prisma)
+  const waEventWiringService = new WAEventWiringService(historySyncManager)
+
+  Object.assign(services, {
+    contactRepository,
+    chatRepository,
+    messageRepository,
+    syncRepository,
+    authSettingsService,
     contactService,
     embeddingService,
     dataWipeService,
@@ -95,10 +120,39 @@ export function createServices(
     favoriteStickerService,
     identityReconciliationService,
     profileSyncService,
-    messageFormatterRegistry
-  }
+    messageFormatterRegistry,
+    historySyncManager,
+    waEventWiringService
+  })
+
+  return services
 }
 
-export type ServiceContainer = ReturnType<typeof createServices>
-
-
+export type ServiceContainer = {
+  contactRepository: ContactRepository
+  chatRepository: ChatRepository
+  messageRepository: MessageRepository
+  syncRepository: SyncRepository
+  authSettingsService: AuthSettingsService
+  contactService: ContactService
+  embeddingService: EmbeddingService
+  dataWipeService: DataWipeService
+  receiptService: ReceiptService
+  chatService: ChatService
+  groupHydrationService: GroupHydrationService
+  messageService: MessageService
+  messageActionService: MessageActionService
+  mediaService: MediaService
+  searchService: SearchService
+  aiService: AIService
+  aiChatSessionService: AIChatSessionService
+  aiChatExportService: AIChatExportService
+  notificationService: NotificationService
+  secretMessageService: SecretMessageService
+  favoriteStickerService: FavoriteStickerService
+  identityReconciliationService: IdentityReconciliationService
+  profileSyncService: ProfileSyncService
+  messageFormatterRegistry: MessageFormatterRegistry
+  historySyncManager: HistorySyncManager
+  waEventWiringService: WAEventWiringService
+}

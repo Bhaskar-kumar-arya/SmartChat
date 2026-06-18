@@ -3,6 +3,9 @@ import { ContactService } from './services/contacts/ContactService'
 import { SyncContactsHandler } from './services/sync/SyncContactsHandler'
 import { SyncChatsHandler } from './services/sync/SyncChatsHandler'
 import { SyncMessagesHandler } from './services/sync/SyncMessagesHandler'
+import { ChatRepository } from './services/chats/ChatRepository'
+import { MessageRepository } from './services/messages/MessageRepository'
+import { ContactRepository } from './services/contacts/ContactRepository'
 
 export interface HistorySyncData {
   chats: Array<Record<string, unknown>>
@@ -37,6 +40,10 @@ export async function handleHistorySync(
   prisma: PrismaClient,
   contactService: ContactService
 ): Promise<HistorySyncResult> {
+  const contactRepository = new ContactRepository(prisma)
+  const chatRepository = new ChatRepository(prisma)
+  const messageRepository = new MessageRepository(prisma)
+
   const meJids = await contactService.getMeJids()
   const meJid = meJids[0] ?? null
   const meIdentityId = meJid ? await contactService.getIdentityIdByJid(meJid) : null
@@ -47,8 +54,8 @@ export async function handleHistorySync(
   contactService.clearCaches()
 
   // Pre-fetch known chat JIDs so handlers can skip redundant chat creation
-  const existingChats = await prisma.chat.findMany({ select: { jid: true } })
-  const processedChats = new Set<string>(existingChats.map(ch => ch.jid))
+  const existingChatJids = await chatRepository.findAllChatJids()
+  const processedChats = new Set<string>(existingChatJids)
 
   // ── 1. Contacts & LID↔PN mappings ─────────────────────────────────────────
   const contactsHandler = new SyncContactsHandler(contactService)
@@ -58,14 +65,14 @@ export async function handleHistorySync(
   )
 
   // ── 2. Chats ────────────────────────────────────────────────────────────────
-  const chatsHandler = new SyncChatsHandler(prisma, contactService)
+  const chatsHandler = new SyncChatsHandler(chatRepository, contactService)
   const chatCount = await chatsHandler.processChats(
     chats as Array<Record<string, unknown>>,
     processedChats
   )
 
   // ── 3. Messages & Reactions ─────────────────────────────────────────────────
-  const messagesHandler = new SyncMessagesHandler(prisma, contactService)
+  const messagesHandler = new SyncMessagesHandler(messageRepository, contactRepository, chatRepository, contactService)
   const { messageCount, importedMessages } = await messagesHandler.processMessages(
     messages,
     processedChats,

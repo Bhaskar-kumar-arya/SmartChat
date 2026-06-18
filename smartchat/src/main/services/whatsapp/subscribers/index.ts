@@ -37,7 +37,7 @@ export function createSubscribers(
 ): IWAEventSubscriber[] {
   const subscribers: IWAEventSubscriber[] = [
     new PersistenceSubscriber(services),
-    new ContactGroupSubscriber(services, prisma),
+    new ContactGroupSubscriber(services),
     new NotificationSubscriber(services),
     new UIBroadcastSubscriber(services, getMainWindow, prisma),
     new ReceiptSubscriber(services),

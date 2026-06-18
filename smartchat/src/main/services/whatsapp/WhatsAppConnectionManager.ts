@@ -20,24 +20,23 @@ import { WAEventBus } from './WAEventBus'
 import { createSubscribers } from './subscribers'
 import { HistorySyncManager } from './HistorySyncManager'
 import { BaileysPatcher } from './BaileysPatcher'
-// import { waEventLogger } from './WAEventLogger'
+import { WAEventWiringService } from './WAEventWiringService'
 
 export class WhatsAppConnectionManager {
   private currentSock: WASocket | null = null
   private reconnectTimeout: NodeJS.Timeout | null = null
   private isFreshLogin = false
   private mainWindow: BrowserWindow | null = null
-  private historySyncManager: HistorySyncManager
   private currentBus: WAEventBus | null = null
 
   constructor(
     private services: ServiceContainer,
-    private prisma: PrismaClient
-  ) {
-    this.historySyncManager = new HistorySyncManager(this.services, () => this.mainWindow, this.prisma)
-  }
+    private prisma: PrismaClient,
+    private historySyncManager: HistorySyncManager,
+    private wiringService: WAEventWiringService
+  ) {}
 
-  public setWindow(window: BrowserWindow) {
+  public setWindow(window: BrowserWindow): void {
     this.mainWindow = window
   }
 
@@ -49,7 +48,7 @@ export class WhatsAppConnectionManager {
     return this.currentBus
   }
 
-  public async connect() {
+  public async connect(): Promise<void> {
     BaileysPatcher.patch()
     this.services.embeddingService.setPaused(false) // Clean start
     if (!this.mainWindow) {
@@ -155,38 +154,20 @@ export class WhatsAppConnectionManager {
       shouldSyncHistoryMessage: () => shouldSyncHistory,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       getMessage: async (key) => {
-        if (!key.id) return undefined;
+        if (!key.id) return undefined
         try {
-          const msg = await this.prisma.message.findUnique({ where: { id: key.id } });
+          const msg = await this.prisma.message.findUnique({ where: { id: key.id } })
           if (msg && msg.content) {
-            return JSON.parse(msg.content);
+            return JSON.parse(msg.content)
           }
         } catch (err) {
-          console.error('Error fetching message for retry/reaction:', err);
+          console.error('Error fetching message for retry/reaction:', err)
         }
-        return undefined;
+        return undefined
       }
     })
 
     this.currentSock = sock
-
-    // Prevent MaxListenersExceededWarning
-    try {
-      const evTarget = sock.ev as unknown as {
-        target?: { setMaxListeners?: (n: number) => void }
-        setMaxListeners?: (n: number) => void
-      }
-      if (evTarget.target?.setMaxListeners) {
-        evTarget.target.setMaxListeners(100)
-      } else if (evTarget.setMaxListeners) {
-        evTarget.setMaxListeners(100)
-      }
-    } catch (err) {
-      console.warn('[Connection] Failed to set max listeners:', err)
-    }
-
-    // creds.update must stay as a direct listener (saveCreds is a plain callback)
-    sock.ev.on('creds.update', saveCreds)
 
     // Create the event bus and wire up all subscribers for this connection
     const bus = new WAEventBus()
@@ -195,173 +176,100 @@ export class WhatsAppConnectionManager {
 
     const eventHandler = new WAEventHandler(this.services, bus)
 
-    // All other events go through ev.process()
-    sock.ev.process(async (events) => {
-      // ── Connection ────────────────────────────────────────────────────────
-      if (events['connection.update']) {
-        const update = events['connection.update']
-        const { connection, lastDisconnect, qr } = update
-
-        if (qr) {
-          console.log('Got QR string:', qr)
-          this.isFreshLogin = true
-          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-            this.mainWindow.webContents.send('wa-qr', qr)
-          }
-        }
-
-        if (connection === 'close') {
-          const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
-          const errorData = (lastDisconnect?.error as unknown as { data?: { tag?: string } })?.data
-          const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
-          const isRestartRequired = statusCode === DisconnectReason.restartRequired
-          const shouldReconnect = (statusCode !== DisconnectReason.loggedOut && !isConflict) || isRestartRequired
-
-          console.log(`[Connection] Closed | statusCode=${statusCode} | isRestart=${isRestartRequired} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect} | error=`, lastDisconnect?.error)
-
-          if (shouldReconnect) {
-            const delay = isRestartRequired ? RECONNECT_DELAY_RESTART_MS : RECONNECT_DELAY_DEFAULT_MS
-            console.log(`[Connection] Scheduling reconnect in ${delay}ms...`)
-            this.reconnectTimeout = setTimeout(() => this.connect(), delay)
-          } else if (isConflict) {
-            console.warn('[Connection] Replaced by another session (440 conflict). Standing down.')
-          } else {
-            console.log('Logged out — wiping all data for fresh QR...')
-            try {
-              const dataWipeService = new DataWipeService(this.prisma)
-              await dataWipeService.wipeAllData()
-            } catch (err) {
-              console.error('Error wiping data:', err)
-            }
-            this.isFreshLogin = true
-            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-              this.mainWindow.webContents.send('wa-logged-out')
-            }
-            this.connect()
-          }
-        } else if (connection === 'open') {
-          console.log('Connected to WhatsApp!')
-          if (sock.user) {
-            await this.services.contactService.registerMe(sock.user).catch((err) => {
-              console.error('[Connection] Failed to register logged-in user identity:', err)
-            })
-          }
-
-          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-            if (!this.isFreshLogin && !isInitialSyncInProgress) {
-              const syncCompletedRow = await this.prisma.authState.findUnique({
-                where: { id: 'history_sync_completed' }
-              }).catch((err) => {
-                console.error('[WhatsAppConnectionManager] find history_sync_completed on reconnect failed:', err)
-                return null
-              })
-              const isHistorySyncCompleted = syncCompletedRow?.data === 'true'
-
-              if (isHistorySyncCompleted) {
-                console.log(`[Connection] Reconnect: history sync previously completed, skipping sync`)
-                this.services.embeddingService.setPaused(false)
-                this.mainWindow.webContents.send('wa-sync-progress', {
-                  progress: 100,
-                  syncType: 6, // SYNC_TYPE_GROUP_HYDRATION
-                  syncFullHistory
-                })
-                this.mainWindow.webContents.send('wa-sync-complete')
-              } else {
-                console.log(`[Connection] Reconnect: history sync NOT completed, continuing sync`)
-                this.mainWindow.webContents.send('wa-connected')
-              }
-            } else {
-              console.log('[Connection] Fresh login or active sync reconnect detected, showing/continuing sync screen')
-              this.historySyncManager.setInProgress(true)
-              this.isFreshLogin = false
-              this.mainWindow.webContents.send('wa-connected')
-            }
-          }
-        }
-      }
-
-      // ── History Sync ──────────────────────────────────────────────────────
-      if (events['messaging-history.set']) {
-        const data = events['messaging-history.set']
-        await this.historySyncManager.handleSyncChunk(data, syncFullHistory, sock)
-      }
-
-      // ── Messages Upsert ───────────────────────────────────────────────────
-      if (events['messages.upsert']) {
-        await eventHandler.handleMessagesUpsert(events['messages.upsert'], sock)
-      }
-
-      // ── Message Updates (revoke/edit/status via messages.update) ──────────
-      if (events['messages.update']) {
-        await eventHandler.handleMessagesUpdate(events['messages.update'], sock)
-      }
-
-      // ── Contacts ──────────────────────────────────────────────────────────
-      if (events['contacts.upsert']) {
-        await eventHandler.handleContactsUpsert(events['contacts.upsert'])
-      }
-
-      if (events['contacts.update']) {
-        await eventHandler.handleContactsUpdate(events['contacts.update'])
-      }
-
-      if (events['lid-mapping.update']) {
-        await eventHandler.handleLidMappingUpdate(events['lid-mapping.update'])
-      }
-
-      // ── Chats ─────────────────────────────────────────────────────────────
-      if (events['chats.update']) {
-        await eventHandler.handleChatsUpdate(events['chats.update'])
-      }
-
-      if (events['chats.upsert']) {
-        await eventHandler.handleChatsUpsert(events['chats.upsert'])
-      }
-
-      // ── Groups ────────────────────────────────────────────────────────────
-      if (events['groups.update']) {
-        await eventHandler.handleGroupsUpdate(events['groups.update'])
-      }
-
-      if (events['group-participants.update']) {
-        await eventHandler.handleGroupParticipantsUpdate(events['group-participants.update'])
-      }
-
-      // ── Message Reactions (messages.reaction) ─────────────────────────────
-      if (events['messages.reaction']) {
-        await eventHandler.handleMessagesReaction(events['messages.reaction'], sock)
-      }
-
-      // ── Presence ──────────────────────────────────────────────────────────
-      if (events['presence.update']) {
-        await eventHandler.handlePresenceUpdate(events['presence.update'], sock)
-      }
-
-      // ── Message Receipts (read/delivered ticks) ───────────────────────────
-      if (events['message-receipt.update']) {
-        await eventHandler.handleMessageReceiptUpdate(events['message-receipt.update'], sock)
-      }
-
-      // ── Call Events ───────────────────────────────────────────────────────
-      if (events['call']) {
-        await eventHandler.handleCallEvent(events['call'])
-      }
-
-      // ── App State Sync ────────────────────────────────────────────────────
-      if (events['app-state.sync']) {
-        const syncEvent = events['app-state.sync']
-        const syncEvents = Array.isArray(syncEvent) ? (syncEvent as unknown[]) : [syncEvent]
-        // for (const e of syncEvents) {
-        //   waEventLogger.log('app-state.sync', e)
-        // }
-        await eventHandler.handleAppStateSync(syncEvents, sock)
-      }
-    })
+    // Delegate all event wiring to WAEventWiringService
+    this.wiringService.wire(
+      sock,
+      eventHandler,
+      this,
+      saveCreds,
+      syncFullHistory
+    )
   }
 
-  public skipSync() {
+  public handleQr(qr: string): void {
+    console.log('Got QR string:', qr)
+    this.isFreshLogin = true
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('wa-qr', qr)
+    }
+  }
+
+  public async handleConnectionClose(lastDisconnect: any): Promise<void> {
+    const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
+    const errorData = (lastDisconnect?.error as unknown as { data?: { tag?: string } })?.data
+    const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
+    const isRestartRequired = statusCode === DisconnectReason.restartRequired
+    const shouldReconnect = (statusCode !== DisconnectReason.loggedOut && !isConflict) || isRestartRequired
+
+    console.log(`[Connection] Closed | statusCode=${statusCode} | isRestart=${isRestartRequired} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect} | error=`, lastDisconnect?.error)
+
+    if (shouldReconnect) {
+      const delay = isRestartRequired ? RECONNECT_DELAY_RESTART_MS : RECONNECT_DELAY_DEFAULT_MS
+      console.log(`[Connection] Scheduling reconnect in ${delay}ms...`)
+      this.reconnectTimeout = setTimeout(() => this.connect(), delay)
+    } else if (isConflict) {
+      console.warn('[Connection] Replaced by another session (440 conflict). Standing down.')
+    } else {
+      console.log('Logged out — wiping all data for fresh QR...')
+      try {
+        const dataWipeService = new DataWipeService(this.prisma)
+        await dataWipeService.wipeAllData()
+      } catch (err) {
+        console.error('Error wiping data:', err)
+      }
+      this.isFreshLogin = true
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('wa-logged-out')
+      }
+      this.connect()
+    }
+  }
+
+  public async handleConnectionOpen(sock: WASocket, syncFullHistory: boolean): Promise<void> {
+    console.log('Connected to WhatsApp!')
+    if (sock.user) {
+      await this.services.contactService.registerMe(sock.user).catch((err) => {
+        console.error('[Connection] Failed to register logged-in user identity:', err)
+      })
+    }
+
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      const isInitialSyncInProgress = this.historySyncManager.isInProgress
+      if (!this.isFreshLogin && !isInitialSyncInProgress) {
+        const syncCompletedRow = await this.prisma.authState.findUnique({
+          where: { id: 'history_sync_completed' }
+        }).catch((err) => {
+          console.error('[WhatsAppConnectionManager] find history_sync_completed on reconnect failed:', err)
+          return null
+        })
+        const isHistorySyncCompleted = syncCompletedRow?.data === 'true'
+
+        if (isHistorySyncCompleted) {
+          console.log(`[Connection] Reconnect: history sync previously completed, skipping sync`)
+          this.services.embeddingService.setPaused(false)
+          this.mainWindow.webContents.send('wa-sync-progress', {
+            progress: 100,
+            syncType: 6, // SYNC_TYPE_GROUP_HYDRATION
+            syncFullHistory
+          })
+          this.mainWindow.webContents.send('wa-sync-complete')
+        } else {
+          console.log(`[Connection] Reconnect: history sync NOT completed, continuing sync`)
+          this.mainWindow.webContents.send('wa-connected')
+        }
+      } else {
+        console.log('[Connection] Fresh login or active sync reconnect detected, showing/continuing sync screen')
+        this.historySyncManager.setInProgress(true)
+        this.isFreshLogin = false
+        this.mainWindow.webContents.send('wa-connected')
+      }
+    }
+  }
+
+  public skipSync(): void {
     if (this.currentSock) {
       this.historySyncManager.skipSync(this.currentSock)
     }
   }
 }
+

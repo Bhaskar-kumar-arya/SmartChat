@@ -153,6 +153,11 @@ export class HistorySyncManager {
       console.warn('[finishSync] deduplicateIdentities error:', err)
     })
 
+    // After deduplication, stale identityIds in the ContactService cache will point to
+    // now-deleted stub identities. Clear the cache so all subsequent lookups (e.g. from
+    // live group:updated events) resolve fresh canonical ids from the database.
+    this.services.contactService.clearCaches()
+
     // Unpause embedding service now that all syncing and deduplication are complete
     this.services.embeddingService.setPaused(false)
     this.services.mediaService.setFavoriteStickerQueuePaused(false)

@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { WAMessageStubType } from '@whiskeysockets/baileys'
+import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { EmbeddingService } from '../search/EmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
@@ -330,7 +330,9 @@ export class MessageService {
       .filter(jid => !existingChatJids.has(jid))
       .map(jid => ({ jid, type: jid.endsWith('@g.us') ? 'GROUP' : 'DM' }))
     if (newChats.length > 0) {
-      await this.prisma.chat.createMany({ data: newChats }).catch(() => {})
+      await this.prisma.chat.createMany({ data: newChats }).catch((err: unknown) => {
+        console.warn('[MessageService] Failed to pre-create missing chats in bulk:', err)
+      })
     }
 
     // Batch-resolve sender identity IDs
@@ -393,19 +395,21 @@ export class MessageService {
       try {
         const content = JSON.parse(m.content)
         const unwrapped = unwrapMessage(content)
+        const unwrappedRaw = unwrapped as Record<string, unknown>
         const ctx = (
-          (unwrapped?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo ??
-          (unwrapped?.contextInfo as Record<string, unknown> | undefined)
+          (unwrappedRaw?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo ??
+          (unwrappedRaw?.contextInfo as Record<string, unknown> | undefined)
         ) as Record<string, unknown> | undefined
         if (ctx) {
           if (ctx.participant) additionalJids.add(ctx.participant as string)
           if (ctx.mentionedJid)
             (ctx.mentionedJid as string[]).forEach(j => additionalJids.add(j))
           if (ctx.quotedMessage) {
-            const q = unwrapMessage(ctx.quotedMessage as Record<string, unknown>)
+            const q = unwrapMessage(ctx.quotedMessage as proto.IMessage)
+            const qRaw = q as Record<string, unknown>
             const qCtx = (
-              (q?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo ??
-              (q?.contextInfo as Record<string, unknown> | undefined)
+              (qRaw?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo ??
+              (qRaw?.contextInfo as Record<string, unknown> | undefined)
             ) as Record<string, unknown> | undefined
             if (qCtx?.mentionedJid)
               (qCtx.mentionedJid as string[]).forEach(j => additionalJids.add(j))
@@ -491,7 +495,9 @@ export class MessageService {
       }
     }
     if (callLid && callPn) {
-      await this.contactService.linkLidAndPn(callLid, callPn, 'messages.reaction').catch(() => {})
+      await this.contactService.linkLidAndPn(callLid, callPn, 'messages.reaction').catch((err: unknown) => {
+        console.warn('[MessageService] Failed to link Lid and Pn for reaction:', err)
+      })
     }
 
     // Parse reaction timestamp

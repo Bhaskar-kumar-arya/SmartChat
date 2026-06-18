@@ -86,6 +86,39 @@ services/<domain>/
 
 **Key rule:** A `*Service.ts` file must NEVER directly contain DB statements, `fs` calls, or raw socket/HTTP operations. Those belong in a `*Repository.ts` or dedicated adapter file.
 
+### When to Create a Sub-Folder
+
+A sub-folder is warranted when a *group of related files* shares a cohesive sub-concern within the domain. Do not create sub-folders prematurely — only when the threshold is clearly met.
+
+| Trigger | Action |
+|---|---|
+| 3 or more files share the same sub-concern (e.g., all are formatters, all are validators) | Extract them into a named sub-folder |
+| A single file implementing a strategy/plugin grows into multiple variants | Move all variants into a sub-folder with a shared interface |
+| A sub-folder would contain only 1–2 files | Do **not** create it — keep files flat in the domain folder |
+
+**Sub-folder structure example:**
+
+```
+services/<domain>/
+  <Domain>Service.ts
+  <Domain>Repository.ts
+  formatters/                  ← sub-folder: 3+ formatter variants exist
+    index.ts                   ← exports only the interface + registry, not each class
+    <Domain>Formatter.ts       ← shared interface / base type
+    TypeAFormatter.ts
+    TypeBFormatter.ts
+    TypeCFormatter.ts
+  validators/                  ← sub-folder: 3+ validator variants exist
+    index.ts
+    <Domain>Validator.ts
+    TypeAValidator.ts
+```
+
+**Sub-folder rules:**
+- The `index.ts` inside a sub-folder must export **only the interface and the registry/resolver function** — never each concrete class individually. Callers depend on the abstraction, not the implementations.
+- Sub-folders must not cross domain boundaries. A `formatters/` folder under `orders/` must not import from `users/`.
+- Maximum nesting depth is **2 levels** below `src/` (e.g., `services/orders/formatters/`). Deeper nesting is a sign the domain itself needs to be split.
+
 ---
 
 ## Section 3 — Strict Type Safety (Zero Tolerance)
@@ -273,7 +306,7 @@ src/
 
 ---
 
-## Section 8 — End-of-Session Checklist
+## Section 8 — End-of-Session Checklist(part of the Task artifact)
 
 Before ending any session where code was written, verify all of the following:
 

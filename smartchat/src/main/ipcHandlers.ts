@@ -1,5 +1,4 @@
 import { ipcMain, app, dialog, BrowserWindow } from 'electron'
-import { PrismaClient } from '@prisma/client'
 import fs from 'fs'
 import { join } from 'path'
 import { ServiceContainer } from './ServiceContainer'
@@ -7,14 +6,13 @@ import { toolRegistry } from './services/ai/AIToolService'
 import { AIToolInitializer } from './services/ai/AIToolInitializer'
 import { audioTranscoderService } from './services/audio/AudioTranscoderService'
 import { WASocket } from './types'
-import { WhatsAppConnectionManager } from './services/whatsapp'
+import { WhatsAppConnectionManager } from './services/whatsapp/WhatsAppConnectionManager'
 import { AIChatContext, AIHistoryMessage, AIMention } from './services/ai/AIService'
 import { AIChatMessageInput } from './services/ai/AIChatSessionService'
 import { ExportSession, ExportMessage } from './services/ai/AIChatExportService'
 import { NotificationPreferences } from './services/notification/INotificationService'
 
 export function registerIpcHandlers(
-  prisma: PrismaClient,
   services: ServiceContainer,
   getSock: () => WASocket | null,
   waConnectionManager: WhatsAppConnectionManager
@@ -137,10 +135,7 @@ export function registerIpcHandlers(
 
   // ── Get My JID ───────────────────────────────────────────────────────
   ipcMain.handle('get-my-jid', async () => {
-    const me = await prisma.identity.findFirst({ where: { isMe: true } })
-    if (me) return me.phoneNumber
-    const rawJid = getSock()?.user?.id
-    return rawJid ? rawJid.split(':')[0] + '@s.whatsapp.net' : null
+    return services.contactService.getMePhoneNumberJid(getSock())
   })
 
   // ── Select File Dialog ───────────────────────────────────────────────
@@ -188,7 +183,7 @@ export function registerIpcHandlers(
   // ── Logout ──────────────────────────────────────────────────────────
   ipcMain.handle('logout', async () => {
     const sock = getSock()
-    if (sock) await sock.logout().catch(() => { })
+    if (sock) await sock.logout().catch((err: unknown) => { console.warn('[IPC] sock.logout failed:', err) })
     await services.dataWipeService.wipeAllData()
     return true
   })
@@ -226,17 +221,11 @@ export function registerIpcHandlers(
 
   // ── Sync Mode Configuration ─────────────────────────────────────────
   ipcMain.handle('get-sync-full-history', async () => {
-    const row = await prisma.authState.findUnique({ where: { id: 'sync_full_history' } }).catch(() => null)
-    return row?.data === 'true'
+    return services.authSettingsService.getSyncFullHistory()
   })
 
   ipcMain.handle('set-sync-full-history', async (_event, full: boolean) => {
-    await prisma.authState.upsert({
-      where: { id: 'sync_full_history' },
-      update: { data: full ? 'true' : 'false' },
-      create: { id: 'sync_full_history', data: full ? 'true' : 'false' }
-    }).catch(() => { })
-
+    await services.authSettingsService.setSyncFullHistory(full)
     waConnectionManager.connect()
     return true
   })
@@ -257,7 +246,9 @@ export function registerIpcHandlers(
   ipcMain.handle('clear-vectors', async (_event) => {
     try {
       await services.embeddingService.clearAllVectors()
-    } catch (err) { }
+    } catch (err: unknown) {
+      console.error('[IPC] Failed to clear vectors:', err)
+    }
   })
 
   // ── AI Handlers ───────────────────────────────────────────────────────

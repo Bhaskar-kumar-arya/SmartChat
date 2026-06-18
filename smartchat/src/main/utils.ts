@@ -1,4 +1,6 @@
 import { MESSAGE_TYPE_LABELS } from './constants'
+import { proto } from '@whiskeysockets/baileys'
+import { ChatUpdatePayload } from './types'
 
 /**
  * Cleans a WhatsApp JID by stripping any device/agent/port suffix (e.g. :1, :2, .0:1).
@@ -6,8 +8,8 @@ import { MESSAGE_TYPE_LABELS } from './constants'
  *          "12345:1@lid" -> "12345@lid"
  *          "12036329439228@g.us" -> "12036329439228@g.us"
  */
-export function cleanJid(jid: any): string {
-  if (!jid || typeof jid !== 'string') return ''
+export function cleanJid(jid: string | null | undefined): string {
+  if (!jid) return ''
   const parts = jid.split('@')
   if (parts.length < 2) return jid
   const base = parts[0].split(':')[0]
@@ -22,10 +24,10 @@ export function cleanJid(jid: any): string {
 export function parseBaileysTimestamp(ts: unknown): bigint {
   if (ts === null || ts === undefined) return BigInt(0)
   if (typeof ts === 'object') {
-    const obj = ts as Record<string, any>
+    const obj = ts as Record<string, unknown>
     if ('low' in obj && 'high' in obj) {
-      const low = BigInt(obj.low >>> 0)
-      const high = BigInt(obj.high >>> 0)
+      const low = BigInt((obj.low as number) >>> 0)
+      const high = BigInt((obj.high as number) >>> 0)
       return (high << 32n) | low
     }
   }
@@ -65,16 +67,17 @@ const IGNORED_MESSAGE_KEYS = new Set(['contextInfo', 'messageContextInfo'])
  * Determines the high-level message type from a Baileys proto.IMessage object.
  * Returns 'unknown' when the message is null/undefined or has no recognisable key.
  */
-export function getMessageType(message: Record<string, unknown> | null | undefined): string {
+export function getMessageType(message: proto.IMessage | Record<string, unknown> | null | undefined): string {
   if (!message) return 'unknown'
 
+  const rawMsg = message as Record<string, unknown>
   for (const key of MESSAGE_TYPE_PRIORITY_KEYS) {
-    if (message[key] !== undefined && message[key] !== null) return key
+    if (rawMsg[key] !== undefined && rawMsg[key] !== null) return key
   }
 
   // Dynamic fallback — scan remaining keys, skipping technical noise
-  for (const key of Object.keys(message)) {
-    if (!IGNORED_MESSAGE_KEYS.has(key) && message[key] !== undefined && message[key] !== null) {
+  for (const key of Object.keys(rawMsg)) {
+    if (!IGNORED_MESSAGE_KEYS.has(key) && rawMsg[key] !== undefined && rawMsg[key] !== null) {
       return key
     }
   }
@@ -86,16 +89,17 @@ export function getMessageType(message: Record<string, unknown> | null | undefin
  * Extracts plain text content from a raw Baileys message object for full-text search indexing.
  * Returns null when no text content can be found.
  */
-export function extractTextContent(message: Record<string, unknown> | null | undefined): string | null {
+export function extractTextContent(message: proto.IMessage | Record<string, unknown> | null | undefined): string | null {
   if (!message) return null
 
-  if (typeof message.conversation === 'string') return message.conversation
+  const rawMsg = message as Record<string, unknown>
+  if (typeof rawMsg.conversation === 'string') return rawMsg.conversation
 
-  const extText = message.extendedTextMessage as Record<string, unknown> | undefined
+  const extText = rawMsg.extendedTextMessage as Record<string, unknown> | undefined
   if (extText && typeof extText.text === 'string') return extText.text
 
   for (const key of ['imageMessage', 'videoMessage', 'documentMessage', 'audioMessage', 'ptvMessage']) {
-    const media = message[key] as Record<string, unknown> | undefined
+    const media = rawMsg[key] as Record<string, unknown> | undefined
     if (media && typeof media.caption === 'string') return media.caption
   }
 
@@ -109,9 +113,9 @@ export function extractTextContent(message: Record<string, unknown> | null | und
  * additional handling of associatedChildMessage and editedMessage that Baileys misses.
  * Returns an empty object when msg is falsy.
  */
-export function unwrapMessage(msg: any): any {
+export function unwrapMessage(msg: proto.IMessage | null | undefined): proto.IMessage {
   if (!msg) return {}
-  let unwrapped = msg
+  let unwrapped: proto.IMessage = msg
   for (let i = 0; i < 5; i++) {
     const next =
       unwrapped.ephemeralMessage?.message ||
@@ -141,7 +145,7 @@ export function getMessagePreviewLabel(messageType: string | null, textContent: 
 /**
  * Standardizes community information parsed from a chat update/group metadata payload.
  */
-export function parseCommunityMetadata(jid: string, update: any): {
+export function parseCommunityMetadata(jid: string, update: ChatUpdatePayload): {
   hasCommunityData: boolean
   isCommunity: boolean
   isAnnounce: boolean

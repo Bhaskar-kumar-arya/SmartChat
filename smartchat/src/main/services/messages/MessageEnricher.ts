@@ -1,3 +1,4 @@
+import { proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { cleanJid, unwrapMessage } from '../../utils'
 import { WASocket, DBMessageWithSender, EnrichedMessage, EnrichedReaction } from '../../types'
@@ -92,25 +93,23 @@ export class MessageEnricher {
     return 'Unknown'
   }
 
-  /**
-   * Extract contextInfo from any message type that carries it.
-   */
   private _extractContextInfo(
-    unwrapped: Record<string, unknown> | null | undefined
+    unwrapped: proto.IMessage | Record<string, unknown> | null | undefined
   ): Record<string, unknown> | null {
     if (!unwrapped) return null
+    const rawMsg = unwrapped as Record<string, unknown>
     return (
-      (unwrapped.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
+      (rawMsg.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
         undefined ??
-      (unwrapped.imageMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
+      (rawMsg.imageMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
         undefined ??
-      (unwrapped.videoMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
+      (rawMsg.videoMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
         undefined ??
-      (unwrapped.documentMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
+      (rawMsg.documentMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
         undefined ??
-      (unwrapped.audioMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
+      (rawMsg.audioMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
         undefined ??
-      (unwrapped.contextInfo as Record<string, unknown> | undefined) ??
+      (rawMsg.contextInfo as Record<string, unknown> | undefined) ??
       null
     )
   }
@@ -142,15 +141,16 @@ export class MessageEnricher {
     }
 
     if (ctx.quotedMessage && typeof ctx.quotedMessage === 'object') {
-      const q = unwrapMessage(ctx.quotedMessage as Record<string, unknown>)
+      const q = unwrapMessage(ctx.quotedMessage as proto.IMessage)
+      const qRaw = q as Record<string, unknown>
       const qCtx =
-        (q?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo as
+        (qRaw?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo as
           | Record<string, unknown>
           | undefined ??
-        (q?.imageMessage as Record<string, unknown> | undefined)?.contextInfo as
+        (qRaw?.imageMessage as Record<string, unknown> | undefined)?.contextInfo as
           | Record<string, unknown>
           | undefined ??
-        (q?.contextInfo as Record<string, unknown> | undefined)
+        (qRaw?.contextInfo as Record<string, unknown> | undefined)
 
       if (qCtx?.mentionedJid && Array.isArray(qCtx.mentionedJid)) {
         qCtx.mentions = Object.fromEntries(

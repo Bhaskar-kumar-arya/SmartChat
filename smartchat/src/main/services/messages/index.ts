@@ -1,6 +1,1 @@
-export * from './MessageService'
-export * from './MessageActionService'
-export * from './MediaService'
-export * from './MessageParser'
-export * from './MessageRepository'
-export * from './MessageEnricher'
+// Empty barrel file to comply with code-review-refactor guidelines.

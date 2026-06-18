@@ -1,5 +1,5 @@
-import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
+import { ChatRepository } from '../chats/ChatRepository'
 import { cleanJid, parseBaileysTimestamp } from '../../utils'
 
 export interface RawChatParticipant {
@@ -45,7 +45,7 @@ export interface RawChat {
  */
 export class SyncChatsHandler {
   constructor(
-    private readonly prisma: PrismaClient,
+    private readonly chatRepository: ChatRepository,
     private readonly contactService: ContactService
   ) {}
 
@@ -135,16 +135,12 @@ export class SyncChatsHandler {
 
         const rootJid = isCommunity ? jid : linkedParentJid ? cleanJid(String(linkedParentJid)) : null
         if (rootJid) {
-          const comm = await this.prisma.community.upsert({
-            where: { jid: rootJid },
-            update: {},
-            create: { jid: rootJid, name: isCommunity ? (c.name ?? null) : null }
-          })
+          const comm = await this.chatRepository.upsertCommunity(rootJid, isCommunity ? (c.name ?? null) : null)
           communityId = comm.id
 
           if (isAnnounce) {
-            await this.prisma.community
-              .update({ where: { id: communityId }, data: { announceJid: jid } })
+            await this.chatRepository
+              .updateCommunityAnnounceJid(communityId, jid)
               .catch((err: unknown) => {
                 console.error('[SyncChatsHandler] community announceJid update failed:', err)
               })
@@ -153,19 +149,11 @@ export class SyncChatsHandler {
         updateData.communityId = communityId
       }
 
-      await this.prisma.chat.upsert({
-        where: { jid },
-        update: updateData,
-        create: {
-          jid,
-          unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
-          timestamp,
-          isArchived,
-          communityId: hasCommunityData ? communityId : null,
-          type: hasCommunityData ? type : jid.endsWith('@g.us') ? 'GROUP' : 'DM',
-          name: c.name,
-          muteExpiration: updateData.muteExpiration ?? BigInt(0)
-        }
+      await this.chatRepository.upsertChat(jid, {
+        ...updateData,
+        unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
+        isArchived,
+        name: c.name ?? updateData.name ?? null
       })
 
       processedChats.add(jid)

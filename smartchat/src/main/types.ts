@@ -41,6 +41,9 @@ export interface ChatListItem {
   lastMessageStatus?: string | null
   lastMessageFromMe?: boolean
   lastMessageId?: string | null
+  lastMessageTargetType?: string | null
+  lastMessageTargetText?: string | null
+  lastMessageReactionText?: string | null
 }
 
 /** Enriched reaction for UI display. */
@@ -185,10 +188,14 @@ export interface BaileysGroupUpdate {
 /** Type-safe extension of WASocket for accessing private signalRepository */
 export interface BaileysSignalRepository {
   lidMapping?: {
-    getPNForLID?: (lid: string) => string | undefined
+    getPNForLID?: (lid: string) => Promise<string | undefined>
   }
 }
 
 export interface WASocketWithSignalRepository {
   signalRepository?: BaileysSignalRepository
+}
+
+export interface MediaMessageWithLocalUri {
+  localURI?: string | null
 }

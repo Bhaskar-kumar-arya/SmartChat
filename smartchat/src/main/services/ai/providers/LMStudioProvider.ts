@@ -229,7 +229,9 @@ CRITICAL TOOL RULES:
               if (typeof argsObj === 'string') {
                   argsObj = JSON.parse(argsObj);
               }
-          } catch (e) {}
+          } catch (e: unknown) {
+              console.warn('[LMStudioProvider] Failed to parse tool arguments in generateResponse:', e);
+          }
           const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
           finalResponse += xml;
       },
@@ -284,7 +286,9 @@ CRITICAL TOOL RULES:
               if (typeof argsObj === 'string') {
                   argsObj = JSON.parse(argsObj);
               }
-          } catch (e) {}
+          } catch (e: unknown) {
+              console.warn('[LMStudioProvider] Failed to parse tool arguments in generateResponseStream:', e);
+          }
           const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
           onChunk(xml);
       }

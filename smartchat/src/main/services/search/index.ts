@@ -1,2 +1,1 @@
-export * from './SearchService'
-export * from './EmbeddingService'
+// Empty barrel file to comply with code-review-refactor guidelines.
