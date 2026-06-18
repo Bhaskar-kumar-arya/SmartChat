@@ -180,7 +180,10 @@ app.whenReady().then(() => {
 
   waConnectionManager = new WhatsAppConnectionManager(
     services,
-    prisma,
+    services.authSettingsService,
+    services.chatRepository,
+    services.messageQueryRepository,
+    services.dataWipeService,
     services.historySyncManager,
     services.waEventWiringService
   )

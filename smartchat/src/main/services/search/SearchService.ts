@@ -1,9 +1,9 @@
 import { ContactService } from '../contacts/ContactService'
 import { EmbeddingService } from './EmbeddingService'
 import { WASocket } from '../../types'
-import { ChatRepository } from '../chats/ChatRepository'
-import { MessageRepository } from '../messages/MessageRepository'
-import { ContactRepository } from '../contacts/ContactRepository'
+import { IChatRepository } from '../chats/IChatRepository'
+import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
+import { IContactRepository } from '../contacts/IContactRepository'
 
 export interface SearchResultItem {
   type: 'chat' | 'message'
@@ -55,9 +55,9 @@ function buildMessageWhereClause(filters?: SearchFilters, extraWhere: Record<str
 
 export class SearchService implements ISearchService {
   constructor(
-    private readonly chatRepository: ChatRepository,
-    private readonly messageRepository: MessageRepository,
-    private readonly contactRepository: ContactRepository,
+    private readonly chatRepository: IChatRepository,
+    private readonly messageRepository: IMessageQueryRepository,
+    private readonly contactRepository: IContactRepository,
     private readonly contactService: ContactService,
     private readonly embeddingService: EmbeddingService
   ) {}

@@ -1,13 +1,15 @@
 import { ChatListItem } from '../../types'
 import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
-import { ChatRepository } from './ChatRepository'
-import { MessageRepository } from '../messages/MessageRepository'
+import { IChatRepository } from './IChatRepository'
+import { IReactionRepository } from '../messages/IReactionRepository'
+import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
 import { ContactService } from '../contacts/ContactService'
 
 export class ChatListEnricher {
   constructor(
-    private readonly chatRepository: ChatRepository,
-    private readonly messageRepository: MessageRepository,
+    private readonly chatRepository: IChatRepository,
+    private readonly messageQueryRepository: IMessageQueryRepository,
+    private readonly reactionRepository: IReactionRepository,
     private readonly contactService: ContactService,
     private readonly formatterRegistry: MessageFormatterRegistry
   ) {}
@@ -55,10 +57,10 @@ export class ChatListEnricher {
         }
 
         // Fetch the most recent message for preview
-        const lastMsg = await this.messageRepository.findLastMessage(chat.jid)
+        const lastMsg = await this.messageQueryRepository.findLastMessage(chat.jid)
 
         // Fetch the most recent reaction for the chat
-        const lastReaction = await this.messageRepository.findLastReaction(chat.jid)
+        const lastReaction = await this.reactionRepository.findLastReaction(chat.jid)
 
         const reactionTs = lastReaction?.timestamp ?? 0n
         const msgTs = lastMsg?.timestamp ?? 0n

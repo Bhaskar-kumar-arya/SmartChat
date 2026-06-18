@@ -1,8 +1,8 @@
 import { cleanJid } from '../../utils'
-import { ContactRepository } from './ContactRepository'
+import { IContactRepository } from './IContactRepository'
 
 export class LidPnLinker {
-  constructor(private readonly repository: ContactRepository) {}
+  constructor(private readonly repository: IContactRepository) {}
 
   /**
    * Links a LID to a PN explicitly (e.g., from lid-mapping.update events).

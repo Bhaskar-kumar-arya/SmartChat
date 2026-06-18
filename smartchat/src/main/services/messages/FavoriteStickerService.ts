@@ -259,4 +259,16 @@ export class FavoriteStickerService {
       console.error('[FavoriteStickerService] Failed during auto-copy of favorite sticker:', err)
     }
   }
+
+  /**
+   * Batch-find favorite sticker records matching the given SHA-256 hashes.
+   * Used by MediaService to check if downloaded stickers should be auto-cached to favourites.
+   */
+  async findFavoritesByHashes(hashes: string[]): Promise<Array<{ fileSha256: string; fileName: string }>> {
+    if (hashes.length === 0) return []
+    return this.prisma.favoriteSticker.findMany({
+      where: { fileSha256: { in: hashes } },
+      select: { fileSha256: true, fileName: true }
+    })
+  }
 }

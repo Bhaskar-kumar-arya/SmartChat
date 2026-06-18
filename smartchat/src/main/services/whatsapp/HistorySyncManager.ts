@@ -1,5 +1,4 @@
 import { BrowserWindow } from 'electron'
-import { PrismaClient } from '@prisma/client'
 import { handleHistorySync } from '../../historySync'
 import { WASocket } from '../../types'
 import {
@@ -11,6 +10,7 @@ import {
   HISTORY_SYNC_TIMEOUT_MS
 } from '../../constants'
 import type { ServiceContainer } from '../../ServiceContainer'
+import { AuthSettingsService } from '../auth/AuthSettingsService'
 
 export class HistorySyncManager {
   private syncChunkCount = 0
@@ -22,7 +22,7 @@ export class HistorySyncManager {
   constructor(
     private services: ServiceContainer,
     private getMainWindow: () => BrowserWindow | null,
-    private prisma: PrismaClient
+    private readonly authSettingsService: AuthSettingsService
   ) {}
 
   public get isComplete(): boolean {
@@ -64,8 +64,11 @@ export class HistorySyncManager {
 
       const syncResult = await handleHistorySync(
         data as any,
-        this.prisma,
-        this.services.contactService
+        this.services.contactService,
+        this.services.contactRepository,
+        this.services.chatRepository,
+        this.services.messageRepository,
+        this.services.reactionRepository
       )
 
       // Post-sync processing: check and download favorite stickers in this batch
@@ -163,11 +166,7 @@ export class HistorySyncManager {
     this.services.mediaService.setFavoriteStickerQueuePaused(false)
 
     // Persist the completed history sync status in AuthState
-    await this.prisma.authState.upsert({
-      where: { id: 'history_sync_completed' },
-      update: { data: 'true' },
-      create: { id: 'history_sync_completed', data: 'true' }
-    }).catch((err) => {
+    await this.authSettingsService.setHistorySyncCompleted().catch((err) => {
       console.error('Failed to save history sync complete status:', err)
     })
 
@@ -183,10 +182,7 @@ export class HistorySyncManager {
   }
 
   async skipSync(sock: WASocket): Promise<void> {
-    const fullHistoryRow = await this.prisma.authState.findUnique({
-      where: { id: 'sync_full_history' }
-    }).catch(() => null)
-    const syncFullHistory = fullHistoryRow?.data === 'true'
+    const syncFullHistory = await this.authSettingsService.getSyncFullHistory()
     await this.finishSync(sock, syncFullHistory)
   }
 }

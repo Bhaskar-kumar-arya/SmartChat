@@ -1,4 +1,5 @@
 import { PrismaClient, Chat, Community, ChatMember, Identity } from '@prisma/client'
+import { IChatRepository } from './IChatRepository'
 
 export interface ChatUpsertData {
   unreadCount?: number
@@ -26,7 +27,7 @@ export interface ChatMemberWithIdentity extends ChatMember {
  * ChatRepository — Encapsulates all read and write database operations
  * for the Chat, Community, and ChatMember tables.
  */
-export class ChatRepository {
+export class ChatRepository implements IChatRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   /**
@@ -308,6 +309,32 @@ export class ChatRepository {
       select: { jid: true }
     })
     return chats.map(c => c.jid)
+  }
+
+  /**
+   * Returns the total number of chat rows in the database.
+   */
+  async countChats(): Promise<number> {
+    return this.prisma.chat.count()
+  }
+
+  /**
+   * Bulk-create multiple chat rows.
+   */
+  async bulkCreateChats(chats: Array<{ jid: string; type: string }>): Promise<void> {
+    await this.prisma.chat.createMany({
+      data: chats.map(c => ({
+        jid: c.jid,
+        type: c.type,
+        unreadCount: 0,
+        timestamp: 0n,
+        pinned: 0,
+        muteExpiration: 0n,
+        isArchived: false
+      }))
+    }).catch((err: unknown) => {
+      console.warn('[ChatRepository] Failed to bulk-create chats:', err)
+    })
   }
 }
 

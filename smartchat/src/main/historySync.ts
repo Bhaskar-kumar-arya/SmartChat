@@ -1,11 +1,12 @@
-import { PrismaClient, Message } from '@prisma/client'
+import { Message } from '@prisma/client'
 import { ContactService } from './services/contacts/ContactService'
 import { SyncContactsHandler } from './services/sync/SyncContactsHandler'
 import { SyncChatsHandler } from './services/sync/SyncChatsHandler'
 import { SyncMessagesHandler } from './services/sync/SyncMessagesHandler'
-import { ChatRepository } from './services/chats/ChatRepository'
-import { MessageRepository } from './services/messages/MessageRepository'
-import { ContactRepository } from './services/contacts/ContactRepository'
+import { IChatRepository } from './services/chats/IChatRepository'
+import { IMessageRepository } from './services/messages/IMessageRepository'
+import { IReactionRepository } from './services/messages/IReactionRepository'
+import { IContactRepository } from './services/contacts/IContactRepository'
 
 export interface HistorySyncData {
   chats: Array<Record<string, unknown>>
@@ -37,13 +38,12 @@ export interface HistorySyncResult {
  */
 export async function handleHistorySync(
   data: HistorySyncData,
-  prisma: PrismaClient,
-  contactService: ContactService
+  contactService: ContactService,
+  contactRepository: IContactRepository,
+  chatRepository: IChatRepository,
+  messageRepository: IMessageRepository,
+  reactionRepository: IReactionRepository
 ): Promise<HistorySyncResult> {
-  const contactRepository = new ContactRepository(prisma)
-  const chatRepository = new ChatRepository(prisma)
-  const messageRepository = new MessageRepository(prisma)
-
   const meJids = await contactService.getMeJids()
   const meJid = meJids[0] ?? null
   const meIdentityId = meJid ? await contactService.getIdentityIdByJid(meJid) : null
@@ -72,7 +72,7 @@ export async function handleHistorySync(
   )
 
   // ── 3. Messages & Reactions ─────────────────────────────────────────────────
-  const messagesHandler = new SyncMessagesHandler(messageRepository, contactRepository, chatRepository, contactService)
+  const messagesHandler = new SyncMessagesHandler(messageRepository, reactionRepository, contactRepository, chatRepository, contactService)
   const { messageCount, importedMessages } = await messagesHandler.processMessages(
     messages,
     processedChats,

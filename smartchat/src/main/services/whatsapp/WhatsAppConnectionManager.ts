@@ -7,7 +7,6 @@ const makeWASocket = (typeof makeWASocketImport === 'function'
 import { Boom } from '@hapi/boom'
 import NodeCache from 'node-cache'
 import { usePrismaAuthState } from '../../auth'
-import { PrismaClient } from '@prisma/client'
 import { WASocket } from '../../types'
 import {
   RECONNECT_DELAY_RESTART_MS,
@@ -21,6 +20,9 @@ import { createSubscribers } from './subscribers'
 import { HistorySyncManager } from './HistorySyncManager'
 import { BaileysPatcher } from './BaileysPatcher'
 import { WAEventWiringService } from './WAEventWiringService'
+import { AuthSettingsService } from '../auth/AuthSettingsService'
+import { IChatRepository } from '../chats/IChatRepository'
+import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
 
 export class WhatsAppConnectionManager {
   private currentSock: WASocket | null = null
@@ -31,7 +33,10 @@ export class WhatsAppConnectionManager {
 
   constructor(
     private services: ServiceContainer,
-    private prisma: PrismaClient,
+    private readonly authSettingsService: AuthSettingsService,
+    private readonly chatRepository: IChatRepository,
+    private readonly messageQueryRepository: IMessageQueryRepository,
+    private readonly dataWipeService: DataWipeService,
     private historySyncManager: HistorySyncManager,
     private wiringService: WAEventWiringService
   ) {}
@@ -82,20 +87,17 @@ export class WhatsAppConnectionManager {
     }
 
     // Clean up orphan data if not logged in
-    const existingCreds = await this.prisma.authState.findUnique({ where: { id: 'creds' } })
+    const existingCreds = await this.authSettingsService.hasCreds()
     if (!existingCreds) {
       this.isFreshLogin = true
-      await this.prisma.authState.deleteMany({
-        where: { id: 'history_sync_completed' }
-      }).catch((err) => {
+      await this.authSettingsService.clearHistorySyncCompleted().catch((err) => {
         console.error('[WhatsAppConnectionManager] failed to delete history_sync_completed flag:', err)
       })
 
-      const orphanChats = await this.prisma.chat.count()
+      const orphanChats = await this.chatRepository.countChats()
       if (orphanChats > 0) {
         console.log(`[Cleanup] No auth creds but found ${orphanChats} orphan chats — wiping stale data`)
-        const dataWipeService = new DataWipeService(this.prisma)
-        await dataWipeService.wipeAllData()
+        await this.dataWipeService.wipeAllData()
       }
     }
 
@@ -113,20 +115,12 @@ export class WhatsAppConnectionManager {
     }
 
     if (this.isFreshLogin) {
-      await this.prisma.authState.deleteMany({
-        where: { id: 'history_sync_completed' }
-      }).catch((err) => {
+      await this.authSettingsService.clearHistorySyncCompleted().catch((err) => {
         console.error('[WhatsAppConnectionManager] fresh login authState deletion failed:', err)
       })
     }
 
-    const syncCompletedRow = await this.prisma.authState.findUnique({
-      where: { id: 'history_sync_completed' }
-    }).catch((err) => {
-      console.error('[WhatsAppConnectionManager] find history_sync_completed failed:', err)
-      return null
-    })
-    const isHistorySyncCompleted = syncCompletedRow?.data === 'true'
+    const isHistorySyncCompleted = await this.authSettingsService.getHistorySyncCompleted()
 
     // Clear HistorySyncManager for this connection
     this.historySyncManager.clear()
@@ -134,13 +128,7 @@ export class WhatsAppConnectionManager {
     const isInitialSyncInProgress = this.historySyncManager.isInProgress
     const shouldSyncHistory = this.isFreshLogin || isInitialSyncInProgress || !isHistorySyncCompleted
 
-    const fullHistoryRow = await this.prisma.authState.findUnique({
-      where: { id: 'sync_full_history' }
-    }).catch((err) => {
-      console.error('[WhatsAppConnectionManager] find sync_full_history failed:', err)
-      return null
-    })
-    const syncFullHistory = fullHistoryRow?.data === 'true'
+    const syncFullHistory = await this.authSettingsService.getSyncFullHistory()
 
     const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
 
@@ -156,7 +144,7 @@ export class WhatsAppConnectionManager {
       getMessage: async (key) => {
         if (!key.id) return undefined
         try {
-          const msg = await this.prisma.message.findUnique({ where: { id: key.id } })
+          const msg = await this.messageQueryRepository.findMessageById(key.id)
           if (msg && msg.content) {
             return JSON.parse(msg.content)
           }
@@ -172,7 +160,7 @@ export class WhatsAppConnectionManager {
     // Create the event bus and wire up all subscribers for this connection
     const bus = new WAEventBus()
     this.currentBus = bus
-    createSubscribers(bus, this.services, () => this.mainWindow, this.prisma)
+    createSubscribers(bus, this.services, () => this.mainWindow)
 
     const eventHandler = new WAEventHandler(this.services, bus)
 
@@ -212,8 +200,7 @@ export class WhatsAppConnectionManager {
     } else {
       console.log('Logged out — wiping all data for fresh QR...')
       try {
-        const dataWipeService = new DataWipeService(this.prisma)
-        await dataWipeService.wipeAllData()
+        await this.dataWipeService.wipeAllData()
       } catch (err) {
         console.error('Error wiping data:', err)
       }
@@ -236,13 +223,7 @@ export class WhatsAppConnectionManager {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       const isInitialSyncInProgress = this.historySyncManager.isInProgress
       if (!this.isFreshLogin && !isInitialSyncInProgress) {
-        const syncCompletedRow = await this.prisma.authState.findUnique({
-          where: { id: 'history_sync_completed' }
-        }).catch((err) => {
-          console.error('[WhatsAppConnectionManager] find history_sync_completed on reconnect failed:', err)
-          return null
-        })
-        const isHistorySyncCompleted = syncCompletedRow?.data === 'true'
+        const isHistorySyncCompleted = await this.authSettingsService.getHistorySyncCompleted()
 
         if (isHistorySyncCompleted) {
           console.log(`[Connection] Reconnect: history sync previously completed, skipping sync`)

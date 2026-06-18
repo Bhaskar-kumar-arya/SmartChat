@@ -1,6 +1,7 @@
 import { PrismaClient, Message } from '@prisma/client'
 import { unwrapMessage } from '../../utils'
 import { MediaMessageWithLocalUri } from '../../types'
+import { IMessageRepository } from './IMessageRepository'
 
 export interface MessageUpsertData {
   id: string
@@ -18,13 +19,10 @@ export interface MessageUpsertData {
 }
 
 /**
- * MessageRepository — Single Responsibility: all Prisma/database operations
- * related to the `Message` and `Reaction` tables.
- *
- * This class must NEVER contain business logic, parsing, or UI enrichment.
- * It is a pure data-access layer: reads and writes only.
+ * MessageRepository — Single Responsibility: all Prisma/database write/mutation
+ * operations related to the `Message` table.
  */
-export class MessageRepository {
+export class MessageRepository implements IMessageRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   /**
@@ -174,48 +172,6 @@ export class MessageRepository {
   }
 
   /**
-   * Upsert a reaction record.
-   * If `emoji` is empty/null, the reaction is deleted instead.
-   */
-  async upsertReaction(
-    messageId: string,
-    reactorId: number,
-    emoji: string | null,
-    timestamp: bigint
-  ): Promise<void> {
-    if (!emoji) {
-      await this.prisma.reaction
-        .deleteMany({ where: { messageId, senderId: reactorId } })
-        .catch((err: unknown) => {
-          console.error('[MessageRepository] Failed to delete reaction:', err)
-        })
-      return
-    }
-
-    await this.prisma.reaction
-      .upsert({
-        where: { messageId_senderId: { messageId, senderId: reactorId } },
-        update: { text: emoji, timestamp },
-        create: { messageId, senderId: reactorId, text: emoji, timestamp }
-      })
-      .catch((err: unknown) => {
-        console.error('[MessageRepository] Failed to upsert reaction:', err)
-      })
-  }
-
-  /**
-   * Fetch existing message IDs from a list for pre-existence checks.
-   */
-  async findExistingIds(ids: string[]): Promise<Set<string>> {
-    if (ids.length === 0) return new Set()
-    const rows = await this.prisma.message.findMany({
-      where: { id: { in: ids } },
-      select: { id: true }
-    })
-    return new Set(rows.map(r => r.id))
-  }
-
-  /**
    * Update an arbitrary set of fields on a message by ID.
    * Used for post-send localURI injection after media upload.
    */
@@ -329,231 +285,44 @@ export class MessageRepository {
   }
 
   /**
-   * Deduplicate, validate, and bulk-upsert a set of pending reaction records.
-   *
-   * Only inserts reactions whose target message IDs exist either in the
-   * current batch (`currentBatchIds`) or already in the database.
-   *
-   * Used exclusively by SyncMessagesHandler during history sync.
+   * Mark a message as deleted (isDeleted = true) by ID.
    */
-  async bulkSyncReactions(
-    pendingReactions: Array<{ targetId: string; reactorId: number; emoji: string; timestamp: bigint }>,
-    _currentBatchIds: Set<string>
-  ): Promise<void> {
-    if (pendingReactions.length === 0) return
-
-    // Keep only the latest reaction per (targetId, reactorId)
-    const uniqueMap = new Map<string, { targetId: string; reactorId: number; emoji: string; timestamp: bigint }>()
-    for (const r of pendingReactions) {
-      const key = `${r.targetId}_${r.reactorId}`
-      const existing = uniqueMap.get(key)
-      if (!existing || r.timestamp > existing.timestamp) {
-        uniqueMap.set(key, r)
-      }
-    }
-    const unique = Array.from(uniqueMap.values())
-
-    // Verify target message IDs exist in the DB
-    const allTargetIds = Array.from(new Set(unique.map(r => r.targetId)))
-    const existingMessageIds = new Set<string>()
-    if (allTargetIds.length > 0) {
-      const found = await this.prisma.message.findMany({
-        where: { id: { in: allTargetIds } },
-        select: { id: true }
+  async updateMessageDeleted(id: string): Promise<void> {
+    await this.prisma.message
+      .update({ where: { id }, data: { isDeleted: true } })
+      .catch((err: unknown) => {
+        console.error(`[MessageRepository] Failed to mark message ${id} as deleted:`, err)
       })
-      for (const m of found) existingMessageIds.add(m.id)
-    }
-
-    // Verify reactor identity IDs exist in the DB
-    const allReactorIds = Array.from(new Set(unique.map(r => r.reactorId)))
-    const existingReactorIds = new Set<number>()
-    if (allReactorIds.length > 0) {
-      const foundIdentities = await this.prisma.identity.findMany({
-        where: { id: { in: allReactorIds } },
-        select: { id: true }
-      })
-      for (const ident of foundIdentities) existingReactorIds.add(ident.id)
-    }
-
-    const valid = unique.filter(
-      r => existingMessageIds.has(r.targetId) && existingReactorIds.has(r.reactorId)
-    )
-    if (valid.length === 0) return
-
-    const ops = valid.map(r =>
-      this.prisma.reaction.upsert({
-        where: { messageId_senderId: { messageId: r.targetId, senderId: r.reactorId } },
-        update: { text: r.emoji, timestamp: r.timestamp },
-        create: { messageId: r.targetId, senderId: r.reactorId, text: r.emoji, timestamp: r.timestamp }
-      })
-    )
-    await this.prisma.$transaction(ops).catch(async (err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.warn('[MessageRepository] bulkSyncReactions transaction failed, falling back:', msg)
-      for (const r of valid) {
-        await this.prisma.reaction
-          .upsert({
-            where: { messageId_senderId: { messageId: r.targetId, senderId: r.reactorId } },
-            update: { text: r.emoji, timestamp: r.timestamp },
-            create: { messageId: r.targetId, senderId: r.reactorId, text: r.emoji, timestamp: r.timestamp }
-          })
-          .catch((opErr: unknown) => {
-            const opMsg = opErr instanceof Error ? opErr.message : String(opErr)
-            console.error(`[MessageRepository] Failed to upsert reaction for ${r.targetId}:`, opMsg)
-          })
-      }
-    })
   }
 
   /**
-   * Performs the native vector MATCH query against the vec_messages table.
+   * Update a message's text, content, and edited flag, then return the updated row with sender.
+   * Used by MessageActionService.editMessage.
    */
-  async searchVectorMatch(
-    queryVectorJson: string,
-    candidateIds?: string[]
-  ): Promise<Array<{ messageId: string; distance: number }>> {
-    let filterSql = ''
-    const params: any[] = [queryVectorJson]
-
-    if (candidateIds && candidateIds.length > 0) {
-      if (candidateIds.length < 2000) {
-        filterSql = `AND messageId IN (${candidateIds.map(() => '?').join(',')})`
-        params.push(...candidateIds)
-      }
-    }
-
-    const sql = `
-      SELECT messageId, distance
-      FROM vec_messages
-      WHERE vector MATCH ?
-      ${filterSql}
-      AND k = 30
-      ORDER BY distance ASC
-    `
-    return this.prisma.$queryRawUnsafe<Array<{ messageId: string; distance: number }>>(sql, ...params)
+  async updateAndFetchMessageWithSender(
+    id: string,
+    textContent: string,
+    content: string
+  ): Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null> {
+    return this.prisma.message.update({
+      where: { id },
+      data: { textContent, content, isEdited: true },
+      include: { sender: true }
+    }) as Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null>
   }
 
   /**
-   * Fetch the most recent message for preview in a chat.
+   * Update a message's content and return the updated row with sender.
+   * Used by MediaService after caching a downloaded media file.
    */
-  async findLastMessage(chatJid: string): Promise<any> {
-    return this.prisma.message.findFirst({
-      where: { chatJid },
-      orderBy: { timestamp: 'desc' },
-      select: {
-        id: true,
-        textContent: true,
-        messageType: true,
-        timestamp: true,
-        fromMe: true,
-        participant: true,
-        status: true,
-        sender: {
-          select: {
-            displayName: true,
-            pushName: true,
-            verifiedName: true,
-            phoneNumber: true
-          }
-        }
-      }
-    })
-  }
-
-  /**
-   * Fetch the most recent reaction for a chat.
-   */
-  async findLastReaction(chatJid: string): Promise<any> {
-    return this.prisma.reaction.findFirst({
-      where: {
-        message: {
-          chatJid
-        }
-      },
-      orderBy: { timestamp: 'desc' },
-      select: {
-        text: true,
-        timestamp: true,
-        sender: {
-          select: {
-            displayName: true,
-            pushName: true,
-            verifiedName: true,
-            phoneNumber: true,
-            isMe: true
-          }
-        },
-        message: {
-          select: {
-            id: true,
-            messageType: true,
-            textContent: true
-          }
-        }
-      }
-    })
-  }
-
-  /**
-   * Batch-find multiple messages with chat and sender details.
-   */
-  async findMessagesByIdsWithChatAndSender(ids: string[]): Promise<any[]> {
-    if (ids.length === 0) return []
-    return this.prisma.message.findMany({
-      where: { id: { in: ids } },
-      include: { chat: true, sender: true }
-    })
-  }
-
-  /**
-   * Find only the message IDs matching a where clause.
-   */
-  async findMessageIdsOnly(where: any): Promise<string[]> {
-    const rows = await this.prisma.message.findMany({
-      where,
-      select: { id: true }
-    })
-    return rows.map(r => r.id)
-  }
-
-  /**
-   * Find messages matching a where clause, with chat and sender details.
-   */
-  async findMessagesWithChatAndSender(where: any, take?: number): Promise<any[]> {
-    return this.prisma.message.findMany({
-      where,
-      orderBy: { timestamp: 'desc' },
-      take,
-      include: { chat: true, sender: true }
-    })
-  }
-
-  /**
-   * Find messages in a chat, ordered descending by timestamp.
-   */
-  async findMessagesByChat(chatJid: string, limit: number): Promise<Message[]> {
-    return this.prisma.message.findMany({
-      where: { chatJid },
-      orderBy: { timestamp: 'desc' },
-      take: limit
-    })
-  }
-
-  /**
-   * Executes a read-only query and returns the matching message ID rows.
-   */
-  async queryMessageIdsBySql(sql: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
-    return this.prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql, ...params)
-  }
-
-  /**
-   * Batch-find multiple messages by their IDs.
-   */
-  async findMessagesByIds(ids: string[]): Promise<Message[]> {
-    if (ids.length === 0) return []
-    return this.prisma.message.findMany({
-      where: { id: { in: ids } }
-    })
+  async updateContentAndFetchWithSender(
+    id: string,
+    content: string
+  ): Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null> {
+    return this.prisma.message.update({
+      where: { id },
+      data: { content },
+      include: { sender: true }
+    }) as Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null>
   }
 }
-

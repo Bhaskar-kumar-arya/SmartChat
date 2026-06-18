@@ -1,12 +1,12 @@
 import { cleanJid, parseCommunityMetadata } from '../../utils'
 import { ContactService } from '../contacts/ContactService'
 import { ChatListItem, ChatUpdatePayload, WASocket } from '../../types'
-import { ChatRepository } from './ChatRepository'
+import { IChatRepository } from './IChatRepository'
 import { ChatListEnricher } from './ChatListEnricher'
 
 export class ChatService {
   constructor(
-    private readonly chatRepository: ChatRepository,
+    private readonly chatRepository: IChatRepository,
     private readonly contactService: ContactService,
     private readonly chatListEnricher: ChatListEnricher
   ) {}

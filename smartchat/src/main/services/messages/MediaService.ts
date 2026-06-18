@@ -1,13 +1,15 @@
 import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
-import { PrismaClient, Message } from '@prisma/client'
 import { app, shell } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 import { MessageService } from './MessageService'
+import { IMessageRepository } from './IMessageRepository'
+import { IMessageQueryRepository } from './IMessageQueryRepository'
 import { FavoriteStickerService } from './FavoriteStickerService'
 import { ContactService } from '../contacts/ContactService'
 import { EnrichedMessage, WASocket } from '../../types'
 import { unwrapMessage } from '../../utils'
+import { Message } from '@prisma/client'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -115,10 +117,11 @@ export class MediaService {
   private queuePaused = false
 
   constructor(
-    private prisma: PrismaClient,
-    private messageService: MessageService,
-    private contactService: ContactService,
-    private favoriteStickerService: FavoriteStickerService
+    private readonly messageRepository: IMessageRepository,
+    private readonly messageQueryRepository: IMessageQueryRepository,
+    private readonly messageService: MessageService,
+    private readonly contactService: ContactService,
+    private readonly favoriteStickerService: FavoriteStickerService
   ) { }
 
   setFavoriteStickerQueuePaused(paused: boolean): void {
@@ -218,13 +221,9 @@ export class MediaService {
 
     // 2. Query all matching favorite stickers in a single DB query
     try {
-      const favRecords = await this.prisma.favoriteSticker.findMany({
-        where: {
-          fileSha256: {
-            in: Array.from(shaToMsgMap.keys())
-          }
-        }
-      })
+      const favRecords = await this.favoriteStickerService.findFavoritesByHashes(
+        Array.from(shaToMsgMap.keys())
+      )
 
       // 3. For each match, queue the download
       for (const fav of favRecords) {
@@ -243,7 +242,7 @@ export class MediaService {
   async downloadAndCacheMedia(msgId: string, sock: WASocket | null): Promise<EnrichedMessage> {
     if (!sock) throw new Error('WhatsApp socket is not connected')
 
-    const dbMsg = await this.prisma.message.findUnique({ where: { id: msgId } })
+    const dbMsg = await this.messageQueryRepository.findMessageById(msgId)
     if (!dbMsg || !dbMsg.content) throw new Error('Message not found')
 
     const rawMessage = JSON.parse(dbMsg.content) as Record<string, unknown>
@@ -296,11 +295,8 @@ export class MediaService {
     // Stamp the local URI back onto the resolved media message payload so the DB gets updated
     mediaMsg.localURI = `app://media/${fileName}`
 
-    const updated = await this.prisma.message.update({
-      where: { id: msgId },
-      data: { content: JSON.stringify(rawMessage) },
-      include: { sender: true }
-    })
+    const updated = await this.messageRepository.updateContentAndFetchWithSender(msgId, JSON.stringify(rawMessage))
+    if (!updated) throw new Error('Failed to fetch updated message after media content update')
 
     const nameMap = await this.contactService.batchResolveNames(
       [updated.participant || updated.chatJid],

@@ -1,9 +1,11 @@
 import { Message } from '@prisma/client'
 import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
-import { MessageRepository, MessageUpsertData } from '../messages/MessageRepository'
-import { ContactRepository } from '../contacts/ContactRepository'
-import { ChatRepository } from '../chats/ChatRepository'
+import { IMessageRepository } from '../messages/IMessageRepository'
+import { IReactionRepository } from '../messages/IReactionRepository'
+import { MessageUpsertData } from '../messages/MessageRepository'
+import { IContactRepository } from '../contacts/IContactRepository'
+import { IChatRepository } from '../chats/IChatRepository'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from '../../utils'
 
@@ -32,9 +34,10 @@ export interface SyncMessageRow extends MessageUpsertData {
  */
 export class SyncMessagesHandler {
   constructor(
-    private readonly repository: MessageRepository,
-    private readonly contactRepository: ContactRepository,
-    private readonly chatRepository: ChatRepository,
+    private readonly repository: IMessageRepository,
+    private readonly reactionRepository: IReactionRepository,
+    private readonly contactRepository: IContactRepository,
+    private readonly chatRepository: IChatRepository,
     private readonly contactService: ContactService
   ) {}
 
@@ -91,7 +94,7 @@ export class SyncMessagesHandler {
         importedMessages.push(...(standardMessages as unknown as Message[]))
       }
 
-      await this.repository.bulkSyncReactions(
+      await this.reactionRepository.bulkSyncReactions(
         pendingReactions,
         new Set(messageRows.map(m => m.id))
       )

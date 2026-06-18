@@ -1,6 +1,6 @@
 import { cleanJid } from '../../utils'
 import { WASocket } from '../../types'
-import { ContactRepository } from './ContactRepository'
+import { IContactRepository } from './IContactRepository'
 import { LidPnLinker } from './LidPnLinker'
 import { ContactNameResolver } from './ContactNameResolver'
 import { Identity } from '@prisma/client'
@@ -11,7 +11,7 @@ export class ContactService {
   private meJidsCache: string[] | null = null
 
   constructor(
-    private readonly repository: ContactRepository,
+    private readonly repository: IContactRepository,
     private readonly lidPnLinker: LidPnLinker,
     private readonly nameResolver: ContactNameResolver
   ) {}

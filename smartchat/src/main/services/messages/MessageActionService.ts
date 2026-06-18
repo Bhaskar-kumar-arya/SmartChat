@@ -1,7 +1,10 @@
-import { PrismaClient } from '@prisma/client'
 import { ContactService } from '../contacts/ContactService'
+import { IContactRepository } from '../contacts/IContactRepository'
 import { join } from 'path'
 import { MessageService } from './MessageService'
+import { IMessageRepository } from './IMessageRepository'
+import { IReactionRepository } from './IReactionRepository'
+import { IMessageQueryRepository } from './IMessageQueryRepository'
 import { ChatService } from '../chats/ChatService'
 import { proto, AnyMessageContent } from '@whiskeysockets/baileys'
 import { WASocket, EnrichedMessage, MediaMessageWithLocalUri } from '../../types'
@@ -16,7 +19,10 @@ export class MessageActionService {
   private readonly fileStorage: LocalFileStorage
 
   constructor(
-    private readonly prisma: PrismaClient,
+    private readonly messageRepository: IMessageRepository,
+    private readonly reactionRepository: IReactionRepository,
+    private readonly messageQueryRepository: IMessageQueryRepository,
+    private readonly contactRepository: IContactRepository,
     private readonly contactService: ContactService,
     private readonly messageService: MessageService,
     private readonly chatService: ChatService,
@@ -32,7 +38,7 @@ export class MessageActionService {
    */
   async deleteMessage(sock: WASocket, messageId: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string }> {
     let targetJid = jid;
-    const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId } });
+    const dbMsg = await this.messageQueryRepository.findMessageById(messageId);
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
     }
@@ -51,10 +57,7 @@ export class MessageActionService {
 
     await sock.sendMessage(resolvedJid, { delete: msgKey });
 
-    await this.prisma.message.update({
-      where: { id: messageId },
-      data: { isDeleted: true }
-    });
+    await this.messageRepository.updateMessageDeleted(messageId);
 
     this.getBus()?.emit('message:deleted', {
       messageId,
@@ -76,7 +79,7 @@ export class MessageActionService {
    */
   async editMessage(sock: WASocket, messageId: string, newText: string, jid?: string): Promise<EnrichedMessage> {
     let targetJid = jid;
-    const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId }, include: { sender: true } });
+    const dbMsg = await this.messageQueryRepository.findMessageWithSender(messageId);
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
     }
@@ -115,11 +118,10 @@ export class MessageActionService {
       updatedContent.conversation = newText;
     }
 
-    const updated = await this.prisma.message.update({
-      where: { id: messageId },
-      data: { textContent: newText, content: JSON.stringify(updatedContent), isEdited: true },
-      include: { sender: true }
-    });
+    const updated = await this.messageRepository.updateAndFetchMessageWithSender(
+      messageId, newText, JSON.stringify(updatedContent)
+    )
+    if (!updated) throw new Error('Failed to fetch updated message after edit')
 
     const nameMap = await this.contactService.batchResolveNames([updated.participant || resolvedJid], sock);
     const enriched = await this.messageService.enrichMessage(updated, sock, nameMap);
@@ -141,7 +143,7 @@ export class MessageActionService {
    * Forwards a message to one or more destination JIDs/LIDs.
    */
   async forwardMessage(sock: WASocket, messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }> {
-    const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId } });
+    const dbMsg = await this.messageQueryRepository.findMessageById(messageId);
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
     }
@@ -219,7 +221,7 @@ export class MessageActionService {
    */
   async reactToMessage(sock: WASocket, messageId: string, reaction: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string; reaction: string }> {
     let targetJid = jid;
-    const dbMsg = await this.prisma.message.findUnique({ where: { id: messageId } });
+    const dbMsg = await this.messageQueryRepository.findMessageById(messageId);
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
     }
@@ -249,7 +251,7 @@ export class MessageActionService {
     // Update the database Reaction table
     // 1. Resolve our own identity ID
     let reactorId: number | null = null;
-    const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } });
+    const meIdent = await this.contactRepository.findMeIdentity();
     if (meIdent) {
       reactorId = meIdent.id;
     } else {
@@ -272,20 +274,11 @@ export class MessageActionService {
 
     if (!reaction) {
       // Remove reaction
-      await this.prisma.reaction.deleteMany({
-        where: { messageId, senderId: reactorId }
-      }).catch((err) => {
-        console.error('[MessageActionService] Failed to delete reaction:', err)
-      });
+      await this.reactionRepository.deleteReactions(messageId, reactorId);
     } else {
       // Upsert reaction
-      await this.prisma.reaction.upsert({
-        where: { messageId_senderId: { messageId, senderId: reactorId } },
-        update: { text: reaction, timestamp },
-        create: { messageId, senderId: reactorId, text: reaction, timestamp }
-      }).catch((err) => {
-        console.error('[MessageActionService] Failed to upsert reaction:', err)
-      });
+      await this.reactionRepository
+        .upsertReaction(messageId, reactorId, reaction, timestamp);
     }
 
     // Reactions are fully handled by ReceiptSubscriber via the reaction:update bus event.
@@ -314,7 +307,7 @@ export class MessageActionService {
 
     let contextInfo: proto.IContextInfo | undefined = undefined
     if (quotedMsgId) {
-      const qm = await this.prisma.message.findUnique({ where: { id: quotedMsgId } })
+      const qm = await this.messageQueryRepository.findMessageById(quotedMsgId)
       if (qm && qm.content) {
         try { 
           const rawQuoted = JSON.parse(qm.content)
@@ -391,7 +384,7 @@ export class MessageActionService {
 
     let contextInfo: proto.IContextInfo | undefined = undefined
     if (quotedMsgId) {
-        const qm = await this.prisma.message.findUnique({ where: { id: quotedMsgId } })
+        const qm = await this.messageQueryRepository.findMessageById(quotedMsgId)
         if (qm && qm.content) {
           try { 
             const rawQuoted = JSON.parse(qm.content)
@@ -479,10 +472,7 @@ export class MessageActionService {
         ;(mediaMsg as MediaMessageWithLocalUri).localURI = `app://media/${fileName}`
 
         const updatedContent = JSON.stringify(parsedContent)
-        await this.prisma.message.update({
-          where: { id: processed.id },
-          data: { content: updatedContent }
-        })
+        await this.messageRepository.updateMessageContent(processed.id, updatedContent)
 
         processed.content = updatedContent
       } catch (err: unknown) {

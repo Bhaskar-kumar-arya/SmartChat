@@ -11,6 +11,8 @@ import { ReceiptService } from './services/whatsapp/ReceiptService'
 import { ChatService } from './services/chats/ChatService'
 import { ChatListEnricher } from './services/chats/ChatListEnricher'
 import { MessageService } from './services/messages/MessageService'
+import { MessageParser } from './services/messages/MessageParser'
+import { MessageEnricher } from './services/messages/MessageEnricher'
 import { MessageActionService } from './services/messages/MessageActionService'
 import { MediaService } from './services/messages/MediaService'
 import { SearchService } from './services/search/SearchService'
@@ -27,8 +29,15 @@ import { ChatSyncHandler } from './services/chats/sync/ChatSyncHandler'
 import { MembershipSyncHandler } from './services/chats/sync/MembershipSyncHandler'
 
 import { ContactRepository } from './services/contacts/ContactRepository'
+import { IContactRepository } from './services/contacts/IContactRepository'
 import { ChatRepository } from './services/chats/ChatRepository'
+import { IChatRepository } from './services/chats/IChatRepository'
 import { MessageRepository } from './services/messages/MessageRepository'
+import { IMessageRepository } from './services/messages/IMessageRepository'
+import { MessageQueryRepository } from './services/messages/MessageQueryRepository'
+import { IMessageQueryRepository } from './services/messages/IMessageQueryRepository'
+import { ReactionRepository } from './services/messages/ReactionRepository'
+import { IReactionRepository } from './services/messages/IReactionRepository'
 import { SyncRepository } from './services/sync/SyncRepository'
 import { AuthStateRepository } from './services/auth/AuthStateRepository'
 import { AuthSettingsService } from './services/auth/AuthSettingsService'
@@ -53,6 +62,8 @@ export function createServices(
   const contactRepository = new ContactRepository(prisma)
   const chatRepository = new ChatRepository(prisma)
   const messageRepository = new MessageRepository(prisma)
+  const messageQueryRepository = new MessageQueryRepository(prisma)
+  const reactionRepository = new ReactionRepository(prisma)
   const syncRepository = new SyncRepository(prisma)
   const authStateRepository = new AuthStateRepository(prisma)
   const authSettingsService = new AuthSettingsService(authStateRepository)
@@ -70,7 +81,7 @@ export function createServices(
   const favoriteStickerService = new FavoriteStickerService(prisma)
 
   // 2. Services with service dependencies
-  const chatListEnricher = new ChatListEnricher(chatRepository, messageRepository, contactService, messageFormatterRegistry)
+  const chatListEnricher = new ChatListEnricher(chatRepository, messageQueryRepository, reactionRepository, contactService, messageFormatterRegistry)
   const chatService = new ChatService(chatRepository, contactService, chatListEnricher)
   const communitySyncHandler = new CommunitySyncHandler(syncRepository)
   const chatSyncHandler = new ChatSyncHandler(syncRepository)
@@ -80,10 +91,19 @@ export function createServices(
     chatSyncHandler,
     membershipSyncHandler
   )
-  const messageService = new MessageService(prisma, contactService, embeddingService, secretMessageService, getBus)
-  const messageActionService = new MessageActionService(prisma, contactService, messageService, chatService, getBus)
-  const mediaService = new MediaService(prisma, messageService, contactService, favoriteStickerService)
-  const searchService = new SearchService(chatRepository, messageRepository, contactRepository, contactService, embeddingService)
+  const messageParser = new MessageParser()
+  const messageEnricher = new MessageEnricher(contactService)
+  const messageService = new MessageService(
+    contactService, contactRepository, chatRepository, embeddingService, secretMessageService, getBus,
+    messageParser, messageRepository, messageQueryRepository, reactionRepository, messageEnricher
+  )
+  const messageActionService = new MessageActionService(
+    messageRepository, reactionRepository, messageQueryRepository, contactRepository, contactService, messageService, chatService, getBus
+  )
+  const mediaService = new MediaService(
+    messageRepository, messageQueryRepository, messageService, contactService, favoriteStickerService
+  )
+  const searchService = new SearchService(chatRepository, messageQueryRepository, contactRepository, contactService, embeddingService)
   const identityReconciliationService = new IdentityReconciliationService(prisma)
   const profileSyncService = new ProfileSyncService(prisma, contactService)
 
@@ -93,13 +113,15 @@ export function createServices(
   const aiChatExportService = new AIChatExportService()
 
   // 4. WhatsApp Event Lifecycle & Sync Services
-  const historySyncManager = new HistorySyncManager(services, getMainWindow, prisma)
+  const historySyncManager = new HistorySyncManager(services, getMainWindow, authSettingsService)
   const waEventWiringService = new WAEventWiringService(historySyncManager)
 
   Object.assign(services, {
     contactRepository,
     chatRepository,
     messageRepository,
+    messageQueryRepository,
+    reactionRepository,
     syncRepository,
     authSettingsService,
     contactService,
@@ -129,9 +151,11 @@ export function createServices(
 }
 
 export type ServiceContainer = {
-  contactRepository: ContactRepository
-  chatRepository: ChatRepository
-  messageRepository: MessageRepository
+  contactRepository: IContactRepository
+  chatRepository: IChatRepository
+  messageRepository: IMessageRepository
+  messageQueryRepository: IMessageQueryRepository
+  reactionRepository: IReactionRepository
   syncRepository: SyncRepository
   authSettingsService: AuthSettingsService
   contactService: ContactService

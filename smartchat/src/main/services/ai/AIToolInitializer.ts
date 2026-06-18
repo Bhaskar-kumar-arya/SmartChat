@@ -20,7 +20,7 @@ export class AIToolInitializer {
     const readMessagesTool = new ReadMessagesTool(
       getSock,
       services.messageFormatterRegistry,
-      services.messageRepository,
+      services.messageQueryRepository,
       services.contactRepository,
       services.chatRepository
     );

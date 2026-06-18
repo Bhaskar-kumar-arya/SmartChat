@@ -10,7 +10,6 @@
  */
 
 import { BrowserWindow } from 'electron'
-import { PrismaClient } from '@prisma/client'
 import type { WAEventBus } from '../WAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type {
@@ -28,8 +27,7 @@ import { cleanJid } from '../../../utils'
 export class UIBroadcastSubscriber implements IWAEventSubscriber {
   constructor(
     private services: ServiceContainer,
-    private getMainWindow: () => BrowserWindow | null,
-    private prisma: PrismaClient
+    private getMainWindow: () => BrowserWindow | null
   ) {}
 
   register(bus: WAEventBus): void {
@@ -84,7 +82,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     const win = this.window
     if (!win) return
     try {
-      const dbMsg = await this.prisma.message.findUnique({ where: { id: event.messageId } })
+      const dbMsg = await this.services.messageQueryRepository.findMessageById(event.messageId)
       if (!dbMsg) return
       const senderJid = cleanJid(dbMsg.participant || dbMsg.chatJid)
       const nameMap = await this.services.contactService.batchResolveNames([senderJid], event.sock)

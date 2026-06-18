@@ -1,13 +1,13 @@
 import { cleanJid } from '../../utils'
 import { WASocket, WASocketWithSignalRepository } from '../../types'
-import { ContactRepository } from './ContactRepository'
+import { IContactRepository } from './IContactRepository'
 
 function hasSignalRepository(sock: WASocket | null | undefined): sock is WASocket & WASocketWithSignalRepository {
   return !!sock && typeof sock === 'object' && 'signalRepository' in sock
 }
 
 export class ContactNameResolver {
-  constructor(private readonly repository: ContactRepository) {}
+  constructor(private readonly repository: IContactRepository) {}
 
   /**
    * Formats display name from an Identity object.

@@ -1,5 +1,5 @@
 import { ContactService } from '../contacts/ContactService'
-import { ChatRepository } from '../chats/ChatRepository'
+import { IChatRepository } from '../chats/IChatRepository'
 import { cleanJid, parseBaileysTimestamp } from '../../utils'
 
 export interface RawChatParticipant {
@@ -45,7 +45,7 @@ export interface RawChat {
  */
 export class SyncChatsHandler {
   constructor(
-    private readonly chatRepository: ChatRepository,
+    private readonly chatRepository: IChatRepository,
     private readonly contactService: ContactService
   ) {}
 

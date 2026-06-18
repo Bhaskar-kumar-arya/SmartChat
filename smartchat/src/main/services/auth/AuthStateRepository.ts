@@ -1,10 +1,11 @@
 import { PrismaClient } from '@prisma/client'
+import { IAuthStateRepository } from './IAuthStateRepository'
 
 /**
  * AuthStateRepository — Encapsulates database read/write queries
  * for the `AuthState` table.
  */
-export class AuthStateRepository {
+export class AuthStateRepository implements IAuthStateRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   /**
@@ -35,6 +36,17 @@ export class AuthStateRepository {
     } catch (err: unknown) {
       console.error(`[AuthStateRepository] Failed to setValue for key ${key}:`, err)
       throw err
+    }
+  }
+
+  /**
+   * Deletes the row for a given key (no-op if it doesn't exist).
+   */
+  async deleteValue(key: string): Promise<void> {
+    try {
+      await this.prisma.authState.deleteMany({ where: { id: key } })
+    } catch (err: unknown) {
+      console.error(`[AuthStateRepository] Failed to deleteValue for key ${key}:`, err)
     }
   }
 }

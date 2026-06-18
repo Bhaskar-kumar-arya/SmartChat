@@ -1,4 +1,5 @@
 import { PrismaClient, Identity, IdentityAlias, LidMap } from '@prisma/client'
+import { IContactRepository } from './IContactRepository'
 
 export interface IdentityCreateInput {
   phoneNumber?: string | null
@@ -42,7 +43,7 @@ export interface ReferenceCounts {
  * ContactRepository — Encapsulates all read and write database operations
  * for the Identity, IdentityAlias, and LidMap tables.
  */
-export class ContactRepository {
+export class ContactRepository implements IContactRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   /**

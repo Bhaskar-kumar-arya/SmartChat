@@ -1,6 +1,7 @@
-import { PrismaClient } from '@prisma/client'
 import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
+import { IContactRepository } from '../contacts/IContactRepository'
+import { IChatRepository } from '../chats/IChatRepository'
 import { EmbeddingService } from '../search/EmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
@@ -17,7 +18,9 @@ import {
 import { WAEventBus } from '../whatsapp/WAEventBus'
 import { resolveExtension } from './MediaHelper'
 import { MessageParser, ParsedMessage } from './MessageParser'
-import { MessageRepository } from './MessageRepository'
+import { IMessageRepository } from './IMessageRepository'
+import { IReactionRepository } from './IReactionRepository'
+import { IMessageQueryRepository } from './IMessageQueryRepository'
 import { MessageEnricher } from './MessageEnricher'
 
 // Re-export ParsedMessage so existing consumers don't break
@@ -37,21 +40,19 @@ export type { ParsedMessage }
  *  - Event-bus notifications
  */
 export class MessageService {
-  private readonly parser: MessageParser
-  private readonly repository: MessageRepository
-  private readonly enricher: MessageEnricher
-
   constructor(
-    private readonly prisma: PrismaClient,
     private readonly contactService: ContactService,
+    private readonly contactRepository: IContactRepository,
+    private readonly chatRepository: IChatRepository,
     private readonly embeddingService: EmbeddingService,
     private readonly secretMessageService: SecretMessageService,
-    private readonly getBus: () => WAEventBus | null
-  ) {
-    this.parser = new MessageParser()
-    this.repository = new MessageRepository(prisma)
-    this.enricher = new MessageEnricher(contactService)
-  }
+    private readonly getBus: () => WAEventBus | null,
+    private readonly parser: MessageParser,
+    private readonly repository: IMessageRepository,
+    private readonly queryRepository: IMessageQueryRepository,
+    private readonly reactionRepository: IReactionRepository,
+    private readonly enricher: MessageEnricher
+  ) {}
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ export class MessageService {
           ? myJid.split(':')[0] + '@s.whatsapp.net'
           : participantString
       } else {
-        const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
+        const meIdent = await this.contactRepository.findMeIdentity()
         if (meIdent?.phoneNumber) {
           participantString = meIdent.phoneNumber
         }
@@ -198,12 +199,8 @@ export class MessageService {
 
     // Ensure chat exists
     const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-    await this.prisma.chat
-      .upsert({
-        where: { jid: remoteJid },
-        update: {},
-        create: { jid: remoteJid, type: chatType }
-      } as unknown as { where: { jid: string }; update: Record<string, unknown>; create: { jid: string; type: 'GROUP' | 'DM' } })
+    await this.chatRepository
+      .upsertChat(remoteJid, { type: chatType })
       .catch((err: unknown) => {
         console.error('[MessageService] Failed to upsert chat:', err)
       })
@@ -216,12 +213,12 @@ export class MessageService {
 
       let reactorId = senderId
       if (key.fromMe) {
-        const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
+        const meIdent = await this.contactRepository.findMeIdentity()
         if (meIdent) reactorId = meIdent.id
       }
 
       if (targetId && reactorId !== null) {
-        await this.repository.upsertReaction(targetId, reactorId, emoji ?? null, timestamp)
+        await this.reactionRepository.upsertReaction(targetId, reactorId, emoji ?? null, timestamp)
       }
     } else {
       // Standard message persistence
@@ -321,18 +318,13 @@ export class MessageService {
 
     // Ensure all referenced chats exist
     const uniqueJids = Array.from(new Set(parsed.map(p => p.chatJid)))
-    const existingChats = await this.prisma.chat.findMany({
-      where: { jid: { in: uniqueJids } },
-      select: { jid: true }
-    })
+    const existingChats = await this.chatRepository.findChatsByJids(uniqueJids)
     const existingChatJids = new Set(existingChats.map(c => c.jid))
     const newChats = uniqueJids
       .filter(jid => !existingChatJids.has(jid))
       .map(jid => ({ jid, type: jid.endsWith('@g.us') ? 'GROUP' : 'DM' }))
     if (newChats.length > 0) {
-      await this.prisma.chat.createMany({ data: newChats }).catch((err: unknown) => {
-        console.warn('[MessageService] Failed to pre-create missing chats in bulk:', err)
-      })
+      await this.chatRepository.bulkCreateChats(newChats)
     }
 
     // Batch-resolve sender identity IDs
@@ -355,7 +347,7 @@ export class MessageService {
       isDeleted: p.isDeleted ?? false
     }))
 
-    const existingIds = await this.repository.findExistingIds(allRows.map(r => r.id))
+    const existingIds = await this.queryRepository.findExistingIds(allRows.map(r => r.id))
     const newRows = allRows.filter(r => !existingIds.has(r.id))
 
     if (newRows.length > 0) {
@@ -381,13 +373,7 @@ export class MessageService {
     const targetJid = resolveLid ? await this.contactService.resolveLidFromJid(jid) : jid
     const skip = (page - 1) * pageSize
 
-    const messages = await this.prisma.message.findMany({
-      where: { chatJid: targetJid },
-      orderBy: { timestamp: 'desc' },
-      skip,
-      take: pageSize,
-      include: { sender: true }
-    })
+    const messages = await this.queryRepository.findChatMessagesWithSender(targetJid, skip, pageSize)
 
     // Collect JIDs needed for name resolution
     const additionalJids = new Set<string>()
@@ -434,10 +420,7 @@ export class MessageService {
     }> = []
     if (includeReactions && messages.length > 0) {
       const messageIds = messages.map(m => m.id)
-      allReactions = await this.prisma.reaction.findMany({
-        where: { messageId: { in: messageIds } },
-        include: { sender: true }
-      })
+      allReactions = await this.reactionRepository.findReactionsForMessages(messageIds)
     }
 
     const enriched = await Promise.all(
@@ -524,7 +507,7 @@ export class MessageService {
           ? myRawJid.split(':')[0] + '@s.whatsapp.net'
           : reactorJid
       } else {
-        const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
+        const meIdent = await this.contactRepository.findMeIdentity()
         if (meIdent?.phoneNumber) reactorJid = meIdent.phoneNumber
       }
     }
@@ -532,7 +515,7 @@ export class MessageService {
     // Resolve reactor identity ID
     let reactorId: number | null = null
     if (reactionKey.fromMe) {
-      const meIdent = await this.prisma.identity.findFirst({ where: { isMe: true } })
+      const meIdent = await this.contactRepository.findMeIdentity()
       if (meIdent) {
         reactorId = meIdent.id
       } else {
@@ -558,14 +541,11 @@ export class MessageService {
 
     // Persist via repository
     if (reactorId) {
-      await this.repository.upsertReaction(targetId, reactorId, text ?? null, timestamp)
+      await this.reactionRepository.upsertReaction(targetId, reactorId, text ?? null, timestamp)
     }
 
     // Fetch target message for enriched event payload
-    const targetMsg = await this.prisma.message.findUnique({
-      where: { id: targetId },
-      select: { messageType: true, textContent: true }
-    })
+    const targetMsg = await this.queryRepository.findMessageTypeAndContent(targetId)
 
     // Notify frontend via event bus
     const reactorJidString = reactorJid ?? reactionKey.remoteJid ?? ''

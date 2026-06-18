@@ -44,7 +44,6 @@ export class ToolRegistry {
 You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request.
 
 CRITICAL TOOL RULES:
-1. You can only emit ONE tool call per response. 
 2. You may make multiple sequential tool calls across multiple turns (tool -> result -> tool -> result).
 3. The "CAN BE USED FOR" guidelines in tool descriptions are just examples. Use tools open-endedly and creatively for any task where their core capabilities apply.
 4. Tool results are processed entirely in the background. The user only sees a brief execution status, not the raw data. Do not restrict data gathering out of concern for visual overwhelm.
@@ -60,10 +59,11 @@ Every response MUST start with a <thought> block. Use it to reason through:
 — What is the user truly asking for, considering the entire conversation history?
 — Have I received any [SYSTEM] results? Did they succeed, and do they fully answer the user's need — or do I need to act further?
 — If a tool failed, what exactly went wrong and what should I change?
-— What is the best next action: use a tool, chain multiple tool calls, or respond directly?
+— Can the full request be completed in this turn, or multiple sequential tool calls are required?
+— What is the best next action: use a tool, chain multiple sequential tool calls(one tool call per turn), or respond directly?
 — What would make the most complete, accurate, and helpful response?
 — Is the requested scope fully feasible? If not, explicitly communicate this rather than silently altering the user's intent.
-
+ 
 Format:
 <thought>
 [Your reasoning here]

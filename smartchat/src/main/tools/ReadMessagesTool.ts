@@ -1,7 +1,7 @@
 import { AITool } from '../services/ai/AIToolService';
-import { MessageRepository } from '../services/messages/MessageRepository';
-import { ContactRepository } from '../services/contacts/ContactRepository';
-import { ChatRepository } from '../services/chats/ChatRepository';
+import { IMessageQueryRepository } from '../services/messages/IMessageQueryRepository';
+import { IContactRepository } from '../services/contacts/IContactRepository';
+import { IChatRepository } from '../services/chats/IChatRepository';
 import { WASocket } from '../types';
 import { unwrapMessage, getMessageType } from '../utils';
 import { MessageFormatterRegistry } from '../services/messages/formatters/MessageFormatterRegistry';
@@ -79,9 +79,9 @@ FORMATTING BEHAVIOR:
   constructor(
     _getSock: () => WASocket | null,
     private readonly formatterRegistry: MessageFormatterRegistry,
-    private readonly messageRepository: MessageRepository,
-    private readonly contactRepository: ContactRepository,
-    private readonly chatRepository: ChatRepository
+    private readonly messageRepository: IMessageQueryRepository,
+    private readonly contactRepository: IContactRepository,
+    private readonly chatRepository: IChatRepository
   ) {}
 
   async execute(args: Record<string, unknown>): Promise<string> {

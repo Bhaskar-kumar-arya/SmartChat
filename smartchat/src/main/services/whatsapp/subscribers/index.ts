@@ -10,7 +10,6 @@
  */
 
 import { BrowserWindow } from 'electron'
-import { PrismaClient } from '@prisma/client'
 import type { WAEventBus } from '../WAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type { ServiceContainer } from '../../../ServiceContainer'
@@ -32,14 +31,13 @@ export type { IWAEventSubscriber }
 export function createSubscribers(
   bus: WAEventBus,
   services: ServiceContainer,
-  getMainWindow: () => BrowserWindow | null,
-  prisma: PrismaClient
+  getMainWindow: () => BrowserWindow | null
 ): IWAEventSubscriber[] {
   const subscribers: IWAEventSubscriber[] = [
     new PersistenceSubscriber(services),
     new ContactGroupSubscriber(services),
     new NotificationSubscriber(services),
-    new UIBroadcastSubscriber(services, getMainWindow, prisma),
+    new UIBroadcastSubscriber(services, getMainWindow),
     new ReceiptSubscriber(services),
     new FavoriteStickerSubscriber(services),
   ]
