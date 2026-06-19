@@ -18,7 +18,7 @@ import {
   BaileysCall,
   ChatUpdatePayload,
   MessageReceiptUpdate
-} from '../../types'
+} from './types'
 import { cleanJid } from '../../utils'
 import {
   PROTOCOL_TYPE_REVOKE,

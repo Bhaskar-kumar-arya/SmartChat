@@ -1,5 +1,5 @@
 import { cleanJid } from '../../utils'
-import { WASocket } from '../../types'
+import { WASocket } from '../whatsapp/types'
 import { IContactRepository } from './IContactRepository'
 import { LidPnLinker } from './LidPnLinker'
 import { ContactNameResolver } from './ContactNameResolver'

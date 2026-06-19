@@ -2,7 +2,8 @@ import { proto, WASocket, hmacSign, aesDecryptGCM } from '@whiskeysockets/bailey
 import { PrismaClient } from '@prisma/client'
 import { ISecretMessageStrategy, SecretMessageContext } from './ISecretMessageStrategy'
 import { MessageEditStrategy } from './MessageEditStrategy'
-import { ProcessedMessage, ProtocolResult } from '../../../types'
+import { ProcessedMessage } from '../../../domain/types'
+import { ProtocolResult } from '../types'
 import { cleanJid } from '../../../utils'
 
 export class SecretMessageService {

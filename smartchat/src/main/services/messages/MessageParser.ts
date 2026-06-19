@@ -1,7 +1,7 @@
 import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils'
-import { BaileysMessage } from '../../types'
+import { BaileysMessage } from '../whatsapp/types'
 
 /** Plain data object produced by parseMessageSync(). */
 export interface ParsedMessage {

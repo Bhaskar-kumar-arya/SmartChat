@@ -4,7 +4,7 @@ import { ReadMessagesTool } from '../../tools/ReadMessagesTool';
 import { QueryDatabaseTool } from '../../tools/QueryDatabaseTool';
 import { MessageActionTool } from '../../tools/MessageActionTool';
 import { ExecuteScriptTool } from '../../tools/ExecuteScriptTool';
-import { WASocket } from '../../types';
+import { WASocket } from '../whatsapp/types';
 import { ServiceContainer } from '../../ServiceContainer';
 
 export class AIToolInitializer {

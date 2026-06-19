@@ -1,4 +1,4 @@
-import { WASocket } from '../../types'
+import { WASocket } from './types'
 import { WAEventHandler } from './WAEventHandler'
 import { HistorySyncManager } from './HistorySyncManager'
 

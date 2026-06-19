@@ -1,5 +1,5 @@
 import { cleanJid } from '../../utils'
-import { WASocket, WASocketWithSignalRepository } from '../../types'
+import { WASocket, WASocketWithSignalRepository } from '../whatsapp/types'
 import { IContactRepository } from './IContactRepository'
 
 function hasSignalRepository(sock: WASocket | null | undefined): sock is WASocket & WASocketWithSignalRepository {

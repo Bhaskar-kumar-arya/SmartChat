@@ -1,6 +1,7 @@
 import { proto, WASocket } from '@whiskeysockets/baileys'
 import { ISecretMessageStrategy, SecretMessageContext } from './ISecretMessageStrategy'
-import { ProcessedMessage, ProtocolResult } from '../../../types'
+import { ProcessedMessage } from '../../../domain/types'
+import { ProtocolResult } from '../types'
 
 export class MessageEditStrategy implements ISecretMessageStrategy {
   constructor() { }

@@ -7,7 +7,7 @@ const makeWASocket = (typeof makeWASocketImport === 'function'
 import { Boom } from '@hapi/boom'
 import NodeCache from 'node-cache'
 import { usePrismaAuthState } from '../../auth'
-import { WASocket } from '../../types'
+import { WASocket } from './types'
 import {
   RECONNECT_DELAY_RESTART_MS,
   RECONNECT_DELAY_DEFAULT_MS

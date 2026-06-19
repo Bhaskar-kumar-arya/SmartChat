@@ -1,6 +1,6 @@
 import { AITool } from '../services/ai/AIToolService';
 import { MessageActionService } from '../services/messages/MessageActionService';
-import { WASocket } from '../types';
+import { WASocket } from '../services/whatsapp/types';
 
 export class MessageActionTool implements AITool {
   name = 'messageAction';

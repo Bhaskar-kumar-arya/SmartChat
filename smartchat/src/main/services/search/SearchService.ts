@@ -1,6 +1,6 @@
 import { ContactService } from '../contacts/ContactService'
 import { EmbeddingService } from './EmbeddingService'
-import { WASocket } from '../../types'
+import { WASocket } from '../whatsapp/types'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
 import { IContactRepository } from '../contacts/IContactRepository'

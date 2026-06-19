@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { handleHistorySync } from '../../historySync'
-import { WASocket } from '../../types'
+import { WASocket } from './types'
 import {
   SYNC_TYPE_INITIAL,
   SYNC_TYPE_FULL,

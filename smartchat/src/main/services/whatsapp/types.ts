@@ -6,54 +6,6 @@ export type WASocket = ReturnType<typeof makeWASocket>
 /** Nullable socket accessor — used for lazy socket access. */
 export type SocketAccessor = () => WASocket | null
 
-/** Enriched message returned to the frontend via IPC. */
-export interface EnrichedMessage {
-  id: string
-  chatJid: string
-  fromMe: boolean
-  participant: string | null
-  participantName: string
-  timestamp: string
-  messageType: string
-  content: string
-  reactions?: EnrichedReaction[]
-  isDeleted?: boolean
-  isEdited?: boolean
-  status?: string | null
-}
-
-/** Chat list item as returned to the frontend. */
-export interface ChatListItem {
-  jid: string
-  name: string
-  unreadCount: number
-  timestamp: string
-  lastMessage: string
-  lastMessageType?: string | null
-  lastMessageTimestamp: string
-  pinned: number
-  muteExpiration: string
-  profilePictureUrl: string | null
-  isCommunity: boolean
-  isAnnounce: boolean
-  linkedParentJid: string | null
-  lastMessageSender?: string | null
-  lastMessageStatus?: string | null
-  lastMessageFromMe?: boolean
-  lastMessageId?: string | null
-  lastMessageTargetType?: string | null
-  lastMessageTargetText?: string | null
-  lastMessageReactionText?: string | null
-}
-
-/** Enriched reaction for UI display. */
-export interface EnrichedReaction {
-  text: string
-  senderId: string
-  senderName: string
-  timestamp: string
-}
-
 /** Protocol message result (revoke/edit). */
 export interface ProtocolResult {
   type: 'protocol'
@@ -76,23 +28,6 @@ export interface BaileysMessage {
   messageStubParameters?: string[] | null
 }
 
-/** Database message row with sender relation included. */
-export interface DBMessageWithSender {
-  id: string
-  chatJid: string
-  fromMe: boolean
-  senderId: number | null
-  participant: string | null
-  timestamp: bigint
-  messageType: string
-  content: string
-  textContent: string | null
-  isDeleted: boolean
-  isEdited: boolean
-  status: string | null
-  sender?: { displayName?: string | null; pushName?: string | null; verifiedName?: string | null; phoneNumber?: string | null } | null
-}
-
 /** Options for sending media via WhatsApp. */
 export interface MediaSendOptions {
   image?: Buffer; video?: Buffer; audio?: Buffer; document?: Buffer; sticker?: Buffer
@@ -112,22 +47,6 @@ export interface ChatUpdatePayload {
   isCommunityAnnounce?: boolean | null; isDefaultSubgroup?: boolean | null
   linkedParentJid?: string | null; linkedParent?: string | null; parentGroupId?: string | null
   owner?: string | null; ownerPn?: string | null; descOwner?: string | null; descOwnerPn?: string | null
-}
-
-/** Processed message returned by processMessage. */
-export interface ProcessedMessage {
-  id: string
-  chatJid: string
-  fromMe: boolean
-  senderId: number | null
-  participant: string | null
-  timestamp: bigint
-  messageType: string
-  textContent: string | null
-  content: string
-  isDeleted: boolean
-  isEdited: boolean
-  status: string | null
 }
 
 /** Payload shape for message status receipt updates. */

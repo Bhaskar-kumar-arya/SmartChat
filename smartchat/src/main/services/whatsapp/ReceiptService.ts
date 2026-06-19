@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { cleanJid, parseBaileysTimestamp } from '../../utils'
-import { WASocket, MessageReceiptUpdate, BaileysMessage } from '../../types'
+import { WASocket, MessageReceiptUpdate, BaileysMessage } from './types'
 import { ContactService } from '../contacts/ContactService'
 import { WAEventBus } from './WAEventBus'
 

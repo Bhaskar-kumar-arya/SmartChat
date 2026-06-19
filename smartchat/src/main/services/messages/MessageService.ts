@@ -9,12 +9,11 @@ import { cleanJid, parseBaileysTimestamp, unwrapMessage } from '../../utils'
 import {
   WASocket,
   BaileysMessage,
-  ProcessedMessage,
   ProtocolResult,
-  DBMessageWithSender,
-  EnrichedMessage,
   BaileysReactionUpdate
-} from '../../types'
+} from '../whatsapp/types'
+import { ProcessedMessage, DBMessageWithSender } from '../../domain/types'
+import { EnrichedMessage } from '../../ipc/types'
 import { WAEventBus } from '../whatsapp/WAEventBus'
 import { resolveExtension } from './MediaHelper'
 import { MessageParser, ParsedMessage } from './MessageParser'

@@ -1,4 +1,4 @@
-import { ChatListItem } from '../../types'
+import { ChatListItem } from '../../ipc/types'
 import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
 import { IChatRepository } from './IChatRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'

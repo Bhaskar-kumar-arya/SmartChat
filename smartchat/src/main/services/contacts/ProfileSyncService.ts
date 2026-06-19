@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { ContactService } from './ContactService'
-import { WASocket } from '../../types'
+import { WASocket } from '../whatsapp/types'
 
 export class ProfileSyncService {
   private imageCache = new Map<string, string>()

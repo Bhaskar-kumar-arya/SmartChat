@@ -1,7 +1,9 @@
 import { proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { cleanJid, unwrapMessage } from '../../utils'
-import { WASocket, DBMessageWithSender, EnrichedMessage, EnrichedReaction } from '../../types'
+import { WASocket } from '../whatsapp/types'
+import { DBMessageWithSender } from '../../domain/types'
+import { EnrichedMessage, EnrichedReaction } from '../../ipc/types'
 
 /**
  * MessageEnricher — Single Responsibility: transform raw database message rows

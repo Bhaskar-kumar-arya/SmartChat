@@ -6,7 +6,7 @@
  */
 
 import { WAEventBus } from './WAEventBus'
-import { WASocket } from '../../types'
+import { WASocket } from './types'
 import { cleanJid } from '../../utils'
 
 export class AppStateSyncParser {

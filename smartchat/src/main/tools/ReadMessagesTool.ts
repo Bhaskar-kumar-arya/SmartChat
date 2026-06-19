@@ -2,7 +2,7 @@ import { AITool } from '../services/ai/AIToolService';
 import { IMessageQueryRepository } from '../services/messages/IMessageQueryRepository';
 import { IContactRepository } from '../services/contacts/IContactRepository';
 import { IChatRepository } from '../services/chats/IChatRepository';
-import { WASocket } from '../types';
+import { WASocket } from '../services/whatsapp/types';
 import { unwrapMessage, getMessageType } from '../utils';
 import { MessageFormatterRegistry } from '../services/messages/formatters/MessageFormatterRegistry';
 import { Message } from '@prisma/client';

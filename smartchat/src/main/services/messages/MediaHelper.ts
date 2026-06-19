@@ -1,4 +1,4 @@
-import { MediaSendOptions } from '../../types'
+import { MediaSendOptions } from '../whatsapp/types'
 
 /**
  * Prepares send options for media or document messages based on file type.

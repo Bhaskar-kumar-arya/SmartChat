@@ -1,6 +1,6 @@
 import { MESSAGE_TYPE_LABELS } from './constants'
 import { proto } from '@whiskeysockets/baileys'
-import { ChatUpdatePayload } from './types'
+import { ChatUpdatePayload } from './services/whatsapp/types'
 
 /**
  * Cleans a WhatsApp JID by stripping any device/agent/port suffix (e.g. :1, :2, .0:1).
