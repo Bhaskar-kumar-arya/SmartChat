@@ -169,4 +169,23 @@ export class MessageParser {
       }
     }
   }
+
+  /**
+   * Maps a ParsedMessage and resolved senderId to the database-row structure.
+   */
+  toDbRow(p: ParsedMessage, senderId: number | null) {
+    return {
+      id: p.id,
+      chatJid: p.chatJid,
+      fromMe: p.fromMe,
+      senderId,
+      participant: p.participantString,
+      timestamp: p.timestamp,
+      messageType: p.messageType,
+      content: JSON.stringify(p.rawMessage ?? {}),
+      textContent: p.textContent,
+      status: p.status ?? 'SENT',
+      isDeleted: p.isDeleted ?? false
+    }
+  }
 }

@@ -1,4 +1,4 @@
-import { AITool } from '../services/ai/AIToolService';
+import { AITool } from '../services/ai/IToolRegistry';
 import { IMessageQueryRepository } from '../services/messages/IMessageQueryRepository';
 import { IIdentityRepository } from '../services/contacts/IIdentityRepository';
 import { IAliasRepository } from '../services/contacts/IAliasRepository';

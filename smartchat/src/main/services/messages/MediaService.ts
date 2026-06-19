@@ -2,7 +2,7 @@ import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
 import { app, shell } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
-import { MessageService } from './MessageService'
+import { IMessageQueryService } from './IMessageQueryService'
 import { IMessageRepository } from './IMessageRepository'
 import { IMessageQueryRepository } from './IMessageQueryRepository'
 import { FavoriteStickerService } from './FavoriteStickerService'
@@ -120,7 +120,7 @@ export class MediaService {
   constructor(
     private readonly messageRepository: IMessageRepository,
     private readonly messageQueryRepository: IMessageQueryRepository,
-    private readonly messageService: MessageService,
+    private readonly messageService: IMessageQueryService,
     private readonly contactService: ContactService,
     private readonly favoriteStickerService: FavoriteStickerService
   ) { }

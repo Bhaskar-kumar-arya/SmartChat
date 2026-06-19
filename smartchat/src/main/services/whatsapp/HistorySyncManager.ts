@@ -19,7 +19,7 @@ import type { IReactionRepository } from '../messages/IReactionRepository'
 import type { MediaService } from '../messages/MediaService'
 import type { IEmbeddingService } from '../search/EmbeddingService'
 import type { GroupHydrationService } from '../chats/GroupHydrationService'
-import type { IdentityReconciliationService } from '../contacts/IdentityReconciliationService'
+import type { IIdentityReconciliationService } from '../contacts/IIdentityReconciliationService'
 
 export interface HistorySyncDependencies {
   mediaService: MediaService
@@ -31,7 +31,7 @@ export interface HistorySyncDependencies {
   messageRepository: IMessageRepository
   reactionRepository: IReactionRepository
   groupHydrationService: GroupHydrationService
-  identityReconciliationService: IdentityReconciliationService
+  identityReconciliationService: IIdentityReconciliationService
 }
 
 export class HistorySyncManager {

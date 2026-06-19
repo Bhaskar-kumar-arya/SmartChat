@@ -1,7 +1,8 @@
 import { ContactService } from '../contacts/ContactService'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { join } from 'path'
-import { MessageService } from './MessageService'
+import { IMessageWriterService } from './IMessageWriterService'
+import { IMessageQueryService } from './IMessageQueryService'
 import { IMessageRepository } from './IMessageRepository'
 import { IReactionRepository } from './IReactionRepository'
 import { IMessageQueryRepository } from './IMessageQueryRepository'
@@ -25,7 +26,8 @@ export class MessageActionService {
     private readonly messageQueryRepository: IMessageQueryRepository,
     private readonly identityRepository: IIdentityRepository,
     private readonly contactService: ContactService,
-    private readonly messageService: MessageService,
+    private readonly messageWriterService: IMessageWriterService,
+    private readonly messageQueryService: IMessageQueryService,
     private readonly chatService: ChatService,
     private readonly getBus: () => IWAEventBus | null,
     fileStorage?: LocalFileStorage
@@ -125,7 +127,7 @@ export class MessageActionService {
     if (!updated) throw new Error('Failed to fetch updated message after edit')
 
     const nameMap = await this.contactService.batchResolveNames([updated.participant || resolvedJid], sock);
-    const enriched = await this.messageService.enrichMessage(updated, sock, nameMap);
+    const enriched = await this.messageQueryService.enrichMessage(updated, sock, nameMap);
 
     this.getBus()?.emit('message:edited', {
       messageId,
@@ -180,7 +182,7 @@ export class MessageActionService {
         throw new Error(`Failed to forward message ${messageId} to ${resolvedDest}`);
       }
 
-      const processed = await this.messageService.processMessage(sentMsg, sock);
+      const processed = await this.messageWriterService.processMessage(sentMsg, sock);
       if (!processed || 'type' in processed) {
         throw new Error('Failed to process forwarded message');
       }
@@ -190,7 +192,7 @@ export class MessageActionService {
         [processed.participant || resolvedDest],
         sock
       );
-      const enriched = await this.messageService.enrichMessage(processed, sock, nameMap);
+      const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap);
       this.getBus()?.emit('message:incoming', {
         chatJid: enriched.chatJid,
         senderJid: cleanJid(enriched.participant || enriched.chatJid),
@@ -347,14 +349,14 @@ export class MessageActionService {
     const sentMsg = await sock.sendMessage(targetJid, messageContent)
     if (!sentMsg) throw new Error('Failed to send message')
 
-    const processed = await this.messageService.processMessage(sentMsg, sock)
+    const processed = await this.messageWriterService.processMessage(sentMsg, sock)
     if (!processed || 'type' in processed) {
       throw new Error('Failed to process sent message')
     }
     await this.chatService.updateTimestamp(targetJid, processed.timestamp)
 
     const nameMap = await this.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
-    const enriched = await this.messageService.enrichMessage(processed, sock, nameMap)
+    const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap)
     this.getBus()?.emit('message:incoming', {
       chatJid: enriched.chatJid,
       senderJid: cleanJid(enriched.participant || enriched.chatJid),
@@ -443,7 +445,7 @@ export class MessageActionService {
       throw new Error('Failed to send media message')
     }
 
-    const processed = await this.messageService.processMessage(sentMsg, sock)
+    const processed = await this.messageWriterService.processMessage(sentMsg, sock)
     if (!processed || 'type' in processed) {
       if (isTempFile) this.fileStorage.deleteFile(finalPathToSend)
       throw new Error('Failed to process sent message')
@@ -465,7 +467,7 @@ export class MessageActionService {
         const mediaDir = this.fileStorage.getMediaDir()
         this.fileStorage.ensureDir(mediaDir)
 
-        const fileName = this.messageService.getSafeMediaFileName(processed.id, mediaType, mediaMsg)
+        const fileName = this.messageQueryService.getSafeMediaFileName(processed.id, mediaType, mediaMsg)
         const cachedFilePath = join(mediaDir, fileName)
 
         this.fileStorage.copyFile(finalPathToSend, cachedFilePath)
@@ -486,7 +488,7 @@ export class MessageActionService {
     await this.chatService.updateTimestamp(targetJid, processed.timestamp)
     
     const nameMap = await this.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
-    const enriched = await this.messageService.enrichMessage(processed, sock, nameMap)
+    const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap)
     this.getBus()?.emit('message:incoming', {
       chatJid: enriched.chatJid,
       senderJid: cleanJid(enriched.participant || enriched.chatJid),

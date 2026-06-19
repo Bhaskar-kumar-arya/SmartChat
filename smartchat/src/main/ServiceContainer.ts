@@ -5,6 +5,7 @@ import { IContactService } from './services/contacts/IContactService'
 import { LidPnLinker } from './services/contacts/LidPnLinker'
 import { ContactNameResolver } from './services/contacts/ContactNameResolver'
 import { IdentityReconciliationService } from './services/contacts/IdentityReconciliationService'
+import { IIdentityReconciliationService } from './services/contacts/IIdentityReconciliationService'
 import { ProfileSyncService } from './services/contacts/ProfileSyncService'
 import { EmbeddingService, IEmbeddingService } from './services/search/EmbeddingService'
 import { DataWipeService } from './services/DataWipeService'
@@ -16,10 +17,19 @@ import { GroupMembershipService } from './services/chats/GroupMembershipService'
 import { IGroupMembershipService } from './services/chats/IGroupMembershipService'
 import { ChatListEnricher } from './services/chats/ChatListEnricher'
 import { MessageService } from './services/messages/MessageService'
+import { IMessageWriterService } from './services/messages/IMessageWriterService'
+import { IMessageQueryService } from './services/messages/IMessageQueryService'
 import { MessageParser } from './services/messages/MessageParser'
 import { MessageEnricher } from './services/messages/MessageEnricher'
 import { MessageActionService } from './services/messages/MessageActionService'
 import { MediaService } from './services/messages/MediaService'
+import { MessageIdentityResolver } from './services/messages/MessageIdentityResolver'
+import {
+  SecretMessageProcessor,
+  ProtocolMessageProcessor,
+  ReactionMessageProcessor,
+  StandardMessageProcessor
+} from './services/messages/processors'
 import { SearchService } from './services/search/SearchService'
 import { AIService } from './services/ai/AIService'
 import { AIChatSessionService } from './services/ai/AIChatSessionService'
@@ -109,6 +119,7 @@ export function createServices(
   const lidPnLinker = new LidPnLinker(identityRepository, aliasRepository, lidMapRepository)
   const contactNameResolver = new ContactNameResolver(aliasRepository)
   const contactService = new ContactService(identityRepository, aliasRepository, lidMapRepository, lidPnLinker, contactNameResolver)
+  const identityReconciliationService = new IdentityReconciliationService(prisma, contactService)
   const groupMembershipService = new GroupMembershipService(chatMemberRepository, contactService)
   const embeddingService = new EmbeddingService(messageVectorRepository, messageQueryRepository)
   const dataWipeService = new DataWipeService(prisma)
@@ -131,18 +142,38 @@ export function createServices(
   )
   const messageParser = new MessageParser()
   const messageEnricher = new MessageEnricher(contactService)
+  const messageIdentityResolver = new MessageIdentityResolver(
+    contactService,
+    identityRepository,
+    identityReconciliationService
+  )
+  const messageProcessors = [
+    new SecretMessageProcessor(),
+    new ProtocolMessageProcessor(),
+    new ReactionMessageProcessor(),
+    new StandardMessageProcessor()
+  ]
   const messageService = new MessageService(
-    contactService, identityRepository, chatRepository, embeddingService, secretMessageService, getBus,
-    messageParser, messageRepository, messageQueryRepository, reactionRepository, messageEnricher
+    contactService,
+    chatRepository,
+    embeddingService,
+    secretMessageService,
+    getBus,
+    messageParser,
+    messageRepository,
+    messageQueryRepository,
+    reactionRepository,
+    messageEnricher,
+    messageIdentityResolver,
+    messageProcessors
   )
   const messageActionService = new MessageActionService(
-    messageRepository, reactionRepository, messageQueryRepository, identityRepository, contactService, messageService, chatService, getBus
+    messageRepository, reactionRepository, messageQueryRepository, identityRepository, contactService, messageService, messageService, chatService, getBus
   )
   const mediaService = new MediaService(
     messageRepository, messageQueryRepository, messageService, contactService, favoriteStickerService
   )
   const searchService = new SearchService(chatRepository, messageQueryRepository, messageVectorRepository, identityRepository, contactService, embeddingService)
-  const identityReconciliationService = new IdentityReconciliationService(prisma)
   const profileSyncService = new ProfileSyncService(prisma, contactService)
 
   // 3. AI services
@@ -175,7 +206,8 @@ export function createServices(
     receiptService,
     chatService,
     groupHydrationService,
-    messageService,
+    messageWriterService: messageService,
+    messageQueryService: messageService,
     messageActionService,
     mediaService,
     searchService,
@@ -217,7 +249,8 @@ export type ServiceContainer = {
   receiptService: IReceiptService
   chatService: IChatService
   groupHydrationService: GroupHydrationService
-  messageService: MessageService
+  messageWriterService: IMessageWriterService
+  messageQueryService: IMessageQueryService
   messageActionService: MessageActionService
   mediaService: MediaService
   searchService: SearchService
@@ -227,7 +260,7 @@ export type ServiceContainer = {
   notificationService: NotificationService
   secretMessageService: SecretMessageService
   favoriteStickerService: FavoriteStickerService
-  identityReconciliationService: IdentityReconciliationService
+  identityReconciliationService: IIdentityReconciliationService
   profileSyncService: ProfileSyncService
   messageFormatterRegistry: MessageFormatterRegistry
   historySyncManager: HistorySyncManager

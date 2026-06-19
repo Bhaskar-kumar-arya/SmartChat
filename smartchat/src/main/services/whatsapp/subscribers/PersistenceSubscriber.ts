@@ -21,12 +21,12 @@ import type {
   ChatUpdatedEvent,
   ChatUpsertedEvent,
 } from '../WAEventTypes'
-import type { MessageService } from '../../messages/MessageService'
+import type { IMessageWriterService } from '../../messages/IMessageWriterService'
 import type { IChatService } from '../../chats/IChatService'
 
 export class PersistenceSubscriber implements IWAEventSubscriber {
   constructor(
-    private messageService: MessageService,
+    private messageWriterService: IMessageWriterService,
     private chatService: IChatService
   ) {}
 
@@ -47,7 +47,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onAppend(event: AppendMessagesEvent): Promise<void> {
     try {
-      await this.messageService.bulkPersistMessages(event.messages)
+      await this.messageWriterService.bulkPersistMessages(event.messages)
     } catch (err) {
       console.error('[PersistenceSubscriber] Bulk persist error:', err)
     }
@@ -90,7 +90,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onDeleted(event: MessageDeletedEvent): Promise<void> {
     try {
-      await this.messageService.revokeMessageInDb(event.messageId)
+      await this.messageWriterService.revokeMessageInDb(event.messageId)
     } catch (err) {
       console.error('[PersistenceSubscriber] Error updating DB for deleted message:', err)
     }
@@ -98,7 +98,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onEdited(event: MessageEditedEvent): Promise<void> {
     try {
-      await this.messageService.editMessageInDb(
+      await this.messageWriterService.editMessageInDb(
         event.messageId,
         event.editedTextContent,
         event.editedContent as unknown as Record<string, unknown> | null

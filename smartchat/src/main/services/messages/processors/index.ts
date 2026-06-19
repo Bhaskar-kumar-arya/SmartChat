@@ -1,0 +1,5 @@
+export * from './IMessageProcessorStrategy'
+export * from './SecretMessageProcessor'
+export * from './ProtocolMessageProcessor'
+export * from './ReactionMessageProcessor'
+export * from './StandardMessageProcessor'

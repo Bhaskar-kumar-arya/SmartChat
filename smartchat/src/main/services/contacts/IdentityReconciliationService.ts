@@ -1,8 +1,11 @@
 import { PrismaClient } from '@prisma/client'
+import { IContactService } from './IContactService'
+import { IIdentityReconciliationService } from './IIdentityReconciliationService'
 
-export class IdentityReconciliationService {
+export class IdentityReconciliationService implements IIdentityReconciliationService {
   constructor(
-    private prisma: PrismaClient
+    private prisma: PrismaClient,
+    private contactService: IContactService
   ) {}
 
   /**
@@ -123,4 +126,29 @@ export class IdentityReconciliationService {
     console.log(`[deduplicateIdentities] Complete — merged: ${merged}, skipped: ${skipped} (ambiguous/no-match)`)
     return { merged, skipped }
   }
+
+  /**
+   * Reconciles Lid and Pn mappings from potential JIDs.
+   */
+  async reconcileLidPnFromJids(
+    potentialIds: (string | null | undefined)[],
+    source: string
+  ): Promise<void> {
+    let discoveredLid: string | null = null
+    let discoveredPn: string | null = null
+    for (const id of potentialIds) {
+      if (typeof id === 'string') {
+        if (id.includes('@lid')) discoveredLid = id
+        if (id.includes('@s.whatsapp.net')) discoveredPn = id
+      }
+    }
+    if (discoveredLid && discoveredPn) {
+      await this.contactService
+        .linkLidAndPn(discoveredLid, discoveredPn, source)
+        .catch((err: unknown) => {
+          console.error(`[IdentityReconciliationService] Failed to link LID and PN for source ${source}:`, err)
+        })
+    }
+  }
 }
+

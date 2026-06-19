@@ -66,3 +66,45 @@ export function resolveExtension(mediaType: string, mediaMsg: any): string {
   
   return 'dat'
 }
+
+/**
+ * Build a safe, deduplication-friendly filename for a downloaded media file.
+ */
+export function getSafeMediaFileName(msgId: string, mediaType: string, mediaMsg: unknown): string {
+  const ext = resolveExtension(mediaType, mediaMsg)
+
+  let fileHash: string | null = null
+  const mediaObj = mediaMsg as Record<string, unknown> | null | undefined
+  if (mediaObj?.fileSha256) {
+    const sha = mediaObj.fileSha256
+    if (typeof sha === 'string') {
+      fileHash = sha.replace(/[/\\?%*:|"<>+]/g, '-').substring(0, 64)
+    } else if (Buffer.isBuffer(sha)) {
+      fileHash = sha.toString('hex')
+    } else if (
+      sha &&
+      typeof sha === 'object' &&
+      'type' in sha &&
+      (sha as { type: unknown }).type === 'Buffer' &&
+      'data' in sha &&
+      Array.isArray((sha as { data: unknown }).data)
+    ) {
+      fileHash = Buffer.from((sha as { data: number[] }).data).toString('hex')
+    } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
+      fileHash = Buffer.from(sha as Uint8Array).toString('hex')
+    }
+  }
+
+  if (mediaType === 'document' && mediaObj && typeof mediaObj.fileName === 'string') {
+    const originalName = mediaObj.fileName.includes('.')
+      ? mediaObj.fileName.substring(0, mediaObj.fileName.lastIndexOf('.'))
+      : mediaObj.fileName
+    const safeName = originalName.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 80)
+    const suffix = fileHash ? fileHash.substring(0, 12) : msgId.substring(0, 8)
+    return `${safeName}_${suffix}.${ext}`
+  }
+
+  if (fileHash) return `hash_${fileHash}.${ext}`
+  return `${msgId}.${ext}`
+}
+

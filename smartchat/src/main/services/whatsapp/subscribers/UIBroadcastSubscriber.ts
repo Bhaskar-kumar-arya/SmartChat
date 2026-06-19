@@ -22,14 +22,14 @@ import type {
   ReactionProcessedEvent,
 } from '../WAEventTypes'
 import type { IContactService } from '../../contacts/IContactService'
-import type { MessageService } from '../../messages/MessageService'
+import type { IMessageQueryService } from '../../messages/IMessageQueryService'
 import type { IMessageQueryRepository } from '../../messages/IMessageQueryRepository'
 import { cleanJid } from '../../../utils'
 
 export class UIBroadcastSubscriber implements IWAEventSubscriber {
   constructor(
     private contactService: IContactService,
-    private messageService: MessageService,
+    private messageQueryService: IMessageQueryService,
     private messageQueryRepository: IMessageQueryRepository,
     private getMainWindow: () => BrowserWindow | null
   ) {}
@@ -66,7 +66,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
       const { processed, sock } = event
       const participantOrChat = cleanJid(processed.participant || processed.chatJid)
       const nameMap = await this.contactService.batchResolveNames([participantOrChat], sock)
-      const enriched = await this.messageService.enrichMessage(processed, sock, nameMap)
+      const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap)
       console.log('[UIBroadcastSubscriber] onIncoming message:', enriched.id, 'type:', enriched.messageType, 'chat:', enriched.chatJid)
       this.send('new-message', enriched)
     } catch (err) {
@@ -90,7 +90,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
       if (!dbMsg) return
       const senderJid = cleanJid(dbMsg.participant || dbMsg.chatJid)
       const nameMap = await this.contactService.batchResolveNames([senderJid], event.sock)
-      const enriched = await this.messageService.enrichMessage(dbMsg, event.sock, nameMap)
+      const enriched = await this.messageQueryService.enrichMessage(dbMsg, event.sock, nameMap)
       this.send('message-edited', enriched)
     } catch (err) {
       console.error('[UIBroadcastSubscriber] Error broadcasting message-edited:', err)

@@ -26,7 +26,7 @@ export function registerIpcHandlers(
   ipcMain.handle(
     'get-messages',
     async (_event, jid: string, page: number = 1, pageSize: number = 50) => {
-      return services.messageService.getChatMessages(jid, page, pageSize, getSock())
+      return services.messageQueryService.getChatMessages(jid, page, pageSize, getSock())
     }
   )
 
@@ -338,7 +338,7 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle('get-chat-context', async (_event, jid: string) => {
-    return services.messageService.getChatMessages(jid, 1, 100, getSock(), true, false)
+    return services.messageQueryService.getChatMessages(jid, 1, 100, getSock(), true, false)
   })
 
   // ── AI Chat Session Handlers ─────────────────────────────────────────

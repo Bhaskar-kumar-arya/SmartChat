@@ -1,4 +1,4 @@
-import { AITool } from '../services/ai/AIToolService';
+import { AITool } from '../services/ai/IToolRegistry';
 import { MessageActionService } from '../services/messages/MessageActionService';
 import { WASocket } from '../services/whatsapp/types';
 

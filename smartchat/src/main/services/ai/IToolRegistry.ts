@@ -1,5 +1,14 @@
-import { AITool } from './AIToolService'
 import { UserDetails } from './SystemPromptBuilder'
+
+export interface AITool {
+  name: string;
+  description: string;
+  parametersSchema: object;
+  requiresPermission: boolean;
+  execute: (args: any) => Promise<any>;
+  /** Optional async setup (e.g. DB introspection). Called once after registration. */
+  initialize?: () => Promise<void>;
+}
 
 export interface IToolRegistry {
   registerTool(tool: AITool): void

@@ -1,10 +1,8 @@
-import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
-import { ContactService } from '../contacts/ContactService'
-import { IIdentityRepository } from '../contacts/IIdentityRepository'
+import { proto } from '@whiskeysockets/baileys'
+import { IContactService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IEmbeddingService } from '../search/EmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
-import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, unwrapMessage } from '../../utils'
 import {
   WASocket,
@@ -15,12 +13,20 @@ import {
 import { ProcessedMessage, DBMessageWithSender } from '../../domain/types'
 import { EnrichedMessage } from '../../ipc/types'
 import { IWAEventBus } from '../whatsapp/IWAEventBus'
-import { resolveExtension } from './MediaHelper'
+import { getSafeMediaFileName as getSafeMediaFileNameHelper } from './MediaHelper'
 import { MessageParser, ParsedMessage } from './MessageParser'
 import { IMessageRepository } from './IMessageRepository'
 import { IReactionRepository } from './IReactionRepository'
 import { IMessageQueryRepository } from './IMessageQueryRepository'
 import { MessageEnricher } from './MessageEnricher'
+import { IMessageWriterService } from './IMessageWriterService'
+import { IMessageQueryService } from './IMessageQueryService'
+import { IMessageIdentityResolver } from './IMessageIdentityResolver'
+import {
+  IMessageProcessorStrategy,
+  IMessageProcessingContext,
+  IMessageServiceDependencyAccessor
+} from './processors'
 
 // Re-export ParsedMessage so existing consumers don't break
 export type { ParsedMessage }
@@ -28,20 +34,19 @@ export type { ParsedMessage }
 /**
  * MessageService — Application Service / Orchestrator.
  *
- * Coordinates the three single-responsibility collaborators:
+ * Coordinates the single-responsibility collaborators:
  *  - MessageParser:     pure parse/classify logic (no I/O)
  *  - MessageRepository: all Prisma read/write operations
  *  - MessageEnricher:   UI display-name resolution
+ *  - IMessageIdentityResolver: all JID/identity mappings and linkings
  *
  * This class owns:
  *  - The high-level processing pipeline (processMessage, bulkPersistMessages)
- *  - Identity side-effects (contact upserts, LID↔PN linking)
  *  - Event-bus notifications
  */
-export class MessageService {
+export class MessageService implements IMessageWriterService, IMessageQueryService {
   constructor(
-    private readonly contactService: ContactService,
-    private readonly identityRepository: IIdentityRepository,
+    private readonly contactService: IContactService,
     private readonly chatRepository: IChatRepository,
     private readonly embeddingService: IEmbeddingService,
     private readonly secretMessageService: SecretMessageService,
@@ -50,7 +55,9 @@ export class MessageService {
     private readonly repository: IMessageRepository,
     private readonly queryRepository: IMessageQueryRepository,
     private readonly reactionRepository: IReactionRepository,
-    private readonly enricher: MessageEnricher
+    private readonly enricher: MessageEnricher,
+    private readonly identityResolver: IMessageIdentityResolver,
+    private readonly processors: IMessageProcessorStrategy[]
   ) {}
 
   // ─── Public API ─────────────────────────────────────────────────────────────
@@ -66,36 +73,33 @@ export class MessageService {
     const key = msg.key
     if (!key?.id) return null
 
-    // Route secret/encrypted messages to their dedicated handler
-    if (msg.message?.secretEncryptedMessage || msg.message?.encReactionMessage) {
-      return this.secretMessageService.handleSecretMessage(msg, _sock)
-    }
-
     const rawMessage = this.parser['_safeSerialize'](msg.message)
 
     const remoteJid = cleanJid(key.remoteJid ?? '')
-    let participantString = key.participant
-      ? cleanJid(key.participant)
-      : remoteJid.endsWith('@g.us')
-      ? null
-      : remoteJid
+    const participantString = await this.identityResolver.resolveSenderJid(key, _sock)
 
-    // Resolve "me" participant JID
-    if (key.fromMe) {
-      if (_sock?.user) {
-        const myJid = _sock.user.id ?? ''
-        const myLid = (_sock.user as { lid?: string })?.lid ?? ''
-        participantString = myLid
-          ? myLid.split(':')[0] + '@lid'
-          : myJid
-          ? myJid.split(':')[0] + '@s.whatsapp.net'
-          : participantString
-      } else {
-        const meIdent = await this.identityRepository.findMeIdentity()
-        if (meIdent?.phoneNumber) {
-          participantString = meIdent.phoneNumber
-        }
-      }
+    // Side-effect: upsert contact for push name
+    if (!key.fromMe && msg.pushName && participantString) {
+      await this.identityResolver
+        .upsertContactPushName(participantString, msg.pushName)
+        .catch((err: unknown) => {
+          console.error('[MessageService] Failed to upsert contact for pushName:', err)
+        })
+    }
+
+    // Opportunistic LID↔PN identity extraction
+    const senderPrimary = participantString ?? remoteJid
+    const keyRefined = key as unknown as { participantAlt?: string; remoteJidAlt?: string; senderPn?: string }
+    const altJid = keyRefined.participantAlt ?? keyRefined.remoteJidAlt
+    const senderPn = keyRefined.senderPn
+    const potentialIds = [senderPrimary, altJid, senderPn].filter(Boolean) as string[]
+
+    await this.identityResolver.reconcileLidPnFromJids(potentialIds, 'message.upsert')
+
+    // Resolve sender identity ID
+    let senderId: number | null = null
+    if (!key.fromMe && participantString) {
+      senderId = await this.identityResolver.resolveSenderId(participantString)
     }
 
     // Extract text content
@@ -111,89 +115,32 @@ export class MessageService {
 
     const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
 
-    // Side-effect: upsert contact for push name
-    if (!key.fromMe && msg.pushName && participantString) {
-      await this.contactService
-        .upsertContact(
-          { id: participantString, name: msg.pushName, notify: msg.pushName },
-          { overwriteName: false }
-        )
-        .catch((err: unknown) => {
-          console.error('[MessageService] Failed to upsert contact for pushName:', err)
-        })
+    const context: IMessageProcessingContext = {
+      msg,
+      sock: _sock,
+      rawMessage,
+      unwrapped,
+      remoteJid,
+      participantString,
+      senderId,
+      timestamp,
+      messageType,
+      textContent
     }
 
-    // Opportunistic LID↔PN identity extraction
-    const senderPrimary = participantString ?? remoteJid
-    const keyRefined = key as unknown as { participantAlt?: string; remoteJidAlt?: string; senderPn?: string }
-    const altJid = keyRefined.participantAlt ?? keyRefined.remoteJidAlt
-    const senderPn = keyRefined.senderPn
-    const potentialIds = [senderPrimary, altJid, senderPn].filter(Boolean) as string[]
+    const dependencies: IMessageServiceDependencyAccessor = {
+      identityRepository: this.identityResolver.identityRepository,
+      repository: this.repository,
+      reactionRepository: this.reactionRepository,
+      embeddingService: this.embeddingService,
+      secretMessageService: this.secretMessageService
+    }
 
-    let discoveredLid: string | null = null
-    let discoveredPn: string | null = null
-    for (const id of potentialIds) {
-      if (typeof id === 'string') {
-        if (id.includes('@lid')) discoveredLid = id
-        if (id.includes('@s.whatsapp.net')) discoveredPn = id
+    // 1. Process messages that don't require ensuring chat exists (e.g. secret, protocol)
+    for (const processor of this.processors) {
+      if (processor.requiresChat === false && processor.supports(context)) {
+        return processor.process(context, dependencies)
       }
-    }
-    if (discoveredLid && discoveredPn) {
-      await this.contactService
-        .linkLidAndPn(discoveredLid, discoveredPn, 'message.upsert')
-        .catch((err: unknown) => {
-          console.error('[MessageService] Failed to link LID and PN:', err)
-        })
-    }
-
-    // Resolve sender identity ID
-    let senderId: number | null = null
-    if (!key.fromMe && participantString) {
-      senderId = await this.contactService.getIdentityIdByJid(participantString)
-      if (!senderId) {
-        await this.contactService.upsertContact({ id: participantString })
-        senderId = await this.contactService.getIdentityIdByJid(participantString)
-      }
-    }
-
-    // Route protocol messages (revoke / edit) without persisting them
-    if (messageType === 'protocolMessage' && unwrapped) {
-      const protocol = unwrapped.protocolMessage as Record<string, unknown> | undefined
-      const targetId = (protocol?.key as { id?: string } | undefined)?.id
-      if (targetId && protocol) {
-        try {
-          const type = protocol.type
-          if (type === 0 || type === 'REVOKE') {
-            return {
-              type: 'protocol',
-              subType: 'revoke',
-              targetId,
-              chatJid: remoteJid,
-              key: protocol.key as import('@whiskeysockets/baileys').proto.IMessageKey
-            }
-          } else if (type === 14 || type === 'MESSAGE_EDIT') {
-            const editedMsg = protocol.editedMessage as Record<string, unknown> | undefined
-            const editContent =
-              (editedMsg?.conversation as string | undefined) ??
-              ((editedMsg?.extendedTextMessage as Record<string, unknown> | undefined)?.text as string | undefined) ??
-              ((editedMsg?.imageMessage as Record<string, unknown> | undefined)?.caption as string | undefined) ??
-              ((editedMsg?.videoMessage as Record<string, unknown> | undefined)?.caption as string | undefined) ??
-              null
-            return {
-              type: 'protocol',
-              subType: 'edit',
-              targetId,
-              chatJid: remoteJid,
-              key: protocol.key as import('@whiskeysockets/baileys').proto.IMessageKey,
-              editedTextContent: editContent,
-              editedContent: editedMsg as import('@whiskeysockets/baileys').proto.IMessage | null
-            }
-          }
-        } catch (err: unknown) {
-          console.error('[MessageService] Error handling protocol message:', err)
-        }
-      }
-      return null
     }
 
     // Ensure chat exists
@@ -204,70 +151,14 @@ export class MessageService {
         console.error('[MessageService] Failed to upsert chat:', err)
       })
 
-    // Handle reaction messages via repository
-    if (messageType === 'reactionMessage' && rawMessage) {
-      const reactionMsg = rawMessage.reactionMessage as Record<string, unknown> | undefined
-      const targetId = (reactionMsg?.key as { id?: string } | undefined)?.id
-      const emoji = reactionMsg?.text as string | undefined
-
-      let reactorId = senderId
-      if (key.fromMe) {
-        const meIdent = await this.identityRepository.findMeIdentity()
-        if (meIdent) reactorId = meIdent.id
-      }
-
-      if (targetId && reactorId !== null) {
-        await this.reactionRepository.upsertReaction(targetId, reactorId, emoji ?? null, timestamp)
-      }
-    } else {
-      // Standard message persistence
-      const isDeleted =
-        msg.messageStubType === WAMessageStubType.REVOKE ||
-        (msg.messageStubType === WAMessageStubType.CIPHERTEXT &&
-          msg.messageStubParameters?.includes('Message absent from node'))
-      const status = mapBaileysStatus(msg.status)
-
-      await this.repository.upsertMessage({
-        id: key.id,
-        chatJid: remoteJid,
-        fromMe: key.fromMe === true,
-        senderId,
-        participant: participantString,
-        timestamp,
-        messageType,
-        content: JSON.stringify(rawMessage ?? {}),
-        textContent,
-        status: status ?? null,
-        isDeleted: isDeleted ?? false
-      })
-
-      // Fire-and-forget semantic search indexing
-      if (textContent && messageType !== 'reactionMessage') {
-        this.embeddingService.indexMessage(key.id, textContent).catch((err: unknown) => {
-          console.error('[MessageService] real-time indexing failed:', err)
-        })
+    // 2. Process messages that require ensuring chat exists (e.g. reaction, standard)
+    for (const processor of this.processors) {
+      if (processor.requiresChat !== false && processor.supports(context)) {
+        return processor.process(context, dependencies)
       }
     }
 
-    const isDeleted =
-      msg.messageStubType === WAMessageStubType.REVOKE ||
-      (msg.messageStubType === WAMessageStubType.CIPHERTEXT &&
-        (msg.messageStubParameters?.includes('Message absent from node') ?? false))
-
-    return {
-      id: key.id,
-      chatJid: remoteJid,
-      fromMe: key.fromMe === true,
-      senderId,
-      participant: participantString,
-      timestamp,
-      messageType,
-      textContent,
-      content: JSON.stringify(rawMessage ?? {}),
-      isDeleted,
-      isEdited: false,
-      status: mapBaileysStatus(msg.status)
-    }
+    return null
   }
 
   /**
@@ -332,19 +223,10 @@ export class MessageService {
     )
     const identityMap = await this.contactService.batchGetIdentityIds(participantJids)
 
-    const allRows = parsed.map(p => ({
-      id: p.id,
-      chatJid: p.chatJid,
-      fromMe: p.fromMe,
-      senderId: p.fromMe ? null : (identityMap.get(p.participantString!) ?? null),
-      participant: p.participantString,
-      timestamp: p.timestamp,
-      messageType: p.messageType,
-      content: JSON.stringify(p.rawMessage ?? {}),
-      textContent: p.textContent,
-      status: p.status ?? 'SENT',
-      isDeleted: p.isDeleted ?? false
-    }))
+    const allRows = parsed.map(p => {
+      const senderId = p.fromMe ? null : (identityMap.get(p.participantString!) ?? null)
+      return this.parser.toDbRow(p, senderId)
+    })
 
     const existingIds = await this.queryRepository.findExistingIds(allRows.map(r => r.id))
     const newRows = allRows.filter(r => !existingIds.has(r.id))
@@ -477,7 +359,7 @@ export class MessageService {
       }
     }
     if (callLid && callPn) {
-      await this.contactService.linkLidAndPn(callLid, callPn, 'messages.reaction').catch((err: unknown) => {
+      await this.identityResolver.linkLidAndPn(callLid, callPn, 'messages.reaction').catch((err: unknown) => {
         console.warn('[MessageService] Failed to link Lid and Pn for reaction:', err)
       })
     }
@@ -493,49 +375,14 @@ export class MessageService {
     }
 
     // Resolve reactor JID
-    let reactorJid: string | null | undefined =
-      refinedKey.participant ??
-      (refinedKey.remoteJid?.endsWith('@g.us') ? null : refinedKey.remoteJid)
-    if (refinedKey.fromMe) {
-      if (sock?.user) {
-        const myRawJid = sock.user.id ?? ''
-        const myLid = (sock.user as unknown as { lid?: string })?.lid ?? ''
-        reactorJid = myLid
-          ? myLid.split(':')[0] + '@lid'
-          : myRawJid
-          ? myRawJid.split(':')[0] + '@s.whatsapp.net'
-          : reactorJid
-      } else {
-        const meIdent = await this.identityRepository.findMeIdentity()
-        if (meIdent?.phoneNumber) reactorJid = meIdent.phoneNumber
-      }
-    }
+    const reactorJid = await this.identityResolver.resolveReactorJid(reactionKey, sock)
 
     // Resolve reactor identity ID
     let reactorId: number | null = null
     if (reactionKey.fromMe) {
-      const meIdent = await this.identityRepository.findMeIdentity()
-      if (meIdent) {
-        reactorId = meIdent.id
-      } else {
-        const myRawJid = sock?.user?.id
-        const myJidClean = myRawJid ? myRawJid.split(':')[0] : null
-        if (myJidClean) {
-          reactorId = await this.contactService.getIdentityIdByJid(myJidClean)
-          if (!reactorId) {
-            const myLid = (sock?.user as unknown as { lid?: string })?.lid?.split(':')[0]
-            if (myLid) reactorId = await this.contactService.getIdentityIdByJid(myLid)
-          }
-        }
-      }
+      reactorId = await this.identityResolver.resolveMeSenderId(sock)
     } else if (reactorJid) {
-      reactorId = await this.contactService.getIdentityIdByJid(reactorJid)
-      if (!reactorId) {
-        await this.contactService.upsertContact({ id: reactorJid }).catch((err: unknown) => {
-          console.error('[MessageService] Failed to upsert reactor contact:', err)
-        })
-        reactorId = await this.contactService.getIdentityIdByJid(reactorJid)
-      }
+      reactorId = await this.identityResolver.resolveSenderId(reactorJid)
     }
 
     // Persist via repository
@@ -576,40 +423,6 @@ export class MessageService {
    * Build a safe, deduplication-friendly filename for a downloaded media file.
    */
   getSafeMediaFileName(msgId: string, mediaType: string, mediaMsg: unknown): string {
-    const ext = resolveExtension(mediaType, mediaMsg)
-
-    let fileHash: string | null = null
-    const mediaObj = mediaMsg as Record<string, unknown> | null | undefined
-    if (mediaObj?.fileSha256) {
-      const sha = mediaObj.fileSha256
-      if (typeof sha === 'string') {
-        fileHash = sha.replace(/[/\\?%*:|"<>+]/g, '-').substring(0, 64)
-      } else if (Buffer.isBuffer(sha)) {
-        fileHash = sha.toString('hex')
-      } else if (
-        sha &&
-        typeof sha === 'object' &&
-        'type' in sha &&
-        (sha as { type: unknown }).type === 'Buffer' &&
-        'data' in sha &&
-        Array.isArray((sha as { data: unknown }).data)
-      ) {
-        fileHash = Buffer.from((sha as { data: number[] }).data).toString('hex')
-      } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
-        fileHash = Buffer.from(sha as Uint8Array).toString('hex')
-      }
-    }
-
-    if (mediaType === 'document' && mediaObj && typeof mediaObj.fileName === 'string') {
-      const originalName = mediaObj.fileName.includes('.')
-        ? mediaObj.fileName.substring(0, mediaObj.fileName.lastIndexOf('.'))
-        : mediaObj.fileName
-      const safeName = originalName.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 80)
-      const suffix = fileHash ? fileHash.substring(0, 12) : msgId.substring(0, 8)
-      return `${safeName}_${suffix}.${ext}`
-    }
-
-    if (fileHash) return `hash_${fileHash}.${ext}`
-    return `${msgId}.${ext}`
+    return getSafeMediaFileNameHelper(msgId, mediaType, mediaMsg)
   }
 }

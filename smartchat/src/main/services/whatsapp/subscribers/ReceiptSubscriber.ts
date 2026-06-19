@@ -19,13 +19,13 @@ import type {
   CallEvent,
 } from '../WAEventTypes'
 import type { IReceiptService } from '../IReceiptService'
-import type { MessageService } from '../../messages/MessageService'
+import type { IMessageWriterService } from '../../messages/IMessageWriterService'
 import type { IContactService } from '../../contacts/IContactService'
 
 export class ReceiptSubscriber implements IWAEventSubscriber {
   constructor(
     private receiptService: IReceiptService,
-    private messageService: MessageService,
+    private messageWriterService: IMessageWriterService,
     private contactService: IContactService
   ) {}
 
@@ -71,7 +71,7 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
 
   private async onReaction(event: ReactionEvent): Promise<void> {
     for (const reactionUpdate of event.reactions) {
-      await this.messageService
+      await this.messageWriterService
         .processReaction(reactionUpdate, event.sock)
         .catch((err) => {
           console.error('[ReceiptSubscriber] Error processing reaction:', err)

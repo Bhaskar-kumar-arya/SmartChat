@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { AITool } from '../services/ai/AIToolService';
+import { AITool } from '../services/ai/IToolRegistry';
 import { prisma } from '../auth';
 
 // Keywords that are never allowed anywhere in the query

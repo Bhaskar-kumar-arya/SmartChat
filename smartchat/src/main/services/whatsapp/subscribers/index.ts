@@ -20,7 +20,8 @@ import { ContactGroupSubscriber }  from './ContactGroupSubscriber'
 import { ReceiptSubscriber }       from './ReceiptSubscriber'
 import { FavoriteStickerSubscriber } from './FavoriteStickerSubscriber'
 
-import type { MessageService } from '../../messages/MessageService'
+import type { IMessageWriterService } from '../../messages/IMessageWriterService'
+import type { IMessageQueryService } from '../../messages/IMessageQueryService'
 import type { IChatService } from '../../chats/IChatService'
 import type { IContactService } from '../../contacts/IContactService'
 import type { IGroupMembershipService } from '../../chats/IGroupMembershipService'
@@ -34,7 +35,8 @@ import type { FavoriteStickerService } from '../../messages/FavoriteStickerServi
 export type { IWAEventSubscriber }
 
 export interface SubscriberServices {
-  messageService: MessageService
+  messageWriterService: IMessageWriterService
+  messageQueryService: IMessageQueryService
   chatService: IChatService
   contactService: IContactService
   groupMembershipService: IGroupMembershipService
@@ -57,11 +59,11 @@ export function createSubscribers(
   getMainWindow: () => BrowserWindow | null
 ): IWAEventSubscriber[] {
   const subscribers: IWAEventSubscriber[] = [
-    new PersistenceSubscriber(services.messageService, services.chatService),
+    new PersistenceSubscriber(services.messageWriterService, services.chatService),
     new ContactGroupSubscriber(services.contactService, services.chatService, services.groupMembershipService, services.chatMemberRepository),
     new NotificationSubscriber(services.chatService, services.contactService, services.profileSyncService, services.notificationService),
-    new UIBroadcastSubscriber(services.contactService, services.messageService, services.messageQueryRepository, getMainWindow),
-    new ReceiptSubscriber(services.receiptService, services.messageService, services.contactService),
+    new UIBroadcastSubscriber(services.contactService, services.messageQueryService, services.messageQueryRepository, getMainWindow),
+    new ReceiptSubscriber(services.receiptService, services.messageWriterService, services.contactService),
     new FavoriteStickerSubscriber(services.favoriteStickerService),
   ]
 

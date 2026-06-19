@@ -1,14 +1,4 @@
-export interface AITool {
-  name: string;
-  description: string;
-  parametersSchema: object;
-  requiresPermission: boolean;
-  execute: (args: any) => Promise<any>;
-  /** Optional async setup (e.g. DB introspection). Called once after registration. */
-  initialize?: () => Promise<void>;
-}
-
-import { IToolRegistry } from './IToolRegistry'
+import { IToolRegistry, AITool } from './IToolRegistry'
 import { SystemPromptBuilder, UserDetails } from './SystemPromptBuilder'
 
 export class ToolRegistry implements IToolRegistry {
