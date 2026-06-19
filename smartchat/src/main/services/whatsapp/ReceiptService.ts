@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { cleanJid, parseBaileysTimestamp } from '../../utils'
 import { WASocket, MessageReceiptUpdate, BaileysMessage } from './types'
 import { ContactService } from '../contacts/ContactService'
-import { WAEventBus } from './WAEventBus'
+import { IWAEventBus } from './IWAEventBus'
 
 export function mapBaileysStatus(status: number | null | undefined): string {
   if (status === undefined || status === null) return 'SENT'
@@ -33,7 +33,7 @@ export class ReceiptService {
   constructor(
     private prisma: PrismaClient,
     private contactService: ContactService,
-    private getBus: () => WAEventBus | null
+    private getBus: () => IWAEventBus | null
   ) {}
 
   /**

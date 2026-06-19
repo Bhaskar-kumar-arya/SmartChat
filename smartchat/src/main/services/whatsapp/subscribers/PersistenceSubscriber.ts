@@ -11,7 +11,7 @@
  */
 
 
-import type { WAEventBus } from '../WAEventBus'
+import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type {
   IncomingMessageEvent,
@@ -30,7 +30,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
     private chatService: ChatService
   ) {}
 
-  register(bus: WAEventBus): void {
+  register(bus: IWAEventBus): void {
     bus.on('messages:append',  this.onAppend.bind(this))
     bus.on('message:incoming', this.onIncoming.bind(this))
     bus.on('message:deleted',  this.onDeleted.bind(this))

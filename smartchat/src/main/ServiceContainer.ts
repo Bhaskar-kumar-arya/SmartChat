@@ -55,7 +55,7 @@ import { SyncRepository } from './services/sync/SyncRepository'
 import { AuthStateRepository } from './services/auth/AuthStateRepository'
 import { AuthSettingsService } from './services/auth/AuthSettingsService'
 
-import type { WAEventBus } from './services/whatsapp/WAEventBus'
+import type { IWAEventBus } from './services/whatsapp/IWAEventBus'
 import { createMessageFormatterRegistry, MessageFormatterRegistry } from './services/messages/formatters'
 
 import { HistorySyncManager } from './services/whatsapp/HistorySyncManager'
@@ -64,7 +64,7 @@ import { WAEventWiringService } from './services/whatsapp/WAEventWiringService'
 export function createServices(
   prisma: PrismaClient,
   getMainWindow: () => BrowserWindow | null,
-  getBus: () => WAEventBus | null
+  getBus: () => IWAEventBus | null
 ): ServiceContainer {
   const services = {} as unknown as ServiceContainer
 

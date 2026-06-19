@@ -5,7 +5,7 @@
  * and database mapping) of favorite stickers.
  */
 
-import type { WAEventBus } from '../WAEventBus'
+import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type { FavoriteStickerSyncEvent } from '../WAEventTypes'
 import type { FavoriteStickerService } from '../../messages/FavoriteStickerService'
@@ -17,7 +17,7 @@ export class FavoriteStickerSubscriber implements IWAEventSubscriber {
     this.onFavoriteStickerSyncBound = this.onFavoriteStickerSync.bind(this)
   }
 
-  register(bus: WAEventBus): void {
+  register(bus: IWAEventBus): void {
     bus.on('app-state:favorite-sticker', this.onFavoriteStickerSyncBound)
   }
 

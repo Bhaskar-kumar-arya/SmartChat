@@ -2,10 +2,10 @@ import { proto, WASocket } from '@whiskeysockets/baileys'
 import { ISecretMessageStrategy, SecretMessageContext } from './ISecretMessageStrategy'
 import { ProcessedMessage } from '../../../domain/types'
 import { ProtocolResult } from '../types'
-import type { WAEventBus } from '../WAEventBus'
+import type { IWAEventBus } from '../IWAEventBus'
 
 export class MessageReactionStrategy implements ISecretMessageStrategy {
-  constructor(private getBus: () => WAEventBus | null) {}
+  constructor(private getBus: () => IWAEventBus | null) {}
 
   getSecretType(): number | string {
     return 'encReactionMessage'

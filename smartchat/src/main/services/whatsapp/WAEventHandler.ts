@@ -25,13 +25,13 @@ import {
   PROTOCOL_TYPE_EDIT
 } from '../../constants'
 import { MessageService } from '../messages/MessageService'
-import type { WAEventBus } from './WAEventBus'
+import type { IWAEventBus } from './IWAEventBus'
 import { AppStateSyncParser } from './AppStateSyncParser'
 
 export class WAEventHandler {
   constructor(
     private messageService: MessageService,
-    private bus: WAEventBus
+    private bus: IWAEventBus
   ) {}
 
   // ── messages.upsert ───────────────────────────────────────────────────────

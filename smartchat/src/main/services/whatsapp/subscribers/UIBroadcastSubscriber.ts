@@ -10,7 +10,7 @@
  */
 
 import { BrowserWindow } from 'electron'
-import type { WAEventBus } from '../WAEventBus'
+import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type {
   IncomingMessageEvent,
@@ -34,7 +34,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     private getMainWindow: () => BrowserWindow | null
   ) {}
 
-  register(bus: WAEventBus): void {
+  register(bus: IWAEventBus): void {
     bus.on('message:incoming', this.onIncoming.bind(this))
     bus.on('message:deleted',  this.onDeleted.bind(this))
     bus.on('message:edited',   this.onEdited.bind(this))

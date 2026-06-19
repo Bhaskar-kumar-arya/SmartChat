@@ -7,7 +7,7 @@
  * Skips fromMe messages, reactions, and history backlog (append type).
  */
 
-import type { WAEventBus } from '../WAEventBus'
+import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type { IncomingMessageEvent } from '../WAEventTypes'
 import type { ChatService } from '../../chats/ChatService'
@@ -28,7 +28,7 @@ export class NotificationSubscriber implements IWAEventSubscriber {
     this.onIncomingMessageBound = this.onIncomingMessage.bind(this)
   }
 
-  register(bus: WAEventBus): void {
+  register(bus: IWAEventBus): void {
     bus.on('message:incoming', this.onIncomingMessageBound)
   }
 

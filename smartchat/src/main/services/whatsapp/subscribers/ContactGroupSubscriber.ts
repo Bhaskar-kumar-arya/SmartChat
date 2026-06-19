@@ -8,7 +8,7 @@
  */
 
 
-import type { WAEventBus } from '../WAEventBus'
+import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type {
   ContactUpsertedEvent,
@@ -29,7 +29,7 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
     private chatMemberRepository: IChatMemberRepository
   ) {}
 
-  register(bus: WAEventBus): void {
+  register(bus: IWAEventBus): void {
     bus.on('contact:upserted',   this.onContactUpserted.bind(this))
     bus.on('contact:updated',    this.onContactUpdated.bind(this))
     bus.on('lid:mapped',         this.onLidMapped.bind(this))

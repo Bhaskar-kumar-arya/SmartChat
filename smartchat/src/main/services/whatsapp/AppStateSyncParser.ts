@@ -5,7 +5,7 @@
  * app-state sync mutations from the main WAEventHandler.
  */
 
-import { WAEventBus } from './WAEventBus'
+import { IWAEventBus } from './IWAEventBus'
 import { WASocket } from './types'
 import { cleanJid } from '../../utils'
 
@@ -14,7 +14,7 @@ export class AppStateSyncParser {
    * Decodes index arrays, detects sync action names, and dispatches the
    * corresponding typed event on the event bus.
    */
-  static async parseAndDispatch(syncAction: any, sock: WASocket, bus: WAEventBus): Promise<void> {
+  static async parseAndDispatch(syncAction: any, sock: WASocket, bus: IWAEventBus): Promise<void> {
     try {
       let indexArray: string[] | null = null
       if (Array.isArray(syncAction.index)) {

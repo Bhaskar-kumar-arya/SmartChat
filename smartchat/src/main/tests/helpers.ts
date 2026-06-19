@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { join } from 'path'
 import { createServices, ServiceContainer } from '../ServiceContainer'
-import { WAEventBus } from '../services/whatsapp/WAEventBus'
+import type { IWAEventBus } from '../services/whatsapp/IWAEventBus'
 import { WAEventHandler } from '../services/whatsapp/WAEventHandler'
 import { createSubscribers } from '../services/whatsapp/subscribers'
 
@@ -96,7 +96,7 @@ export function createMockSocket(options: MockSocketOptions = {}) {
  */
 export function createTestServiceContainer(
   prisma: PrismaClient,
-  bus: WAEventBus
+  bus: IWAEventBus
 ): ServiceContainer {
   const mockWindow = {
     isDestroyed: () => false,

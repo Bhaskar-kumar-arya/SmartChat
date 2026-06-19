@@ -10,7 +10,7 @@ import { proto, AnyMessageContent } from '@whiskeysockets/baileys'
 import { WASocket, MediaMessageWithLocalUri } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/types'
 import { unwrapMessage, cleanJid } from '../../utils'
-import type { WAEventBus } from '../whatsapp/WAEventBus'
+import type { IWAEventBus } from '../whatsapp/IWAEventBus'
 import { stickerMetadataService } from './StickerMetadataService'
 import { getMediaSendOptions } from './MediaHelper'
 import { LocalFileStorage } from '../storage/LocalFileStorage'
@@ -27,7 +27,7 @@ export class MessageActionService {
     private readonly contactService: ContactService,
     private readonly messageService: MessageService,
     private readonly chatService: ChatService,
-    private readonly getBus: () => WAEventBus | null,
+    private readonly getBus: () => IWAEventBus | null,
     fileStorage?: LocalFileStorage
   ) {
     // Allow injection for testing; default to concrete adapter for production

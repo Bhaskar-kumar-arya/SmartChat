@@ -10,7 +10,7 @@
  */
 
 import { BrowserWindow } from 'electron'
-import type { WAEventBus } from '../WAEventBus'
+import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 
 import { NotificationSubscriber }  from './NotificationSubscriber'
@@ -50,7 +50,7 @@ export interface SubscriberServices {
  * or simply call `bus.removeAllListeners()` for a full reset on reconnect.
  */
 export function createSubscribers(
-  bus: WAEventBus,
+  bus: IWAEventBus,
   services: SubscriberServices,
   getMainWindow: () => BrowserWindow | null
 ): IWAEventSubscriber[] {

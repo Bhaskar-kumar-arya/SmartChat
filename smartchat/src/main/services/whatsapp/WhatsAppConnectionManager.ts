@@ -15,6 +15,7 @@ import {
 import { DataWipeService } from '../DataWipeService'
 import { WAEventHandler } from './WAEventHandler'
 import { WAEventBus } from './WAEventBus'
+import type { IWAEventBus } from './IWAEventBus'
 import { createSubscribers, SubscriberServices } from './subscribers'
 import { HistorySyncManager } from './HistorySyncManager'
 import { BaileysPatcher } from './BaileysPatcher'
@@ -33,7 +34,7 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
   private reconnectTimeout: NodeJS.Timeout | null = null
   private isFreshLogin = false
   private mainWindow: BrowserWindow | null = null
-  private currentBus: WAEventBus | null = null
+  private currentBus: IWAEventBus | null = null
 
   constructor(
     private deps: WhatsAppConnectionDependencies,
@@ -53,7 +54,7 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
     return this.currentSock
   }
 
-  public getBus(): WAEventBus | null {
+  public getBus(): IWAEventBus | null {
     return this.currentBus
   }
 

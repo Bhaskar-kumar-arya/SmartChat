@@ -10,7 +10,7 @@
  * Single responsibility: message status tracking and call-event side-effects.
  */
 
-import type { WAEventBus } from '../WAEventBus'
+import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type {
   MessageStatusEvent,
@@ -29,7 +29,7 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
     private contactService: ContactService
   ) {}
 
-  register(bus: WAEventBus): void {
+  register(bus: IWAEventBus): void {
     bus.on('message:status', this.onMessageStatus.bind(this))
     bus.on('receipt:update', this.onReceipt.bind(this))
     bus.on('reaction:update', this.onReaction.bind(this))

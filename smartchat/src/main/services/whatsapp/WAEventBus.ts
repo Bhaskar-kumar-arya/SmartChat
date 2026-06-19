@@ -14,10 +14,9 @@
 
 import { EventEmitter } from 'events'
 import type { WAEventMap } from './WAEventTypes'
+import type { IWAEventBus, AsyncHandler } from './IWAEventBus'
 
-type AsyncHandler<T> = (data: T) => Promise<void> | void
-
-export class WAEventBus {
+export class WAEventBus implements IWAEventBus {
   private emitter = new EventEmitter()
 
   constructor() {

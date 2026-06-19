@@ -14,7 +14,7 @@ import {
 } from '../whatsapp/types'
 import { ProcessedMessage, DBMessageWithSender } from '../../domain/types'
 import { EnrichedMessage } from '../../ipc/types'
-import { WAEventBus } from '../whatsapp/WAEventBus'
+import { IWAEventBus } from '../whatsapp/IWAEventBus'
 import { resolveExtension } from './MediaHelper'
 import { MessageParser, ParsedMessage } from './MessageParser'
 import { IMessageRepository } from './IMessageRepository'
@@ -45,7 +45,7 @@ export class MessageService {
     private readonly chatRepository: IChatRepository,
     private readonly embeddingService: EmbeddingService,
     private readonly secretMessageService: SecretMessageService,
-    private readonly getBus: () => WAEventBus | null,
+    private readonly getBus: () => IWAEventBus | null,
     private readonly parser: MessageParser,
     private readonly repository: IMessageRepository,
     private readonly queryRepository: IMessageQueryRepository,
