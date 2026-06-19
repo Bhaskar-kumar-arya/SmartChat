@@ -149,4 +149,11 @@ export class MessageQueryRepository implements IMessageQueryRepository {
       select: { messageType: true, textContent: true }
     })
   }
+
+  async findMessagesWithTextContent(): Promise<Array<{ id: string; textContent: string | null }>> {
+    return this.prisma.message.findMany({
+      where: { textContent: { not: null } },
+      select: { id: true, textContent: true }
+    })
+  }
 }

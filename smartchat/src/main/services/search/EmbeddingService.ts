@@ -1,7 +1,8 @@
 import { app } from 'electron'
 import path from 'path'
 import { Worker } from 'worker_threads'
-import { PrismaClient } from '@prisma/client'
+import { IMessageVectorRepository } from '../messages/IMessageVectorRepository'
+import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
 
 // ── SRP: this service ONLY handles embedding generation coordination, storage and retrieval ──
 
@@ -31,7 +32,10 @@ export class EmbeddingService implements IEmbeddingService {
   private onActiveStateChange?: (isActive: boolean) => void
   private activeJobs = 0
 
-  constructor(private prisma: PrismaClient) {
+  constructor(
+    private readonly messageVectorRepository: IMessageVectorRepository,
+    private readonly messageQueryRepository: IMessageQueryRepository
+  ) {
     // We don't initialize the worker in constructor to avoid overhead if not used
   }
 
@@ -213,18 +217,10 @@ export class EmbeddingService implements IEmbeddingService {
         const vector = await this.embed(text)
         const vectorJson = JSON.stringify(vector)
 
-        await this.prisma.messageVector.upsert({
-          where: { messageId },
-          create: { messageId, vector: vectorJson },
-          update: { vector: vectorJson }
-        })
+        await this.messageVectorRepository.upsertVector(messageId, vectorJson)
 
-        await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, messageId)
-        await this.prisma.$executeRawUnsafe(
-          `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
-          messageId,
-          vectorJson
-        )
+        await this.messageVectorRepository.deleteFromVecMessages(messageId)
+        await this.messageVectorRepository.insertIntoVecMessages(messageId, vectorJson)
       } catch (err) {
         console.error(`[EmbeddingService] Failed to index message:`, err)
       }
@@ -245,13 +241,10 @@ export class EmbeddingService implements IEmbeddingService {
     
     await this.ensureWorker()
 
-    const indexed = await this.prisma.messageVector.findMany({ select: { messageId: true } })
-    const indexedSet = new Set<string>(indexed.map((v) => v.messageId))
+    const indexedIds = await this.messageVectorRepository.getAllIndexedMessageIds()
+    const indexedSet = new Set<string>(indexedIds)
 
-    const messages = await this.prisma.message.findMany({
-      where: { textContent: { not: null } },
-      select: { id: true, textContent: true }
-    })
+    const messages = await this.messageQueryRepository.findMessagesWithTextContent()
 
     const pending = messages.filter((m) => !indexedSet.has(m.id) && m.textContent?.trim())
     const total = pending.length
@@ -271,18 +264,10 @@ export class EmbeddingService implements IEmbeddingService {
           const vector = await this.embed(m.textContent!)
           const vectorJson = JSON.stringify(vector)
 
-          await this.prisma.messageVector.upsert({
-            where: { messageId: m.id },
-            create: { messageId: m.id, vector: vectorJson },
-            update: { vector: vectorJson }
-          })
+          await this.messageVectorRepository.upsertVector(m.id, vectorJson)
 
-          await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, m.id)
-          await this.prisma.$executeRawUnsafe(
-            `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
-            m.id,
-            vectorJson
-          )
+          await this.messageVectorRepository.deleteFromVecMessages(m.id)
+          await this.messageVectorRepository.insertIntoVecMessages(m.id, vectorJson)
         } catch (err) {
           console.error(`[EmbeddingService] Failed to index message ${m.id}:`, err)
         }
@@ -299,30 +284,25 @@ export class EmbeddingService implements IEmbeddingService {
   }
 
   async clearAllVectors(): Promise<void> {
-    await this.prisma.messageVector.deleteMany({})
-    await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages`)
+    await this.messageVectorRepository.clearAllVectors()
     console.log('[EmbeddingService] All vectors cleared.')
   }
 
   async syncVectors(): Promise<void> {
-    const vectors = await this.prisma.messageVector.findMany()
+    const vectors = await this.messageVectorRepository.getAllVectors()
     console.log(`[EmbeddingService] Syncing ${vectors.length} vectors to virtual table...`)
     for (const v of vectors) {
       try {
         const parsed = JSON.parse(v.vector)
         if (Array.isArray(parsed) && parsed.length !== 768) {
           console.warn(`[EmbeddingService] Dimension mismatch for message ${v.messageId} (expected 768, got ${parsed.length}). Deleting stale vector.`)
-          await this.prisma.messageVector.delete({ where: { messageId: v.messageId } }).catch((err) => {
+          await this.messageVectorRepository.deleteVector(v.messageId).catch((err) => {
             console.error(`[EmbeddingService] Failed to delete stale vector for ${v.messageId}:`, err)
           })
           continue
         }
-        await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, v.messageId)
-        await this.prisma.$executeRawUnsafe(
-          `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
-          v.messageId,
-          v.vector
-        )
+        await this.messageVectorRepository.deleteFromVecMessages(v.messageId)
+        await this.messageVectorRepository.insertIntoVecMessages(v.messageId, v.vector)
       } catch (err) {
         console.error(`[EmbeddingService] Error syncing vector for ${v.messageId}:`, err)
       }

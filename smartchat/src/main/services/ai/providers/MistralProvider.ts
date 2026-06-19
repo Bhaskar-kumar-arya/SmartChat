@@ -1,13 +1,13 @@
 import OpenAI from 'openai';
 import { AIProvider, ModelInfo } from './Provider';
 import { toolRegistry } from '../AIToolService';
-import { aiKeyService } from '../AIKeyService';
+import { IAIKeyService } from '../IAIKeyService';
 
 export class MistralProvider implements AIProvider {
   private client: OpenAI;
 
-  constructor() {
-    const apiKey = aiKeyService.getKey('mistral');
+  constructor(private readonly aiKeyService: IAIKeyService) {
+    const apiKey = this.aiKeyService.getKey('mistral');
     const baseURL = process.env.MISTRAL_BASE_URL || 'https://api.mistral.ai/v1';
     this.client = new OpenAI({ apiKey, baseURL });
   }

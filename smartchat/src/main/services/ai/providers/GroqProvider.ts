@@ -1,13 +1,13 @@
 import Groq from 'groq-sdk';
 import { AIProvider, ModelInfo } from './Provider';
 import { toolRegistry } from '../AIToolService';
-import { aiKeyService } from '../AIKeyService';
+import { IAIKeyService } from '../IAIKeyService';
 
 export class GroqProvider implements AIProvider {
   private client: Groq;
 
-  constructor() {
-    const apiKey = aiKeyService.getKey('groq');
+  constructor(private readonly aiKeyService: IAIKeyService) {
+    const apiKey = this.aiKeyService.getKey('groq');
     this.client = new Groq({ apiKey });
   }
 

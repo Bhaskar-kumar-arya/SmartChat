@@ -1,13 +1,13 @@
 import { GoogleGenAI } from '@google/genai'
 import { AIProvider, ModelInfo } from './Provider'
 import { toolRegistry } from '../AIToolService'
-import { aiKeyService } from '../AIKeyService'
+import { IAIKeyService } from '../IAIKeyService'
 
 export class GeminiProvider implements AIProvider {
   private ai: GoogleGenAI;
   private fetchedModelIds = new Set<string>();
-  constructor() {
-    const key = aiKeyService.getKey('gemini');
+  constructor(private readonly aiKeyService: IAIKeyService) {
+    const key = this.aiKeyService.getKey('gemini');
     this.ai = new GoogleGenAI({ apiKey: key }); 
   }
 

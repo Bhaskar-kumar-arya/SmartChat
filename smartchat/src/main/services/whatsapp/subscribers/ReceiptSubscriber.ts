@@ -18,13 +18,13 @@ import type {
   ReactionEvent,
   CallEvent,
 } from '../WAEventTypes'
-import type { ReceiptService } from '../ReceiptService'
+import type { IReceiptService } from '../IReceiptService'
 import type { MessageService } from '../../messages/MessageService'
 import type { ContactService } from '../../contacts/ContactService'
 
 export class ReceiptSubscriber implements IWAEventSubscriber {
   constructor(
-    private receiptService: ReceiptService,
+    private receiptService: IReceiptService,
     private messageService: MessageService,
     private contactService: ContactService
   ) {}

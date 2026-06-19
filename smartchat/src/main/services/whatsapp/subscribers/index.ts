@@ -27,7 +27,7 @@ import type { IChatMemberRepository } from '../../chats/IChatMemberRepository'
 import type { ProfileSyncService } from '../../contacts/ProfileSyncService'
 import type { NotificationService } from '../../notification/NotificationService'
 import type { IMessageQueryRepository } from '../../messages/IMessageQueryRepository'
-import type { ReceiptService } from '../ReceiptService'
+import type { IReceiptService } from '../IReceiptService'
 import type { FavoriteStickerService } from '../../messages/FavoriteStickerService'
 
 export type { IWAEventSubscriber }
@@ -40,7 +40,7 @@ export interface SubscriberServices {
   profileSyncService: ProfileSyncService
   notificationService: NotificationService
   messageQueryRepository: IMessageQueryRepository
-  receiptService: ReceiptService
+  receiptService: IReceiptService
   favoriteStickerService: FavoriteStickerService
 }
 

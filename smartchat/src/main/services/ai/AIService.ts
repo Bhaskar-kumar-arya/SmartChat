@@ -4,7 +4,7 @@ import { GroqProvider } from './providers/GroqProvider'
 import { MistralProvider } from './providers/MistralProvider'
 import { DeepSeekProvider } from './providers/DeepSeekProvider'
 import { AIProvider, ModelInfo } from './providers/Provider'
-import { aiKeyService } from './AIKeyService'
+import { IAIKeyService } from './IAIKeyService'
 
 export interface AIMention {
   jid: string
@@ -38,11 +38,11 @@ export class AIService {
   private currentModelId: string = 'gemini:gemma-4-31b-it' // Default
   private activeRequests: Map<string, AbortController> = new Map()
 
-  constructor() {
-    this.registerProvider('gemini', new GeminiProvider());
-    this.registerProvider('groq', new GroqProvider());
-    this.registerProvider('mistral', new MistralProvider());
-    this.registerProvider('deepseek', new DeepSeekProvider());
+  constructor(private readonly aiKeyService: IAIKeyService) {
+    this.registerProvider('gemini', new GeminiProvider(this.aiKeyService));
+    this.registerProvider('groq', new GroqProvider(this.aiKeyService));
+    this.registerProvider('mistral', new MistralProvider(this.aiKeyService));
+    this.registerProvider('deepseek', new DeepSeekProvider(this.aiKeyService));
     this.registerProvider('lmstudio', new LMStudioProvider()); // Fallback / local
   }
 
@@ -52,12 +52,12 @@ export class AIService {
   }
 
   getProviderKeys(): Record<string, string> {
-    return aiKeyService.getKeys() as unknown as Record<string, string>;
+    return this.aiKeyService.getKeys() as unknown as Record<string, string>;
   }
 
   setProviderKey(provider: string, key: string): boolean {
     if (provider in this.providers) {
-      aiKeyService.saveKey(provider as any, key);
+      this.aiKeyService.saveKey(provider as any, key);
       const updateMethod = this.providers[provider].updateApiKey;
       if (updateMethod) {
         updateMethod.call(this.providers[provider], key);

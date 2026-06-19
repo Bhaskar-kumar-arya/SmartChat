@@ -1,16 +1,7 @@
-import { app } from 'electron';
-import fs from 'fs';
-import { join } from 'path';
+import { IAIKeyService, ProviderKeys } from './IAIKeyService';
+import { IKeyStorage } from './IKeyStorage';
 
-export interface ProviderKeys {
-  gemini: string;
-  groq: string;
-  mistral: string;
-  deepseek: string;
-}
-
-class AIKeyService {
-  private keysPath: string;
+export class AIKeyService implements IAIKeyService {
   private keys: ProviderKeys;
 
   // Ultimate out-of-the-box hardcoded fallbacks
@@ -21,8 +12,7 @@ class AIKeyService {
     deepseek: 'sk-a96018659be1476485d5043356483922'
   };
 
-  constructor() {
-    this.keysPath = join(app.getPath('userData'), 'provider_keys.json');
+  constructor(private readonly storage: IKeyStorage) {
     this.keys = { ...AIKeyService.DEFAULTS };
     this.loadKeys();
   }
@@ -37,20 +27,17 @@ class AIKeyService {
     if (process.env.MISTRAL_API_KEY) this.keys.mistral = process.env.MISTRAL_API_KEY;
     if (process.env.DEEPSEEK_API_KEY) this.keys.deepseek = process.env.DEEPSEEK_API_KEY;
 
-    // 3. Override with locally persisted JSON user configuration
-    if (fs.existsSync(this.keysPath)) {
-      try {
-        const fileContent = fs.readFileSync(this.keysPath, 'utf8');
-        const savedKeys = JSON.parse(fileContent);
-        if (savedKeys) {
-          if (savedKeys.gemini) this.keys.gemini = savedKeys.gemini;
-          if (savedKeys.groq) this.keys.groq = savedKeys.groq;
-          if (savedKeys.mistral) this.keys.mistral = savedKeys.mistral;
-          if (savedKeys.deepseek) this.keys.deepseek = savedKeys.deepseek;
-        }
-      } catch (err) {
-        console.error('[AIKeyService] Failed to load provider keys:', err);
+    // 3. Override with locally persisted user configuration
+    try {
+      const savedKeys = this.storage.loadKeys();
+      if (savedKeys) {
+        if (savedKeys.gemini) this.keys.gemini = savedKeys.gemini;
+        if (savedKeys.groq) this.keys.groq = savedKeys.groq;
+        if (savedKeys.mistral) this.keys.mistral = savedKeys.mistral;
+        if (savedKeys.deepseek) this.keys.deepseek = savedKeys.deepseek;
       }
+    } catch (err) {
+      console.error('[AIKeyService] Failed to load provider keys:', err);
     }
   }
 
@@ -65,16 +52,10 @@ class AIKeyService {
   saveKey(provider: keyof ProviderKeys, key: string): void {
     this.keys[provider] = key;
     try {
-      const dir = join(app.getPath('userData'));
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(this.keysPath, JSON.stringify(this.keys, null, 2), 'utf8');
+      this.storage.saveKeys(this.keys);
       console.log(`[AIKeyService] Dynamic API key persisted for provider: ${provider}`);
     } catch (err) {
       console.error('[AIKeyService] Failed to persist provider keys:', err);
     }
   }
 }
-
-export const aiKeyService = new AIKeyService();

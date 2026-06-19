@@ -5,9 +5,10 @@ import { LidPnLinker } from './services/contacts/LidPnLinker'
 import { ContactNameResolver } from './services/contacts/ContactNameResolver'
 import { IdentityReconciliationService } from './services/contacts/IdentityReconciliationService'
 import { ProfileSyncService } from './services/contacts/ProfileSyncService'
-import { EmbeddingService } from './services/search/EmbeddingService'
+import { EmbeddingService, IEmbeddingService } from './services/search/EmbeddingService'
 import { DataWipeService } from './services/DataWipeService'
 import { ReceiptService } from './services/whatsapp/ReceiptService'
+import { IReceiptService } from './services/whatsapp/IReceiptService'
 import { ChatService } from './services/chats/ChatService'
 import { ChatListEnricher } from './services/chats/ChatListEnricher'
 import { MessageService } from './services/messages/MessageService'
@@ -61,6 +62,13 @@ import { createMessageFormatterRegistry, MessageFormatterRegistry } from './serv
 import { HistorySyncManager } from './services/whatsapp/HistorySyncManager'
 import { WAEventWiringService } from './services/whatsapp/WAEventWiringService'
 
+import { IKeyStorage } from './services/ai/IKeyStorage'
+import { FSKeyStorage } from './services/ai/FSKeyStorage'
+import { IAIKeyService } from './services/ai/IAIKeyService'
+import { AIKeyService } from './services/ai/AIKeyService'
+import { IReceiptRepository } from './services/messages/IReceiptRepository'
+import { ReceiptRepository } from './services/messages/ReceiptRepository'
+
 export function createServices(
   prisma: PrismaClient,
   getMainWindow: () => BrowserWindow | null,
@@ -83,18 +91,23 @@ export function createServices(
   const messageRepository = new MessageRepository(prisma)
   const messageQueryRepository = new MessageQueryRepository(prisma)
   const messageVectorRepository = new MessageVectorRepository(prisma)
+  const receiptRepository = new ReceiptRepository(prisma)
   const reactionRepository = new ReactionRepository(prisma)
   const syncRepository = new SyncRepository(prisma)
   const authStateRepository = new AuthStateRepository(prisma)
   const authSettingsService = new AuthSettingsService(authStateRepository)
 
+  // AI Key Storage & Service
+  const keyStorage: IKeyStorage = new FSKeyStorage()
+  const aiKeyService = new AIKeyService(keyStorage)
+
   // 1. Foundation services (no service dependencies)
   const lidPnLinker = new LidPnLinker(identityRepository, aliasRepository, lidMapRepository)
   const contactNameResolver = new ContactNameResolver(aliasRepository)
   const contactService = new ContactService(identityRepository, aliasRepository, lidMapRepository, lidPnLinker, contactNameResolver)
-  const embeddingService = new EmbeddingService(prisma)
+  const embeddingService = new EmbeddingService(messageVectorRepository, messageQueryRepository)
   const dataWipeService = new DataWipeService(prisma)
-  const receiptService = new ReceiptService(prisma, contactService, getBus)
+  const receiptService = new ReceiptService(receiptRepository, contactService, getBus)
   const notificationService = new NotificationService(getMainWindow, messageFormatterRegistry)
   const secretMessageService = new SecretMessageService(prisma)
   secretMessageService.registerStrategy(new MessageReactionStrategy(getBus))
@@ -127,8 +140,8 @@ export function createServices(
   const identityReconciliationService = new IdentityReconciliationService(prisma)
   const profileSyncService = new ProfileSyncService(prisma, contactService)
 
-  // 3. AI services (unchanged internally — just re-exported/wired)
-  const aiService = new AIService()
+  // 3. AI services
+  const aiService = new AIService(aiKeyService)
   const aiChatSessionService = new AIChatSessionService(prisma)
   const aiChatExportService = new AIChatExportService()
 
@@ -146,6 +159,7 @@ export function createServices(
     messageRepository,
     messageQueryRepository,
     messageVectorRepository,
+    receiptRepository,
     reactionRepository,
     syncRepository,
     authSettingsService,
@@ -169,7 +183,8 @@ export function createServices(
     profileSyncService,
     messageFormatterRegistry,
     historySyncManager,
-    waEventWiringService
+    waEventWiringService,
+    aiKeyService
   })
 
   return services
@@ -185,13 +200,14 @@ export type ServiceContainer = {
   messageRepository: IMessageRepository
   messageQueryRepository: IMessageQueryRepository
   messageVectorRepository: IMessageVectorRepository
+  receiptRepository: IReceiptRepository
   reactionRepository: IReactionRepository
   syncRepository: SyncRepository
   authSettingsService: AuthSettingsService
   contactService: ContactService
-  embeddingService: EmbeddingService
+  embeddingService: IEmbeddingService
   dataWipeService: DataWipeService
-  receiptService: ReceiptService
+  receiptService: IReceiptService
   chatService: ChatService
   groupHydrationService: GroupHydrationService
   messageService: MessageService
@@ -209,4 +225,5 @@ export type ServiceContainer = {
   messageFormatterRegistry: MessageFormatterRegistry
   historySyncManager: HistorySyncManager
   waEventWiringService: WAEventWiringService
+  aiKeyService: IAIKeyService
 }

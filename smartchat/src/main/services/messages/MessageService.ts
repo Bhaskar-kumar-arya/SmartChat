@@ -2,7 +2,7 @@ import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { IChatRepository } from '../chats/IChatRepository'
-import { EmbeddingService } from '../search/EmbeddingService'
+import { IEmbeddingService } from '../search/EmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, unwrapMessage } from '../../utils'
@@ -43,7 +43,7 @@ export class MessageService {
     private readonly contactService: ContactService,
     private readonly identityRepository: IIdentityRepository,
     private readonly chatRepository: IChatRepository,
-    private readonly embeddingService: EmbeddingService,
+    private readonly embeddingService: IEmbeddingService,
     private readonly secretMessageService: SecretMessageService,
     private readonly getBus: () => IWAEventBus | null,
     private readonly parser: MessageParser,

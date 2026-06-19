@@ -31,4 +31,42 @@ export class MessageVectorRepository implements IMessageVectorRepository {
     `
     return this.prisma.$queryRawUnsafe<Array<{ messageId: string; distance: number }>>(sql, ...params)
   }
+
+  async upsertVector(messageId: string, vectorJson: string): Promise<void> {
+    await this.prisma.messageVector.upsert({
+      where: { messageId },
+      create: { messageId, vector: vectorJson },
+      update: { vector: vectorJson }
+    })
+  }
+
+  async deleteFromVecMessages(messageId: string): Promise<void> {
+    await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages WHERE messageId = ?`, messageId)
+  }
+
+  async insertIntoVecMessages(messageId: string, vectorJson: string): Promise<void> {
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)`,
+      messageId,
+      vectorJson
+    )
+  }
+
+  async getAllIndexedMessageIds(): Promise<string[]> {
+    const indexed = await this.prisma.messageVector.findMany({ select: { messageId: true } })
+    return indexed.map((v) => v.messageId)
+  }
+
+  async clearAllVectors(): Promise<void> {
+    await this.prisma.messageVector.deleteMany({})
+    await this.prisma.$executeRawUnsafe(`DELETE FROM vec_messages`)
+  }
+
+  async getAllVectors(): Promise<Array<{ messageId: string; vector: string }>> {
+    return this.prisma.messageVector.findMany()
+  }
+
+  async deleteVector(messageId: string): Promise<void> {
+    await this.prisma.messageVector.delete({ where: { messageId } })
+  }
 }

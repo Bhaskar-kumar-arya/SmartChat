@@ -1,13 +1,13 @@
 import OpenAI from 'openai';
 import { AIProvider, ModelInfo } from './Provider';
 import { toolRegistry } from '../AIToolService';
-import { aiKeyService } from '../AIKeyService';
+import { IAIKeyService } from '../IAIKeyService';
 
 export class DeepSeekProvider implements AIProvider {
   private client: OpenAI;
 
-  constructor() {
-    const apiKey = aiKeyService.getKey('deepseek');
+  constructor(private readonly aiKeyService: IAIKeyService) {
+    const apiKey = this.aiKeyService.getKey('deepseek');
     const baseURL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
     this.client = new OpenAI({ apiKey, baseURL });
   }

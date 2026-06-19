@@ -1,5 +1,5 @@
 import { ContactService } from '../contacts/ContactService'
-import { EmbeddingService } from './EmbeddingService'
+import { IEmbeddingService } from './EmbeddingService'
 import { WASocket } from '../whatsapp/types'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
@@ -61,7 +61,7 @@ export class SearchService implements ISearchService {
     private readonly messageVectorRepository: IMessageVectorRepository,
     private readonly identityRepository: IIdentityRepository,
     private readonly contactService: ContactService,
-    private readonly embeddingService: EmbeddingService
+    private readonly embeddingService: IEmbeddingService
   ) {}
 
   async searchAll(

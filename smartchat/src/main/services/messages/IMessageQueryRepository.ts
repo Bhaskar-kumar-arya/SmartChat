@@ -28,4 +28,6 @@ export interface IMessageQueryRepository {
   findMessageIdsOnly(where: any): Promise<string[]>
   
   findMessagesWithChatAndSender(where: any, take?: number): Promise<any[]>
+
+  findMessagesWithTextContent(): Promise<Array<{ id: string; textContent: string | null }>>
 }

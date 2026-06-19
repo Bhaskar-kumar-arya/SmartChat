@@ -23,10 +23,10 @@ import { WAEventWiringService, ConnectionCallbacks } from './WAEventWiringServic
 import { AuthSettingsService } from '../auth/AuthSettingsService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
-import type { EmbeddingService } from '../search/EmbeddingService'
+import type { IEmbeddingService } from '../search/EmbeddingService'
 
 export interface WhatsAppConnectionDependencies extends SubscriberServices {
-  embeddingService: EmbeddingService
+  embeddingService: IEmbeddingService
 }
 
 export class WhatsAppConnectionManager implements ConnectionCallbacks {
