@@ -221,7 +221,7 @@ export class WhatsAppConnectionManager {
     }
 
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      const isInitialSyncInProgress = this.historySyncManager.isInProgress
+      const isInitialSyncInProgress = this.historySyncManager.isInProgress 
       if (!this.isFreshLogin && !isInitialSyncInProgress) {
         const isHistorySyncCompleted = await this.authSettingsService.getHistorySyncCompleted()
 
