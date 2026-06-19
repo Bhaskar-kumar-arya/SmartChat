@@ -3,7 +3,7 @@ import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { IMessageRepository, MessageUpsertData } from '../messages/IMessageRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'
-import { IContactRepository } from '../contacts/IContactRepository'
+import { IAliasRepository } from '../contacts/IAliasRepository'
 import { IChatRepository } from '../chats/IChatRepository'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from '../../utils'
@@ -35,7 +35,7 @@ export class SyncMessagesHandler {
   constructor(
     private readonly repository: IMessageRepository,
     private readonly reactionRepository: IReactionRepository,
-    private readonly contactRepository: IContactRepository,
+    private readonly aliasRepository: IAliasRepository,
     private readonly chatRepository: IChatRepository,
     private readonly contactService: ContactService
   ) {}
@@ -59,7 +59,7 @@ export class SyncMessagesHandler {
     }
 
     // Build an in-memory JID -> identityId cache to avoid repeated DB round-trips
-    const aliasRows = await this.contactRepository.findAllAliases()
+    const aliasRows = await this.aliasRepository.findAllAliases()
     const identityCache = new Map<string, number>()
     for (const row of aliasRows) {
       identityCache.set(row.jid, row.identityId)

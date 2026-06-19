@@ -1,9 +1,8 @@
-import { PrismaClient, Chat, Community, ChatMember } from '@prisma/client'
-import { IChatRepository, ChatUpsertData, ChatWithCommunity, ChatMemberWithIdentity } from './IChatRepository'
+import { PrismaClient, Chat } from '@prisma/client'
+import { IChatRepository, ChatUpsertData, ChatWithCommunity } from './IChatRepository'
 
 /**
- * ChatRepository — Encapsulates all read and write database operations
- * for the Chat, Community, and ChatMember tables.
+ * ChatRepository — Encapsulates database operations for the Chat table.
  */
 export class ChatRepository implements IChatRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -111,27 +110,6 @@ export class ChatRepository implements IChatRepository {
   }
 
   /**
-   * Upsert a community row.
-   */
-  async upsertCommunity(jid: string, name: string | null): Promise<Community> {
-    return this.prisma.community.upsert({
-      where: { jid },
-      update: name ? { name } : {},
-      create: { jid, name }
-    })
-  }
-
-  /**
-   * Update the announce JID for a community.
-   */
-  async updateCommunityAnnounceJid(id: number, announceJid: string): Promise<Community> {
-    return this.prisma.community.update({
-      where: { id },
-      data: { announceJid }
-    })
-  }
-
-  /**
    * Update a chat's unread count.
    */
   async updateChatUnreadCount(jid: string, count: number): Promise<Chat> {
@@ -149,77 +127,6 @@ export class ChatRepository implements IChatRepository {
       where: { jid },
       select: { muteExpiration: true }
     })
-  }
-
-  /**
-   * Upsert a group member row.
-   */
-  async upsertChatMember(chatJid: string, identityId: number, role: string): Promise<ChatMember | null> {
-    // Guard 1: Ensure the parent Chat row exists (FK → Chat.jid)
-    const existingChat = await this.prisma.chat.findUnique({ where: { jid: chatJid } })
-    if (!existingChat) {
-      const type = chatJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-      try {
-        await this.prisma.chat.create({
-          data: {
-            jid: chatJid,
-            type,
-            unreadCount: 0,
-            timestamp: 0n,
-            pinned: 0,
-            muteExpiration: 0n,
-            isArchived: false
-          }
-        })
-      } catch (err) {
-        // Race condition: another process created the row — check again
-        const recheckChat = await this.prisma.chat.findUnique({ where: { jid: chatJid } })
-        if (!recheckChat) {
-          console.error(`[ChatRepository] upsertChatMember: cannot create/find chat ${chatJid}; skipping member insert`)
-          return null
-        }
-      }
-    }
-
-    // Guard 2: Ensure the Identity row exists (FK → Identity.id).
-    // If the identity is missing, it was likely a LID-only stub that was merged and
-    // deleted by deduplicateIdentities. The ContactService cache is cleared after
-    // deduplication, so subsequent calls will resolve the correct canonical id.
-    const existingIdentity = await this.prisma.identity.findUnique({ where: { id: identityId } })
-    if (!existingIdentity) {
-      console.warn(`[ChatRepository] upsertChatMember: identity ${identityId} no longer exists (merged?); skipping for ${chatJid}`)
-      return null
-    }
-
-    return this.prisma.chatMember.upsert({
-      where: { chatJid_identityId: { chatJid, identityId } },
-      update: { role },
-      create: { chatJid, identityId, role }
-    })
-  }
-
-  /**
-   * Delete a group member row.
-   */
-  async deleteChatMember(chatJid: string, identityId: number): Promise<ChatMember | null> {
-    try {
-      return await this.prisma.chatMember.delete({
-        where: { chatJid_identityId: { chatJid, identityId } }
-      })
-    } catch (err) {
-      return null
-    }
-  }
-
-  /**
-   * Fetch all member records for a group.
-   */
-  async findChatMembers(chatJid: string): Promise<ChatMemberWithIdentity[]> {
-    const members = await this.prisma.chatMember.findMany({
-      where: { chatJid },
-      include: { identity: true }
-    })
-    return members as ChatMemberWithIdentity[]
   }
 
   /**
@@ -315,4 +222,3 @@ export class ChatRepository implements IChatRepository {
     })
   }
 }
-

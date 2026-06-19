@@ -11,8 +11,9 @@ import {
 } from '../../constants'
 import { AuthSettingsService } from '../auth/AuthSettingsService'
 import type { ContactService } from '../contacts/ContactService'
-import type { IContactRepository } from '../contacts/IContactRepository'
+import type { IAliasRepository } from '../contacts/IAliasRepository'
 import type { IChatRepository } from '../chats/IChatRepository'
+import type { ICommunityRepository } from '../chats/ICommunityRepository'
 import type { IMessageRepository } from '../messages/IMessageRepository'
 import type { IReactionRepository } from '../messages/IReactionRepository'
 import type { MediaService } from '../messages/MediaService'
@@ -24,8 +25,9 @@ export interface HistorySyncDependencies {
   mediaService: MediaService
   embeddingService: EmbeddingService
   contactService: ContactService
-  contactRepository: IContactRepository
+  aliasRepository: IAliasRepository
   chatRepository: IChatRepository
+  communityRepository: ICommunityRepository
   messageRepository: IMessageRepository
   reactionRepository: IReactionRepository
   groupHydrationService: GroupHydrationService
@@ -85,8 +87,9 @@ export class HistorySyncManager {
       const syncResult = await handleHistorySync(
         data as any,
         this.deps.contactService,
-        this.deps.contactRepository,
+        this.deps.aliasRepository,
         this.deps.chatRepository,
+        this.deps.communityRepository,
         this.deps.messageRepository,
         this.deps.reactionRepository
       )

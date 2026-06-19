@@ -21,11 +21,6 @@ export interface IMessageQueryRepository {
   
   queryMessageIdsBySql(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]>
   
-  searchVectorMatch(
-    queryVectorJson: string,
-    candidateIds?: string[]
-  ): Promise<Array<{ messageId: string; distance: number }>>
-  
   findLastMessage(chatJid: string): Promise<any>
   
   findMessagesByIdsWithChatAndSender(ids: string[]): Promise<any[]>

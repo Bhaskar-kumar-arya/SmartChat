@@ -17,34 +17,6 @@ export class MessageQueryRepository implements IMessageQueryRepository {
   }
 
   /**
-   * Performs the native vector MATCH query against the vec_messages table.
-   */
-  async searchVectorMatch(
-    queryVectorJson: string,
-    candidateIds?: string[]
-  ): Promise<Array<{ messageId: string; distance: number }>> {
-    let filterSql = ''
-    const params: any[] = [queryVectorJson]
-
-    if (candidateIds && candidateIds.length > 0) {
-      if (candidateIds.length < 2000) {
-        filterSql = `AND messageId IN (${candidateIds.map(() => '?').join(',')})`
-        params.push(...candidateIds)
-      }
-    }
-
-    const sql = `
-      SELECT messageId, distance
-      FROM vec_messages
-      WHERE vector MATCH ?
-      ${filterSql}
-      AND k = 30
-      ORDER BY distance ASC
-    `
-    return this.prisma.$queryRawUnsafe<Array<{ messageId: string; distance: number }>>(sql, ...params)
-  }
-
-  /**
    * Fetch the most recent message for preview in a chat.
    */
   async findLastMessage(chatJid: string): Promise<any> {

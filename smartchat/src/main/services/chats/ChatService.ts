@@ -3,11 +3,15 @@ import { ContactService } from '../contacts/ContactService'
 import { ChatUpdatePayload, WASocket } from '../whatsapp/types'
 import { ChatListItem } from '../../ipc/types'
 import { IChatRepository } from './IChatRepository'
+import { ICommunityRepository } from './ICommunityRepository'
+import { IChatMemberRepository } from './IChatMemberRepository'
 import { ChatListEnricher } from './ChatListEnricher'
 
 export class ChatService {
   constructor(
     private readonly chatRepository: IChatRepository,
+    private readonly communityRepository: ICommunityRepository,
+    private readonly chatMemberRepository: IChatMemberRepository,
     private readonly contactService: ContactService,
     private readonly chatListEnricher: ChatListEnricher
   ) {}
@@ -91,12 +95,12 @@ export class ChatService {
 
       if (rootJid) {
         // Ensure Community exists
-        const comm = await this.chatRepository.upsertCommunity(rootJid, commInfo.isCommunity ? (chatName ?? null) : null)
+        const comm = await this.communityRepository.upsertCommunity(rootJid, commInfo.isCommunity ? (chatName ?? null) : null)
         communityId = comm.id
         
         // Update announce channel if known
         if (commInfo.isAnnounce && rootJid) {
-          await this.chatRepository.updateCommunityAnnounceJid(communityId, cleanedJid)
+          await this.communityRepository.updateCommunityAnnounceJid(communityId, cleanedJid)
         }
       }
       data.communityId = communityId
@@ -231,7 +235,7 @@ export class ChatService {
 
       if (identityId) {
         const role = p.admin === 'superadmin' ? 'SUPERADMIN' : (p.admin === 'admin' ? 'ADMIN' : 'MEMBER')
-        await this.chatRepository.upsertChatMember(cleanedChatJid, identityId, role).catch((err) => {
+        await this.chatMemberRepository.upsertChatMember(cleanedChatJid, identityId, role).catch((err) => {
           console.error('[ChatService] Failed to upsert chat member:', err)
         })
       }

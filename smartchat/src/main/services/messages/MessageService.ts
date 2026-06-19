@@ -1,6 +1,6 @@
 import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
-import { IContactRepository } from '../contacts/IContactRepository'
+import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { IChatRepository } from '../chats/IChatRepository'
 import { EmbeddingService } from '../search/EmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
@@ -41,7 +41,7 @@ export type { ParsedMessage }
 export class MessageService {
   constructor(
     private readonly contactService: ContactService,
-    private readonly contactRepository: IContactRepository,
+    private readonly identityRepository: IIdentityRepository,
     private readonly chatRepository: IChatRepository,
     private readonly embeddingService: EmbeddingService,
     private readonly secretMessageService: SecretMessageService,
@@ -91,7 +91,7 @@ export class MessageService {
           ? myJid.split(':')[0] + '@s.whatsapp.net'
           : participantString
       } else {
-        const meIdent = await this.contactRepository.findMeIdentity()
+        const meIdent = await this.identityRepository.findMeIdentity()
         if (meIdent?.phoneNumber) {
           participantString = meIdent.phoneNumber
         }
@@ -212,7 +212,7 @@ export class MessageService {
 
       let reactorId = senderId
       if (key.fromMe) {
-        const meIdent = await this.contactRepository.findMeIdentity()
+        const meIdent = await this.identityRepository.findMeIdentity()
         if (meIdent) reactorId = meIdent.id
       }
 
@@ -506,7 +506,7 @@ export class MessageService {
           ? myRawJid.split(':')[0] + '@s.whatsapp.net'
           : reactorJid
       } else {
-        const meIdent = await this.contactRepository.findMeIdentity()
+        const meIdent = await this.identityRepository.findMeIdentity()
         if (meIdent?.phoneNumber) reactorJid = meIdent.phoneNumber
       }
     }
@@ -514,7 +514,7 @@ export class MessageService {
     // Resolve reactor identity ID
     let reactorId: number | null = null
     if (reactionKey.fromMe) {
-      const meIdent = await this.contactRepository.findMeIdentity()
+      const meIdent = await this.identityRepository.findMeIdentity()
       if (meIdent) {
         reactorId = meIdent.id
       } else {

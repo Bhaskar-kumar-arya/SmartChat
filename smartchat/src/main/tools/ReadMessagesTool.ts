@@ -1,6 +1,7 @@
 import { AITool } from '../services/ai/AIToolService';
 import { IMessageQueryRepository } from '../services/messages/IMessageQueryRepository';
-import { IContactRepository } from '../services/contacts/IContactRepository';
+import { IIdentityRepository } from '../services/contacts/IIdentityRepository';
+import { IAliasRepository } from '../services/contacts/IAliasRepository';
 import { IChatRepository } from '../services/chats/IChatRepository';
 import { WASocket } from '../services/whatsapp/types';
 import { unwrapMessage, getMessageType } from '../utils';
@@ -80,7 +81,8 @@ FORMATTING BEHAVIOR:
     _getSock: () => WASocket | null,
     private readonly formatterRegistry: MessageFormatterRegistry,
     private readonly messageRepository: IMessageQueryRepository,
-    private readonly contactRepository: IContactRepository,
+    private readonly identityRepository: IIdentityRepository,
+    private readonly aliasRepository: IAliasRepository,
     private readonly chatRepository: IChatRepository
   ) {}
 
@@ -378,14 +380,14 @@ FORMATTING BEHAVIOR:
     const nameMap = new Map<string, string>();
 
     // Pre-populate Me aliases
-    const meIdent = await this.contactRepository.findMeIdentity();
+    const meIdent = await this.identityRepository.findMeIdentity();
     if (meIdent) {
       for (const alias of meIdent.aliases) {
         nameMap.set(alias.jid, 'Me');
       }
     }
 
-    const aliases = await this.contactRepository.findIdentityAliases(Array.from(uniqueJids));
+    const aliases = await this.aliasRepository.findIdentityAliases(Array.from(uniqueJids));
 
     for (const alias of aliases) {
       const ident = alias.identity;

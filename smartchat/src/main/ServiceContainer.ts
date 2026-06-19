@@ -28,14 +28,27 @@ import { CommunitySyncHandler } from './services/chats/sync/CommunitySyncHandler
 import { ChatSyncHandler } from './services/chats/sync/ChatSyncHandler'
 import { MembershipSyncHandler } from './services/chats/sync/MembershipSyncHandler'
 
-import { ContactRepository } from './services/contacts/ContactRepository'
-import { IContactRepository } from './services/contacts/IContactRepository'
+import { IdentityRepository } from './services/contacts/IdentityRepository'
+import { IIdentityRepository } from './services/contacts/IIdentityRepository'
+import { AliasRepository } from './services/contacts/AliasRepository'
+import { IAliasRepository } from './services/contacts/IAliasRepository'
+import { LidMapRepository } from './services/contacts/LidMapRepository'
+import { ILidMapRepository } from './services/contacts/ILidMapRepository'
+
 import { ChatRepository } from './services/chats/ChatRepository'
 import { IChatRepository } from './services/chats/IChatRepository'
+import { CommunityRepository } from './services/chats/CommunityRepository'
+import { ICommunityRepository } from './services/chats/ICommunityRepository'
+import { ChatMemberRepository } from './services/chats/ChatMemberRepository'
+import { IChatMemberRepository } from './services/chats/IChatMemberRepository'
+
 import { MessageRepository } from './services/messages/MessageRepository'
 import { IMessageRepository } from './services/messages/IMessageRepository'
 import { MessageQueryRepository } from './services/messages/MessageQueryRepository'
 import { IMessageQueryRepository } from './services/messages/IMessageQueryRepository'
+import { MessageVectorRepository } from './services/messages/MessageVectorRepository'
+import { IMessageVectorRepository } from './services/messages/IMessageVectorRepository'
+
 import { ReactionRepository } from './services/messages/ReactionRepository'
 import { IReactionRepository } from './services/messages/IReactionRepository'
 import { SyncRepository } from './services/sync/SyncRepository'
@@ -59,19 +72,26 @@ export function createServices(
   const messageFormatterRegistry = createMessageFormatterRegistry()
 
   // Repositories
-  const contactRepository = new ContactRepository(prisma)
+  const identityRepository = new IdentityRepository(prisma)
+  const aliasRepository = new AliasRepository(prisma)
+  const lidMapRepository = new LidMapRepository(prisma)
+
   const chatRepository = new ChatRepository(prisma)
+  const communityRepository = new CommunityRepository(prisma)
+  const chatMemberRepository = new ChatMemberRepository(prisma)
+
   const messageRepository = new MessageRepository(prisma)
   const messageQueryRepository = new MessageQueryRepository(prisma)
+  const messageVectorRepository = new MessageVectorRepository(prisma)
   const reactionRepository = new ReactionRepository(prisma)
   const syncRepository = new SyncRepository(prisma)
   const authStateRepository = new AuthStateRepository(prisma)
   const authSettingsService = new AuthSettingsService(authStateRepository)
 
   // 1. Foundation services (no service dependencies)
-  const lidPnLinker = new LidPnLinker(contactRepository)
-  const contactNameResolver = new ContactNameResolver(contactRepository)
-  const contactService = new ContactService(contactRepository, lidPnLinker, contactNameResolver)
+  const lidPnLinker = new LidPnLinker(identityRepository, aliasRepository, lidMapRepository)
+  const contactNameResolver = new ContactNameResolver(aliasRepository)
+  const contactService = new ContactService(identityRepository, aliasRepository, lidMapRepository, lidPnLinker, contactNameResolver)
   const embeddingService = new EmbeddingService(prisma)
   const dataWipeService = new DataWipeService(prisma)
   const receiptService = new ReceiptService(prisma, contactService, getBus)
@@ -82,7 +102,7 @@ export function createServices(
 
   // 2. Services with service dependencies
   const chatListEnricher = new ChatListEnricher(chatRepository, messageQueryRepository, reactionRepository, contactService, messageFormatterRegistry)
-  const chatService = new ChatService(chatRepository, contactService, chatListEnricher)
+  const chatService = new ChatService(chatRepository, communityRepository, chatMemberRepository, contactService, chatListEnricher)
   const communitySyncHandler = new CommunitySyncHandler(syncRepository)
   const chatSyncHandler = new ChatSyncHandler(syncRepository)
   const membershipSyncHandler = new MembershipSyncHandler(syncRepository, contactService)
@@ -94,16 +114,16 @@ export function createServices(
   const messageParser = new MessageParser()
   const messageEnricher = new MessageEnricher(contactService)
   const messageService = new MessageService(
-    contactService, contactRepository, chatRepository, embeddingService, secretMessageService, getBus,
+    contactService, identityRepository, chatRepository, embeddingService, secretMessageService, getBus,
     messageParser, messageRepository, messageQueryRepository, reactionRepository, messageEnricher
   )
   const messageActionService = new MessageActionService(
-    messageRepository, reactionRepository, messageQueryRepository, contactRepository, contactService, messageService, chatService, getBus
+    messageRepository, reactionRepository, messageQueryRepository, identityRepository, contactService, messageService, chatService, getBus
   )
   const mediaService = new MediaService(
     messageRepository, messageQueryRepository, messageService, contactService, favoriteStickerService
   )
-  const searchService = new SearchService(chatRepository, messageQueryRepository, contactRepository, contactService, embeddingService)
+  const searchService = new SearchService(chatRepository, messageQueryRepository, messageVectorRepository, identityRepository, contactService, embeddingService)
   const identityReconciliationService = new IdentityReconciliationService(prisma)
   const profileSyncService = new ProfileSyncService(prisma, contactService)
 
@@ -117,10 +137,15 @@ export function createServices(
   const waEventWiringService = new WAEventWiringService(historySyncManager)
 
   Object.assign(services, {
-    contactRepository,
+    identityRepository,
+    aliasRepository,
+    lidMapRepository,
     chatRepository,
+    communityRepository,
+    chatMemberRepository,
     messageRepository,
     messageQueryRepository,
+    messageVectorRepository,
     reactionRepository,
     syncRepository,
     authSettingsService,
@@ -151,10 +176,15 @@ export function createServices(
 }
 
 export type ServiceContainer = {
-  contactRepository: IContactRepository
+  identityRepository: IIdentityRepository
+  aliasRepository: IAliasRepository
+  lidMapRepository: ILidMapRepository
   chatRepository: IChatRepository
+  communityRepository: ICommunityRepository
+  chatMemberRepository: IChatMemberRepository
   messageRepository: IMessageRepository
   messageQueryRepository: IMessageQueryRepository
+  messageVectorRepository: IMessageVectorRepository
   reactionRepository: IReactionRepository
   syncRepository: SyncRepository
   authSettingsService: AuthSettingsService

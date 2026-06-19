@@ -1,5 +1,6 @@
 import { ContactService } from '../contacts/ContactService'
 import { IChatRepository } from '../chats/IChatRepository'
+import { ICommunityRepository } from '../chats/ICommunityRepository'
 import { cleanJid, parseBaileysTimestamp } from '../../utils'
 
 export interface RawChatParticipant {
@@ -46,6 +47,7 @@ export interface RawChat {
 export class SyncChatsHandler {
   constructor(
     private readonly chatRepository: IChatRepository,
+    private readonly communityRepository: ICommunityRepository,
     private readonly contactService: ContactService
   ) {}
 
@@ -135,11 +137,11 @@ export class SyncChatsHandler {
 
         const rootJid = isCommunity ? jid : linkedParentJid ? cleanJid(String(linkedParentJid)) : null
         if (rootJid) {
-          const comm = await this.chatRepository.upsertCommunity(rootJid, isCommunity ? (c.name ?? null) : null)
+          const comm = await this.communityRepository.upsertCommunity(rootJid, isCommunity ? (c.name ?? null) : null)
           communityId = comm.id
 
           if (isAnnounce) {
-            await this.chatRepository
+            await this.communityRepository
               .updateCommunityAnnounceJid(communityId, jid)
               .catch((err: unknown) => {
                 console.error('[SyncChatsHandler] community announceJid update failed:', err)

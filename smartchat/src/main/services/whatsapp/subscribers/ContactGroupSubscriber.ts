@@ -19,14 +19,14 @@ import type {
 } from '../WAEventTypes'
 import type { ContactService } from '../../contacts/ContactService'
 import type { ChatService } from '../../chats/ChatService'
-import type { IChatRepository } from '../../chats/IChatRepository'
+import type { IChatMemberRepository } from '../../chats/IChatMemberRepository'
 import { cleanJid } from '../../../utils'
 
 export class ContactGroupSubscriber implements IWAEventSubscriber {
   constructor(
     private contactService: ContactService,
     private chatService: ChatService,
-    private chatRepository: IChatRepository
+    private chatMemberRepository: IChatMemberRepository
   ) {}
 
   register(bus: WAEventBus): void {
@@ -143,11 +143,11 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
 
       if (action === 'add' || action === 'promote' || action === 'demote') {
         const role = action === 'promote' ? 'ADMIN' : 'MEMBER'
-        await this.chatRepository.upsertChatMember(cleanGroupId, identityId, role).catch((err) => {
+        await this.chatMemberRepository.upsertChatMember(cleanGroupId, identityId, role).catch((err) => {
           console.error('[ContactGroupSubscriber] Failed to upsert ChatMember in onGroupParticipants:', err)
         })
       } else if (action === 'remove') {
-        await this.chatRepository.deleteChatMember(cleanGroupId, identityId).catch((err) => {
+        await this.chatMemberRepository.deleteChatMember(cleanGroupId, identityId).catch((err) => {
           console.error('[ContactGroupSubscriber] Failed to delete ChatMember in onGroupParticipants:', err)
         })
       }

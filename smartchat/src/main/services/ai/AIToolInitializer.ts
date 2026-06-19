@@ -21,7 +21,8 @@ export class AIToolInitializer {
       getSock,
       services.messageFormatterRegistry,
       services.messageQueryRepository,
-      services.contactRepository,
+      services.identityRepository,
+      services.aliasRepository,
       services.chatRepository
     );
     const queryDatabaseTool = new QueryDatabaseTool();

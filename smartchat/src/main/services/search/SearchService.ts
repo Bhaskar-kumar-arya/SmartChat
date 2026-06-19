@@ -3,7 +3,8 @@ import { EmbeddingService } from './EmbeddingService'
 import { WASocket } from '../whatsapp/types'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
-import { IContactRepository } from '../contacts/IContactRepository'
+import { IIdentityRepository } from '../contacts/IIdentityRepository'
+import { IMessageVectorRepository } from '../messages/IMessageVectorRepository'
 
 export interface SearchResultItem {
   type: 'chat' | 'message'
@@ -57,7 +58,8 @@ export class SearchService implements ISearchService {
   constructor(
     private readonly chatRepository: IChatRepository,
     private readonly messageRepository: IMessageQueryRepository,
-    private readonly contactRepository: IContactRepository,
+    private readonly messageVectorRepository: IMessageVectorRepository,
+    private readonly identityRepository: IIdentityRepository,
     private readonly contactService: ContactService,
     private readonly embeddingService: EmbeddingService
   ) {}
@@ -162,7 +164,7 @@ export class SearchService implements ISearchService {
     }
 
     try {
-      const scoredResults = await this.messageRepository.searchVectorMatch(queryVectorJson, candidateIds)
+      const scoredResults = await this.messageVectorRepository.searchVectorMatch(queryVectorJson, candidateIds)
       if (scoredResults.length === 0) return []
 
       const scoredIds = scoredResults.map((r) => r.messageId)
@@ -203,7 +205,7 @@ export class SearchService implements ISearchService {
     if (!q) return []
 
     // 1. Search Identities (contacts/people)
-    const identities = await this.contactRepository.searchIdentities(q, 20)
+    const identities = await this.identityRepository.searchIdentities(q, 20)
 
     // 2. Search Chats (group chats, DMs, communities, subgroups)
     const chats = await this.chatRepository.searchChats(q, 20)

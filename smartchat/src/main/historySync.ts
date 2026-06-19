@@ -4,9 +4,10 @@ import { SyncContactsHandler } from './services/sync/SyncContactsHandler'
 import { SyncChatsHandler } from './services/sync/SyncChatsHandler'
 import { SyncMessagesHandler } from './services/sync/SyncMessagesHandler'
 import { IChatRepository } from './services/chats/IChatRepository'
+import { ICommunityRepository } from './services/chats/ICommunityRepository'
 import { IMessageRepository } from './services/messages/IMessageRepository'
 import { IReactionRepository } from './services/messages/IReactionRepository'
-import { IContactRepository } from './services/contacts/IContactRepository'
+import { IAliasRepository } from './services/contacts/IAliasRepository'
 
 export interface HistorySyncData {
   chats: Array<Record<string, unknown>>
@@ -39,8 +40,9 @@ export interface HistorySyncResult {
 export async function handleHistorySync(
   data: HistorySyncData,
   contactService: ContactService,
-  contactRepository: IContactRepository,
+  aliasRepository: IAliasRepository,
   chatRepository: IChatRepository,
+  communityRepository: ICommunityRepository,
   messageRepository: IMessageRepository,
   reactionRepository: IReactionRepository
 ): Promise<HistorySyncResult> {
@@ -65,14 +67,14 @@ export async function handleHistorySync(
   )
 
   // ── 2. Chats ────────────────────────────────────────────────────────────────
-  const chatsHandler = new SyncChatsHandler(chatRepository, contactService)
+  const chatsHandler = new SyncChatsHandler(chatRepository, communityRepository, contactService)
   const chatCount = await chatsHandler.processChats(
     chats as Array<Record<string, unknown>>,
     processedChats
   )
 
   // ── 3. Messages & Reactions ─────────────────────────────────────────────────
-  const messagesHandler = new SyncMessagesHandler(messageRepository, reactionRepository, contactRepository, chatRepository, contactService)
+  const messagesHandler = new SyncMessagesHandler(messageRepository, reactionRepository, aliasRepository, chatRepository, contactService)
   const { messageCount, importedMessages } = await messagesHandler.processMessages(
     messages,
     processedChats,

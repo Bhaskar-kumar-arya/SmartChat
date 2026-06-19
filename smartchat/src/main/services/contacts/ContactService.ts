@@ -1,6 +1,8 @@
 import { cleanJid } from '../../utils'
 import { WASocket } from '../whatsapp/types'
-import { IContactRepository } from './IContactRepository'
+import { IIdentityRepository } from './IIdentityRepository'
+import { IAliasRepository } from './IAliasRepository'
+import { ILidMapRepository } from './ILidMapRepository'
 import { LidPnLinker } from './LidPnLinker'
 import { ContactNameResolver } from './ContactNameResolver'
 import { Identity } from '@prisma/client'
@@ -11,7 +13,9 @@ export class ContactService {
   private meJidsCache: string[] | null = null
 
   constructor(
-    private readonly repository: IContactRepository,
+    private readonly identityRepository: IIdentityRepository,
+    private readonly aliasRepository: IAliasRepository,
+    private readonly lidMapRepository: ILidMapRepository,
     private readonly lidPnLinker: LidPnLinker,
     private readonly nameResolver: ContactNameResolver
   ) {}
@@ -52,7 +56,7 @@ export class ContactService {
     }
 
     try {
-      const meIdent = await this.repository.findMeIdentity()
+      const meIdent = await this.identityRepository.findMeIdentity()
       if (meIdent) {
         const dbJids = [meIdent.phoneNumber, ...(meIdent.aliases?.map(a => a.jid) || [])].filter(Boolean).map(cleanJid)
         this.meJidsCache = dbJids
@@ -138,7 +142,7 @@ export class ContactService {
       if (this.identityIdCache.has(phoneNumber)) {
         identityId = this.identityIdCache.get(phoneNumber)!
       } else {
-        const existingById = await this.repository.findIdentityByPhoneNumber(phoneNumber)
+        const existingById = await this.identityRepository.findIdentityByPhoneNumber(phoneNumber)
         if (existingById) {
           identityId = existingById.id
           this.identityIdCache.set(phoneNumber, identityId)
@@ -152,7 +156,7 @@ export class ContactService {
       if (this.identityIdCache.has(searchLid)) {
         identityId = this.identityIdCache.get(searchLid)!
       } else {
-        const existingByAlias = await this.repository.findIdentityAlias(searchLid)
+        const existingByAlias = await this.aliasRepository.findIdentityAlias(searchLid)
         if (existingByAlias) {
           identityId = existingByAlias.identityId
           this.identityIdCache.set(searchLid, identityId)
@@ -165,7 +169,7 @@ export class ContactService {
       if (this.identityIdCache.has(id)) {
         identityId = this.identityIdCache.get(id)!
       } else {
-        const existingByAlias = await this.repository.findIdentityAlias(id)
+        const existingByAlias = await this.aliasRepository.findIdentityAlias(id)
         if (existingByAlias) {
           identityId = existingByAlias.identityId
           this.identityIdCache.set(id, identityId)
@@ -176,9 +180,9 @@ export class ContactService {
     // 4. Check LidMap: if this is a PN JID, a LID stub may already exist for this number.
     //    Reuse that stub instead of creating a duplicate PN identity.
     if (!identityId && phoneNumber) {
-      const lidMapEntry = await this.repository.findLidMap(phoneNumber)
+      const lidMapEntry = await this.lidMapRepository.findLidMap(phoneNumber)
       if (lidMapEntry) {
-        const lidAlias = await this.repository.findIdentityAlias(lidMapEntry.lid)
+        const lidAlias = await this.aliasRepository.findIdentityAlias(lidMapEntry.lid)
         if (lidAlias) {
           identityId = lidAlias.identityId
           this.identityIdCache.set(phoneNumber, identityId)
@@ -188,7 +192,7 @@ export class ContactService {
 
     // Create the Identity if it doesn't exist
     if (!identityId) {
-      const newIdentity = await this.repository.createIdentity({
+      const newIdentity = await this.identityRepository.createIdentity({
         phoneNumber: phoneNumber,
         displayName: newName,
         pushName: newNotify,
@@ -214,13 +218,13 @@ export class ContactService {
       }
 
       if (Object.keys(updateData).length > 0) {
-        await this.repository.updateIdentity(identityId, updateData)
+        await this.identityRepository.updateIdentity(identityId, updateData)
       }
     }
 
     // 2. Ensure Aliases are created and pointing to the correct identity
     const ensureAlias = async (jid: string, type: string) => {
-      await this.repository.upsertIdentityAlias(jid, type, identityId as number)
+      await this.aliasRepository.upsertIdentityAlias(jid, type, identityId as number)
       this.identityIdCache.set(jid, identityId as number)
     }
 
@@ -272,7 +276,7 @@ export class ContactService {
       const CHUNK = 500
       for (let i = 0; i < missing.length; i += CHUNK) {
         const chunk = missing.slice(i, i + CHUNK)
-        const aliases = await this.repository.findIdentityAliasesMinimal(chunk)
+        const aliases = await this.aliasRepository.findIdentityAliasesMinimal(chunk)
         for (const alias of aliases) {
           result.set(alias.jid, alias.identityId)
           this.identityIdCache.set(alias.jid, alias.identityId)
@@ -301,7 +305,7 @@ export class ContactService {
       return this.identityIdCache.get(cleaned)!
     }
 
-    const alias = await this.repository.findIdentityAlias(cleaned)
+    const alias = await this.aliasRepository.findIdentityAlias(cleaned)
     if (alias) {
       this.identityIdCache.set(cleaned, alias.identityId)
       return alias.identityId
@@ -309,7 +313,7 @@ export class ContactService {
     
     // Fallback: search identity by phone number directly
     if (cleaned.endsWith('@s.whatsapp.net')) {
-      const ident = await this.repository.findIdentityByPhoneNumber(cleaned)
+      const ident = await this.identityRepository.findIdentityByPhoneNumber(cleaned)
       if (ident) {
         this.identityIdCache.set(cleaned, ident.id)
         return ident.id
@@ -330,11 +334,11 @@ export class ContactService {
 
     try {
       // Find matching identity alias
-      const alias = await this.repository.findIdentityAlias(cleaned)
+      const alias = await this.aliasRepository.findIdentityAlias(cleaned)
 
       if (alias) {
         // Find the LID alias for this identity
-        const lidAlias = await this.repository.findLidAliasByIdentityId(alias.identityId)
+        const lidAlias = await this.aliasRepository.findLidAliasByIdentityId(alias.identityId)
         if (lidAlias) {
           return lidAlias.jid;
         }
@@ -361,13 +365,13 @@ export class ContactService {
     let identityId: number | null = null;
 
     // 1. Try to find existing identity alias
-    const existingJidAlias = await this.repository.findIdentityAlias(myJid)
+    const existingJidAlias = await this.aliasRepository.findIdentityAlias(myJid)
     if (existingJidAlias) {
       identityId = existingJidAlias.identityId;
     }
 
     if (!identityId && myLid) {
-      const existingLidAlias = await this.repository.findIdentityAlias(myLid)
+      const existingLidAlias = await this.aliasRepository.findIdentityAlias(myLid)
       if (existingLidAlias) {
         identityId = existingLidAlias.identityId;
       }
@@ -375,26 +379,26 @@ export class ContactService {
 
     // 2. Upsert the Identity row with isMe = true
     if (!identityId) {
-      const newIdentity = await this.repository.createIdentity({
+      const newIdentity = await this.identityRepository.createIdentity({
         phoneNumber: myJid,
         displayName: name,
         isMe: true
       });
       identityId = newIdentity.id;
     } else {
-      await this.repository.updateIdentity(identityId, {
+      await this.identityRepository.updateIdentity(identityId, {
         phoneNumber: myJid,
         isMe: true
       });
     }
 
     // 3. Ensure aliases are pointing to the isMe identity
-    await this.repository.upsertIdentityAlias(myJid, 'PN', identityId)
+    await this.aliasRepository.upsertIdentityAlias(myJid, 'PN', identityId)
 
     if (myLid) {
-      await this.repository.upsertIdentityAlias(myLid, 'LID', identityId)
+      await this.aliasRepository.upsertIdentityAlias(myLid, 'LID', identityId)
 
-      await this.repository.upsertLidMap(myLid, myJid, 'registerMe').catch((err: unknown) => {
+      await this.lidMapRepository.upsertLidMap(myLid, myJid, 'registerMe').catch((err: unknown) => {
         console.error('[ContactService] Failed to upsert me lidMap entry:', err)
       });
     }
@@ -406,7 +410,7 @@ export class ContactService {
    * Find a single identity by ID.
    */
   public async findIdentityById(id: number): Promise<Identity | null> {
-    return this.repository.findIdentityById(id)
+    return this.identityRepository.findIdentityById(id)
   }
 
   /**

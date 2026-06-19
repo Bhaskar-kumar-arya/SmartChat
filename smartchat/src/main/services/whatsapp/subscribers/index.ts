@@ -23,7 +23,7 @@ import { FavoriteStickerSubscriber } from './FavoriteStickerSubscriber'
 import type { MessageService } from '../../messages/MessageService'
 import type { ChatService } from '../../chats/ChatService'
 import type { ContactService } from '../../contacts/ContactService'
-import type { IChatRepository } from '../../chats/IChatRepository'
+import type { IChatMemberRepository } from '../../chats/IChatMemberRepository'
 import type { ProfileSyncService } from '../../contacts/ProfileSyncService'
 import type { NotificationService } from '../../notification/NotificationService'
 import type { IMessageQueryRepository } from '../../messages/IMessageQueryRepository'
@@ -36,7 +36,7 @@ export interface SubscriberServices {
   messageService: MessageService
   chatService: ChatService
   contactService: ContactService
-  chatRepository: IChatRepository
+  chatMemberRepository: IChatMemberRepository
   profileSyncService: ProfileSyncService
   notificationService: NotificationService
   messageQueryRepository: IMessageQueryRepository
@@ -56,7 +56,7 @@ export function createSubscribers(
 ): IWAEventSubscriber[] {
   const subscribers: IWAEventSubscriber[] = [
     new PersistenceSubscriber(services.messageService, services.chatService),
-    new ContactGroupSubscriber(services.contactService, services.chatService, services.chatRepository),
+    new ContactGroupSubscriber(services.contactService, services.chatService, services.chatMemberRepository),
     new NotificationSubscriber(services.chatService, services.contactService, services.profileSyncService, services.notificationService),
     new UIBroadcastSubscriber(services.contactService, services.messageService, services.messageQueryRepository, getMainWindow),
     new ReceiptSubscriber(services.receiptService, services.messageService, services.contactService),

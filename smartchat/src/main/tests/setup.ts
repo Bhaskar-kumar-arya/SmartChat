@@ -28,6 +28,12 @@ vi.mock('electron', () => {
       webContents = {
         send: () => {}
       }
+    },
+    Notification: class MockNotification {
+      static isSupported() { return true }
+      constructor() {}
+      show() {}
+      on() {}
     }
   }
 })

@@ -1,5 +1,5 @@
 import { ContactService } from '../contacts/ContactService'
-import { IContactRepository } from '../contacts/IContactRepository'
+import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { join } from 'path'
 import { MessageService } from './MessageService'
 import { IMessageRepository } from './IMessageRepository'
@@ -23,7 +23,7 @@ export class MessageActionService {
     private readonly messageRepository: IMessageRepository,
     private readonly reactionRepository: IReactionRepository,
     private readonly messageQueryRepository: IMessageQueryRepository,
-    private readonly contactRepository: IContactRepository,
+    private readonly identityRepository: IIdentityRepository,
     private readonly contactService: ContactService,
     private readonly messageService: MessageService,
     private readonly chatService: ChatService,
@@ -252,7 +252,7 @@ export class MessageActionService {
     // Update the database Reaction table
     // 1. Resolve our own identity ID
     let reactorId: number | null = null;
-    const meIdent = await this.contactRepository.findMeIdentity();
+    const meIdent = await this.identityRepository.findMeIdentity();
     if (meIdent) {
       reactorId = meIdent.id;
     } else {
