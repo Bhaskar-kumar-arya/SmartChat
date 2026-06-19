@@ -1,9 +1,26 @@
-import { Chat, Community, ChatMember } from '@prisma/client'
-import {
-  ChatUpsertData,
-  ChatWithCommunity,
-  ChatMemberWithIdentity
-} from './ChatRepository'
+import { Chat, Community, ChatMember, Identity } from '@prisma/client'
+
+export interface ChatUpsertData {
+  unreadCount?: number
+  pinned?: number
+  muteExpiration?: bigint
+  isArchived?: boolean
+  name?: string | null
+  profilePictureUrl?: string | null
+  timestamp?: bigint
+  type?: string
+  communityId?: number | null
+}
+
+export interface ChatWithCommunity extends Chat {
+  community: {
+    jid: string
+  } | null
+}
+
+export interface ChatMemberWithIdentity extends ChatMember {
+  identity: Identity
+}
 
 export interface IChatRepository {
   findChatByJid(jid: string): Promise<Chat | null>

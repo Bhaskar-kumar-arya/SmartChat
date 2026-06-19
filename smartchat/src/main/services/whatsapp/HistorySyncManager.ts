@@ -9,8 +9,28 @@ import {
   SYNC_AUTO_FINISH_THRESHOLD,
   HISTORY_SYNC_TIMEOUT_MS
 } from '../../constants'
-import type { ServiceContainer } from '../../ServiceContainer'
 import { AuthSettingsService } from '../auth/AuthSettingsService'
+import type { ContactService } from '../contacts/ContactService'
+import type { IContactRepository } from '../contacts/IContactRepository'
+import type { IChatRepository } from '../chats/IChatRepository'
+import type { IMessageRepository } from '../messages/IMessageRepository'
+import type { IReactionRepository } from '../messages/IReactionRepository'
+import type { MediaService } from '../messages/MediaService'
+import type { EmbeddingService } from '../search/EmbeddingService'
+import type { GroupHydrationService } from '../chats/GroupHydrationService'
+import type { IdentityReconciliationService } from '../contacts/IdentityReconciliationService'
+
+export interface HistorySyncDependencies {
+  mediaService: MediaService
+  embeddingService: EmbeddingService
+  contactService: ContactService
+  contactRepository: IContactRepository
+  chatRepository: IChatRepository
+  messageRepository: IMessageRepository
+  reactionRepository: IReactionRepository
+  groupHydrationService: GroupHydrationService
+  identityReconciliationService: IdentityReconciliationService
+}
 
 export class HistorySyncManager {
   private syncChunkCount = 0
@@ -20,7 +40,7 @@ export class HistorySyncManager {
   private syncTimeout: NodeJS.Timeout | null = null
 
   constructor(
-    private services: ServiceContainer,
+    private deps: HistorySyncDependencies,
     private getMainWindow: () => BrowserWindow | null,
     private readonly authSettingsService: AuthSettingsService
   ) {}
@@ -46,13 +66,13 @@ export class HistorySyncManager {
       clearTimeout(this.syncTimeout)
       this.syncTimeout = null
     }
-    this.services.mediaService.clearFavoriteStickerQueue()
+    this.deps.mediaService.clearFavoriteStickerQueue()
   }
 
   async handleSyncChunk(data: unknown, syncFullHistory: boolean, sock: WASocket): Promise<void> {
     try {
-      this.services.embeddingService.setPaused(true)
-      this.services.mediaService.setFavoriteStickerQueuePaused(true)
+      this.deps.embeddingService.setPaused(true)
+      this.deps.mediaService.setFavoriteStickerQueuePaused(true)
       this.isInitialSyncInProgress = true
       this.syncChunkCount++
       const rawData = data as Record<string, unknown>
@@ -64,15 +84,15 @@ export class HistorySyncManager {
 
       const syncResult = await handleHistorySync(
         data as any,
-        this.services.contactService,
-        this.services.contactRepository,
-        this.services.chatRepository,
-        this.services.messageRepository,
-        this.services.reactionRepository
+        this.deps.contactService,
+        this.deps.contactRepository,
+        this.deps.chatRepository,
+        this.deps.messageRepository,
+        this.deps.reactionRepository
       )
 
       // Post-sync processing: check and download favorite stickers in this batch
-      this.services.mediaService.downloadFavoriteStickersFromSync(
+      this.deps.mediaService.downloadFavoriteStickersFromSync(
         syncResult.importedMessages,
         sock
       ).catch((err) => {
@@ -136,7 +156,7 @@ export class HistorySyncManager {
         syncFullHistory
       })
       mainWindow?.webContents.send('wa-sync-status', 'Fetching group metadata from WhatsApp...')
-      await this.services.groupHydrationService.hydrateGroups(groups, (progress, status) => {
+      await this.deps.groupHydrationService.hydrateGroups(groups, (progress, status) => {
         mainWindow?.webContents.send('wa-sync-progress', {
           progress,
           syncType: SYNC_TYPE_GROUP_HYDRATION,
@@ -152,18 +172,18 @@ export class HistorySyncManager {
 
     // Heal any LID-stub / PN-identity splits that formed during the sync
     console.log('[finishSync] Running post-sync identity deduplication...')
-    await this.services.identityReconciliationService.deduplicateIdentities().catch((err) => {
+    await this.deps.identityReconciliationService.deduplicateIdentities().catch((err) => {
       console.warn('[finishSync] deduplicateIdentities error:', err)
     })
 
     // After deduplication, stale identityIds in the ContactService cache will point to
     // now-deleted stub identities. Clear the cache so all subsequent lookups (e.g. from
     // live group:updated events) resolve fresh canonical ids from the database.
-    this.services.contactService.clearCaches()
+    this.deps.contactService.clearCaches()
 
     // Unpause embedding service now that all syncing and deduplication are complete
-    this.services.embeddingService.setPaused(false)
-    this.services.mediaService.setFavoriteStickerQueuePaused(false)
+    this.deps.embeddingService.setPaused(false)
+    this.deps.mediaService.setFavoriteStickerQueuePaused(false)
 
     // Persist the completed history sync status in AuthState
     await this.authSettingsService.setHistorySyncCompleted().catch((err) => {

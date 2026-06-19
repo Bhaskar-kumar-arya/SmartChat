@@ -10,13 +10,20 @@
 import type { WAEventBus } from '../WAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type { IncomingMessageEvent } from '../WAEventTypes'
-import type { ServiceContainer } from '../../../ServiceContainer'
-
+import type { ChatService } from '../../chats/ChatService'
+import type { ContactService } from '../../contacts/ContactService'
+import type { ProfileSyncService } from '../../contacts/ProfileSyncService'
+import type { NotificationService } from '../../notification/NotificationService'
 
 export class NotificationSubscriber implements IWAEventSubscriber {
   private onIncomingMessageBound: (e: IncomingMessageEvent) => Promise<void>
 
-  constructor(private services: ServiceContainer) {
+  constructor(
+    private chatService: ChatService,
+    private contactService: ContactService,
+    private profileSyncService: ProfileSyncService,
+    private notificationService: NotificationService
+  ) {
     // Bind so we can remove the exact same reference in dispose()
     this.onIncomingMessageBound = this.onIncomingMessage.bind(this)
   }
@@ -37,28 +44,28 @@ export class NotificationSubscriber implements IWAEventSubscriber {
 
     try {
       // Silence notifications for muted chats
-      const isMuted = await this.services.chatService.isChatMuted(chatJid)
+      const isMuted = await this.chatService.isChatMuted(chatJid)
       if (isMuted) return
 
       // Resolve sender display name
-      const nameMap = await this.services.contactService.batchResolveNames([senderJid], sock)
+      const nameMap = await this.contactService.batchResolveNames([senderJid], sock)
       const senderName = nameMap.get(senderJid) || senderJid.split('@')[0]
 
       // Resolve chat display name via contactService
       let chatName = chatJid
-      const chatNameMap = await this.services.contactService.batchResolveNames([chatJid], sock)
+      const chatNameMap = await this.contactService.batchResolveNames([chatJid], sock)
       chatName = chatNameMap.get(chatJid) || chatJid.split('@')[0]
 
       // Fetch profile picture (best-effort)
       let profilePicUrl: string | null = null
       try {
         const targetJid = chatJid.endsWith('@g.us') ? chatJid : senderJid
-        profilePicUrl = await this.services.profileSyncService.getProfilePicture(targetJid, 'preview', sock)
+        profilePicUrl = await this.profileSyncService.getProfilePicture(targetJid, 'preview', sock)
       } catch {
         // Non-fatal — notify without picture
       }
 
-      this.services.notificationService.notify({
+      this.notificationService.notify({
         chatJid,
         chatName,
         senderName,

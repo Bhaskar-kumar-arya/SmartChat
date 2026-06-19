@@ -1,7 +1,12 @@
 import { WASocket } from '../../types'
 import { WAEventHandler } from './WAEventHandler'
 import { HistorySyncManager } from './HistorySyncManager'
-import type { WhatsAppConnectionManager } from './WhatsAppConnectionManager'
+
+export interface ConnectionCallbacks {
+  handleQr(qr: string): void
+  handleConnectionClose(lastDisconnect: any): Promise<void>
+  handleConnectionOpen(sock: WASocket, syncFullHistory: boolean): Promise<void>
+}
 
 export class WAEventWiringService {
   constructor(
@@ -14,7 +19,7 @@ export class WAEventWiringService {
   public wire(
     sock: WASocket,
     eventHandler: WAEventHandler,
-    connectionManager: WhatsAppConnectionManager,
+    connectionCallbacks: ConnectionCallbacks,
     saveCreds: () => Promise<void>,
     syncFullHistory: boolean
   ): void {
@@ -44,13 +49,13 @@ export class WAEventWiringService {
         const { connection, lastDisconnect, qr } = update
 
         if (qr) {
-          connectionManager.handleQr(qr)
+          connectionCallbacks.handleQr(qr)
         }
 
         if (connection === 'close') {
-          await connectionManager.handleConnectionClose(lastDisconnect)
+          await connectionCallbacks.handleConnectionClose(lastDisconnect)
         } else if (connection === 'open') {
-          await connectionManager.handleConnectionOpen(sock, syncFullHistory)
+          await connectionCallbacks.handleConnectionOpen(sock, syncFullHistory)
         }
       }
 

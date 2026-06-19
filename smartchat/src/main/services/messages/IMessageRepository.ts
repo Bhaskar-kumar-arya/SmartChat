@@ -1,5 +1,19 @@
 import { Message } from '@prisma/client'
-import { MessageUpsertData } from './MessageRepository'
+
+export interface MessageUpsertData {
+  id: string
+  chatJid: string
+  fromMe: boolean
+  senderId: number | null
+  participant: string | null
+  timestamp: bigint
+  messageType: string
+  content: string
+  textContent: string | null
+  status: string | null
+  isDeleted: boolean
+  isEdited?: boolean
+}
 
 export interface IMessageRepository {
   upsertMessage(data: MessageUpsertData): Promise<void>

@@ -1,5 +1,5 @@
 import { SyncRepository } from '../../sync/SyncRepository'
-import { BaileysGroupMetadata } from '../GroupHydrationService'
+import { BaileysGroupMetadata } from '../types'
 import { cleanJid, parseCommunityMetadata } from '../../../utils'
 
 export class CommunitySyncHandler {

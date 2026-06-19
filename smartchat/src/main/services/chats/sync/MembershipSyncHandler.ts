@@ -1,6 +1,6 @@
 import { SyncRepository, SyncChatMemberUpsert } from '../../sync/SyncRepository'
 import { ContactService } from '../../contacts/ContactService'
-import { BaileysGroupMetadata } from '../GroupHydrationService'
+import { BaileysGroupMetadata } from '../types'
 import { cleanJid } from '../../../utils'
 
 export class MembershipSyncHandler {

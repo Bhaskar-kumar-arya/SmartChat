@@ -13,18 +13,22 @@ import {
   RECONNECT_DELAY_DEFAULT_MS
 } from '../../constants'
 import { DataWipeService } from '../DataWipeService'
-import type { ServiceContainer } from '../../ServiceContainer'
 import { WAEventHandler } from './WAEventHandler'
 import { WAEventBus } from './WAEventBus'
-import { createSubscribers } from './subscribers'
+import { createSubscribers, SubscriberServices } from './subscribers'
 import { HistorySyncManager } from './HistorySyncManager'
 import { BaileysPatcher } from './BaileysPatcher'
-import { WAEventWiringService } from './WAEventWiringService'
+import { WAEventWiringService, ConnectionCallbacks } from './WAEventWiringService'
 import { AuthSettingsService } from '../auth/AuthSettingsService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
+import type { EmbeddingService } from '../search/EmbeddingService'
 
-export class WhatsAppConnectionManager {
+export interface WhatsAppConnectionDependencies extends SubscriberServices {
+  embeddingService: EmbeddingService
+}
+
+export class WhatsAppConnectionManager implements ConnectionCallbacks {
   private currentSock: WASocket | null = null
   private reconnectTimeout: NodeJS.Timeout | null = null
   private isFreshLogin = false
@@ -32,7 +36,7 @@ export class WhatsAppConnectionManager {
   private currentBus: WAEventBus | null = null
 
   constructor(
-    private services: ServiceContainer,
+    private deps: WhatsAppConnectionDependencies,
     private readonly authSettingsService: AuthSettingsService,
     private readonly chatRepository: IChatRepository,
     private readonly messageQueryRepository: IMessageQueryRepository,
@@ -55,7 +59,7 @@ export class WhatsAppConnectionManager {
 
   public async connect(): Promise<void> {
     BaileysPatcher.patch()
-    this.services.embeddingService.setPaused(false) // Clean start
+    this.deps.embeddingService.setPaused(false) // Clean start
     if (!this.mainWindow) {
       console.warn('[WhatsAppConnectionManager] No window set, cannot connect.')
       return
@@ -160,9 +164,9 @@ export class WhatsAppConnectionManager {
     // Create the event bus and wire up all subscribers for this connection
     const bus = new WAEventBus()
     this.currentBus = bus
-    createSubscribers(bus, this.services, () => this.mainWindow)
+    createSubscribers(bus, this.deps, () => this.mainWindow)
 
-    const eventHandler = new WAEventHandler(this.services, bus)
+    const eventHandler = new WAEventHandler(this.deps.messageService, bus)
 
     // Delegate all event wiring to WAEventWiringService
     this.wiringService.wire(
@@ -215,7 +219,7 @@ export class WhatsAppConnectionManager {
   public async handleConnectionOpen(sock: WASocket, syncFullHistory: boolean): Promise<void> {
     console.log('Connected to WhatsApp!')
     if (sock.user) {
-      await this.services.contactService.registerMe(sock.user).catch((err) => {
+      await this.deps.contactService.registerMe(sock.user).catch((err) => {
         console.error('[Connection] Failed to register logged-in user identity:', err)
       })
     }
@@ -227,7 +231,7 @@ export class WhatsAppConnectionManager {
 
         if (isHistorySyncCompleted) {
           console.log(`[Connection] Reconnect: history sync previously completed, skipping sync`)
-          this.services.embeddingService.setPaused(false)
+          this.deps.embeddingService.setPaused(false)
           this.mainWindow.webContents.send('wa-sync-progress', {
             progress: 100,
             syncType: 6, // SYNC_TYPE_GROUP_HYDRATION

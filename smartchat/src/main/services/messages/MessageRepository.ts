@@ -1,22 +1,7 @@
 import { PrismaClient, Message } from '@prisma/client'
 import { unwrapMessage } from '../../utils'
 import { MediaMessageWithLocalUri } from '../../types'
-import { IMessageRepository } from './IMessageRepository'
-
-export interface MessageUpsertData {
-  id: string
-  chatJid: string
-  fromMe: boolean
-  senderId: number | null
-  participant: string | null
-  timestamp: bigint
-  messageType: string
-  content: string
-  textContent: string | null
-  status: string | null
-  isDeleted: boolean
-  isEdited?: boolean
-}
+import { IMessageRepository, MessageUpsertData } from './IMessageRepository'
 
 /**
  * MessageRepository — Single Responsibility: all Prisma/database write/mutation

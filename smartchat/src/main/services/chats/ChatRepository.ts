@@ -1,27 +1,5 @@
-import { PrismaClient, Chat, Community, ChatMember, Identity } from '@prisma/client'
-import { IChatRepository } from './IChatRepository'
-
-export interface ChatUpsertData {
-  unreadCount?: number
-  pinned?: number
-  muteExpiration?: bigint
-  isArchived?: boolean
-  name?: string | null
-  profilePictureUrl?: string | null
-  timestamp?: bigint
-  type?: string
-  communityId?: number | null
-}
-
-export interface ChatWithCommunity extends Chat {
-  community: {
-    jid: string
-  } | null
-}
-
-export interface ChatMemberWithIdentity extends ChatMember {
-  identity: Identity
-}
+import { PrismaClient, Chat, Community, ChatMember } from '@prisma/client'
+import { IChatRepository, ChatUpsertData, ChatWithCommunity, ChatMemberWithIdentity } from './IChatRepository'
 
 /**
  * ChatRepository — Encapsulates all read and write database operations

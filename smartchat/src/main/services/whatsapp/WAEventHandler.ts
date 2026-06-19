@@ -24,13 +24,13 @@ import {
   PROTOCOL_TYPE_REVOKE,
   PROTOCOL_TYPE_EDIT
 } from '../../constants'
-import type { ServiceContainer } from '../../ServiceContainer'
+import { MessageService } from '../messages/MessageService'
 import type { WAEventBus } from './WAEventBus'
 import { AppStateSyncParser } from './AppStateSyncParser'
 
 export class WAEventHandler {
   constructor(
-    private services: ServiceContainer,
+    private messageService: MessageService,
     private bus: WAEventBus
   ) {}
 
@@ -49,9 +49,9 @@ export class WAEventHandler {
 
       // 2. Process special messages (edits, revokes, reactions) sequentially
       for (const msg of messages) {
-        if (this.services.messageService.isSpecialMessage(msg)) {
+        if (this.messageService.isSpecialMessage(msg)) {
           try {
-            const processed = await this.services.messageService.processMessage(msg, sock)
+            const processed = await this.messageService.processMessage(msg, sock)
             if (processed && 'type' in processed) {
               if (processed.subType === 'revoke') {
                 await this.bus.emit('message:deleted', {
@@ -80,7 +80,7 @@ export class WAEventHandler {
     // 'notify' = real-time new messages. Process individually.
     for (const msg of messages) {
       try {
-        const processed = await this.services.messageService.processMessage(msg, sock)
+        const processed = await this.messageService.processMessage(msg, sock)
         if (!processed) continue
 
         if ('type' in processed) {

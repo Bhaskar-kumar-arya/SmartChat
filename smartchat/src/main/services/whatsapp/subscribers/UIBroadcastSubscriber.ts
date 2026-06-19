@@ -21,12 +21,16 @@ import type {
   MessageStatusUpdatedEvent,
   ReactionProcessedEvent,
 } from '../WAEventTypes'
-import type { ServiceContainer } from '../../../ServiceContainer'
+import type { ContactService } from '../../contacts/ContactService'
+import type { MessageService } from '../../messages/MessageService'
+import type { IMessageQueryRepository } from '../../messages/IMessageQueryRepository'
 import { cleanJid } from '../../../utils'
 
 export class UIBroadcastSubscriber implements IWAEventSubscriber {
   constructor(
-    private services: ServiceContainer,
+    private contactService: ContactService,
+    private messageService: MessageService,
+    private messageQueryRepository: IMessageQueryRepository,
     private getMainWindow: () => BrowserWindow | null
   ) {}
 
@@ -61,8 +65,8 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     try {
       const { processed, sock } = event
       const participantOrChat = cleanJid(processed.participant || processed.chatJid)
-      const nameMap = await this.services.contactService.batchResolveNames([participantOrChat], sock)
-      const enriched = await this.services.messageService.enrichMessage(processed, sock, nameMap)
+      const nameMap = await this.contactService.batchResolveNames([participantOrChat], sock)
+      const enriched = await this.messageService.enrichMessage(processed, sock, nameMap)
       console.log('[UIBroadcastSubscriber] onIncoming message:', enriched.id, 'type:', enriched.messageType, 'chat:', enriched.chatJid)
       this.send('new-message', enriched)
     } catch (err) {
@@ -82,11 +86,11 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     const win = this.window
     if (!win) return
     try {
-      const dbMsg = await this.services.messageQueryRepository.findMessageById(event.messageId)
+      const dbMsg = await this.messageQueryRepository.findMessageById(event.messageId)
       if (!dbMsg) return
       const senderJid = cleanJid(dbMsg.participant || dbMsg.chatJid)
-      const nameMap = await this.services.contactService.batchResolveNames([senderJid], event.sock)
-      const enriched = await this.services.messageService.enrichMessage(dbMsg, event.sock, nameMap)
+      const nameMap = await this.contactService.batchResolveNames([senderJid], event.sock)
+      const enriched = await this.messageService.enrichMessage(dbMsg, event.sock, nameMap)
       this.send('message-edited', enriched)
     } catch (err) {
       console.error('[UIBroadcastSubscriber] Error broadcasting message-edited:', err)
@@ -109,7 +113,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
       const { id, presences, sock } = event
       const cleanRemoteJid = cleanJid(id)
       const jids = Object.keys(presences).map(j => cleanJid(j))
-      const nameMap = await this.services.contactService.batchResolveNames(jids, sock)
+      const nameMap = await this.contactService.batchResolveNames(jids, sock)
 
       const enrichedPresences = Object.entries(presences).map(([participantJid, status]) => {
         const cleanParticipantJid = cleanJid(participantJid)

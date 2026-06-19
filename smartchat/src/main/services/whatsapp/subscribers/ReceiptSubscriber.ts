@@ -18,11 +18,15 @@ import type {
   ReactionEvent,
   CallEvent,
 } from '../WAEventTypes'
-import type { ServiceContainer } from '../../../ServiceContainer'
+import type { ReceiptService } from '../ReceiptService'
+import type { MessageService } from '../../messages/MessageService'
+import type { ContactService } from '../../contacts/ContactService'
 
 export class ReceiptSubscriber implements IWAEventSubscriber {
   constructor(
-    private services: ServiceContainer
+    private receiptService: ReceiptService,
+    private messageService: MessageService,
+    private contactService: ContactService
   ) {}
 
   register(bus: WAEventBus): void {
@@ -39,7 +43,7 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   private async onMessageStatus(event: MessageStatusEvent): Promise<void> {
-    await this.services.receiptService
+    await this.receiptService
       .processMessageStatusUpdate(event.key, event.baileysStatus)
       .catch((err) => {
         console.error('[ReceiptSubscriber] Failed to process message status update:', err)
@@ -57,7 +61,7 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
       console.log(
         `[ReceiptSubscriber] ${type} | msgId=${key?.id} | chat=${key?.remoteJid} | by=${receipt?.userJid} | ts=${receipt?.readTimestamp ?? receipt?.deliveredTimestamp}`
       )
-      await this.services.receiptService
+      await this.receiptService
         .processMessageReceipt(update, event.sock)
         .catch((err) => {
           console.error('[ReceiptSubscriber] Failed to process message receipt:', err)
@@ -67,7 +71,7 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
 
   private async onReaction(event: ReactionEvent): Promise<void> {
     for (const reactionUpdate of event.reactions) {
-      await this.services.messageService
+      await this.messageService
         .processReaction(reactionUpdate, event.sock)
         .catch((err) => {
           console.error('[ReceiptSubscriber] Error processing reaction:', err)
@@ -94,10 +98,10 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
         }
 
         if (callLid && callPn) {
-          await this.services.contactService
+          await this.contactService
             .linkLidAndPn(callLid, callPn, 'call.event')
             .catch((err) => {
-              console.error('[ReceiptSubscriber] Failed to link LID and PN in call event:', err)
+               console.error('[ReceiptSubscriber] Failed to link LID and PN in call event:', err)
             })
         }
       } catch (err) {

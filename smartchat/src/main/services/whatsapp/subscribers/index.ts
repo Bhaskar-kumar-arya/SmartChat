@@ -12,7 +12,6 @@
 import { BrowserWindow } from 'electron'
 import type { WAEventBus } from '../WAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
-import type { ServiceContainer } from '../../../ServiceContainer'
 
 import { NotificationSubscriber }  from './NotificationSubscriber'
 import { UIBroadcastSubscriber }   from './UIBroadcastSubscriber'
@@ -21,7 +20,29 @@ import { ContactGroupSubscriber }  from './ContactGroupSubscriber'
 import { ReceiptSubscriber }       from './ReceiptSubscriber'
 import { FavoriteStickerSubscriber } from './FavoriteStickerSubscriber'
 
+import type { MessageService } from '../../messages/MessageService'
+import type { ChatService } from '../../chats/ChatService'
+import type { ContactService } from '../../contacts/ContactService'
+import type { IChatRepository } from '../../chats/IChatRepository'
+import type { ProfileSyncService } from '../../contacts/ProfileSyncService'
+import type { NotificationService } from '../../notification/NotificationService'
+import type { IMessageQueryRepository } from '../../messages/IMessageQueryRepository'
+import type { ReceiptService } from '../ReceiptService'
+import type { FavoriteStickerService } from '../../messages/FavoriteStickerService'
+
 export type { IWAEventSubscriber }
+
+export interface SubscriberServices {
+  messageService: MessageService
+  chatService: ChatService
+  contactService: ContactService
+  chatRepository: IChatRepository
+  profileSyncService: ProfileSyncService
+  notificationService: NotificationService
+  messageQueryRepository: IMessageQueryRepository
+  receiptService: ReceiptService
+  favoriteStickerService: FavoriteStickerService
+}
 
 /**
  * Creates all subscribers, registers them on the bus, and returns the list.
@@ -30,16 +51,16 @@ export type { IWAEventSubscriber }
  */
 export function createSubscribers(
   bus: WAEventBus,
-  services: ServiceContainer,
+  services: SubscriberServices,
   getMainWindow: () => BrowserWindow | null
 ): IWAEventSubscriber[] {
   const subscribers: IWAEventSubscriber[] = [
-    new PersistenceSubscriber(services),
-    new ContactGroupSubscriber(services),
-    new NotificationSubscriber(services),
-    new UIBroadcastSubscriber(services, getMainWindow),
-    new ReceiptSubscriber(services),
-    new FavoriteStickerSubscriber(services),
+    new PersistenceSubscriber(services.messageService, services.chatService),
+    new ContactGroupSubscriber(services.contactService, services.chatService, services.chatRepository),
+    new NotificationSubscriber(services.chatService, services.contactService, services.profileSyncService, services.notificationService),
+    new UIBroadcastSubscriber(services.contactService, services.messageService, services.messageQueryRepository, getMainWindow),
+    new ReceiptSubscriber(services.receiptService, services.messageService, services.contactService),
+    new FavoriteStickerSubscriber(services.favoriteStickerService),
   ]
 
   // Register each subscriber on the bus — order matters for same-event handlers

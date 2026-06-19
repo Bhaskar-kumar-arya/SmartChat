@@ -1,43 +1,13 @@
 import { PrismaClient, Identity, IdentityAlias, LidMap } from '@prisma/client'
-import { IContactRepository } from './IContactRepository'
-
-export interface IdentityCreateInput {
-  phoneNumber?: string | null
-  displayName?: string | null
-  pushName?: string | null
-  verifiedName?: string | null
-  profilePictureUrl?: string | null
-  isMe?: boolean
-}
-
-export interface IdentityUpdateInput {
-  phoneNumber?: string | null
-  displayName?: string | null
-  pushName?: string | null
-  verifiedName?: string | null
-  profilePictureUrl?: string | null
-  isMe?: boolean
-}
-
-export interface IdentityWithAliases extends Identity {
-  aliases: IdentityAlias[]
-}
-
-export interface IdentityAliasWithIdentity extends IdentityAlias {
-  identity: Identity | null
-}
-
-export interface IdentityAliasMinimal {
-  jid: string
-  identityId: number
-}
-
-export interface ReferenceCounts {
-  aliases: number
-  messages: number
-  members: number
-  reactions: number
-}
+import {
+  IContactRepository,
+  IdentityCreateInput,
+  IdentityUpdateInput,
+  IdentityWithAliases,
+  IdentityAliasWithIdentity,
+  IdentityAliasMinimal,
+  ReferenceCounts
+} from './IContactRepository'
 
 /**
  * ContactRepository — Encapsulates all read and write database operations

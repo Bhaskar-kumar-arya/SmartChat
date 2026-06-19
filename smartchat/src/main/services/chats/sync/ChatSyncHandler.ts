@@ -1,5 +1,5 @@
 import { SyncRepository, SyncChatCreateInput, SyncChatUpdateInput } from '../../sync/SyncRepository'
-import { BaileysGroupMetadata } from '../GroupHydrationService'
+import { BaileysGroupMetadata } from '../types'
 import { cleanJid, parseBaileysTimestamp, parseCommunityMetadata } from '../../../utils'
 
 export class ChatSyncHandler {

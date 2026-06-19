@@ -26,7 +26,7 @@ describe('Milestone 3 Integration Tests', () => {
 
     bus = new WAEventBus()
     services = createTestServiceContainer(prisma, bus)
-    eventHandler = new WAEventHandler(services, bus)
+    eventHandler = new WAEventHandler(services.messageService, bus)
     sock = createMockSocket()
 
     await services.contactService.registerMe({
@@ -367,8 +367,6 @@ describe('Milestone 3 Integration Tests', () => {
     })
 
     it('should reconcile/merge stub LID identities with existing PN identities to prevent identity pollution', async () => {
-      const ts = Math.floor(Date.now() / 1000)
-
       // 1. Simulate receiving contact details via LID only (stub created)
       await services.contactService.upsertContact({
         id: lid,

@@ -21,11 +21,13 @@ import type {
   ChatUpdatedEvent,
   ChatUpsertedEvent,
 } from '../WAEventTypes'
-import type { ServiceContainer } from '../../../ServiceContainer'
+import type { MessageService } from '../../messages/MessageService'
+import type { ChatService } from '../../chats/ChatService'
 
 export class PersistenceSubscriber implements IWAEventSubscriber {
   constructor(
-    private services: ServiceContainer
+    private messageService: MessageService,
+    private chatService: ChatService
   ) {}
 
   register(bus: WAEventBus): void {
@@ -45,7 +47,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onAppend(event: AppendMessagesEvent): Promise<void> {
     try {
-      await this.services.messageService.bulkPersistMessages(event.messages)
+      await this.messageService.bulkPersistMessages(event.messages)
     } catch (err) {
       console.error('[PersistenceSubscriber] Bulk persist error:', err)
     }
@@ -56,10 +58,10 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
     try {
       if (!fromMe) {
         if (messageType !== 'reactionMessage') {
-          await this.services.chatService.incrementUnread(chatJid, timestamp)
+          await this.chatService.incrementUnread(chatJid, timestamp)
         }
       } else if (messageType !== 'reactionMessage') {
-        await this.services.chatService.updateTimestamp(chatJid, timestamp)
+        await this.chatService.updateTimestamp(chatJid, timestamp)
       }
     } catch (err) {
       console.error('[PersistenceSubscriber] Error updating chat for incoming message:', err)
@@ -68,7 +70,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onChatUpdated(event: ChatUpdatedEvent): Promise<void> {
     try {
-      await this.services.chatService.upsertChat(event.jid, event.update).catch((err) => {
+      await this.chatService.upsertChat(event.jid, event.update).catch((err) => {
         console.error('[PersistenceSubscriber] Failed to upsert chat in onChatUpdated:', err)
       })
     } catch (err) {
@@ -78,7 +80,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onChatUpserted(event: ChatUpsertedEvent): Promise<void> {
     try {
-      await this.services.chatService.upsertChat(event.jid, event.raw).catch((err) => {
+      await this.chatService.upsertChat(event.jid, event.raw).catch((err) => {
         console.error('[PersistenceSubscriber] Failed to upsert chat in onChatUpserted:', err)
       })
     } catch (err) {
@@ -88,7 +90,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onDeleted(event: MessageDeletedEvent): Promise<void> {
     try {
-      await this.services.messageService.revokeMessageInDb(event.messageId)
+      await this.messageService.revokeMessageInDb(event.messageId)
     } catch (err) {
       console.error('[PersistenceSubscriber] Error updating DB for deleted message:', err)
     }
@@ -96,7 +98,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
 
   private async onEdited(event: MessageEditedEvent): Promise<void> {
     try {
-      await this.services.messageService.editMessageInDb(
+      await this.messageService.editMessageInDb(
         event.messageId,
         event.editedTextContent,
         event.editedContent as unknown as Record<string, unknown> | null

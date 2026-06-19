@@ -3,7 +3,7 @@ import { join } from 'path'
 import { existsSync, unlinkSync } from 'fs'
 import { PrismaClient } from '@prisma/client'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-import { vi } from 'vitest'
+import { vi, beforeAll, afterAll } from 'vitest'
 
 // Mock Electron globally for all tests
 vi.mock('electron', () => {

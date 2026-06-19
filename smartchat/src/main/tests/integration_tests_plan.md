@@ -237,12 +237,12 @@ We will implement the test harness in three progressive milestones:
 *   [x] Add a `basic.test.ts` to confirm database connectivity, database resets, and basic operations.
 
 ### Milestone 2: Event Injection and Synchronization Test
-*   [ ] Create `src/main/tests/helpers.ts` containing the `createMockSocket`, service container instantiator, and test event injector.
-*   [ ] Write the **Backlog Synchronization Test** using the `messaging-history.set` fixtures to verify bulk database insertion.
-*   [ ] Write the **Real-time Message Upsert Test** (`messages.upsert`) to verify text indexing, chat list mutations, and unread counters.
+*   [x] Create `src/main/tests/helpers.ts` containing the `createMockSocket`, service container instantiator, and test event injector.
+*   [x] Write the **Backlog Synchronization Test** using the `messaging-history.set` fixtures to verify bulk database insertion.
+*   [x] Write the **Real-time Message Upsert Test** (`messages.upsert`) to verify text indexing, chat list mutations, and unread counters.
 
 ### Milestone 3: Advanced Messaging, Reactions, and ID Reconciliation
-*   [ ] Write tests for **Message Revokes and Edits** to verify state flags on existing rows.
-*   [ ] Write tests for **Reactions** (add, update, remove).
-*   [ ] Write tests for **LID / PN mapping** and verify the database prevents identity pollution and keeps aliases aligned.
-*   [ ] Run the full test suite (`npm run test`) and verify 100% pass rates.
+*   [x] Write tests for **Message Revokes and Edits** to verify state flags on existing rows.
+*   [x] Write tests for **Reactions** (add, update, remove).
+*   [x] Write tests for **LID / PN mapping** and verify the database prevents identity pollution and keeps aliases aligned.
+*   [x] Run the full test suite (`npm run test`) and verify 100% pass rates.

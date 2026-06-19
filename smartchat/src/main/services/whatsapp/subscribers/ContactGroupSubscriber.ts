@@ -17,12 +17,16 @@ import type {
   GroupUpdatedEvent,
   GroupParticipantsEvent,
 } from '../WAEventTypes'
-import type { ServiceContainer } from '../../../ServiceContainer'
+import type { ContactService } from '../../contacts/ContactService'
+import type { ChatService } from '../../chats/ChatService'
+import type { IChatRepository } from '../../chats/IChatRepository'
 import { cleanJid } from '../../../utils'
 
 export class ContactGroupSubscriber implements IWAEventSubscriber {
   constructor(
-    private services: ServiceContainer
+    private contactService: ContactService,
+    private chatService: ChatService,
+    private chatRepository: IChatRepository
   ) {}
 
   register(bus: WAEventBus): void {
@@ -47,7 +51,7 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
         lid: contact.lid ? cleanJid(contact.lid) : undefined,
         phoneNumber: contact.phoneNumber ? cleanJid(contact.phoneNumber) : undefined
       }
-      await this.services.contactService.upsertContact(cleanContact).catch((err) => {
+      await this.contactService.upsertContact(cleanContact).catch((err) => {
         console.error('[ContactGroupSubscriber] Failed to upsert contact in onContactUpserted:', err)
       })
 
@@ -57,7 +61,7 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
         !String(contact.id).endsWith('@lid') &&
         String(contact.id).includes('@s.whatsapp.net')
       ) {
-        await this.services.contactService
+        await this.contactService
           .linkLidAndPn(cleanJid(contact.lid), cleanJid(contact.id), 'contacts.upsert')
           .catch((err) => {
             console.error('[ContactGroupSubscriber] Failed to link LID and PN in onContactUpserted:', err)
@@ -74,7 +78,7 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
         lid: contact.lid ? cleanJid(contact.lid) : undefined,
         phoneNumber: contact.phoneNumber ? cleanJid(contact.phoneNumber) : undefined
       }
-      await this.services.contactService
+      await this.contactService
         .upsertContact(cleanContact, { overwriteName: true })
         .catch((err) => {
           console.error('[ContactGroupSubscriber] Failed to upsert contact in onContactUpdated:', err)
@@ -85,7 +89,7 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
   private async onLidMapped(event: LidMappingEvent): Promise<void> {
     for (const { lid, pn } of event.mappings) {
       if (lid && pn) {
-        await this.services.contactService
+        await this.contactService
           .linkLidAndPn(cleanJid(lid), cleanJid(pn), 'lid-mapping.update')
           .catch((err) => {
             console.error('[ContactGroupSubscriber] Failed to link LID and PN in onLidMapped:', err)
@@ -99,10 +103,10 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
       if (!update.id) continue
       const cleanGroupId = cleanJid(update.id)
 
-      await this.services.chatService
+      await this.chatService
          .upsertChat(cleanGroupId, { ...update, id: cleanGroupId })
          .catch((err) => {
-           console.error('[ContactGroupSubscriber] Failed to upsert chat in onGroupUpdated:', err)
+            console.error('[ContactGroupSubscriber] Failed to upsert chat in onGroupUpdated:', err)
          })
 
       if (update.participants && update.participants.length > 0) {
@@ -110,7 +114,7 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
           ...p,
           id: cleanJid(p.id || p.userJid || '')
         }))
-        await this.services.chatService
+        await this.chatService
           .syncGroupMembers(cleanGroupId, cleanParticipants)
           .catch((err) => {
             console.error(`[ContactGroupSubscriber] Failed to sync members for ${cleanGroupId}:`, err)
@@ -126,24 +130,24 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
 
     for (const jid of participants) {
       const cleanUserJid = cleanJid(jid)
-      let identityId = await this.services.contactService.getIdentityIdByJid(cleanUserJid)
+      let identityId = await this.contactService.getIdentityIdByJid(cleanUserJid)
 
       if (!identityId) {
-        await this.services.contactService.upsertContact({ id: cleanUserJid }).catch((err) => {
+        await this.contactService.upsertContact({ id: cleanUserJid }).catch((err) => {
           console.error('[ContactGroupSubscriber] Failed to upsert contact in onGroupParticipants:', err)
         })
-        identityId = await this.services.contactService.getIdentityIdByJid(cleanUserJid)
+        identityId = await this.contactService.getIdentityIdByJid(cleanUserJid)
       }
 
       if (!identityId) continue
 
       if (action === 'add' || action === 'promote' || action === 'demote') {
         const role = action === 'promote' ? 'ADMIN' : 'MEMBER'
-        await this.services.chatRepository.upsertChatMember(cleanGroupId, identityId, role).catch((err) => {
+        await this.chatRepository.upsertChatMember(cleanGroupId, identityId, role).catch((err) => {
           console.error('[ContactGroupSubscriber] Failed to upsert ChatMember in onGroupParticipants:', err)
         })
       } else if (action === 'remove') {
-        await this.services.chatRepository.deleteChatMember(cleanGroupId, identityId).catch((err) => {
+        await this.chatRepository.deleteChatMember(cleanGroupId, identityId).catch((err) => {
           console.error('[ContactGroupSubscriber] Failed to delete ChatMember in onGroupParticipants:', err)
         })
       }
