@@ -66,7 +66,9 @@ describe('Milestone 2 Integration Tests', () => {
 
   afterEach(async () => {
     await prisma.$disconnect()
-    bus.removeAllListeners()
+    if (bus) {
+      bus.removeAllListeners()
+    }
   })
 
   // ── Journey 1: History Sync ───────────────────────────────────────────────
