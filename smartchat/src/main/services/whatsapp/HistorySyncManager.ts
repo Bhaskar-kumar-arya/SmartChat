@@ -10,7 +10,7 @@ import {
   HISTORY_SYNC_TIMEOUT_MS
 } from '../../constants'
 import { AuthSettingsService } from '../auth/AuthSettingsService'
-import type { ContactService } from '../contacts/ContactService'
+import type { IContactService } from '../contacts/IContactService'
 import type { IAliasRepository } from '../contacts/IAliasRepository'
 import type { IChatRepository } from '../chats/IChatRepository'
 import type { ICommunityRepository } from '../chats/ICommunityRepository'
@@ -24,7 +24,7 @@ import type { IdentityReconciliationService } from '../contacts/IdentityReconcil
 export interface HistorySyncDependencies {
   mediaService: MediaService
   embeddingService: IEmbeddingService
-  contactService: ContactService
+  contactService: IContactService
   aliasRepository: IAliasRepository
   chatRepository: IChatRepository
   communityRepository: ICommunityRepository

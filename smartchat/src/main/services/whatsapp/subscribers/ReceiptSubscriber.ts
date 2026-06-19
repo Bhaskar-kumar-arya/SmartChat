@@ -20,13 +20,13 @@ import type {
 } from '../WAEventTypes'
 import type { IReceiptService } from '../IReceiptService'
 import type { MessageService } from '../../messages/MessageService'
-import type { ContactService } from '../../contacts/ContactService'
+import type { IContactService } from '../../contacts/IContactService'
 
 export class ReceiptSubscriber implements IWAEventSubscriber {
   constructor(
     private receiptService: IReceiptService,
     private messageService: MessageService,
-    private contactService: ContactService
+    private contactService: IContactService
   ) {}
 
   register(bus: IWAEventBus): void {

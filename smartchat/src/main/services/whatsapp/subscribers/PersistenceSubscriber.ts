@@ -22,12 +22,12 @@ import type {
   ChatUpsertedEvent,
 } from '../WAEventTypes'
 import type { MessageService } from '../../messages/MessageService'
-import type { ChatService } from '../../chats/ChatService'
+import type { IChatService } from '../../chats/IChatService'
 
 export class PersistenceSubscriber implements IWAEventSubscriber {
   constructor(
     private messageService: MessageService,
-    private chatService: ChatService
+    private chatService: IChatService
   ) {}
 
   register(bus: IWAEventBus): void {

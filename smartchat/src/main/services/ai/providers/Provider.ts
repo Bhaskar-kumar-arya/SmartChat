@@ -15,7 +15,7 @@ export interface AIProvider {
   /**
    * Returns the system prompt for this provider.
    */
-  getSystemPrompt(useThinkMode: boolean): string;
+  getSystemPrompt(useThinkMode: boolean, userDetails?: any): string;
 
   /**
    * Cleans up resources (e.g., unloading models on exit).

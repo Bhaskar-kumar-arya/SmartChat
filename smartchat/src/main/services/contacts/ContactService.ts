@@ -6,11 +6,51 @@ import { ILidMapRepository } from './ILidMapRepository'
 import { LidPnLinker } from './LidPnLinker'
 import { ContactNameResolver } from './ContactNameResolver'
 import { Identity } from '@prisma/client'
+import { IContactService } from './IContactService'
 
-export class ContactService {
+export interface IJidStrategy {
+  supports(jid: string): boolean
+  aliasType: string
+}
+
+export class PnJidStrategy implements IJidStrategy {
+  supports(jid: string): boolean {
+    return jid.endsWith('@s.whatsapp.net')
+  }
+  aliasType = 'PN'
+}
+
+export class LidJidStrategy implements IJidStrategy {
+  supports(jid: string): boolean {
+    return jid.endsWith('@lid')
+  }
+  aliasType = 'LID'
+}
+
+export class GroupJidStrategy implements IJidStrategy {
+  supports(jid: string): boolean {
+    return jid.endsWith('@g.us')
+  }
+  aliasType = 'GROUP'
+}
+
+export class BotJidStrategy implements IJidStrategy {
+  supports(jid: string): boolean {
+    return jid.endsWith('@bot')
+  }
+  aliasType = 'BOT'
+}
+
+export class ContactService implements IContactService {
   private linkCache = new Set<string>()
   private identityIdCache = new Map<string, number>()
   private meJidsCache: string[] | null = null
+  private strategies: IJidStrategy[] = [
+    new PnJidStrategy(),
+    new LidJidStrategy(),
+    new GroupJidStrategy(),
+    new BotJidStrategy()
+  ]
 
   constructor(
     private readonly identityRepository: IIdentityRepository,
@@ -228,15 +268,9 @@ export class ContactService {
       this.identityIdCache.set(jid, identityId as number)
     }
 
-    if (id.endsWith('@s.whatsapp.net')) {
-      await ensureAlias(id, 'PN')
-    } else if (id.endsWith('@lid')) {
-      await ensureAlias(id, 'LID')
-    } else if (id.endsWith('@g.us')) {
-      // If a group subject update comes through the contacts pipeline
-      await ensureAlias(id, 'GROUP')
-    } else if (id.endsWith('@bot')) {
-      await ensureAlias(id, 'BOT')
+    const matchedStrategy = this.strategies.find(s => s.supports(id))
+    if (matchedStrategy) {
+      await ensureAlias(id, matchedStrategy.aliasType)
     }
 
     // If payload contains a LID, ensure that alias is created too
@@ -245,11 +279,18 @@ export class ContactService {
     }
   }
 
-  /**
-   * Links a LID to a PN explicitly (e.g., from lid-mapping.update events).
-   */
   async linkLidAndPn(lid: string, pn: string, source: string = 'unknown'): Promise<void> {
-    return this.lidPnLinker.linkLidAndPn(lid, pn, source, this.linkCache, this.identityIdCache)
+    return this.lidPnLinker.linkLidAndPn(
+      lid,
+      pn,
+      source,
+      (cleanLid, cleanPn) => this.linkCache.has(`${cleanLid}->${cleanPn}`),
+      (cleanLid, cleanPn, identityId) => {
+        this.identityIdCache.set(cleanLid, identityId)
+        this.identityIdCache.set(cleanPn, identityId)
+        this.linkCache.add(`${cleanLid}->${cleanPn}`)
+      }
+    )
   }
 
   /**

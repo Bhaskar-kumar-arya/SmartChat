@@ -21,14 +21,14 @@ import type {
   MessageStatusUpdatedEvent,
   ReactionProcessedEvent,
 } from '../WAEventTypes'
-import type { ContactService } from '../../contacts/ContactService'
+import type { IContactService } from '../../contacts/IContactService'
 import type { MessageService } from '../../messages/MessageService'
 import type { IMessageQueryRepository } from '../../messages/IMessageQueryRepository'
 import { cleanJid } from '../../../utils'
 
 export class UIBroadcastSubscriber implements IWAEventSubscriber {
   constructor(
-    private contactService: ContactService,
+    private contactService: IContactService,
     private messageService: MessageService,
     private messageQueryRepository: IMessageQueryRepository,
     private getMainWindow: () => BrowserWindow | null

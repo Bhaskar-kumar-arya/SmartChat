@@ -36,8 +36,8 @@ export class GeminiProvider implements AIProvider {
     });
   }
 
-  getSystemPrompt(useThinkMode: boolean): string {
-    return toolRegistry.getSystemInstructions(useThinkMode);
+  getSystemPrompt(useThinkMode: boolean, userDetails?: any): string {
+    return toolRegistry.getSystemInstructions(useThinkMode, userDetails);
   }
 
   async cleanup(): Promise<void> {
@@ -47,7 +47,7 @@ export class GeminiProvider implements AIProvider {
   async generateResponse(
     prompt: string,
     history: Array<{ role: string; content: string; isSystem?: boolean }>,
-    options: { model?: string; useThinkMode?: boolean; isSystem?: boolean; signal?: AbortSignal },
+    options: { model?: string; useThinkMode?: boolean; isSystem?: boolean; signal?: AbortSignal; userDetails?: any },
     _signal?: AbortSignal
   ): Promise<string> {
     const formattedHistory = this.formatHistory(history);
@@ -55,7 +55,7 @@ export class GeminiProvider implements AIProvider {
     const finalPrompt = this.wrapWithRole(prompt, isPromptSystem, 'user');
 
     const useThinkMode = options?.useThinkMode !== false;
-    const systemInstructions = this.getSystemPrompt(useThinkMode);
+    const systemInstructions = this.getSystemPrompt(useThinkMode, options?.userDetails);
     
     // Prepare contents including history and current prompt
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
@@ -73,7 +73,7 @@ export class GeminiProvider implements AIProvider {
   async generateResponseStream(
     prompt: string,
     history: Array<{ role: string; content: string; isSystem?: boolean }>,
-    options: { model?: string; useThinkMode?: boolean; isSystem?: boolean; signal?: AbortSignal },
+    options: { model?: string; useThinkMode?: boolean; isSystem?: boolean; signal?: AbortSignal; userDetails?: any },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void> {
@@ -82,7 +82,7 @@ export class GeminiProvider implements AIProvider {
     const finalPrompt = this.wrapWithRole(prompt, isPromptSystem, 'user');
 
     const useThinkMode = options?.useThinkMode !== false;
-    const systemInstructions = this.getSystemPrompt(useThinkMode);
+    const systemInstructions = this.getSystemPrompt(useThinkMode, options?.userDetails);
     
     // Prepare contents including history and current prompt
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];

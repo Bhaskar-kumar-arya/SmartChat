@@ -17,15 +17,17 @@ import type {
   GroupUpdatedEvent,
   GroupParticipantsEvent,
 } from '../WAEventTypes'
-import type { ContactService } from '../../contacts/ContactService'
-import type { ChatService } from '../../chats/ChatService'
+import type { IContactService } from '../../contacts/IContactService'
+import type { IChatService } from '../../chats/IChatService'
+import type { IGroupMembershipService } from '../../chats/IGroupMembershipService'
 import type { IChatMemberRepository } from '../../chats/IChatMemberRepository'
 import { cleanJid } from '../../../utils'
 
 export class ContactGroupSubscriber implements IWAEventSubscriber {
   constructor(
-    private contactService: ContactService,
-    private chatService: ChatService,
+    private contactService: IContactService,
+    private chatService: IChatService,
+    private groupMembershipService: IGroupMembershipService,
     private chatMemberRepository: IChatMemberRepository
   ) {}
 
@@ -114,7 +116,7 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
           ...p,
           id: cleanJid(p.id || p.userJid || '')
         }))
-        await this.chatService
+        await this.groupMembershipService
           .syncGroupMembers(cleanGroupId, cleanParticipants)
           .catch((err) => {
             console.error(`[ContactGroupSubscriber] Failed to sync members for ${cleanGroupId}:`, err)

@@ -5,6 +5,7 @@ import { MistralProvider } from './providers/MistralProvider'
 import { DeepSeekProvider } from './providers/DeepSeekProvider'
 import { AIProvider, ModelInfo } from './providers/Provider'
 import { IAIKeyService } from './IAIKeyService'
+import { IContactService } from '../contacts/IContactService'
 
 export interface AIMention {
   jid: string
@@ -38,7 +39,10 @@ export class AIService {
   private currentModelId: string = 'gemini:gemma-4-31b-it' // Default
   private activeRequests: Map<string, AbortController> = new Map()
 
-  constructor(private readonly aiKeyService: IAIKeyService) {
+  constructor(
+    private readonly aiKeyService: IAIKeyService,
+    private readonly contactService: IContactService
+  ) {
     this.registerProvider('gemini', new GeminiProvider(this.aiKeyService));
     this.registerProvider('groq', new GroqProvider(this.aiKeyService));
     this.registerProvider('mistral', new MistralProvider(this.aiKeyService));
@@ -103,6 +107,25 @@ export class AIService {
     }
     // Default fallback to lmstudio if nothing matches
     return this.providers['lmstudio'];
+  }
+
+  private async getUserDetails(): Promise<any> {
+    try {
+      const meJids = await this.contactService.getMeJids()
+      const phoneJid = meJids.find(j => j.endsWith('@s.whatsapp.net')) || null
+      const lidJid = meJids.find(j => j.endsWith('@lid')) || null
+      const phoneNumber = phoneJid ? phoneJid.split('@')[0] : null
+      const lid = lidJid ? lidJid.split('@')[0] : null
+      return {
+        phoneNumber,
+        lid,
+        phoneJid,
+        linkedJid: lidJid
+      }
+    } catch (e) {
+      console.warn('[AIService] Failed to resolve user details:', e)
+      return undefined
+    }
   }
 
   private buildFullPrompt(prompt: string, contextFiles?: AIChatContext[], mentions?: AIMention[]): string {
@@ -198,7 +221,8 @@ export class AIService {
         signal = controller.signal;
       }
 
-      const result = await provider.generateResponse(fullPrompt, processedHistory, { ...options, model: modelId }, signal);
+      const userDetails = await this.getUserDetails()
+      const result = await provider.generateResponse(fullPrompt, processedHistory, { ...options, model: modelId, userDetails }, signal);
       
       if (options?.requestId) {
         this.activeRequests.delete(options.requestId);
@@ -243,7 +267,8 @@ export class AIService {
       }
 
       try {
-        await provider.generateResponseStream(fullPrompt, processedHistory, { ...options, model: modelId }, onChunk, signal);
+        const userDetails = await this.getUserDetails()
+        await provider.generateResponseStream(fullPrompt, processedHistory, { ...options, model: modelId, userDetails }, onChunk, signal);
       } finally {
         if (options?.requestId) {
           this.activeRequests.delete(options.requestId);

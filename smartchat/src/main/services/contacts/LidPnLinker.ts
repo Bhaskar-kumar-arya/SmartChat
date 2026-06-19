@@ -17,15 +17,14 @@ export class LidPnLinker {
     lid: string,
     pn: string,
     source: string,
-    linkCache: Set<string>,
-    identityIdCache: Map<string, number>
+    isAlreadyLinked?: (lid: string, pn: string) => boolean,
+    onLinked?: (lid: string, pn: string, identityId: number) => void
   ): Promise<void> {
     const cleanLid = cleanJid(lid)
     const cleanPn = cleanJid(pn)
     if (!cleanLid || !cleanPn) return
 
-    const cacheKey = `${cleanLid}->${cleanPn}`
-    if (linkCache.has(cacheKey)) {
+    if (isAlreadyLinked && isAlreadyLinked(cleanLid, cleanPn)) {
       return
     }
 
@@ -80,8 +79,8 @@ export class LidPnLinker {
       await this.aliasRepository.upsertIdentityAlias(cleanLid, 'LID', identityId)
     }
 
-    identityIdCache.set(cleanLid, identityId)
-    identityIdCache.set(cleanPn, identityId)
-    linkCache.add(cacheKey)
+    if (onLinked) {
+      onLinked(cleanLid, cleanPn, identityId)
+    }
   }
 }

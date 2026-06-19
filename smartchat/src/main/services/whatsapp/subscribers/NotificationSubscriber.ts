@@ -10,8 +10,8 @@
 import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type { IncomingMessageEvent } from '../WAEventTypes'
-import type { ChatService } from '../../chats/ChatService'
-import type { ContactService } from '../../contacts/ContactService'
+import type { IChatService } from '../../chats/IChatService'
+import type { IContactService } from '../../contacts/IContactService'
 import type { ProfileSyncService } from '../../contacts/ProfileSyncService'
 import type { NotificationService } from '../../notification/NotificationService'
 
@@ -19,8 +19,8 @@ export class NotificationSubscriber implements IWAEventSubscriber {
   private onIncomingMessageBound: (e: IncomingMessageEvent) => Promise<void>
 
   constructor(
-    private chatService: ChatService,
-    private contactService: ContactService,
+    private chatService: IChatService,
+    private contactService: IContactService,
     private profileSyncService: ProfileSyncService,
     private notificationService: NotificationService
   ) {
