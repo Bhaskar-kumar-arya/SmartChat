@@ -19,18 +19,24 @@ tags:
 
 ## Overview
 
-This skill defines **preventive** rules and mandatory analysis steps that must be performed *before writing a single line of code*. The goal is to prevent architectural debt from accumulating in the first place — not just to clean it up afterward.
+This skill defines **preventive** rules, design guidelines, and verification steps. The execution flow must adapt dynamically based on the user's intent:
 
-> [!CAUTION]
-> **YOU MUST COMPLETE THE PRE-FLIGHT ANALYSIS (Section 1) BEFORE WRITING ANY CODE.**
-> Skipping or rushing this phase is the primary cause of monolith growth, type pollution, and refactors.
-> Failure to comply is unacceptable.
+### Step 0 — Task Classification & Mode Selection
+
+Identify the user's request type before executing any tool or writing any notes:
+
+1. **Analysis & Review Mode:** The user is asking for an evaluation, audit, advice, or query on a specific topic (e.g., *"analyze folder organization"*, *"review this for SOLID violations"*, *"check our type safety"*).
+   - **Scope:** Limit your activity **strictly** to the section corresponding to the request (e.g., Section 7 for folders, Section 3 for type safety, Section 5 for SOLID).
+   - **Execution:** Perform the requested checks and report the analysis. Do **NOT** perform pre-flight analysis on unrelated files, make any code modifications, or run the End-of-Session Checklist.
+2. **Implementation Mode:** The user is asking to add a feature, refactor code, or fix a bug (e.g., *"implement checkout"*, *"fix the cache issue"*).
+   - **Scope:** This is the full development flow.
+   - **Execution:** You **MUST** complete the entire sequence: Section 1 (Pre-Flight Analysis), follow all style/design guidelines, and run the Section 10 (End-of-Session Checklist) at the end of the session.
 
 ---
 
 ## Section 1 — Mandatory Pre-Flight Analysis
 
-Before touching any file, run through this checklist in order. Do not skip steps.
+Before touching any file in **Implementation Mode**, run through this checklist in order. Do not skip steps. (Skip this section entirely if in **Analysis & Review Mode**).
 
 ### Step 1.1 — Discover Existing Architecture
 
@@ -85,7 +91,7 @@ These are hard thresholds. When any threshold is breached, splitting is **mandat
 
 | Threshold | Action Required |
 |---|---|
-| A file exceeds **300 lines** | Split into focused sub-modules |
+| A file exceeds **300 lines** | Split into focused sub-modules, dont try to just condense the code |
 | A file exceeds **200 lines** *and* your change adds significant new code | Split before adding new code |
 | A function/method exceeds **40 lines** | Extract sub-functions with single purposes |
 | A class has **more than 3 public methods** doing unrelated things | Split into separate classes |
@@ -405,7 +411,7 @@ Before ending any session where code was written, verify all of the following:
 - [ ] **No barrel file exports concrete classes** — only interfaces and types.
 - [ ] **No regression of established patterns** — if `ai-context.md` documents constraints, verify none were violated.
 - [ ] **Documentation updated** — if any files, public interfaces, dependencies, or architectural decisions were added/modified, `modules.md`, `ai-context.md`, or `ADR.md` have been updated accordingly.
-- [ ] **Tests pass** — read `package.json` to discover the test command and run it. Report the result.
+- [ ] **Tests pass** — read `package.json` to discover the test command and run it. Report the result. dont run npm run test:rebuild:electron yourself, just remind it to user.
 
 > [!IMPORTANT]
 > If ANY item in this checklist is not green, do not end the session. Fix the violation before submitting.
