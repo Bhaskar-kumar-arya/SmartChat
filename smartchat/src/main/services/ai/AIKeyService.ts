@@ -45,11 +45,11 @@ export class AIKeyService implements IAIKeyService {
     return { ...this.keys };
   }
 
-  getKey(provider: keyof ProviderKeys): string {
+  getKey(provider: string): string {
     return this.keys[provider];
   }
 
-  saveKey(provider: keyof ProviderKeys, key: string): void {
+  saveKey(provider: string, key: string): void {
     this.keys[provider] = key;
     try {
       this.storage.saveKeys(this.keys);

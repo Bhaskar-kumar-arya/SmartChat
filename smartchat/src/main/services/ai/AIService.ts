@@ -61,7 +61,7 @@ export class AIService {
 
   setProviderKey(provider: string, key: string): boolean {
     if (provider in this.providers) {
-      this.aiKeyService.saveKey(provider as any, key);
+      this.aiKeyService.saveKey(provider, key);
       const updateMethod = this.providers[provider].updateApiKey;
       if (updateMethod) {
         updateMethod.call(this.providers[provider], key);

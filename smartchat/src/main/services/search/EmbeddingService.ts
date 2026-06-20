@@ -1,8 +1,6 @@
-import { app } from 'electron'
-import path from 'path'
-import { Worker } from 'worker_threads'
 import { IMessageVectorRepository } from '../messages/IMessageVectorRepository'
 import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
+import { IEmbeddingWorkerManager } from './IEmbeddingWorkerManager'
 
 // ── SRP: this service ONLY handles embedding generation coordination, storage and retrieval ──
 
@@ -23,10 +21,7 @@ export interface IEmbeddingService {
  * to keep the Main process responsive.
  */
 export class EmbeddingService implements IEmbeddingService {
-  private worker: Worker | null = null
-  private workerJobCounter = 0
-  private pendingJobs = new Map<number, { resolve: (v: number[]) => void; reject: (e: Error) => void }>()
-  private initPromise: Promise<void> | null = null
+  private readonly workerManager: IEmbeddingWorkerManager
   private isPaused = false
   private modelName = 'Xenova/all-MiniLM-L6-v2'
   private onActiveStateChange?: (isActive: boolean) => void
@@ -34,9 +29,24 @@ export class EmbeddingService implements IEmbeddingService {
 
   constructor(
     private readonly messageVectorRepository: IMessageVectorRepository,
-    private readonly messageQueryRepository: IMessageQueryRepository
+    private readonly messageQueryRepository: IMessageQueryRepository,
+    workerManager?: IEmbeddingWorkerManager
   ) {
-    // We don't initialize the worker in constructor to avoid overhead if not used
+    if (workerManager) {
+      this.workerManager = workerManager
+    } else {
+      // Fallback for Phase 4-6 until Phase 7 wires the manager in ServiceContainer.ts
+      const { app } = require('electron')
+      const path = require('path')
+      const { EmbeddingWorkerManager } = require('./EmbeddingWorkerManager')
+      
+      const config = {
+        workerPath: path.join(__dirname, 'embedding.worker.js'),
+        modelCacheDir: path.join(app.getPath('userData'), 'models'),
+        localModelsRoot: path.join(app.getAppPath(), 'src', 'main', 'models')
+      }
+      this.workerManager = new EmbeddingWorkerManager(config)
+    }
   }
 
   public setOnActiveStateSync(cb: (isActive: boolean) => void): void {
@@ -56,103 +66,13 @@ export class EmbeddingService implements IEmbeddingService {
   public setModel(name: string): void {
     if (this.modelName !== name) {
       this.modelName = name
-      if (this.worker) {
-        this.worker.postMessage({ type: 'setModel', payload: { modelName: name } })
-      }
+      this.workerManager.setModel(name)
       console.log(`[EmbeddingService] Model changed to: ${name}.`)
     }
   }
 
   public getModel(): string {
     return this.modelName
-  }
-
-  private async ensureWorker(): Promise<void> {
-    if (this.worker) return
-    if (this.initPromise) return this.initPromise
-
-    this.initPromise = new Promise((resolve, reject) => {
-      try {
-        // Path logic: electron-vite builds main files into out/main/
-        // Our worker is configured as 'embedding.worker' in electron.vite.config.ts
-        const workerPath = path.join(__dirname, 'embedding.worker.js')
-        
-        console.log(`[EmbeddingService] Starting worker from: ${workerPath}`)
-        this.worker = new Worker(workerPath)
-
-        interface WorkerMessage {
-          type: 'init_done' | 'progress' | 'embed_done' | 'error' | string
-          id: number | null
-          payload: {
-            status?: string
-            file?: string
-            loaded?: number
-            total?: number
-            vector?: number[]
-            error?: string
-          }
-        }
-
-        this.worker.on('message', (msg: WorkerMessage) => {
-          if (msg.type === 'init_done') {
-            console.log('[EmbeddingService] Worker initialized.')
-            resolve()
-          } else if (msg.type === 'progress') {
-            const p = msg.payload
-            if (p.status === 'progress' && p.file && p.loaded !== undefined && p.total !== undefined) {
-              console.log(`[EmbeddingService] Worker Download: ${p.file} (${Math.round((p.loaded / p.total) * 100)}%)`)
-            }
-          } else if (msg.type === 'embed_done') {
-            if (msg.id !== null && msg.id !== undefined) {
-              const job = this.pendingJobs.get(msg.id)
-              if (job && msg.payload.vector) {
-                job.resolve(msg.payload.vector)
-                this.pendingJobs.delete(msg.id)
-              }
-            }
-          } else if (msg.type === 'error') {
-            if (msg.id !== null && msg.id !== undefined) {
-              const job = this.pendingJobs.get(msg.id)
-              if (job) {
-                job.reject(new Error(msg.payload.error || 'Unknown worker error'))
-                this.pendingJobs.delete(msg.id)
-              }
-            } else {
-              console.error('[EmbeddingService] Worker Global Error:', msg.payload.error)
-              reject(new Error(msg.payload.error || 'Unknown worker error'))
-            }
-          }
-        })
-
-        this.worker.on('error', (err) => {
-          console.error('[EmbeddingService] Worker Critical Error:', err)
-          reject(err)
-        })
-
-        this.worker.on('exit', (code) => {
-          if (code !== 0) console.error(`[EmbeddingService] Worker stopped with exit code ${code}`)
-          this.worker = null
-          this.initPromise = null
-        })
-
-        // Initialize model settings
-        const modelCacheDir = path.join(app.getPath('userData'), 'models')
-        const localModelsRoot = path.join(app.getAppPath(), 'src', 'main', 'models')
-
-        this.worker.postMessage({
-          type: 'init',
-          payload: {
-            modelName: this.modelName,
-            modelCacheDir,
-            localModelsRoot
-          }
-        })
-      } catch (err) {
-        reject(err)
-      }
-    })
-
-    return this.initPromise
   }
 
   public setPaused(paused: boolean): void {
@@ -167,28 +87,13 @@ export class EmbeddingService implements IEmbeddingService {
   // -----------------------------------------------------------------
 
   async embed(text: string): Promise<number[]> {
-    await this.ensureWorker()
-    if (!this.worker) throw new Error('Worker not available')
-
     this.updateActiveState(1)
-    const jobId = ++this.workerJobCounter
-    return new Promise((resolve, reject) => {
-      this.pendingJobs.set(jobId, { 
-        resolve: (v) => {
-          this.updateActiveState(-1)
-          resolve(v)
-        }, 
-        reject: (e) => {
-          this.updateActiveState(-1)
-          reject(e)
-        } 
-      })
-      this.worker!.postMessage({
-        type: 'embed',
-        id: jobId,
-        payload: { text }
-      })
-    })
+    try {
+      await this.workerManager.ensureWorker(this.modelName)
+      return await this.workerManager.embed(text)
+    } finally {
+      this.updateActiveState(-1)
+    }
   }
 
   // -----------------------------------------------------------------
@@ -239,7 +144,7 @@ export class EmbeddingService implements IEmbeddingService {
       return
     }
     
-    await this.ensureWorker()
+    await this.workerManager.ensureWorker(this.modelName)
 
     const indexedIds = await this.messageVectorRepository.getAllIndexedMessageIds()
     const indexedSet = new Set<string>(indexedIds)
@@ -310,3 +215,4 @@ export class EmbeddingService implements IEmbeddingService {
     console.log('[EmbeddingService] Sync complete.')
   }
 }
+

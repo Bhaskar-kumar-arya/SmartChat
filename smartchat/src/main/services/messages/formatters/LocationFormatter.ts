@@ -1,5 +1,4 @@
-import { proto } from '@whiskeysockets/baileys';
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
 
 export class LocationFormatter implements MessageFormatter {
   supports(messageType: string): boolean {
@@ -7,7 +6,7 @@ export class LocationFormatter implements MessageFormatter {
   }
 
   format(
-    _unwrappedContent: proto.IMessage | null | undefined,
+    _unwrappedContent: IFormattedMessageContent | null | undefined,
     _message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {

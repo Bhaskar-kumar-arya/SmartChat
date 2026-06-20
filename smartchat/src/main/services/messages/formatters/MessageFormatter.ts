@@ -1,11 +1,62 @@
-import { proto } from '@whiskeysockets/baileys';
-
 export type MessageFormattingContext = 'transcript' | 'notification' | 'chatList' | 'chatListReaction';
 
 export interface FormatterMessageInput {
   textContent?: string | null;
   messageType: string;
   isDeleted?: boolean;
+}
+
+export interface IFormattedMessageContent {
+  contactMessage?: {
+    displayName?: string | null;
+    [key: string]: any;
+  } | null;
+  pollCreationMessage?: {
+    name?: string | null;
+    options?: Array<{ optionName?: string | null; [key: string]: any }> | null;
+    [key: string]: any;
+  } | null;
+  audioMessage?: {
+    seconds?: number | null;
+    [key: string]: any;
+  } | null;
+  imageMessage?: {
+    caption?: string | null;
+    [key: string]: any;
+  } | null;
+  reactionMessage?: {
+    text?: string | null;
+    [key: string]: any;
+  } | null;
+  documentMessage?: {
+    fileName?: string | null;
+    caption?: string | null;
+    [key: string]: any;
+  } | null;
+  documentWithCaptionMessage?: {
+    message?: {
+      documentMessage?: {
+        fileName?: string | null;
+        caption?: string | null;
+        [key: string]: any;
+      } | null;
+      [key: string]: any;
+    } | null;
+    [key: string]: any;
+  } | null;
+  videoMessage?: {
+    caption?: string | null;
+    [key: string]: any;
+  } | null;
+  ptvMessage?: {
+    caption?: string | null;
+    [key: string]: any;
+  } | null;
+  extendedTextMessage?: {
+    canonicalUrl?: string | null;
+    [key: string]: any;
+  } | null;
+  [key: string]: any;
 }
 
 export interface MessageFormatter {
@@ -17,13 +68,14 @@ export interface MessageFormatter {
   /**
    * Formats a message into a plain string according to the requested context.
    * 
-   * @param unwrappedContent - The unwrapped content object from Baileys.
+   * @param unwrappedContent - The unwrapped content object containing message details.
    * @param message - Basic message properties from the database or payload.
    * @param context - The context in which the message is being formatted.
    */
   format(
-    unwrappedContent: proto.IMessage | null | undefined,
+    unwrappedContent: IFormattedMessageContent | null | undefined,
     message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string;
 }
+

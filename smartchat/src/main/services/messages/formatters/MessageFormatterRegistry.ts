@@ -1,5 +1,4 @@
-import { proto } from '@whiskeysockets/baileys';
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
 
 export class MessageFormatterRegistry {
   private readonly formatters: MessageFormatter[] = [];
@@ -15,7 +14,7 @@ export class MessageFormatterRegistry {
    * Formats message content using the first supporting strategy or fallbacks.
    */
   format(
-    unwrappedContent: proto.IMessage | null | undefined,
+    unwrappedContent: IFormattedMessageContent | null | undefined,
     message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {
