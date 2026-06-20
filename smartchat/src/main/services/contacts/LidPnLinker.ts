@@ -2,8 +2,9 @@ import { cleanJid } from '../../utils'
 import { IIdentityRepository } from './IIdentityRepository'
 import { IAliasRepository } from './IAliasRepository'
 import { ILidMapRepository } from './ILidMapRepository'
+import { ILidPnLinker } from './ILidPnLinker'
 
-export class LidPnLinker {
+export class LidPnLinker implements ILidPnLinker {
   constructor(
     private readonly identityRepository: IIdentityRepository,
     private readonly aliasRepository: IAliasRepository,

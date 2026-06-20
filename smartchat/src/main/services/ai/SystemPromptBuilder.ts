@@ -1,12 +1,8 @@
-export interface UserDetails {
-  phoneNumber: string
-  lid: string
-  phoneJid: string
-  linkedJid: string
-}
+import { ISystemPromptBuilder, UserDetails } from './ISystemPromptBuilder'
+export type { UserDetails }
 
-export class SystemPromptBuilder {
-  static build(
+export class SystemPromptBuilder implements ISystemPromptBuilder {
+  build(
     tools: any[],
     useThinkMode: boolean,
     userDetails?: UserDetails

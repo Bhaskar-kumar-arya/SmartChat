@@ -1,7 +1,7 @@
 export interface ModelInfo {
   id: string;
   name: string;
-  provider: 'gemini' | 'lmstudio' | 'groq' | 'mistral' | 'deepseek';
+  provider: string;
   description?: string;
   isLocal: boolean;
 }

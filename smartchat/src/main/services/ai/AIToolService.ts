@@ -1,8 +1,11 @@
 import { IToolRegistry, AITool } from './IToolRegistry'
-import { SystemPromptBuilder, UserDetails } from './SystemPromptBuilder'
+import { ISystemPromptBuilder, UserDetails } from './ISystemPromptBuilder'
+import { SystemPromptBuilder } from './SystemPromptBuilder'
 
 export class ToolRegistry implements IToolRegistry {
   private tools: Map<string, AITool> = new Map();
+
+  constructor(private readonly promptBuilder: ISystemPromptBuilder) {}
 
   registerTool(tool: AITool) {
     this.tools.set(tool.name, tool);
@@ -27,8 +30,8 @@ export class ToolRegistry implements IToolRegistry {
   getSystemInstructions(useThinkMode: boolean = true, userDetails?: UserDetails): string {
     const tools = this.getToolDefinitions();
     if (tools.length === 0) return '';
-    return SystemPromptBuilder.build(tools, useThinkMode, userDetails);
+    return this.promptBuilder.build(tools, useThinkMode, userDetails);
   }
 }
 
-export const toolRegistry = new ToolRegistry();
+export const toolRegistry = new ToolRegistry(new SystemPromptBuilder());

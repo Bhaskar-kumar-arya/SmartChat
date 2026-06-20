@@ -4,6 +4,8 @@ import { ContactService } from './services/contacts/ContactService'
 import { IContactService } from './services/contacts/IContactService'
 import { LidPnLinker } from './services/contacts/LidPnLinker'
 import { ContactNameResolver } from './services/contacts/ContactNameResolver'
+import { ContactCache } from './services/contacts/ContactCache'
+import { PnJidStrategy, LidJidStrategy, GroupJidStrategy, BotJidStrategy } from './services/contacts/JidStrategies'
 import { IdentityReconciliationService } from './services/contacts/IdentityReconciliationService'
 import { IIdentityReconciliationService } from './services/contacts/IIdentityReconciliationService'
 import { ProfileSyncService } from './services/contacts/ProfileSyncService'
@@ -117,9 +119,28 @@ export function createServices(
   const aiKeyService = new AIKeyService(keyStorage)
 
   // 1. Foundation services (no service dependencies)
+  const strategies = [
+    new PnJidStrategy(),
+    new LidJidStrategy(),
+    new GroupJidStrategy(),
+    new BotJidStrategy()
+  ]
+  const contactCache = new ContactCache()
   const lidPnLinker = new LidPnLinker(identityRepository, aliasRepository, lidMapRepository)
-  const contactNameResolver = new ContactNameResolver(aliasRepository)
-  const contactService = new ContactService(identityRepository, aliasRepository, lidMapRepository, lidPnLinker, contactNameResolver)
+  const contactNameResolver = new ContactNameResolver(
+    aliasRepository,
+    (sock) => contactService.getMeJids(sock),
+    (lid, pn, src) => contactService.linkLidAndPn(lid, pn, src)
+  )
+  const contactService = new ContactService(
+    identityRepository,
+    aliasRepository,
+    lidMapRepository,
+    lidPnLinker,
+    contactNameResolver,
+    contactCache,
+    strategies
+  )
   const identityReconciliationService = new IdentityReconciliationService(prisma, contactService)
   const groupMembershipService = new GroupMembershipService(chatMemberRepository, contactService)
   const embeddingService = new EmbeddingService(messageVectorRepository, messageQueryRepository)

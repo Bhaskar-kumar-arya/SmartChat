@@ -3,61 +3,21 @@ import { WASocket } from '../whatsapp/types'
 import { IIdentityRepository } from './IIdentityRepository'
 import { IAliasRepository } from './IAliasRepository'
 import { ILidMapRepository } from './ILidMapRepository'
-import { LidPnLinker } from './LidPnLinker'
-import { ContactNameResolver } from './ContactNameResolver'
+import { ILidPnLinker } from './ILidPnLinker'
+import { IContactNameResolver, IContactService } from './IContactService'
 import { Identity } from '@prisma/client'
-import { IContactService } from './IContactService'
-
-export interface IJidStrategy {
-  supports(jid: string): boolean
-  aliasType: string
-}
-
-export class PnJidStrategy implements IJidStrategy {
-  supports(jid: string): boolean {
-    return jid.endsWith('@s.whatsapp.net')
-  }
-  aliasType = 'PN'
-}
-
-export class LidJidStrategy implements IJidStrategy {
-  supports(jid: string): boolean {
-    return jid.endsWith('@lid')
-  }
-  aliasType = 'LID'
-}
-
-export class GroupJidStrategy implements IJidStrategy {
-  supports(jid: string): boolean {
-    return jid.endsWith('@g.us')
-  }
-  aliasType = 'GROUP'
-}
-
-export class BotJidStrategy implements IJidStrategy {
-  supports(jid: string): boolean {
-    return jid.endsWith('@bot')
-  }
-  aliasType = 'BOT'
-}
+import { IContactCache } from './IContactCache'
+import { IJidStrategy } from './IJidStrategy'
 
 export class ContactService implements IContactService {
-  private linkCache = new Set<string>()
-  private identityIdCache = new Map<string, number>()
-  private meJidsCache: string[] | null = null
-  private strategies: IJidStrategy[] = [
-    new PnJidStrategy(),
-    new LidJidStrategy(),
-    new GroupJidStrategy(),
-    new BotJidStrategy()
-  ]
-
   constructor(
     private readonly identityRepository: IIdentityRepository,
     private readonly aliasRepository: IAliasRepository,
     private readonly lidMapRepository: ILidMapRepository,
-    private readonly lidPnLinker: LidPnLinker,
-    private readonly nameResolver: ContactNameResolver
+    private readonly lidPnLinker: ILidPnLinker,
+    private readonly nameResolver: IContactNameResolver,
+    private readonly cache: IContactCache,
+    private readonly strategies: IJidStrategy[]
   ) {}
 
   /**
@@ -72,13 +32,20 @@ export class ContactService implements IContactService {
     } | null | undefined,
     fallback: string = 'Unknown'
   ): string {
-    return ContactNameResolver.getDisplayName(identity, fallback)
+    if (!identity) return fallback
+    if (identity.displayName) return identity.displayName
+    if (identity.verifiedName) return identity.verifiedName
+    if (identity.pushName) {
+      const trimmed = identity.pushName.trim()
+      if (trimmed) {
+        return trimmed.startsWith('~') ? trimmed : `~ ${trimmed}`
+      }
+    }
+    return identity.phoneNumber?.split('@')[0] || fallback
   }
 
   public clearCaches(): void {
-    this.linkCache.clear()
-    this.identityIdCache.clear()
-    this.meJidsCache = null
+    this.cache.clear()
     console.log('[ContactService] Caches cleared')
   }
 
@@ -91,15 +58,16 @@ export class ContactService implements IContactService {
       if (myLid) jids.push(myLid)
     }
 
-    if (this.meJidsCache) {
-      return Array.from(new Set([...jids, ...this.meJidsCache]))
+    const cachedMeJids = this.cache.getMeJids()
+    if (cachedMeJids) {
+      return Array.from(new Set([...jids, ...cachedMeJids]))
     }
 
     try {
       const meIdent = await this.identityRepository.findMeIdentity()
       if (meIdent) {
         const dbJids = [meIdent.phoneNumber, ...(meIdent.aliases?.map(a => a.jid) || [])].filter(Boolean).map(cleanJid)
-        this.meJidsCache = dbJids
+        this.cache.setMeJids(dbJids)
         return Array.from(new Set([...jids, ...dbJids]))
       }
     } catch (err) {
@@ -110,13 +78,11 @@ export class ContactService implements IContactService {
   }
 
   public warmLinkCache(cacheKey: string): void {
-    this.linkCache.add(cacheKey)
+    this.cache.addLink(cacheKey)
   }
 
   public populateIdentityIdCache(entries: Map<string, number>): void {
-    for (const [jid, id] of entries) {
-      this.identityIdCache.set(jid, id)
-    }
+    this.cache.populateIdentityIdCache(entries)
   }
 
   /**
@@ -127,27 +93,14 @@ export class ContactService implements IContactService {
     jids: string[],
     sock?: WASocket | null
   ): Promise<Map<string, string>> {
-    const meJids = await this.getMeJids(sock)
-    return this.nameResolver.batchResolveNames(
-      jids,
-      meJids,
-      (lid, pn, src) => this.linkLidAndPn(lid, pn, src),
-      sock
-    )
+    return this.nameResolver.batchResolveNames(jids, sock)
   }
 
   /**
    * Resolves a single JID into a display name.
    */
   async resolveName(jid: string, chatName: string | null, sock?: WASocket | null): Promise<string> {
-    const meJids = await this.getMeJids(sock)
-    return this.nameResolver.resolveName(
-      jid,
-      chatName,
-      meJids,
-      (lid, pn, src) => this.linkLidAndPn(lid, pn, src),
-      sock
-    )
+    return this.nameResolver.resolveName(jid, chatName, sock)
   }
 
   /**
@@ -179,13 +132,13 @@ export class ContactService implements IContactService {
 
     // Look for existing identity by phone number
     if (phoneNumber) {
-      if (this.identityIdCache.has(phoneNumber)) {
-        identityId = this.identityIdCache.get(phoneNumber)!
+      if (this.cache.hasIdentityId(phoneNumber)) {
+        identityId = this.cache.getIdentityId(phoneNumber)!
       } else {
         const existingById = await this.identityRepository.findIdentityByPhoneNumber(phoneNumber)
         if (existingById) {
           identityId = existingById.id
-          this.identityIdCache.set(phoneNumber, identityId)
+          this.cache.setIdentityId(phoneNumber, identityId)
         }
       }
     }
@@ -193,26 +146,26 @@ export class ContactService implements IContactService {
     // Look for existing identity by LID alias if not found by PN
     if (!identityId && (lid || id.endsWith('@lid'))) {
       const searchLid = lid || id
-      if (this.identityIdCache.has(searchLid)) {
-        identityId = this.identityIdCache.get(searchLid)!
+      if (this.cache.hasIdentityId(searchLid)) {
+        identityId = this.cache.getIdentityId(searchLid)!
       } else {
         const existingByAlias = await this.aliasRepository.findIdentityAlias(searchLid)
         if (existingByAlias) {
           identityId = existingByAlias.identityId
-          this.identityIdCache.set(searchLid, identityId)
+          this.cache.setIdentityId(searchLid, identityId)
         }
       }
     }
 
     // Still not found? Look for existing identity by the JID alias itself
     if (!identityId) {
-      if (this.identityIdCache.has(id)) {
-        identityId = this.identityIdCache.get(id)!
+      if (this.cache.hasIdentityId(id)) {
+        identityId = this.cache.getIdentityId(id)!
       } else {
         const existingByAlias = await this.aliasRepository.findIdentityAlias(id)
         if (existingByAlias) {
           identityId = existingByAlias.identityId
-          this.identityIdCache.set(id, identityId)
+          this.cache.setIdentityId(id, identityId)
         }
       }
     }
@@ -225,7 +178,7 @@ export class ContactService implements IContactService {
         const lidAlias = await this.aliasRepository.findIdentityAlias(lidMapEntry.lid)
         if (lidAlias) {
           identityId = lidAlias.identityId
-          this.identityIdCache.set(phoneNumber, identityId)
+          this.cache.setIdentityId(phoneNumber, identityId)
         }
       }
     }
@@ -239,9 +192,9 @@ export class ContactService implements IContactService {
         verifiedName: newVerifiedName
       })
       identityId = newIdentity.id
-      if (phoneNumber) this.identityIdCache.set(phoneNumber, identityId)
-      this.identityIdCache.set(id, identityId)
-      if (lid) this.identityIdCache.set(lid, identityId)
+      if (phoneNumber) this.cache.setIdentityId(phoneNumber, identityId)
+      this.cache.setIdentityId(id, identityId)
+      if (lid) this.cache.setIdentityId(lid, identityId)
     } else {
       // Update existing identity
       const updateData: {
@@ -265,7 +218,7 @@ export class ContactService implements IContactService {
     // 2. Ensure Aliases are created and pointing to the correct identity
     const ensureAlias = async (jid: string, type: string) => {
       await this.aliasRepository.upsertIdentityAlias(jid, type, identityId as number)
-      this.identityIdCache.set(jid, identityId as number)
+      this.cache.setIdentityId(jid, identityId as number)
     }
 
     const matchedStrategy = this.strategies.find(s => s.supports(id))
@@ -284,11 +237,11 @@ export class ContactService implements IContactService {
       lid,
       pn,
       source,
-      (cleanLid, cleanPn) => this.linkCache.has(`${cleanLid}->${cleanPn}`),
+      (cleanLid, cleanPn) => this.cache.hasLink(`${cleanLid}->${cleanPn}`),
       (cleanLid, cleanPn, identityId) => {
-        this.identityIdCache.set(cleanLid, identityId)
-        this.identityIdCache.set(cleanPn, identityId)
-        this.linkCache.add(`${cleanLid}->${cleanPn}`)
+        this.cache.setIdentityId(cleanLid, identityId)
+        this.cache.setIdentityId(cleanPn, identityId)
+        this.cache.addLink(`${cleanLid}->${cleanPn}`)
       }
     )
   }
@@ -306,8 +259,8 @@ export class ContactService implements IContactService {
     const missing: string[] = []
 
     for (const jid of unique) {
-      if (this.identityIdCache.has(jid)) {
-        result.set(jid, this.identityIdCache.get(jid)!)
+      if (this.cache.hasIdentityId(jid)) {
+        result.set(jid, this.cache.getIdentityId(jid)!)
       } else {
         missing.push(jid)
       }
@@ -320,7 +273,7 @@ export class ContactService implements IContactService {
         const aliases = await this.aliasRepository.findIdentityAliasesMinimal(chunk)
         for (const alias of aliases) {
           result.set(alias.jid, alias.identityId)
-          this.identityIdCache.set(alias.jid, alias.identityId)
+          this.cache.setIdentityId(alias.jid, alias.identityId)
         }
       }
     }
@@ -342,25 +295,25 @@ export class ContactService implements IContactService {
     }
 
     const cleaned = cleanJid(targetJid)
-    if (this.identityIdCache.has(cleaned)) {
-      return this.identityIdCache.get(cleaned)!
+    if (this.cache.hasIdentityId(cleaned)) {
+      return this.cache.getIdentityId(cleaned)!
     }
 
     const alias = await this.aliasRepository.findIdentityAlias(cleaned)
     if (alias) {
-      this.identityIdCache.set(cleaned, alias.identityId)
+      this.cache.setIdentityId(cleaned, alias.identityId)
       return alias.identityId
     }
-    
+
     // Fallback: search identity by phone number directly
     if (cleaned.endsWith('@s.whatsapp.net')) {
       const ident = await this.identityRepository.findIdentityByPhoneNumber(cleaned)
       if (ident) {
-        this.identityIdCache.set(cleaned, ident.id)
+        this.cache.setIdentityId(cleaned, ident.id)
         return ident.id
       }
     }
-    
+
     return null
   }
 
@@ -444,7 +397,7 @@ export class ContactService implements IContactService {
       });
     }
 
-    this.meJidsCache = null;
+    this.cache.setMeJids(null);
   }
 
   /**

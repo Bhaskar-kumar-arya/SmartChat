@@ -1,13 +1,18 @@
 import { cleanJid } from '../../utils'
 import { WASocket, WASocketWithSignalRepository } from '../whatsapp/types'
 import { IAliasRepository } from './IAliasRepository'
+import { IContactNameResolver } from './IContactService'
 
 function hasSignalRepository(sock: WASocket | null | undefined): sock is WASocket & WASocketWithSignalRepository {
   return !!sock && typeof sock === 'object' && 'signalRepository' in sock
 }
 
-export class ContactNameResolver {
-  constructor(private readonly repository: IAliasRepository) {}
+export class ContactNameResolver implements IContactNameResolver {
+  constructor(
+    private readonly repository: IAliasRepository,
+    private readonly getMeJids: (sock?: WASocket | null) => Promise<string[]>,
+    private readonly linkLidAndPn: (lid: string, pn: string, source: string) => Promise<void>
+  ) {}
 
   /**
    * Formats display name from an Identity object.
@@ -39,10 +44,9 @@ export class ContactNameResolver {
    */
   async batchResolveNames(
     jids: string[],
-    meJids: string[],
-    linkLidAndPn: (lid: string, pn: string, source: string) => Promise<void>,
     sock?: WASocket | null
   ): Promise<Map<string, string>> {
+    const meJids = await this.getMeJids(sock)
     const uniqueJids = Array.from(new Set(jids.filter(Boolean).map(cleanJid)))
     if (uniqueJids.length === 0) return new Map()
 
@@ -91,7 +95,7 @@ export class ContactNameResolver {
           if (pn) {
             resolvedFromCache = true;
             // Async fire-and-forget to link them
-            linkLidAndPn(jid, pn, 'runtime.cache').catch((err: unknown) => {
+            this.linkLidAndPn(jid, pn, 'runtime.cache').catch((err: unknown) => {
               console.error('[ContactNameResolver] Failed to link LID and PN in runtime cache:', err)
             });
             
@@ -122,12 +126,10 @@ export class ContactNameResolver {
   async resolveName(
     jid: string,
     chatName: string | null,
-    meJids: string[],
-    linkLidAndPn: (lid: string, pn: string, source: string) => Promise<void>,
     sock?: WASocket | null
   ): Promise<string> {
     const cleaned = cleanJid(jid)
-    const map = await this.batchResolveNames([cleaned], meJids, linkLidAndPn, sock)
+    const map = await this.batchResolveNames([cleaned], sock)
     const resolved = map.get(cleaned)
     // If it's just the raw number (fallback), and we have a chatName, use the chatName
     if (resolved === cleaned.split('@')[0] && chatName) {
