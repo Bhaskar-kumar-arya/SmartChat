@@ -46,7 +46,8 @@ export class ChatRepository implements IChatRepository {
         communityId: true,
         community: {
           select: {
-            jid: true
+            jid: true,
+            name: true
           }
         },
         profilePictureUrl: true,
@@ -76,7 +77,8 @@ export class ChatRepository implements IChatRepository {
         communityId: true,
         community: {
           select: {
-            jid: true
+            jid: true,
+            name: true
           }
         },
         profilePictureUrl: true,

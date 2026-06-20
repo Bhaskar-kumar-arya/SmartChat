@@ -15,6 +15,7 @@ export interface ChatUpsertData {
 export interface ChatWithCommunity extends Chat {
   community: {
     jid: string
+    name: string | null
   } | null
 }
 

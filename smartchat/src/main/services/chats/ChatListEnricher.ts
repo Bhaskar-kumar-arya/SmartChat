@@ -42,7 +42,9 @@ export class ChatListEnricher {
       chats.map(async (chat) => {
         let name = chat.name
         if (!name) {
-          if (chat.type === 'DM') {
+          if (chat.type === 'COMMUNITY' && chat.community?.name) {
+            name = chat.community.name
+          } else if (chat.type === 'DM') {
             const identId = await this.contactService.getIdentityIdByJid(chat.jid)
             if (identId) {
               const ident = await this.contactService.findIdentityById(identId)
