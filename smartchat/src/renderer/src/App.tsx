@@ -11,7 +11,7 @@ export function App() {
   const [qr, setQr] = useState<string | null>(null)
   const [appState, setAppState] = useState<AppState>('initializing')
   const [syncProgress, setSyncProgress] = useState<number>(0)
-  const [syncStatus, setSyncStatus] = useState<string>('Importing your chat history into local storage...')
+  const [syncStatus, setSyncStatus] = useState<string>('Initializing connection...')
   const [syncFullHistory, setSyncFullHistory] = useState<boolean>(false)
   const [syncType, setSyncType] = useState<number>(0)
   const [isRegeneratingQr, setIsRegeneratingQr] = useState<boolean>(false)
@@ -50,6 +50,7 @@ export function App() {
       setAppState('initializing')
       setSyncProgress(0)
       setSyncType(0)
+      setSyncStatus('Initializing connection...')
     })
 
     const unSubSyncPrg = api.onWaSyncProgress((data) => {
@@ -299,7 +300,7 @@ export function App() {
               <div className="init-spinner" />
               <div className="init-spinner-glow" />
             </div>
-            <p className="init-text">Initializing connection...</p>
+            <p className="init-text">{syncStatus}</p>
           </div>
         )}
       </div>

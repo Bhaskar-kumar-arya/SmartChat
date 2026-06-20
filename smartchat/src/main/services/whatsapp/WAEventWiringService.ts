@@ -52,6 +52,8 @@ export class WAEventWiringService implements IWAEventWiringService {
         } else if (connection === 'open') {
           await connectionCallbacks.handleConnectionOpen(sock, syncFullHistory)
         }
+
+        await connectionCallbacks.handleConnectionUpdate(update)
       }
 
       // ── History Sync ──────────────────────────────────────────────────────

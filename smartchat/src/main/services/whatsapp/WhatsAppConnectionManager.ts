@@ -1,5 +1,5 @@
 import { BrowserWindow } from 'electron'
-import makeWASocketImport, { DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys'
+import makeWASocketImport, { DisconnectReason, fetchLatestBaileysVersion, Browsers, ConnectionState } from '@whiskeysockets/baileys'
 
 const makeWASocket = (typeof makeWASocketImport === 'function'
   ? makeWASocketImport
@@ -34,6 +34,9 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
   private isFreshLogin = false
   private mainWindow: BrowserWindow | null = null
   private currentBus: IWAEventBus | null = null
+  private isWaitingForCatchUp = false
+  private catchUpTimeout: NodeJS.Timeout | null = null
+  private hasReceivedPendingNotifications = false
 
   constructor(
     private deps: WhatsAppConnectionDependencies,
@@ -44,7 +47,7 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
     private historySyncManager: IHistorySyncManager,
     private wiringService: IWAEventWiringService,
     private readonly eventBusFactory: WAEventBusFactory
-  ) {}
+  ) { }
 
   public setWindow(window: BrowserWindow): void {
     this.mainWindow = window
@@ -188,6 +191,13 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
   }
 
   public async handleConnectionClose(lastDisconnect: any): Promise<void> {
+    if (this.catchUpTimeout) {
+      clearTimeout(this.catchUpTimeout)
+      this.catchUpTimeout = null
+    }
+    this.isWaitingForCatchUp = false
+    this.hasReceivedPendingNotifications = false
+
     const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
     const errorData = (lastDisconnect?.error as unknown as { data?: { tag?: string } })?.data
     const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
@@ -226,19 +236,23 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
     }
 
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      const isInitialSyncInProgress = this.historySyncManager.isInProgress 
+      const isInitialSyncInProgress = this.historySyncManager.isInProgress
       if (!this.isFreshLogin && !isInitialSyncInProgress) {
         const isHistorySyncCompleted = await this.authSettingsService.getHistorySyncCompleted()
 
         if (isHistorySyncCompleted) {
-          console.log(`[Connection] Reconnect: history sync previously completed, skipping sync`)
-          this.deps.embeddingService.setPaused(false)
-          this.mainWindow.webContents.send('wa-sync-progress', {
-            progress: 100,
-            syncType: 6, // SYNC_TYPE_GROUP_HYDRATION
-            syncFullHistory
-          })
-          this.mainWindow.webContents.send('wa-sync-complete')
+          if (this.hasReceivedPendingNotifications) {
+            console.log('[Connection] Already received pending notifications. Skipping catchup.')
+            this.deps.embeddingService.setPaused(false)
+            this.mainWindow.webContents.send('wa-sync-progress', {
+              progress: 100,
+              syncType: 6, // SYNC_TYPE_GROUP_HYDRATION
+              syncFullHistory
+            })
+            this.mainWindow.webContents.send('wa-sync-complete')
+          } else {
+            this.initiateCatchUp(syncFullHistory)
+          }
         } else {
           console.log(`[Connection] Reconnect: history sync NOT completed, continuing sync`)
           this.mainWindow.webContents.send('wa-connected')
@@ -252,10 +266,52 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
     }
   }
 
+  public async handleConnectionUpdate(update: Partial<ConnectionState>): Promise<void> {
+    const { receivedPendingNotifications } = update
+    if (receivedPendingNotifications !== undefined) {
+      this.hasReceivedPendingNotifications = receivedPendingNotifications
+    }
+
+    if (receivedPendingNotifications === true && this.isWaitingForCatchUp) {
+      console.log('[Connection] Received pending notifications (catch-up complete).')
+      this.isWaitingForCatchUp = false
+      if (this.catchUpTimeout) {
+        clearTimeout(this.catchUpTimeout)
+        this.catchUpTimeout = null
+      }
+      this.deps.embeddingService.setPaused(false)
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        const syncFullHistory = await this.authSettingsService.getSyncFullHistory()
+        this.mainWindow.webContents.send('wa-sync-progress', { progress: 100, syncType: 6, syncFullHistory })
+        this.mainWindow.webContents.send('wa-sync-complete')
+      }
+    }
+  }
+
+  private initiateCatchUp(syncFullHistory: boolean): void {
+    console.log('[Connection] Reconnect: history sync previously completed. Waiting for offline catch-up...')
+    this.isWaitingForCatchUp = true
+    this.deps.embeddingService.setPaused(true)
+    if (this.catchUpTimeout) clearTimeout(this.catchUpTimeout)
+    this.catchUpTimeout = setTimeout(() => {
+      if (this.isWaitingForCatchUp) {
+        console.warn('[Connection] Catch-up safety timeout reached. Forcing transition.')
+        this.isWaitingForCatchUp = false
+        this.deps.embeddingService.setPaused(false)
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('wa-sync-progress', { progress: 100, syncType: 6, syncFullHistory })
+          this.mainWindow.webContents.send('wa-sync-complete')
+        }
+      }
+    }, 30000)
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('wa-sync-status', 'Syncing missed messages...')
+    }
+  }
+
   public skipSync(): void {
     if (this.currentSock) {
       this.historySyncManager.skipSync(this.currentSock)
     }
   }
 }
-

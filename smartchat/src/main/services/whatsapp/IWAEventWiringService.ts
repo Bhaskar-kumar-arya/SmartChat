@@ -1,3 +1,4 @@
+import { ConnectionState } from '@whiskeysockets/baileys'
 import { WASocket } from './types'
 import { WAEventHandler } from './WAEventHandler'
 
@@ -5,6 +6,7 @@ export interface ConnectionCallbacks {
   handleQr(qr: string): void
   handleConnectionClose(lastDisconnect: any): Promise<void>
   handleConnectionOpen(sock: WASocket, syncFullHistory: boolean): Promise<void>
+  handleConnectionUpdate(update: Partial<ConnectionState>): Promise<void>
 }
 
 export interface IWAEventWiringService {
