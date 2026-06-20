@@ -144,6 +144,8 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - `WAEventWiringService.ts` — routes incoming Baileys listeners.
 - `ReceiptService.ts` — updates receipt tables.
 - `SecretMessageService.ts` — handles end-to-end secret state strategies.
+- `IWASocketFactory.ts`, `WASocketFactory.ts` — handles creation and configuration of underlying Baileys sockets.
+- `IWACatchUpManager.ts`, `WACatchUpManager.ts` — coordinates offline catch-up, embedding pause/unpause, and loading screen synchronization.
 - `subscribers/` (subfolder with its own barrel `index.ts`) — registers listeners on the event bus.
 
 **Consumes from other modules:**
