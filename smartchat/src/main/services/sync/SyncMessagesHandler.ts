@@ -19,6 +19,7 @@ export interface SyncMessageRow extends MessageUpsertData {
   isEdited: boolean
 }
 
+
 /**
  * SyncMessagesHandler — Single Responsibility: **parse** history sync messages.
  *
@@ -128,6 +129,7 @@ export class SyncMessagesHandler {
       const message = mTyped.message
       const timestamp = parseBaileysTimestamp(mTyped.messageTimestamp ?? 0)
       const remoteJid = cleanJid(String(key.remoteJid ?? ''))
+
       const unwrappedMessage = message
         ? (unwrapMessage(message) as Record<string, unknown>)
         : null
@@ -147,7 +149,27 @@ export class SyncMessagesHandler {
       let finalParticipant = finalParticipantRaw ? cleanJid(finalParticipantRaw) : null
       let isEdited = false
       const stubType = mTyped.messageStubType
-      let isDeleted = stubType === WAMessageStubType.REVOKE
+      let isDeleted = false
+
+      // A stub-only REVOKE (no embedded protocolMessage) means "delete the message
+      // referenced in messageStubParameters[0]".  Persist a deleted placeholder row
+      // under the TARGET message ID so the UI shows "This message was deleted" — matching
+      // mobile client behaviour.
+      if (stubType === WAMessageStubType.REVOKE && !message?.protocolMessage) {
+        const targetId = Array.isArray(mTyped.messageStubParameters)
+          ? (mTyped.messageStubParameters[0] as string | undefined)
+          : undefined
+        if (targetId) {
+          finalId = targetId
+          finalMessageType = 'unknown'
+          finalContent = '{}'
+          finalTextContent = null
+          isDeleted = true
+        } else {
+          // No target ID — nothing useful to persist; skip the stub
+          continue
+        }
+      }
 
       if (stubType === WAMessageStubType.CIPHERTEXT) {
         finalMessageType = 'ciphertext'

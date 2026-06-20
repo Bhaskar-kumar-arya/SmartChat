@@ -77,9 +77,9 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     const key = baileysMsg.key
     if (!key?.id) return null
 
-    const rawMessage = this.parser['_safeSerialize'](baileysMsg.message)
-
     const remoteJid = cleanJid(key.remoteJid ?? '')
+
+    const rawMessage = this.parser['_safeSerialize'](baileysMsg.message)
     const participantString = await this.identityResolver.resolveSenderJid(key, sock)
 
     // Side-effect: upsert contact for push name

@@ -343,11 +343,17 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
   const canDelete = msg.fromMe && !msg.isDeleted
 
   const renderContent = () => {
-    if (msg.isDeleted && msg.fromMe) {
+    // No content available (e.g. history-sync placeholder) — show deleted notice + type below it
+    if (msg.isDeleted && msg.messageType === 'unknown') {
       return (
-        <div className="message-deleted-badge">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-          <span className="message-deleted-text">You deleted this message</span>
+        <div className="message-content-vertical">
+          <div className="message-deleted-badge">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+            <span className="message-deleted-text">
+              {msg.fromMe ? 'You deleted this message' : 'This message was deleted'}
+            </span>
+          </div>
+          <p className="message-text message-unsupported">[{msg.messageType}]</p>
         </div>
       )
     }
@@ -373,20 +379,19 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
       )
     }
 
-    if (msg.isDeleted && !msg.fromMe) {
-      return (
-        <div className="message-deleted-badge">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-          <span className="message-deleted-text">This message was deleted</span>
-        </div>
-      )
-    }
-
     const typeKey = getMessageTypeKey()
     const Renderer = typeKey ? MESSAGE_REGISTRY[typeKey] : null
 
     return (
       <div className="message-content-vertical">
+        {msg.isDeleted && (
+          <div className="message-deleted-badge">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+            <span className="message-deleted-text">
+              {msg.fromMe ? 'You deleted this message' : 'This message was deleted'}
+            </span>
+          </div>
+        )}
         {Renderer ? (
           <Renderer
             msg={msg}
