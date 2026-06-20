@@ -21,6 +21,8 @@ import { ChatListEnricher } from './services/chats/ChatListEnricher'
 import { MessageService } from './services/messages/MessageService'
 import { IMessageWriterService } from './services/messages/IMessageWriterService'
 import { IMessageQueryService } from './services/messages/IMessageQueryService'
+import { IMessageParserService } from './services/messages/IMessageParserService'
+import { IMessageProcessingService } from './services/messages/IMessageProcessingService'
 import { MessageParser } from './services/messages/MessageParser'
 import { MessageEnricher } from './services/messages/MessageEnricher'
 import { MessageActionService } from './services/messages/MessageActionService'
@@ -190,10 +192,10 @@ export function createServices(
     messageProcessors
   )
   const messageActionService = new MessageActionService(
-    messageRepository, reactionRepository, messageQueryRepository, identityRepository, contactService, messageService, messageService, chatService, getBus
+    messageRepository, reactionRepository, messageQueryRepository, identityRepository, contactService, messageService, messageService, messageService, chatService, getBus
   )
   const mediaService = new MediaService(
-    messageRepository, messageQueryRepository, messageService, contactService, favoriteStickerService
+    messageRepository, messageQueryRepository, messageService, messageService, contactService, favoriteStickerService
   )
   const searchService = new SearchService(chatRepository, messageQueryRepository, messageVectorRepository, identityRepository, contactService, embeddingService)
   const profileSyncService = new ProfileSyncService(prisma, contactService)
@@ -230,6 +232,8 @@ export function createServices(
     groupHydrationService,
     messageWriterService: messageService,
     messageQueryService: messageService,
+    messageProcessingService: messageService,
+    messageParserService: messageService,
     messageActionService,
     mediaService,
     searchService,
@@ -273,6 +277,8 @@ export type ServiceContainer = {
   groupHydrationService: GroupHydrationService
   messageWriterService: IMessageWriterService
   messageQueryService: IMessageQueryService
+  messageProcessingService: IMessageProcessingService
+  messageParserService: IMessageParserService
   messageActionService: MessageActionService
   mediaService: MediaService
   searchService: SearchService

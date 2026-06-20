@@ -21,6 +21,8 @@ import { IMessageQueryRepository } from './IMessageQueryRepository'
 import { MessageEnricher } from './MessageEnricher'
 import { IMessageWriterService } from './IMessageWriterService'
 import { IMessageQueryService } from './IMessageQueryService'
+import { IMessageParserService } from './IMessageParserService'
+import { IMessageProcessingService } from './IMessageProcessingService'
 import { IMessageIdentityResolver } from './IMessageIdentityResolver'
 import {
   IMessageProcessorStrategy,
@@ -44,7 +46,7 @@ export type { ParsedMessage }
  *  - The high-level processing pipeline (processMessage, bulkPersistMessages)
  *  - Event-bus notifications
  */
-export class MessageService implements IMessageWriterService, IMessageQueryService {
+export class MessageService implements IMessageWriterService, IMessageQueryService, IMessageParserService, IMessageProcessingService {
   constructor(
     private readonly contactService: IContactService,
     private readonly chatRepository: IChatRepository,
@@ -67,21 +69,23 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
    * persists to DB, triggers semantic indexing, and returns a ProcessedMessage.
    */
   async processMessage(
-    msg: BaileysMessage,
-    _sock: WASocket | null
+    msg: unknown,
+    _sock: unknown | null
   ): Promise<ProcessedMessage | ProtocolResult | null> {
-    const key = msg.key
+    const baileysMsg = msg as BaileysMessage
+    const sock = _sock as WASocket | null
+    const key = baileysMsg.key
     if (!key?.id) return null
 
-    const rawMessage = this.parser['_safeSerialize'](msg.message)
+    const rawMessage = this.parser['_safeSerialize'](baileysMsg.message)
 
     const remoteJid = cleanJid(key.remoteJid ?? '')
-    const participantString = await this.identityResolver.resolveSenderJid(key, _sock)
+    const participantString = await this.identityResolver.resolveSenderJid(key, sock)
 
     // Side-effect: upsert contact for push name
-    if (!key.fromMe && msg.pushName && participantString) {
+    if (!key.fromMe && baileysMsg.pushName && participantString) {
       await this.identityResolver
-        .upsertContactPushName(participantString, msg.pushName)
+        .upsertContactPushName(participantString, baileysMsg.pushName)
         .catch((err: unknown) => {
           console.error('[MessageService] Failed to upsert contact for pushName:', err)
         })
@@ -108,16 +112,16 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
 
     // Determine message type
     const messageType = unwrapped
-      ? (unwrapped
-          ? Object.keys(unwrapped).find(k => k !== 'messageContextInfo') ?? 'unknown'
-          : 'unknown')
-      : 'unknown'
+       ? (unwrapped
+           ? Object.keys(unwrapped).find(k => k !== 'messageContextInfo') ?? 'unknown'
+           : 'unknown')
+       : 'unknown'
 
-    const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
+    const timestamp = parseBaileysTimestamp(baileysMsg.messageTimestamp ?? 0)
 
     const context: IMessageProcessingContext = {
-      msg,
-      sock: _sock,
+      msg: baileysMsg,
+      sock,
       rawMessage,
       unwrapped,
       remoteJid,
@@ -182,25 +186,26 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
   /**
    * Returns true for message types that require special per-message handling.
    */
-  isSpecialMessage(msg: BaileysMessage): boolean {
-    return this.parser.isSpecialMessage(msg)
+  isSpecialMessage(msg: unknown): boolean {
+    return this.parser.isSpecialMessage(msg as BaileysMessage)
   }
 
   /**
    * Synchronously parses a raw Baileys message into a plain data object.
    * Zero DB calls, zero side-effects — safe to call on large batches.
    */
-  parseMessageSync(msg: BaileysMessage): ParsedMessage | null {
-    return this.parser.parseMessageSync(msg)
+  parseMessageSync(msg: unknown): ParsedMessage | null {
+    return this.parser.parseMessageSync(msg as BaileysMessage)
   }
 
   /**
    * Bulk-persists a batch of historical messages efficiently.
    */
-  async bulkPersistMessages(msgs: BaileysMessage[]): Promise<void> {
-    if (msgs.length === 0) return
+  async bulkPersistMessages(msgs: unknown[]): Promise<void> {
+    const baileysMsgs = msgs as BaileysMessage[]
+    if (baileysMsgs.length === 0) return
 
-    const parsed = msgs
+    const parsed = baileysMsgs
       .map(m => this.parser.parseMessageSync(m))
       .filter((p): p is ParsedMessage => p !== null)
 
@@ -247,7 +252,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     jid: string,
     page: number = 1,
     pageSize: number = 50,
-    sock: WASocket | null,
+    sock: unknown | null = null,
     resolveLid: boolean = false,
     includeReactions: boolean = true
   ): Promise<EnrichedMessage[]> {
@@ -289,7 +294,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
 
     const nameMap = await this.contactService.batchResolveNames(
       Array.from(additionalJids),
-      sock
+      sock as WASocket | null
     )
 
     let allReactions: Array<{
@@ -306,7 +311,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
 
     const enriched = await Promise.all(
       messages.map(async m => {
-        const enrichedMsg = await this.enricher.enrichMessage(m, sock, nameMap)
+        const enrichedMsg = await this.enricher.enrichMessage(m, sock as WASocket | null, nameMap)
         if (!includeReactions) return enrichedMsg
         const msgReactions = allReactions.filter(r => r.messageId === m.id)
         return {
@@ -324,23 +329,24 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
    */
   async enrichMessage(
     msg: DBMessageWithSender,
-    sock: WASocket | null,
+    sock: unknown | null,
     nameMap: Map<string, string>
   ): Promise<EnrichedMessage> {
-    return this.enricher.enrichMessage(msg, sock, nameMap)
+    return this.enricher.enrichMessage(msg, sock as WASocket | null, nameMap)
   }
 
   /**
    * Process an incoming reaction update event.
    */
   async processReaction(
-    reactionUpdate: BaileysReactionUpdate,
-    sock: WASocket | null
+    reactionUpdate: unknown,
+    sock: unknown | null
   ): Promise<void> {
-    const targetId = reactionUpdate.key?.id
-    const reactionKey = reactionUpdate.reaction?.key
-    const text = reactionUpdate.reaction?.text
-    const ts = reactionUpdate.reaction?.senderTimestampMs
+    const update = reactionUpdate as BaileysReactionUpdate
+    const targetId = update.key?.id
+    const reactionKey = update.reaction?.key
+    const text = update.reaction?.text
+    const ts = update.reaction?.senderTimestampMs
 
     if (!targetId || !reactionKey) return
 
@@ -375,12 +381,12 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     }
 
     // Resolve reactor JID
-    const reactorJid = await this.identityResolver.resolveReactorJid(reactionKey, sock)
+    const reactorJid = await this.identityResolver.resolveReactorJid(reactionKey, sock as WASocket | null)
 
     // Resolve reactor identity ID
     let reactorId: number | null = null
     if (reactionKey.fromMe) {
-      reactorId = await this.identityResolver.resolveMeSenderId(sock)
+      reactorId = await this.identityResolver.resolveMeSenderId(sock as WASocket | null)
     } else if (reactorJid) {
       reactorId = await this.identityResolver.resolveSenderId(reactorJid)
     }
@@ -395,7 +401,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
 
     // Notify frontend via event bus
     const reactorJidString = reactorJid ?? reactionKey.remoteJid ?? ''
-    const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock)
+    const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock as WASocket | null)
     const reactorName = nameMap.get(reactorJidString) ?? reactorJidString.replace(/@.*$/, '')
 
     await this.getBus()?.emit('reaction:processed', {

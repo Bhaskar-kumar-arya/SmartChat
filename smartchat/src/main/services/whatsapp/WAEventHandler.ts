@@ -24,15 +24,15 @@ import {
   PROTOCOL_TYPE_REVOKE,
   PROTOCOL_TYPE_EDIT
 } from '../../constants'
-import { IMessageWriterService } from '../messages/IMessageWriterService'
-import { IMessageQueryService } from '../messages/IMessageQueryService'
+import { IMessageParserService } from '../messages/IMessageParserService'
+import { IMessageProcessingService } from '../messages/IMessageProcessingService'
 import type { IWAEventBus } from './IWAEventBus'
 import { AppStateSyncParser } from './AppStateSyncParser'
 
 export class WAEventHandler {
   constructor(
-    private messageWriterService: IMessageWriterService,
-    private messageQueryService: IMessageQueryService,
+    private messageProcessingService: IMessageProcessingService,
+    private messageParserService: IMessageParserService,
     private bus: IWAEventBus
   ) {}
 
@@ -51,9 +51,9 @@ export class WAEventHandler {
 
       // 2. Process special messages (edits, revokes, reactions) sequentially
       for (const msg of messages) {
-        if (this.messageQueryService.isSpecialMessage(msg)) {
+        if (this.messageParserService.isSpecialMessage(msg)) {
           try {
-            const processed = await this.messageWriterService.processMessage(msg, sock)
+            const processed = await this.messageProcessingService.processMessage(msg, sock)
             if (processed && 'type' in processed) {
               if (processed.subType === 'revoke') {
                 await this.bus.emit('message:deleted', {
@@ -82,7 +82,7 @@ export class WAEventHandler {
     // 'notify' = real-time new messages. Process individually.
     for (const msg of messages) {
       try {
-        const processed = await this.messageWriterService.processMessage(msg, sock)
+        const processed = await this.messageProcessingService.processMessage(msg, sock)
         if (!processed) continue
 
         if ('type' in processed) {

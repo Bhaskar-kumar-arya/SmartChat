@@ -22,6 +22,8 @@ import { FavoriteStickerSubscriber } from './FavoriteStickerSubscriber'
 
 import type { IMessageWriterService } from '../../messages/IMessageWriterService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
+import type { IMessageProcessingService } from '../../messages/IMessageProcessingService'
+import type { IMessageParserService } from '../../messages/IMessageParserService'
 import type { IChatService } from '../../chats/IChatService'
 import type { IContactService } from '../../contacts/IContactService'
 import type { IGroupMembershipService } from '../../chats/IGroupMembershipService'
@@ -37,6 +39,8 @@ export type { IWAEventSubscriber }
 export interface SubscriberServices {
   messageWriterService: IMessageWriterService
   messageQueryService: IMessageQueryService
+  messageProcessingService: IMessageProcessingService
+  messageParserService: IMessageParserService
   chatService: IChatService
   contactService: IContactService
   groupMembershipService: IGroupMembershipService
@@ -63,7 +67,7 @@ export function createSubscribers(
     new ContactGroupSubscriber(services.contactService, services.chatService, services.groupMembershipService, services.chatMemberRepository),
     new NotificationSubscriber(services.chatService, services.contactService, services.profileSyncService, services.notificationService),
     new UIBroadcastSubscriber(services.contactService, services.messageQueryService, services.messageQueryRepository, getMainWindow),
-    new ReceiptSubscriber(services.receiptService, services.messageWriterService, services.contactService),
+    new ReceiptSubscriber(services.receiptService, services.messageProcessingService, services.contactService),
     new FavoriteStickerSubscriber(services.favoriteStickerService),
   ]
 

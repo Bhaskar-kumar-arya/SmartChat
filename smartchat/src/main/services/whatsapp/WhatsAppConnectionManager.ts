@@ -167,7 +167,7 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
     this.currentBus = bus
     createSubscribers(bus, this.deps, () => this.mainWindow)
 
-    const eventHandler = new WAEventHandler(this.deps.messageWriterService, this.deps.messageQueryService, bus)
+    const eventHandler = new WAEventHandler(this.deps.messageProcessingService, this.deps.messageParserService, bus)
 
     // Delegate all event wiring to WAEventWiringService
     this.wiringService.wire(

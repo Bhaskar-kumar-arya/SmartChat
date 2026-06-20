@@ -3,6 +3,7 @@ import { app, shell } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 import { IMessageQueryService } from './IMessageQueryService'
+import { IMessageParserService } from './IMessageParserService'
 import { IMessageRepository } from './IMessageRepository'
 import { IMessageQueryRepository } from './IMessageQueryRepository'
 import { FavoriteStickerService } from './FavoriteStickerService'
@@ -121,6 +122,7 @@ export class MediaService {
     private readonly messageRepository: IMessageRepository,
     private readonly messageQueryRepository: IMessageQueryRepository,
     private readonly messageService: IMessageQueryService,
+    private readonly messageParserService: IMessageParserService,
     private readonly contactService: ContactService,
     private readonly favoriteStickerService: FavoriteStickerService
   ) { }
@@ -261,7 +263,7 @@ export class MediaService {
     const mediaDir = join(app.getPath('userData'), 'media')
     if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
 
-    const fileName = this.messageService.getSafeMediaFileName(msgId, mediaType, mediaMsg)
+    const fileName = this.messageParserService.getSafeMediaFileName(msgId, mediaType, mediaMsg)
     const filePath = join(mediaDir, fileName)
 
     if (!fs.existsSync(filePath)) {
