@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, app } from 'electron'
+import path from 'path'
 import { ContactService } from './services/contacts/ContactService'
 import { IContactService } from './services/contacts/IContactService'
 import { LidPnLinker } from './services/contacts/LidPnLinker'
@@ -11,6 +12,7 @@ import { IIdentityReconciliationService } from './services/contacts/IIdentityRec
 import { ProfileSyncService } from './services/contacts/ProfileSyncService'
 import { IProfileSyncService } from './services/contacts/IProfileSyncService'
 import { EmbeddingService, IEmbeddingService } from './services/search/EmbeddingService'
+import { EmbeddingWorkerManager } from './services/search/EmbeddingWorkerManager'
 import { DataWipeService } from './services/DataWipeService'
 import { IDataWipeService } from './services/IDataWipeService'
 import { ReceiptService } from './services/whatsapp/ReceiptService'
@@ -161,7 +163,16 @@ export function createServices(
   )
   const identityReconciliationService = new IdentityReconciliationService(prisma, contactService)
   const groupMembershipService = new GroupMembershipService(chatMemberRepository, contactService)
-  const embeddingService = new EmbeddingService(messageVectorRepository, messageQueryRepository)
+  const embeddingWorkerManager = new EmbeddingWorkerManager({
+    workerPath: path.join(__dirname, 'embedding.worker.js'),
+    modelCacheDir: path.join(app.getPath('userData'), 'models'),
+    localModelsRoot: path.join(app.getAppPath(), 'src', 'main', 'models')
+  })
+  const embeddingService = new EmbeddingService(
+    messageVectorRepository,
+    messageQueryRepository,
+    embeddingWorkerManager
+  )
   const dataWipeService = new DataWipeService(prisma)
   const receiptService = new ReceiptService(receiptRepository, contactService, getBus)
   const notificationService = new NotificationService(getMainWindow, messageFormatterRegistry)

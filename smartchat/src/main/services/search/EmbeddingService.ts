@@ -30,23 +30,9 @@ export class EmbeddingService implements IEmbeddingService {
   constructor(
     private readonly messageVectorRepository: IMessageVectorRepository,
     private readonly messageQueryRepository: IMessageQueryRepository,
-    workerManager?: IEmbeddingWorkerManager
+    workerManager: IEmbeddingWorkerManager
   ) {
-    if (workerManager) {
-      this.workerManager = workerManager
-    } else {
-      // Fallback for Phase 4-6 until Phase 7 wires the manager in ServiceContainer.ts
-      const { app } = require('electron')
-      const path = require('path')
-      const { EmbeddingWorkerManager } = require('./EmbeddingWorkerManager')
-      
-      const config = {
-        workerPath: path.join(__dirname, 'embedding.worker.js'),
-        modelCacheDir: path.join(app.getPath('userData'), 'models'),
-        localModelsRoot: path.join(app.getAppPath(), 'src', 'main', 'models')
-      }
-      this.workerManager = new EmbeddingWorkerManager(config)
-    }
+    this.workerManager = workerManager
   }
 
   public setOnActiveStateSync(cb: (isActive: boolean) => void): void {
