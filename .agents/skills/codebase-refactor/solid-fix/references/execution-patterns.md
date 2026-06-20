@@ -4,7 +4,7 @@ Detailed patterns for the most common fix types encountered in each phase.
 
 ---
 
-## Phase 1: Splitting a Monolithic Types File
+## Phase 1: Common Types and Constants
 
 ### Pattern: Layer-based split
 
@@ -43,7 +43,7 @@ After:
 
 ---
 
-## Phase 2: Splitting a Fat Repository Interface
+## Phase 2: Core Data/Infrastructure Abstraction
 
 ### Pattern: ISP split by concern
 
@@ -105,7 +105,7 @@ constructor(
 
 ---
 
-## Phase 3: Event Bus Abstraction
+## Phase 3: Shared Communication Infrastructure
 
 ### Pattern: Extract IEventBus
 
@@ -156,7 +156,7 @@ export interface IEventSubscriber {
 
 ---
 
-## Phase 4: Leaf Service — DIP Fix
+## Phase 4: Leaf Services / Utilities
 
 ### Pattern: Extract repository interface + inject
 
@@ -195,7 +195,7 @@ export class InvoiceService {
 
 ---
 
-## Phase 5: Mid-Level Service — OCP Fix (Strategy Registry)
+## Phase 5: Domain Services
 
 ### Pattern: Replace switch block with strategy registry
 
@@ -246,7 +246,7 @@ async processPayment(paymentType: string, amount: number): Promise<void> {
 
 ---
 
-## Phase 6: Pipeline Orchestrator — SRP Split (CQRS)
+## Phase 6: High-Level Pipeline Orchestrators
 
 ### Pattern: Split Fat Service into Query (Read) and Command (Write) sides
 
@@ -298,7 +298,7 @@ export class OrderQueryService implements IOrderQueryService {
 
 ---
 
-## Phase 7: ServiceContainer Wiring
+## Phase 7: Composition Root / Dependency Injection Wiring
 
 ### Pattern: Map keys to interfaces, not concrete classes
 

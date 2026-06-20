@@ -8,24 +8,29 @@ Full specification for every stage, including step sequences, commands to run, a
 
 **Purpose:** Explore the codebase and build the project context block used in all subsequent worker prompts.
 
-**Run these commands yourself (no worker needed):**
+**Run these steps yourself (no worker needed):**
 
-```bash
-# 1. Get a structural overview
-find src/ -type f -name "*.ts" | sort | head -80
+1. Get a structural overview — use file-listing tools or:
+   ```bash
+   # Unix/macOS
+   find src/ -type f -name "*.ts" | sort | head -80
+   # Windows PowerShell
+   Get-ChildItem -Recurse -Filter *.ts src/ | Select-Object -First 80 FullName
+   ```
 
-# 2. Check stack and scripts
-cat package.json
+2. Read `package.json` — note stack, scripts (especially `test`, `typecheck`), and dependencies
 
-# 3. Read tsconfig
-cat tsconfig.json
+3. Read `tsconfig.json`
 
-# 4. Find the ServiceContainer
-find src/ -name "ServiceContainer.ts" -o -name "container.ts" | head -5
+4. Search for a DI container file:
+   ```bash
+   # Look for files named *Container*, *container*, *Module*, *Injector*
+   ```
+   If none found, set `DI container path: "none"` in the project context block.
 
-# 5. Identify entry points
-ls src/
-```
+5. Identify entry points — check `src/` top-level structure, look for `main`, `index`, `app` files
+
+6. Discover key architectural patterns by scanning imports and class structures
 
 **Output:** Populated project context block. Advance immediately to Stage 1.
 
@@ -90,7 +95,7 @@ circular-deps
 
 ## Verification contract
 Run `npx madge --circular --ts-config tsconfig.json --extensions ts src/` — must return 0 cycles
-Run `npx tsc --noEmit` — must return zero errors
+Run `npm run typecheck` — must return zero errors
 
 ## Required report format
 - Files changed: [list]
@@ -104,12 +109,12 @@ Run `npx tsc --noEmit` — must return zero errors
 When worker reports back, run yourself:
 ```bash
 npx madge --circular --ts-config tsconfig.json --extensions ts src/
-npx tsc --noEmit
+npm run typecheck
 ```
 
 Both must pass. If not, generate a targeted fix prompt identifying the remaining cycles.
 
-**Stage 1 complete when:** madge returns 0 cycles AND tsc returns 0 errors.
+**Stage 1 complete when:** madge returns 0 cycles AND `npm run typecheck` returns 0 errors.
 
 ---
 
@@ -123,6 +128,10 @@ All Stage 3 workers will read and update this file.
 
 Run yourself:
 ```bash
+# Cross-platform (recommended)
+node .agents/skills/codebase-refactor/refactor-orchestrator/scripts/fan-in.mjs --top 25
+
+# Unix alternative
 npx madge --json --ts-config tsconfig.json --extensions ts src/ | node -e "
 const data = JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
 const fanIn = {};
@@ -173,17 +182,19 @@ Organize all fixes into phases. Each phase must:
 - State what verification command confirms it is complete
 - Have a status field: [ ] TODO
 
-Standard phase order (adjust if your analysis suggests otherwise):
-- Phase 1: Shared types segregation (types.ts, event types)
-- Phase 2: Repository interface segregation (fat interfaces → split ISP)
-- Phase 3: Core event infrastructure (event bus abstraction)
-- Phase 4: Leaf services (e.g. EncryptionService, LoggingService, ConfigService)
-- Phase 5: Mid-level services (e.g. UserService, PaymentService, InventoryService)
-- Phase 6: High-level pipeline orchestrators (e.g. OrderProcessingService, AuthPipelineService)
-- Phase 7: ServiceContainer wiring (bind keys to interfaces not concrete classes)
+Standard phase order (use as reference — include only phases that apply based on audit findings):
+- Common Types and Constants (if monolithic type definitions exist)
+- Core Data/Infrastructure Abstraction (if fat interfaces need ISP splitting)
+- Shared Communication Infrastructure (if concrete event bus / broker imports exist)
+- Leaf Services / Utilities (if low-level services have DIP violations)
+- Domain Services (if mid-level services have SRP/OCP violations)
+- High-Level Pipeline Orchestrators (if complex coordinators need splitting)
+- Composition Root / DI Wiring (if DI container maps to concrete classes)
+
+Generate 3-12 phases as needed. Do not force phases that don't apply.
 
 ### Section 3: Phase completion tracker
-A checklist at the top of the file:
+A checklist at the bottom of the file:
 - [ ] Phase 1
 - [ ] Phase 2
 ... etc
@@ -226,11 +237,15 @@ These are safe to fix with zero structural changes and mean Stage 3 workers oper
 
 Run yourself:
 ```bash
+# Cross-platform (recommended)
+node .agents/skills/codebase-refactor/refactor-orchestrator/scripts/detect-smells.mjs --type type-safety
+
+# Unix alternative (grep-based)
 # as any / : any
 grep -rn "as any\|: any" src/ --include="*.ts" | grep -v node_modules | grep -v ".d.ts"
 
 # Non-null assertions
-grep -rn "!\." src/ --include="*.ts" | grep -v node_modules | grep -v ".d.ts"
+grep -rn "\!." src/ --include="*.ts" | grep -v node_modules | grep -v ".d.ts"
 
 # Empty catches
 grep -rn "catch\s*(.*)\s*{}" src/ --include="*.ts" | grep -v node_modules
@@ -296,7 +311,7 @@ downstream must be awaited.
 - Add missing return type annotations to all public functions
 
 ## Verification contract
-`npx tsc --noEmit` must return zero errors
+`npm run typecheck` must return zero errors
 Grep for `as any\|: any` must return zero hits in changed files
 
 ## Required report format
@@ -311,10 +326,10 @@ Grep for `as any\|: any` must return zero hits in changed files
 
 ```bash
 grep -rn "as any\|: any" src/ --include="*.ts" | grep -v node_modules | grep -v ".d.ts"
-npx tsc --noEmit
+npm run typecheck
 ```
 
-**Stage 4a complete when:** `as any` / `: any` count is zero (or documented exceptions only) AND tsc is clean.
+**Stage 4a complete when:** `as any` / `: any` count is zero (or documented exceptions only) AND `npm run typecheck` is clean.
 
 ---
 
@@ -359,7 +374,7 @@ Objective: <from audit.md>
 - ServiceContainer wiring changes belong ONLY in Phase 7 — do not wire new interfaces early
 
 ## Verification contract
-`npx tsc --noEmit` must return zero errors
+`npm run typecheck` must return zero errors
 audit.md Phase <N> checkbox must be marked [x]
 
 ## Required report format
@@ -375,12 +390,12 @@ audit.md Phase <N> checkbox must be marked [x]
 ### After each phase, verify yourself:
 
 ```bash
-npx tsc --noEmit
+npm run typecheck
 ```
 
 Read audit.md — confirm the phase checkbox is marked `[x]`.
 
-**Stage 3 complete when:** All phase checkboxes in audit.md are `[x]` AND tsc is clean.
+**Stage 3 complete when:** All phase checkboxes in audit.md are `[x]` AND `npm run typecheck` is clean.
 
 ---
 
@@ -393,6 +408,11 @@ class boundaries have settled.
 
 Run yourself:
 ```bash
+# Cross-platform (recommended)
+node .agents/skills/codebase-refactor/refactor-orchestrator/scripts/detect-smells.mjs --type structural
+node .agents/skills/codebase-refactor/refactor-orchestrator/scripts/line-count.mjs --min 300
+
+# Unix alternative (grep-based)
 # Files over 300 lines
 find src/ -name "*.ts" | xargs wc -l | sort -rn | awk '$1 > 300' | head -20
 
@@ -450,7 +470,7 @@ Pick one strategy per service and apply it consistently:
 - Do not change business logic — only structure and readability
 
 ## Verification contract
-`npx tsc --noEmit` must return zero errors
+`npm run typecheck` must return zero errors
 No method in changed files exceeds 40 lines
 
 ## Required report format
@@ -460,7 +480,7 @@ No method in changed files exceeds 40 lines
 - Blockers: [any issues]
 ```
 
-**Stage 4b complete when:** tsc is clean and no method in changed files exceeds 40 lines.
+**Stage 4b complete when:** `npm run typecheck` is clean and no method in changed files exceeds 40 lines.
 
 ---
 

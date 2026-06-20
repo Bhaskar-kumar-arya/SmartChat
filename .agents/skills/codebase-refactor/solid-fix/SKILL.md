@@ -65,7 +65,7 @@ Update them to import and use the interface instead.
 
 ### Step 5 — Verify this file
 ```bash
-npx tsc --noEmit
+npm run typecheck
 ```
 Fix any errors before moving to the next file. Never leave a broken state.
 
@@ -151,13 +151,16 @@ After completing your phase (or documenting blockers), update audit.md:
 
 ```bash
 # Must return zero errors
-npx tsc --noEmit
+npm run typecheck
 
 # Confirm no concrete class imports in service files (spot check)
 grep -rn "import.*Repository\b" src/services --include="*.ts" | grep -v "I[A-Z]"
 
 # Confirm audit.md phase checkbox is marked
 grep "\[x\] Phase" audit.md
+
+# Test execution: read package.json for the test script and run it if present
+# e.g. npm test
 ```
 
 ---

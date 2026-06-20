@@ -4,12 +4,15 @@ description: |
   Enforces strict type safety, SOLID principles, DRY principles, clean folder structures, and layered boundaries
   when implementing new features or fixing bugs. Contains mandatory pre-flight analysis and concrete guard-rails
   designed to prevent monolith growth, type pollution, and silent error swallowing before they ever accumulate.
-version: 2.0.0
+  Also acts as an architecture guardian — if the codebase has been refactored with established patterns,
+  this skill prevents new work from regressing those patterns.
+version: 3.0.0
 tags:
   - development
   - feature-implementation
   - bug-fix
   - architecture
+  - regression-prevention
 ---
 
 # Feature & Bugfix Guidelines
@@ -29,7 +32,23 @@ This skill defines **preventive** rules and mandatory analysis steps that must b
 
 Before touching any file, run through this checklist in order. Do not skip steps.
 
-### Step 1.1 — Identify the Blast Radius
+### Step 1.1 — Discover Existing Architecture
+
+Before making any change, check whether the codebase has established architectural patterns:
+
+1. **Check for `docs/architecture/ai-context.md`** — if this file exists, read it first. It contains
+   the project's key patterns, hard constraints, module map, and extension points. Your changes
+   must respect everything documented there.
+2. **Check for `audit.md`** — if this file exists, read the phase tracker to understand what
+   refactoring has already been done. Do not re-introduce violations that were fixed.
+3. **Check for barrel files (`index.ts`)** — if they exist, understand what they export and
+   respect the public/private boundary they establish.
+4. **Check for a DI container** — if one exists, understand how dependencies are wired and
+   follow the established injection pattern.
+
+If none of these files exist, proceed with general best practices from Section 2 onward.
+
+### Step 1.2 — Identify the Blast Radius
 
 Answer these questions before making any change:
 
@@ -38,7 +57,7 @@ Answer these questions before making any change:
 3. **Will any touched file grow by more than ~50 lines?** If yes, a split is mandatory (see Section 2).
 4. **Am I adding a new responsibility to an existing class/module?** If yes, extract it into its own file.
 
-### Step 1.2 — Classify the Change
+### Step 1.3 — Classify the Change
 
 Identify which architectural layer the change belongs to:
 
@@ -50,7 +69,7 @@ Identify which architectural layer the change belongs to:
 
 If your change touches *more than one layer in the same file*, you must split the file first.
 
-### Step 1.3 — Pre-Code Architectural Decision
+### Step 1.4 — Pre-Code Architectural Decision
 
 Before writing implementation code, explicitly decide:
 
@@ -260,7 +279,49 @@ class OrderService {
 
 ---
 
-## Section 6 — Folder & File Organization
+## Section 6 — Architecture Regression Prevention
+
+This section prevents re-introducing problems that a refactoring pipeline would fix.
+Even if the codebase has never been formally refactored, these patterns prevent debt accumulation.
+
+### 6.1 — Barrel File Discipline
+
+If the codebase uses `index.ts` barrel files:
+- **Never export concrete classes** through a barrel — only interfaces and types
+- **Never import from a module's internal files** if that module has a barrel — use the barrel
+- When creating new files in a module with a barrel, add the public interface to the barrel
+
+### 6.2 — Interface-Driven Dependencies
+
+- When adding a new dependency between services, always create or use an interface
+- A service file must never `import { ConcreteClass } from '../other-module/ConcreteClass'`
+- The correct pattern: `import { IInterfaceName } from '../other-module'` (through the barrel)
+
+### 6.3 — DI Container Respect
+
+If the project has a DI container:
+- Never call `new ConcreteClass()` inside a service class body
+- New services must be instantiated in the DI container and injected via constructor
+- Never import the DI container inside a service — only the DI container imports services
+
+### 6.4 — Strategy/Registry Patterns
+
+If the codebase uses strategy registries for extensibility:
+- Adding a new variant = create a new file + register it
+- Never add a new `case` to an existing `switch` or a new `if-else` branch
+- Check the extension points documented in `ai-context.md` (if it exists)
+
+### 6.5 — Layer Boundary Enforcement
+
+| Layer | Files Belong Here | Must NOT Import |
+|---|---|---|
+| **Infrastructure** | `*Repository.ts`, `*Adapter.ts`, storage clients | Domain services, UI/transport |
+| **Domain / Service** | `*Service.ts`, `*Handler.ts`, `*Workflow.ts` | Raw DB clients, `fs`, sockets directly |
+| **Presentation / Transport** | Controllers, route handlers, IPC bridges, UI components | Domain internals, DB clients directly |
+
+---
+
+## Section 7 — Folder & File Organization
 
 ### Preferred Structure (Feature-Domain Based)
 
@@ -290,23 +351,23 @@ src/
 
 ---
 
-## Section 7 — Implementation Rules
+## Section 8 — Implementation Rules
 
-### 7.1 No Speculative Code (YAGNI)
+### 8.1 No Speculative Code (YAGNI)
 - Only implement what the active task requires.
 - Do not add "future-proof" abstractions, optional parameters, or hooks that nothing currently uses.
 
-### 7.2 Root Cause, Not Patch
+### 8.2 Root Cause, Not Patch
 - Never wrap a buggy path in a generic `try-catch` to hide the symptom.
 - Use `console.log` / `console.error` liberally during debugging to trace actual values, then remove them once the root cause is confirmed.
 
-### 7.3 Design Pattern Fit
+### 8.3 Design Pattern Fit
 - Before implementing, consider whether an event-driven, queue-based, state machine, pub/sub, or repository pattern fits better than a direct call chain.
 - The easiest implementation path is often the worst architectural choice.
 
 ---
 
-## Section 8 — End-of-Session Checklist(part of the Task artifact)
+## Section 9 — End-of-Session Checklist (part of the Task artifact)
 
 Before ending any session where code was written, verify all of the following:
 
@@ -315,9 +376,31 @@ Before ending any session where code was written, verify all of the following:
 - [ ] **No file grew past 300 lines** without being split in the same session.
 - [ ] **No new cross-layer imports** (e.g., a Service importing a DB client directly, a Repository containing business logic).
 - [ ] **All new functions have explicit return types** declared.
-- [ ] **TypeScript compiles with zero errors** (`npm run build` or `tsc --noEmit`).
+- [ ] **TypeScript compiles with zero errors** (`npm run typecheck`).
 - [ ] **All new classes use constructor injection** for dependencies.
 - [ ] **Every new public interface is in a dedicated `.ts` type file** or barrel — not inline in implementation files.
+- [ ] **No barrel file exports concrete classes** — only interfaces and types.
+- [ ] **No regression of established patterns** — if `ai-context.md` documents constraints, verify none were violated.
+- [ ] **Tests pass** — read `package.json` to discover the test command and run it. Report the result.
 
 > [!IMPORTANT]
 > If ANY item in this checklist is not green, do not end the session. Fix the violation before submitting.
+
+---
+
+## Section 10 — Anti-Patterns That Cause Massive Refactors
+
+These are the exact patterns that lead to large-scale, painful refactors. Flag them immediately and never introduce them:
+
+| Anti-Pattern | Why It's Dangerous |
+|---|---|
+| God file / God function (500+ lines, multiple concerns) | Impossible to unit-test, change, or reason about in isolation |
+| `as any` on third-party payloads | Runtime crashes when external schemas change; no compile-time guard |
+| `.catch(() => {})` everywhere | Failures are invisible; bugs accumulate silently |
+| Business logic in controllers or transport handlers | Can't be tested, reused, or decoupled from the transport layer |
+| Direct DB client in a Service layer | Swapping DB or mocking for tests becomes a full rewrite |
+| Hardcoded type `if-else` chains | Every new type requires touching and risking multiple existing files |
+| `new Dependency()` inside class body | Impossible to inject mocks or swap implementations |
+| Mixing layers in one file | One change cascades into unrelated concerns; no clean boundaries |
+| Importing concrete classes across module boundaries | Defeats the purpose of interfaces and makes swapping impossible |
+| Exporting concrete classes from barrel files | Consumers couple to implementations instead of abstractions |

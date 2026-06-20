@@ -146,7 +146,7 @@ After all fixes, run:
 
 ```bash
 npx madge --circular --ts-config tsconfig.json --extensions ts src/
-npx tsc --noEmit
+npm run typecheck
 ```
 
 Both must pass. If madge still shows cycles:
@@ -155,6 +155,9 @@ Both must pass. If madge still shows cycles:
 
 If tsc shows errors:
 - They are almost always missing imports after moving types — fix the import paths
+
+**Test execution:** Read `package.json` to discover the test script (e.g. `npm test`).
+If a test script exists, run it after tsc verification passes. Report the result.
 
 ---
 

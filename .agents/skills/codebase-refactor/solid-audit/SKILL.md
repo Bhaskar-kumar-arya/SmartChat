@@ -79,14 +79,20 @@ Put this at the very top so workers can find it immediately.
 # Refactor Audit — [App Name]
 
 ## Phase Tracker
-- [ ] Phase 1: Shared Types Segregation
-- [ ] Phase 2: Repository Interface Segregation
-- [ ] Phase 3: Event Bus Abstraction
-- [ ] Phase 4: Leaf Services
-- [ ] Phase 5: Mid-Level Services
-- [ ] Phase 6: Pipeline Orchestrators
-- [ ] Phase 7: ServiceContainer Wiring
+<Generate phases dynamically based on your audit findings. Include only phases that
+apply to this codebase. Use the reference template below as a starting point, but
+add, remove, or rename phases as needed. Number them sequentially.>
+- [ ] Phase 1: ...
+- [ ] Phase 2: ...
+...
 ```
+
+**Phase generation rules:**
+- Include only phases that address violations you actually found
+- Order phases so that earlier phases have no dependency on later ones
+- Low-effort phases go before high-effort phases when dependency order allows
+- Each phase must be completable independently once prior phases are done
+- 3-12 phases is the typical range
 
 ### Section 2: Per-File Violation Report
 
@@ -128,64 +134,42 @@ Organize all violations into phases. Each phase groups files whose fixes have th
 dependency profile — i.e., fixing them together doesn't require any other phase to be
 done first.
 
-Standard phase order:
+**Determine which phases apply using this decision tree:**
+
+| Question | If YES → include phase |
+|---|---|
+| Are there shared types files > 200 lines or monolithic type definitions? | Types & Constants phase |
+| Are there fat interfaces (8+ methods) with consumers using different subsets? | Interface Segregation phase |
+| Are there concrete event bus / message broker imports in services? | Communication Infrastructure phase |
+| Are there leaf services with DIP violations (no interface, direct DB imports)? | Leaf Services phase |
+| Are there mid-level services with SRP / OCP violations? | Domain Services phase |
+| Are there complex orchestrators / controllers with multiple responsibilities? | Pipeline Orchestrators phase |
+| Does the project have a DI container mapping to concrete classes? | Composition Root phase |
+
+**Reference template** (adapt as needed — do not copy verbatim if phases don't apply):
 
 ```markdown
-## Phase 1: Shared Types Segregation
-**Objective:** Remove the monolithic types file(s) that every layer imports.
-**Files in scope:** [list]
+## Phase N: [Phase Title]
+**Objective:** [One sentence describing what this phase achieves]
+**Files in scope:** [exhaustive list]
 **What changes:**
-- Split types.ts into layer-specific files: dtos/types.ts, domain/types.ts, infra/types.ts
-- Split EventTypes.ts into individual sub-event type files + index barrel
-- Update all import paths across the codebase
-**Verification:** `npx tsc --noEmit` returns zero errors
-
-## Phase 2: Repository Interface Segregation
-**Objective:** Split fat repository interfaces so consumers only depend on what they use.
-**Files in scope:** [list]
-**What changes:**
-- IUserRepository → IUserRepository + IUserProfileRepository + IUserSessionRepository
-- IOrderRepository → IOrderRepository + IOrderHistoryRepository
-- IInvoiceRepository → IInvoiceRepository + IInvoiceHistoryRepository
-- Concrete repository classes implement the segregated interfaces
-**Verification:** `npx tsc --noEmit` returns zero errors
-
-## Phase 3: Event Bus Abstraction
-**Objective:** Decouple all event-driven services from the concrete EventBus class.
-**Files in scope:** [list]
-**What changes:**
-- Extract IEventBus interface (on, off, emit, removeAllListeners)
-- Update IEventSubscriber.register(bus) parameter type to IEventBus
-- Wire concrete bus to interface in ServiceContainer
-**Verification:** `npx tsc --noEmit` returns zero errors
-
-## Phase 4: Leaf Services
-**Objective:** Fix SRP and DIP in leaf-level services (no other services depend on them).
-**Files in scope:** [list — determined by your fan-in analysis]
-**What changes:** [specific to your audit findings]
-**Verification:** `npx tsc --noEmit` returns zero errors
-
-## Phase 5: Mid-Level Services
-**Objective:** Fix SRP, OCP, and DIP in mid-level orchestrators.
-**Files in scope:** [list]
-**What changes:** [specific to your audit findings]
-**Verification:** `npx tsc --noEmit` returns zero errors
-
-## Phase 6: Pipeline Orchestrators
-**Objective:** Refactor the highest-complexity coordinators (e.g. OrderService).
-**Files in scope:** [list]
-**What changes:** [specific to your audit findings]
-**Verification:** `npx tsc --noEmit` returns zero errors
-
-## Phase 7: ServiceContainer Wiring
-**Objective:** Bind all container keys to interface types, not concrete classes.
-**Files in scope:** [ServiceContainer.ts]
-**What changes:**
-- Update type definition: keys map to interfaces (IOrderService, IUserService, etc.)
-- Update createServices to wire concrete classes to their interfaces
-- Verify all consumer code uses interface types, not concrete class types
-**Verification:** `npx tsc --noEmit` returns zero errors
+- [Specific change 1]
+- [Specific change 2]
+**Verification:** `npm run typecheck` returns zero errors
 ```
+
+**Common phase archetypes** (use as inspiration, not a fixed list):
+
+1. **Common Types and Constants** — Segregate monolithic type/constant definitions so layers import only what they need
+2. **Core Data/Infrastructure Abstraction** — Split bloated interfaces for database, network, or filesystem operations (ISP)
+3. **Shared Communication Infrastructure** — Abstract event buses, message brokers, or notification systems behind interfaces
+4. **Leaf Services / Utilities** — Refactor low-level independent services with no internal domain dependencies (SRP + DIP)
+5. **Domain Services** — Refactor mid-level business services (SRP + OCP + DIP)
+6. **High-Level Pipeline Orchestrators** — Refactor complex workflow coordinators and controllers
+7. **Composition Root / DI Wiring** — Map DI keys to abstract interfaces instead of concrete classes
+
+Skip any archetype that has no violations in this codebase. Add custom phases for
+violation patterns not covered above.
 
 ---
 

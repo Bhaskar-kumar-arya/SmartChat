@@ -58,16 +58,24 @@ The user will paste this block at the start of the next session so you know wher
 
 Always output this at the end of every response. Keep it compact and machine-readable.
 
-```
+```yaml
 === REFACTOR STATE ===
 stage: <current stage id>
 step: <current step within stage>
-status: <IN_PROGRESS | AWAITING_WORKER | AWAITING_VERIFICATION | COMPLETE>
+status: IN_PROGRESS | AWAITING_WORKER | AWAITING_VERIFICATION | COMPLETE
 completed: [<list of completed stage ids>]
 audit_md_path: <path to audit.md once generated, else null>
-last_verification: <what was last verified and result>
+last_verification:
+  command: <what was run>
+  result: <pass or fail>
 next_action: <one sentence: what happens next>
 blocked_by: <null, or description of blocker>
+metrics:
+  total_violations: <from audit.md, else null>
+  violations_fixed: <running count>
+  phases_total: <from audit.md, else null>
+  phases_complete: <running count>
+  files_touched: <running count>
 === END STATE ===
 ```
 
@@ -147,7 +155,7 @@ After every worker report, run the appropriate verification before advancing:
 | Stage 1 | `npx madge --circular --ts-config tsconfig.json --extensions ts src/` → must return 0 cycles |
 | Stage 2 | Read audit.md — confirm it has violations, no-code fixes, and phase plan sections |
 | Stage 4a | `grep -rn "as any\|: any\|catch (() =>\|catch (_\|!\." src/ --include="*.ts"` → count must decrease |
-| Stage 3 (each phase) | `npx tsc --noEmit` → must return zero errors |
+| Stage 3 (each phase) | `npm run typecheck` → must return zero errors |
 | Stage 4b | Manual: re-run grep for magic strings, count methods >40 lines |
 | Stage 5 | Read generated docs — confirm ADR, module map, and AI context file all exist |
 
@@ -162,17 +170,19 @@ Generated once in Stage 0. Prepend to every worker prompt.
 
 ```
 Project: <name>
-Stack: <e.g. Electron + TypeScript>
-Structure: <e.g. feature-domain>
-Entry points: <src/main/, src/renderer/>
+Stack: <e.g. Electron + TypeScript, Next.js + TypeScript, Node.js CLI>
+Structure: <e.g. feature-domain, layered, monorepo>
+Entry points: <e.g. src/main/, src/renderer/, src/index.ts>
 tsconfig: <path>
-Key patterns: <e.g. Repository, EventBus, CQRS, ServiceContainer DI>
-ServiceContainer path: <path>
+Key patterns: <discovered from codebase — e.g. Repository, EventBus, CQRS, DI Container, Strategy Registry>
+DI container path: <path if found, else "none">
 Audit MD path: <path, once generated>
+Test command: <from package.json scripts, e.g. "npm test", else "none">
+Typecheck command: npm run typecheck
 Hard constraints:
+  <derived from codebase analysis — examples:>
   - Never import concrete classes across module boundaries
-  - Never bypass ServiceContainer for instantiation
-  - Never add logic to ServiceContainer itself
+  - Never bypass the DI container for instantiation (if one exists)
   - Services must never import DB clients or fs directly
 ```
 
@@ -184,13 +194,14 @@ If the user pastes a STATE BLOCK, read it and resume from where you left off.
 
 If there is no STATE BLOCK (first session ever), run Stage 0:
 
-1. Read the directory structure: `find src/ -type f -name "*.ts" | head -60`
+1. Read the directory structure (use file-listing tools or `Get-ChildItem -Recurse -Filter *.ts src/`)
 2. Read `tsconfig.json`
-3. Read `package.json` for stack/framework details
-4. Identify the ServiceContainer file
-5. Identify entry points (main vs renderer)
-6. Build the project context block
-7. Output the initial state block with `stage: 0, status: COMPLETE` and advance to Stage 1
+3. Read `package.json` for stack/framework details and discover test/typecheck scripts
+4. Identify the DI container file (if any): search for files named `*Container*`, `*container*`, `*Module*`, or `*Injector*`
+5. Identify entry points (main vs renderer, index files, etc.)
+6. Discover key architectural patterns by scanning imports and class structures
+7. Build the project context block with discovered values
+8. Output the initial state block with `stage: 0, status: COMPLETE` and advance to Stage 1
 
 ---
 

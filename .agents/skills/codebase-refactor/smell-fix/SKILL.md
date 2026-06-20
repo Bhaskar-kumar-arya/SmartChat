@@ -282,7 +282,7 @@ flag it as a blocker and leave that method alone.
 
 After each file:
 ```bash
-npx tsc --noEmit
+npm run typecheck
 ```
 
 Final check — no method over 40 lines in changed files:
@@ -290,6 +290,9 @@ Final check — no method over 40 lines in changed files:
 # Rough heuristic — count lines between method signatures
 grep -n "^\s*\(async \)\?\(public\|private\|protected\)" <file> | head -30
 ```
+
+**Test execution:** Read `package.json` to discover the test script (e.g. `npm test`).
+If a test script exists, run it after tsc verification passes. Report the result.
 
 ---
 

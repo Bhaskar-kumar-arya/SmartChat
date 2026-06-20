@@ -203,7 +203,7 @@ grep -rn "logger\|Logger" src/ --include="*.ts" | head -10
 After fixing each file, run:
 
 ```bash
-npx tsc --noEmit
+npm run typecheck
 ```
 
 Fix any type errors introduced by your changes before moving to the next file.
@@ -216,14 +216,17 @@ Final verification after all files:
 grep -n "as any\|: any" <changed-files>
 
 # Confirm non-null assertions are gone
-grep -n "!\." <changed-files>
+grep -n "\!." <changed-files>
 
 # Confirm empty catches are gone
 grep -n "catch.*{}" <changed-files>
 
 # tsc clean
-npx tsc --noEmit
+npm run typecheck
 ```
+
+**Test execution:** Read `package.json` to discover the test script (e.g. `npm test`).
+If a test script exists, run it after tsc verification passes. Report the result.
 
 ---
 

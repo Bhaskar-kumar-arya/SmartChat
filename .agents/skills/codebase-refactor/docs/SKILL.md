@@ -3,12 +3,12 @@ name: docs
 description: |
   Produces architecture documentation from a finalized TypeScript codebase. Use when the
   orchestrator assigns a Stage 5 documentation task. Reads barrel files, interfaces,
-  ServiceContainer, and audit.md, then produces three documents: ADR.md, modules.md,
+  the DI container (if any), and audit.md, then produces three documents: ADR.md, modules.md,
   and ai-context.md. The ai-context.md must be under 100 lines — it is prepended to
   future AI prompts. Triggers on phrases like "generate architecture docs", "document
   the architecture", "create the ADR", or when the orchestrator hands off a Stage 5
   worker prompt.
-version: 1.0.0
+version: 2.0.0
 tags:
   - documentation
   - architecture
@@ -34,7 +34,7 @@ Read these files before writing anything:
 
 1. All `index.ts` barrel files in `src/` — these define public module boundaries
 2. All interface files (`I*.ts`) — these define the contracts between modules
-3. `ServiceContainer.ts` — this defines the full dependency graph
+3. The DI container file (if one exists) — this defines the full dependency graph
 4. `audit.md` — this contains the history of what was changed and why (ADR source material)
 5. `package.json` — for stack/framework details
 
@@ -48,6 +48,13 @@ Architecture Decision Records — one entry per major architectural decision.
 
 Source material: audit.md violation descriptions + fix rationale, plus your reading of
 the current codebase structure.
+
+### ADR generation algorithm
+
+For each Phase marked `[x]` in audit.md, generate one or more ADR entries covering:
+- The violation(s) that existed before the change
+- The pattern that was applied to fix it
+- The constraints it introduces going forward
 
 ### ADR entry format
 
@@ -77,18 +84,7 @@ Event Bus Abstraction, CQRS, ISP split, etc.]
 - [Common ways this decision gets eroded over time]
 ```
 
-### Required ADR entries (at minimum)
-
-Cover every decision that appears in audit.md. Expected entries include:
-
-- **Repository Pattern** — why services don't touch DB clients directly
-- **Interface-Driven DI** — why ServiceContainer maps to interfaces not concrete classes
-- **Event Bus Abstraction** — why services depend on IWAEventBus not WAEventBus
-- **ISP Repository Split** — why IChatRepository was split into three interfaces
-- **CQRS for Messages** — why MessageService was split into write and query sides
-- **Strategy Registry for Message Types** — why the switch chain was replaced
-- **Shared Types Files** — why types.ts was split into layer-specific files
-- **Subscriber Injection Pattern** — why subscribers take specific deps not ServiceContainer
+See `references/adr-template.md` for a worked example.
 
 ---
 
@@ -114,12 +110,10 @@ A boundary map for every feature domain.
 - `helpers/`, `parsers/`, etc.
 
 **Consumes from other modules:**
-- `services/contacts/` — `IContactService` for name resolution
-- `services/whatsapp/` — `IWAEventBus` for event publishing
+- `services/<other>/` — `IInterfaceName` for [purpose]
 
 **Consumed by:**
-- `services/whatsapp/subscribers/` — uses `IMessageWriteService`
-- `ipc/` — uses `IMessageQueryService`
+- `services/<consumer>/` — uses `IInterfaceName`
 ```
 
 ### Coverage requirement
@@ -139,53 +133,33 @@ Every line must earn its place. Cut anything an AI could infer from context.
 ### Required sections
 
 ```markdown
-# SmartChat — AI Context File
+# [Project Name] — AI Context File
 
 ## Stack
-Electron + TypeScript | Feature-domain structure | Prisma + SQLite
+[Stack description] | [Structure type] | [Key infrastructure]
 
 ## Key Patterns
 | Pattern | Where | Rule |
 |---|---|---|
-| Repository | `*Repository.ts` | Only place DB/ORM calls are allowed |
-| Interface DI | `ServiceContainer.ts` | Keys map to interfaces, never concrete classes |
-| Event Bus | `WAEventBus` / `IWAEventBus` | All cross-service events go through here |
-| Strategy Registry | `*Registry.ts` | New variants = new file + register, never edit existing |
-| CQRS | messages/ | Write: IMessageWriteService. Read: IMessageQueryService |
-| ISP | repositories | Interfaces split by concern — chat/community/member separate |
+| [Pattern name] | [File pattern] | [One-sentence enforcement rule] |
 
 ## Hard Constraints
-- Services NEVER import PrismaClient, fs, or sockets directly
-- Concrete classes NEVER cross module boundaries — only interfaces do
-- ServiceContainer is the ONLY place where `new ConcreteClass()` is called
-- Subscribers NEVER throw — log and continue
-- IPC handlers NEVER throw — return typed { success, data/error } objects
-- index.ts barrel files export ONLY interfaces and types, never concrete classes
+- [Constraint 1 — what must never be done]
+- [Constraint 2]
 
 ## Module Map
 | Module | Public Interface | Owned By |
 |---|---|---|
-| messages | IMessageWriteService, IMessageQueryService | MessageIngestionService, MessageQueryService |
-| contacts | IContactService | ContactService |
-| chats | IChatService | ChatService |
-| search | IEmbeddingService | EmbeddingService |
-| whatsapp | IWAEventBus, IWhatsAppConnectionManager | WAEventBus, WhatsAppConnectionManager |
-| ai | IToolRegistry, IAIKeyService, IProvider | AIToolService, AIKeyService, LMStudioProvider |
+| [module name] | [exported interfaces] | [concrete class(es)] |
 
 ## Extension Points
 | To add... | Do this |
 |---|---|
-| New message type handler | Implement IMessageHandler, register in MessageHandlerRegistry |
-| New JID alias strategy | Implement IJidAliasStrategy, register in JidAliasRegistry |
-| New AI provider | Implement IProvider in services/ai/providers/ |
-| New event subscriber | Implement IWAEventSubscriber, add to createSubscribers() |
-| New IPC channel | Add handler in ipc/, inject only needed interfaces from ServiceContainer |
+| [New variant/feature] | [Exact steps — what file to create, where to register] |
 
 ## What NOT to do
-- Do not add `new X()` calls inside service class bodies
-- Do not import from `ServiceContainer` inside any service (only ServiceContainer imports services)
-- Do not add methods to a repository interface that belong in a different interface
-- Do not put business logic in IPC handlers or event subscribers
+- [Anti-pattern 1 — specific to this codebase]
+- [Anti-pattern 2]
 ```
 
 **After writing:** Count the lines. If over 100, cut the least useful rows from the
@@ -212,6 +186,21 @@ module map or merge similar extension points.
 
 ---
 
+## Verification
+
+After generating all three documents:
+
+```bash
+# Verify all files exist
+# Verify ai-context.md is under 100 lines
+
+# If the project has tests, read package.json and run them
+# to confirm documentation generation didn't break anything
+npm run typecheck
+```
+
+---
+
 ## Required Report Format
 
 ```
@@ -235,3 +224,8 @@ Modules without index.ts (unformalized boundaries):
 
 Blockers: [any issues]
 ```
+
+## Reference Files
+
+- `references/adr-template.md` — Worked example of a well-written ADR entry
+- `references/module-template.md` — Worked example of a module boundary entry
