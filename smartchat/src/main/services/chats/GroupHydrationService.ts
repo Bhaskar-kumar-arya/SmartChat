@@ -1,13 +1,14 @@
-import { CommunitySyncHandler } from './sync/CommunitySyncHandler'
-import { ChatSyncHandler } from './sync/ChatSyncHandler'
-import { MembershipSyncHandler } from './sync/MembershipSyncHandler'
+import { ICommunitySyncHandler } from './sync/ICommunitySyncHandler'
+import { IChatSyncHandler } from './sync/IChatSyncHandler'
+import { IMembershipSyncHandler } from './sync/IMembershipSyncHandler'
 import { BaileysGroupMetadata } from './types'
+import { IGroupHydrationService } from './IGroupHydrationService'
 
-export class GroupHydrationService {
+export class GroupHydrationService implements IGroupHydrationService {
   constructor(
-    private readonly communitySyncHandler: CommunitySyncHandler,
-    private readonly chatSyncHandler: ChatSyncHandler,
-    private readonly membershipSyncHandler: MembershipSyncHandler
+    private readonly communitySyncHandler: ICommunitySyncHandler,
+    private readonly chatSyncHandler: IChatSyncHandler,
+    private readonly membershipSyncHandler: IMembershipSyncHandler
   ) {}
 
   /**

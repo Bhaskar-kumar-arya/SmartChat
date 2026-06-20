@@ -6,12 +6,13 @@ import { IMessageQueryService } from './IMessageQueryService'
 import { IMessageParserService } from './IMessageParserService'
 import { IMessageRepository } from './IMessageRepository'
 import { IMessageQueryRepository } from './IMessageQueryRepository'
-import { FavoriteStickerService } from './FavoriteStickerService'
-import { ContactService } from '../contacts/ContactService'
+import { IFavoriteStickerService } from './IFavoriteStickerService'
+import { IContactService } from '../contacts/IContactService'
 import { WASocket } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/types'
 import { unwrapMessage } from '../../utils'
 import { Message } from '@prisma/client'
+import { IMediaService } from './IMediaService'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -111,7 +112,7 @@ function ensureBuffer(val: unknown): Buffer | null {
 
 // ─── service ────────────────────────────────────────────────────────────────
 
-export class MediaService {
+export class MediaService implements IMediaService {
   private favoriteStickerQueue: Array<{ msgId: string; sock: WASocket }> = []
   private activeDownloadsCount = 0
   private concurrencyLimit = 2
@@ -123,8 +124,8 @@ export class MediaService {
     private readonly messageQueryRepository: IMessageQueryRepository,
     private readonly messageService: IMessageQueryService,
     private readonly messageParserService: IMessageParserService,
-    private readonly contactService: ContactService,
-    private readonly favoriteStickerService: FavoriteStickerService
+    private readonly contactService: IContactService,
+    private readonly favoriteStickerService: IFavoriteStickerService
   ) { }
 
   setFavoriteStickerQueuePaused(paused: boolean): void {

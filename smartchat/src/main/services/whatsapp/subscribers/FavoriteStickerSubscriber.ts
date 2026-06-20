@@ -8,12 +8,12 @@
 import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type { FavoriteStickerSyncEvent } from '../WAEventTypes'
-import type { FavoriteStickerService } from '../../messages/FavoriteStickerService'
+import type { IFavoriteStickerService } from '../../messages/IFavoriteStickerService'
 
 export class FavoriteStickerSubscriber implements IWAEventSubscriber {
   private onFavoriteStickerSyncBound: (e: FavoriteStickerSyncEvent) => Promise<void>
 
-  constructor(private favoriteStickerService: FavoriteStickerService) {
+  constructor(private favoriteStickerService: IFavoriteStickerService) {
     this.onFavoriteStickerSyncBound = this.onFavoriteStickerSync.bind(this)
   }
 

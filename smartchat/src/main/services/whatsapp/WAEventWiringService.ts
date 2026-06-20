@@ -1,16 +1,11 @@
 import { WASocket } from './types'
 import { WAEventHandler } from './WAEventHandler'
-import { HistorySyncManager } from './HistorySyncManager'
+import { IHistorySyncManager } from './IHistorySyncManager'
+import { IWAEventWiringService, ConnectionCallbacks } from './IWAEventWiringService'
 
-export interface ConnectionCallbacks {
-  handleQr(qr: string): void
-  handleConnectionClose(lastDisconnect: any): Promise<void>
-  handleConnectionOpen(sock: WASocket, syncFullHistory: boolean): Promise<void>
-}
-
-export class WAEventWiringService {
+export class WAEventWiringService implements IWAEventWiringService {
   constructor(
-    private readonly historySyncManager: HistorySyncManager
+    private readonly historySyncManager: IHistorySyncManager
   ) {}
 
   /**

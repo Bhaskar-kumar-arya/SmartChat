@@ -28,11 +28,11 @@ import type { IChatService } from '../../chats/IChatService'
 import type { IContactService } from '../../contacts/IContactService'
 import type { IGroupMembershipService } from '../../chats/IGroupMembershipService'
 import type { IChatMemberRepository } from '../../chats/IChatMemberRepository'
-import type { ProfileSyncService } from '../../contacts/ProfileSyncService'
-import type { NotificationService } from '../../notification/NotificationService'
+import type { IProfileSyncService } from '../../contacts/IProfileSyncService'
+import type { INotificationService } from '../../notification/INotificationService'
 import type { IMessageQueryRepository } from '../../messages/IMessageQueryRepository'
 import type { IReceiptService } from '../IReceiptService'
-import type { FavoriteStickerService } from '../../messages/FavoriteStickerService'
+import type { IFavoriteStickerService } from '../../messages/IFavoriteStickerService'
 
 export type { IWAEventSubscriber }
 
@@ -45,11 +45,11 @@ export interface SubscriberServices {
   contactService: IContactService
   groupMembershipService: IGroupMembershipService
   chatMemberRepository: IChatMemberRepository
-  profileSyncService: ProfileSyncService
-  notificationService: NotificationService
+  profileSyncService: IProfileSyncService
+  notificationService: INotificationService
   messageQueryRepository: IMessageQueryRepository
   receiptService: IReceiptService
-  favoriteStickerService: FavoriteStickerService
+  favoriteStickerService: IFavoriteStickerService
 }
 
 /**

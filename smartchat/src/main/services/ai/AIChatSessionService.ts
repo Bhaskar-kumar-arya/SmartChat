@@ -3,23 +3,12 @@ import { app } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 
-import { AIChatContext, AIMention } from './AIService'
+import { IAIChatSessionService, AIChatMessageInput } from './IAIChatSessionService'
 
 // Path for storing simple preferences like auto-save
 const preferencesPath = join(app.getPath('userData'), 'ai_preferences.json')
 
-export interface AIChatMessageInput {
-  role: 'user' | 'ai'
-  content: string
-  contexts?: AIChatContext[]
-  mentions?: AIMention[]
-  isHidden?: boolean
-  isSystem?: boolean
-  toolResult?: string
-  hasError?: boolean
-}
-
-export class AIChatSessionService {
+export class AIChatSessionService implements IAIChatSessionService {
   constructor(private prisma: PrismaClient) {}
 
   // ── Session CRUD ──

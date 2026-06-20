@@ -12,8 +12,8 @@ import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type { IncomingMessageEvent } from '../WAEventTypes'
 import type { IChatService } from '../../chats/IChatService'
 import type { IContactService } from '../../contacts/IContactService'
-import type { ProfileSyncService } from '../../contacts/ProfileSyncService'
-import type { NotificationService } from '../../notification/NotificationService'
+import type { IProfileSyncService } from '../../contacts/IProfileSyncService'
+import type { INotificationService } from '../../notification/INotificationService'
 
 export class NotificationSubscriber implements IWAEventSubscriber {
   private onIncomingMessageBound: (e: IncomingMessageEvent) => Promise<void>
@@ -21,8 +21,8 @@ export class NotificationSubscriber implements IWAEventSubscriber {
   constructor(
     private chatService: IChatService,
     private contactService: IContactService,
-    private profileSyncService: ProfileSyncService,
-    private notificationService: NotificationService
+    private profileSyncService: IProfileSyncService,
+    private notificationService: INotificationService
   ) {
     // Bind so we can remove the exact same reference in dispose()
     this.onIncomingMessageBound = this.onIncomingMessage.bind(this)

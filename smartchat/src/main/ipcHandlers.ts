@@ -7,9 +7,9 @@ import { AIToolInitializer } from './services/ai/AIToolInitializer'
 import { audioTranscoderService } from './services/audio/AudioTranscoderService'
 import { WASocket } from './services/whatsapp/types'
 import { WhatsAppConnectionManager } from './services/whatsapp/WhatsAppConnectionManager'
-import { AIChatContext, AIHistoryMessage, AIMention } from './services/ai/AIService'
-import { AIChatMessageInput } from './services/ai/AIChatSessionService'
-import { ExportSession, ExportMessage } from './services/ai/AIChatExportService'
+import { AIChatContext, AIHistoryMessage, AIMention } from './services/ai/IAIService'
+import { AIChatMessageInput } from './services/ai/IAIChatSessionService'
+import { ExportSession, ExportMessage } from './services/ai/IAIChatExportService'
 import { NotificationPreferences } from './services/notification/INotificationService'
 
 export function registerIpcHandlers(

@@ -1,9 +1,10 @@
-import { SyncRepository, SyncChatCreateInput, SyncChatUpdateInput } from '../../sync/SyncRepository'
+import { ISyncRepository, SyncChatCreateInput, SyncChatUpdateInput } from '../../sync/ISyncRepository'
 import { BaileysGroupMetadata } from '../types'
 import { cleanJid, parseBaileysTimestamp, parseCommunityMetadata } from '../../../utils'
+import { IChatSyncHandler } from './IChatSyncHandler'
 
-export class ChatSyncHandler {
-  constructor(private readonly syncRepository: SyncRepository) {}
+export class ChatSyncHandler implements IChatSyncHandler {
+  constructor(private readonly syncRepository: ISyncRepository) {}
 
   /**
    * Synchronizes chat records for a batch of groups.

@@ -5,8 +5,9 @@ import { MessageEditStrategy } from './MessageEditStrategy'
 import { ProcessedMessage } from '../../../domain/types'
 import { ProtocolResult } from '../types'
 import { cleanJid } from '../../../utils'
+import { ISecretMessageService } from './ISecretMessageService'
 
-export class SecretMessageService {
+export class SecretMessageService implements ISecretMessageService {
   private strategies = new Map<number | string, ISecretMessageStrategy>()
 
   constructor(private prisma: PrismaClient) {

@@ -1,10 +1,11 @@
 import { IAuthStateRepository } from './IAuthStateRepository'
+import { IAuthSettingsService } from './IAuthSettingsService'
 
 /**
  * AuthSettingsService — Orchestrates authState setting flags
  * without exposing raw database client operations.
  */
-export class AuthSettingsService {
+export class AuthSettingsService implements IAuthSettingsService {
   constructor(private readonly authStateRepository: IAuthStateRepository) {}
 
   /**

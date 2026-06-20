@@ -1,18 +1,6 @@
 import fs from 'fs'
 import { join } from 'path'
-
-
-export interface ExportSession {
-  id: string
-  title: string
-  modelId?: string | null
-}
-
-export interface ExportMessage {
-  role: string
-  content: string
-  timestamp?: string | number | null
-}
+import { IAIChatExportService, ExportSession, ExportMessage } from './IAIChatExportService'
 
 export interface ExportedChatData {
   sessionId: string
@@ -26,7 +14,7 @@ export interface ExportedChatData {
   }>
 }
 
-export class AIChatExportService {
+export class AIChatExportService implements IAIChatExportService {
   private getExportPath(): string {
     return join(process.cwd(), 'ai_chats_export.json')
   }

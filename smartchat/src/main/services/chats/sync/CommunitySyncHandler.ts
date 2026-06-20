@@ -1,9 +1,10 @@
-import { SyncRepository } from '../../sync/SyncRepository'
+import { ISyncRepository } from '../../sync/ISyncRepository'
 import { BaileysGroupMetadata } from '../types'
 import { cleanJid, parseCommunityMetadata } from '../../../utils'
+import { ICommunitySyncHandler } from './ICommunitySyncHandler'
 
-export class CommunitySyncHandler {
-  constructor(private readonly syncRepository: SyncRepository) {}
+export class CommunitySyncHandler implements ICommunitySyncHandler {
+  constructor(private readonly syncRepository: ISyncRepository) {}
 
   /**
    * Synchronizes community records and sets up root/announce JID mappings.

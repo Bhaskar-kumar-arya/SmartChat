@@ -1,4 +1,4 @@
-import { ContactService } from '../contacts/ContactService'
+import { IContactService } from '../contacts/IContactService'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { join } from 'path'
 import { IMessageProcessingService } from './IMessageProcessingService'
@@ -7,7 +7,7 @@ import { IMessageQueryService } from './IMessageQueryService'
 import { IMessageRepository } from './IMessageRepository'
 import { IReactionRepository } from './IReactionRepository'
 import { IMessageQueryRepository } from './IMessageQueryRepository'
-import { ChatService } from '../chats/ChatService'
+import { IChatService } from '../chats/IChatService'
 import { proto, AnyMessageContent } from '@whiskeysockets/baileys'
 import { WASocket, MediaMessageWithLocalUri } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/types'
@@ -16,9 +16,10 @@ import type { IWAEventBus } from '../whatsapp/IWAEventBus'
 import { stickerMetadataService } from './StickerMetadataService'
 import { getMediaSendOptions } from './MediaHelper'
 import { LocalFileStorage } from '../storage/LocalFileStorage'
+import { IMessageActionService } from './IMessageActionService'
 
 
-export class MessageActionService {
+export class MessageActionService implements IMessageActionService {
   private readonly fileStorage: LocalFileStorage
 
   constructor(
@@ -26,11 +27,11 @@ export class MessageActionService {
     private readonly reactionRepository: IReactionRepository,
     private readonly messageQueryRepository: IMessageQueryRepository,
     private readonly identityRepository: IIdentityRepository,
-    private readonly contactService: ContactService,
+    private readonly contactService: IContactService,
     private readonly messageProcessingService: IMessageProcessingService,
     private readonly messageParserService: IMessageParserService,
     private readonly messageQueryService: IMessageQueryService,
-    private readonly chatService: ChatService,
+    private readonly chatService: IChatService,
     private readonly getBus: () => IWAEventBus | null,
     fileStorage?: LocalFileStorage
   ) {

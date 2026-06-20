@@ -9,8 +9,10 @@ import { PnJidStrategy, LidJidStrategy, GroupJidStrategy, BotJidStrategy } from 
 import { IdentityReconciliationService } from './services/contacts/IdentityReconciliationService'
 import { IIdentityReconciliationService } from './services/contacts/IIdentityReconciliationService'
 import { ProfileSyncService } from './services/contacts/ProfileSyncService'
+import { IProfileSyncService } from './services/contacts/IProfileSyncService'
 import { EmbeddingService, IEmbeddingService } from './services/search/EmbeddingService'
 import { DataWipeService } from './services/DataWipeService'
+import { IDataWipeService } from './services/IDataWipeService'
 import { ReceiptService } from './services/whatsapp/ReceiptService'
 import { IReceiptService } from './services/whatsapp/IReceiptService'
 import { ChatService } from './services/chats/ChatService'
@@ -26,7 +28,9 @@ import { IMessageProcessingService } from './services/messages/IMessageProcessin
 import { MessageParser } from './services/messages/MessageParser'
 import { MessageEnricher } from './services/messages/MessageEnricher'
 import { MessageActionService } from './services/messages/MessageActionService'
+import { IMessageActionService } from './services/messages/IMessageActionService'
 import { MediaService } from './services/messages/MediaService'
+import { IMediaService } from './services/messages/IMediaService'
 import { MessageIdentityResolver } from './services/messages/MessageIdentityResolver'
 import {
   SecretMessageProcessor,
@@ -35,14 +39,22 @@ import {
   StandardMessageProcessor
 } from './services/messages/processors'
 import { SearchService } from './services/search/SearchService'
+import { ISearchService } from './services/search/ISearchService'
 import { AIService } from './services/ai/AIService'
+import { IAIService } from './services/ai/IAIService'
 import { AIChatSessionService } from './services/ai/AIChatSessionService'
+import { IAIChatSessionService } from './services/ai/IAIChatSessionService'
 import { AIChatExportService } from './services/ai/AIChatExportService'
+import { IAIChatExportService } from './services/ai/IAIChatExportService'
 import { NotificationService } from './services/notification/NotificationService'
+import { INotificationService } from './services/notification/INotificationService'
 import { SecretMessageService } from './services/whatsapp/secret/SecretMessageService'
+import { ISecretMessageService } from './services/whatsapp/secret/ISecretMessageService'
 import { MessageReactionStrategy } from './services/whatsapp/secret/MessageReactionStrategy'
 import { FavoriteStickerService } from './services/messages/FavoriteStickerService'
+import { IFavoriteStickerService } from './services/messages/IFavoriteStickerService'
 import { GroupHydrationService } from './services/chats/GroupHydrationService'
+import { IGroupHydrationService } from './services/chats/IGroupHydrationService'
 import { CommunitySyncHandler } from './services/chats/sync/CommunitySyncHandler'
 import { ChatSyncHandler } from './services/chats/sync/ChatSyncHandler'
 import { MembershipSyncHandler } from './services/chats/sync/MembershipSyncHandler'
@@ -72,14 +84,18 @@ import { IMessageVectorRepository } from './services/messages/IMessageVectorRepo
 import { ReactionRepository } from './services/messages/ReactionRepository'
 import { IReactionRepository } from './services/messages/IReactionRepository'
 import { SyncRepository } from './services/sync/SyncRepository'
+import { ISyncRepository } from './services/sync/ISyncRepository'
 import { AuthStateRepository } from './services/auth/AuthStateRepository'
 import { AuthSettingsService } from './services/auth/AuthSettingsService'
+import { IAuthSettingsService } from './services/auth/IAuthSettingsService'
 
 import type { IWAEventBus } from './services/whatsapp/IWAEventBus'
 import { createMessageFormatterRegistry, MessageFormatterRegistry } from './services/messages/formatters'
 
 import { HistorySyncManager } from './services/whatsapp/HistorySyncManager'
+import { IHistorySyncManager } from './services/whatsapp/IHistorySyncManager'
 import { WAEventWiringService } from './services/whatsapp/WAEventWiringService'
+import { IWAEventWiringService } from './services/whatsapp/IWAEventWiringService'
 
 import { IKeyStorage } from './services/ai/IKeyStorage'
 import { FSKeyStorage } from './services/ai/FSKeyStorage'
@@ -266,32 +282,32 @@ export type ServiceContainer = {
   messageVectorRepository: IMessageVectorRepository
   receiptRepository: IReceiptRepository
   reactionRepository: IReactionRepository
-  syncRepository: SyncRepository
-  authSettingsService: AuthSettingsService
+  syncRepository: ISyncRepository
+  authSettingsService: IAuthSettingsService
   contactService: IContactService
   groupMembershipService: IGroupMembershipService
   embeddingService: IEmbeddingService
-  dataWipeService: DataWipeService
+  dataWipeService: IDataWipeService
   receiptService: IReceiptService
   chatService: IChatService
-  groupHydrationService: GroupHydrationService
+  groupHydrationService: IGroupHydrationService
   messageWriterService: IMessageWriterService
   messageQueryService: IMessageQueryService
   messageProcessingService: IMessageProcessingService
   messageParserService: IMessageParserService
-  messageActionService: MessageActionService
-  mediaService: MediaService
-  searchService: SearchService
-  aiService: AIService
-  aiChatSessionService: AIChatSessionService
-  aiChatExportService: AIChatExportService
-  notificationService: NotificationService
-  secretMessageService: SecretMessageService
-  favoriteStickerService: FavoriteStickerService
+  messageActionService: IMessageActionService
+  mediaService: IMediaService
+  searchService: ISearchService
+  aiService: IAIService
+  aiChatSessionService: IAIChatSessionService
+  aiChatExportService: IAIChatExportService
+  notificationService: INotificationService
+  secretMessageService: ISecretMessageService
+  favoriteStickerService: IFavoriteStickerService
   identityReconciliationService: IIdentityReconciliationService
-  profileSyncService: ProfileSyncService
+  profileSyncService: IProfileSyncService
   messageFormatterRegistry: MessageFormatterRegistry
-  historySyncManager: HistorySyncManager
-  waEventWiringService: WAEventWiringService
+  historySyncManager: IHistorySyncManager
+  waEventWiringService: IWAEventWiringService
   aiKeyService: IAIKeyService
 }

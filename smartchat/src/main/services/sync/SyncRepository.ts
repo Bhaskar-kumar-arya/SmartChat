@@ -1,48 +1,17 @@
 import { PrismaClient, Chat, Community, ChatMember, Identity, IdentityAlias, LidMap } from '@prisma/client'
-
-export interface SyncChatCreateInput {
-  jid: string
-  type: string
-  unreadCount: number
-  timestamp: bigint
-  pinned: number
-  muteExpiration: bigint
-  isArchived: boolean
-  name: string | null
-  communityId: number | null
-  profilePictureUrl: string | null
-}
-
-export interface SyncChatUpdateInput {
-  jid: string
-  type: string
-  isArchived: boolean
-  communityId: number | null
-  name?: string | null
-  timestamp?: bigint
-  unreadCount?: number
-  pinned?: number
-  muteExpiration?: bigint
-  profilePictureUrl?: string | null
-}
-
-export interface SyncLidMapEntry {
-  lid: string
-  pn: string
-  source: string
-}
-
-export interface SyncChatMemberUpsert {
-  chatJid: string
-  identityId: number
-  role: string
-}
+import {
+  ISyncRepository,
+  SyncChatCreateInput,
+  SyncChatUpdateInput,
+  SyncLidMapEntry,
+  SyncChatMemberUpsert
+} from './ISyncRepository'
 
 /**
  * SyncRepository — Encapsulates batch database operations used during high-throughput
  * sync and group hydration operations.
  */
-export class SyncRepository {
+export class SyncRepository implements ISyncRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   /**

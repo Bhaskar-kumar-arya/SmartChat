@@ -1,49 +1,18 @@
-import { ContactService } from '../contacts/ContactService'
+import { IContactService, getDisplayName } from '../contacts/IContactService'
 import { IEmbeddingService } from './EmbeddingService'
 import { WASocket } from '../whatsapp/types'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { IMessageVectorRepository } from '../messages/IMessageVectorRepository'
-
-export interface SearchResultItem {
-  type: 'chat' | 'message'
-  jid: string
-  name: string
-  lastMessage?: string
-  messageId?: string
-  snippet?: string
-  timestamp?: string
-  score?: number
-}
-
-export interface SearchResults {
-  chats: SearchResultItem[]
-  messages: SearchResultItem[]
-}
-
-export interface SearchFilters {
-  jids?: string[]
-  fromDate?: Date
-  toDate?: Date
-}
-
-export type SearchMode = 'normal' | 'deep'
-
-export interface MentionResult {
-  jid: string
-  name: string
-  pushName?: string | null
-  verifiedName?: string | null
-  phoneNumber?: string | null
-  profilePictureUrl?: string | null
-}
-
-export interface ISearchService {
-  searchAll(query: string, mode: SearchMode, sock: WASocket | null, filters?: SearchFilters): Promise<SearchResults>
-  searchMentionContacts(query: string): Promise<MentionResult[]>
-  searchMentionChats(query: string): Promise<MentionResult[]>
-}
+import {
+  ISearchService,
+  SearchResultItem,
+  SearchResults,
+  SearchFilters,
+  SearchMode,
+  MentionResult
+} from './ISearchService'
 
 function buildTimestampFilter(filters?: SearchFilters): { gte?: bigint; lte?: bigint } | undefined {
   if (!filters?.fromDate && !filters?.toDate) return undefined
@@ -81,7 +50,7 @@ export class SearchService implements ISearchService {
     private readonly messageRepository: IMessageQueryRepository,
     private readonly messageVectorRepository: IMessageVectorRepository,
     private readonly identityRepository: IIdentityRepository,
-    private readonly contactService: ContactService,
+    private readonly contactService: IContactService,
     private readonly embeddingService: IEmbeddingService
   ) {}
 
@@ -153,7 +122,7 @@ export class SearchService implements ISearchService {
     return (messages as unknown as DBMessageWithChatAndSender[]).map((msg) => {
         let name = msg.chat?.name
         if (!name && msg.chat?.type === 'DM' && msg.sender) {
-            name = ContactService.getDisplayName(msg.sender, msg.chatJid.split('@')[0])
+            name = getDisplayName(msg.sender, msg.chatJid.split('@')[0])
         }
         if (!name) name = msg.chatJid.split('@')[0]
 
@@ -202,7 +171,7 @@ export class SearchService implements ISearchService {
           
           let name = msg.chat?.name
           if (!name && msg.chat?.type === 'DM' && msg.sender) {
-              name = ContactService.getDisplayName(msg.sender, msg.chatJid.split('@')[0])
+              name = getDisplayName(msg.sender, msg.chatJid.split('@')[0])
           }
           if (!name) name = msg.chatJid.split('@')[0]
 
@@ -244,7 +213,7 @@ export class SearchService implements ISearchService {
 
       if (!bestJid) continue
 
-      const displayName = ContactService.getDisplayName(ident, bestJid.split('@')[0])
+      const displayName = getDisplayName(ident, bestJid.split('@')[0])
       seenJids.add(bestJid)
 
       results.push({
@@ -278,7 +247,7 @@ export class SearchService implements ISearchService {
         if (identId) {
           const ident = await this.contactService.findIdentityById(identId)
           if (ident) {
-            if (!name) name = ContactService.getDisplayName(ident, chat.jid.split('@')[0])
+            if (!name) name = getDisplayName(ident, chat.jid.split('@')[0])
             pushName = ident.pushName
             verifiedName = ident.verifiedName
             phoneNumber = ident.phoneNumber

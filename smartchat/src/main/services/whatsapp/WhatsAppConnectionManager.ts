@@ -12,14 +12,14 @@ import {
   RECONNECT_DELAY_RESTART_MS,
   RECONNECT_DELAY_DEFAULT_MS
 } from '../../constants'
-import { DataWipeService } from '../DataWipeService'
+import { IDataWipeService } from '../IDataWipeService'
 import { WAEventHandler } from './WAEventHandler'
 import type { IWAEventBus, WAEventBusFactory } from './IWAEventBus'
 import { createSubscribers, SubscriberServices } from './subscribers'
-import { HistorySyncManager } from './HistorySyncManager'
+import { IHistorySyncManager } from './IHistorySyncManager'
 import { BaileysPatcher } from './BaileysPatcher'
-import { WAEventWiringService, ConnectionCallbacks } from './WAEventWiringService'
-import { AuthSettingsService } from '../auth/AuthSettingsService'
+import { IWAEventWiringService, ConnectionCallbacks } from './IWAEventWiringService'
+import { IAuthSettingsService } from '../auth/IAuthSettingsService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
 import type { IEmbeddingService } from '../search/EmbeddingService'
@@ -37,12 +37,12 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
 
   constructor(
     private deps: WhatsAppConnectionDependencies,
-    private readonly authSettingsService: AuthSettingsService,
+    private readonly authSettingsService: IAuthSettingsService,
     private readonly chatRepository: IChatRepository,
     private readonly messageQueryRepository: IMessageQueryRepository,
-    private readonly dataWipeService: DataWipeService,
-    private historySyncManager: HistorySyncManager,
-    private wiringService: WAEventWiringService,
+    private readonly dataWipeService: IDataWipeService,
+    private historySyncManager: IHistorySyncManager,
+    private wiringService: IWAEventWiringService,
     private readonly eventBusFactory: WAEventBusFactory
   ) {}
 

@@ -5,6 +5,8 @@ import * as fs from 'fs'
 import { unwrapMessage } from '../../utils'
 import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 
+import { IFavoriteStickerService, FavoriteStickerDTO } from './IFavoriteStickerService'
+
 async function streamToBuffer(stream: AsyncIterable<Buffer>): Promise<Buffer> {
   const chunks: Buffer[] = []
   for await (const chunk of stream) {
@@ -19,15 +21,7 @@ interface StickerMessageLike {
   mediaKey?: unknown;
 }
 
-interface FavoriteStickerDTO {
-  id: string;
-  fileSha256: string;
-  fileName: string;
-  localURI: string;
-  createdAt: number;
-}
-
-export class FavoriteStickerService {
+export class FavoriteStickerService implements IFavoriteStickerService {
   constructor(private prisma: PrismaClient) {}
 
   private getMediaDir(): string {

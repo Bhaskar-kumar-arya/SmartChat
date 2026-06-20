@@ -9,20 +9,21 @@ import {
   SYNC_AUTO_FINISH_THRESHOLD,
   HISTORY_SYNC_TIMEOUT_MS
 } from '../../constants'
-import { AuthSettingsService } from '../auth/AuthSettingsService'
+import type { IAuthSettingsService } from '../auth/IAuthSettingsService'
 import type { IContactService } from '../contacts/IContactService'
 import type { IAliasRepository } from '../contacts/IAliasRepository'
 import type { IChatRepository } from '../chats/IChatRepository'
 import type { ICommunityRepository } from '../chats/ICommunityRepository'
 import type { IMessageRepository } from '../messages/IMessageRepository'
 import type { IReactionRepository } from '../messages/IReactionRepository'
-import type { MediaService } from '../messages/MediaService'
+import type { IMediaService } from '../messages/IMediaService'
 import type { IEmbeddingService } from '../search/EmbeddingService'
-import type { GroupHydrationService } from '../chats/GroupHydrationService'
+import type { IGroupHydrationService } from '../chats/IGroupHydrationService'
 import type { IIdentityReconciliationService } from '../contacts/IIdentityReconciliationService'
+import { IHistorySyncManager } from './IHistorySyncManager'
 
 export interface HistorySyncDependencies {
-  mediaService: MediaService
+  mediaService: IMediaService
   embeddingService: IEmbeddingService
   contactService: IContactService
   aliasRepository: IAliasRepository
@@ -30,11 +31,11 @@ export interface HistorySyncDependencies {
   communityRepository: ICommunityRepository
   messageRepository: IMessageRepository
   reactionRepository: IReactionRepository
-  groupHydrationService: GroupHydrationService
+  groupHydrationService: IGroupHydrationService
   identityReconciliationService: IIdentityReconciliationService
 }
 
-export class HistorySyncManager {
+export class HistorySyncManager implements IHistorySyncManager {
   private syncChunkCount = 0
   private maxProgress = 0
   private syncComplete = false
@@ -44,7 +45,7 @@ export class HistorySyncManager {
   constructor(
     private deps: HistorySyncDependencies,
     private getMainWindow: () => BrowserWindow | null,
-    private readonly authSettingsService: AuthSettingsService
+    private readonly authSettingsService: IAuthSettingsService
   ) {}
 
   public get isComplete(): boolean {

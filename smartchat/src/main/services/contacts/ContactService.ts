@@ -4,7 +4,7 @@ import { IIdentityRepository } from './IIdentityRepository'
 import { IAliasRepository } from './IAliasRepository'
 import { ILidMapRepository } from './ILidMapRepository'
 import { ILidPnLinker } from './ILidPnLinker'
-import { IContactNameResolver, IContactService } from './IContactService'
+import { IContactNameResolver, IContactService, getDisplayName } from './IContactService'
 import { Identity } from '@prisma/client'
 import { IContactCache } from './IContactCache'
 import { IJidStrategy } from './IJidStrategy'
@@ -32,16 +32,7 @@ export class ContactService implements IContactService {
     } | null | undefined,
     fallback: string = 'Unknown'
   ): string {
-    if (!identity) return fallback
-    if (identity.displayName) return identity.displayName
-    if (identity.verifiedName) return identity.verifiedName
-    if (identity.pushName) {
-      const trimmed = identity.pushName.trim()
-      if (trimmed) {
-        return trimmed.startsWith('~') ? trimmed : `~ ${trimmed}`
-      }
-    }
-    return identity.phoneNumber?.split('@')[0] || fallback
+    return getDisplayName(identity, fallback)
   }
 
   public clearCaches(): void {

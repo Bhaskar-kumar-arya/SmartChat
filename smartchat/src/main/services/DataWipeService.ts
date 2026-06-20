@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
+import { IDataWipeService } from './IDataWipeService'
 
-export class DataWipeService {
+export class DataWipeService implements IDataWipeService {
   constructor(private prisma: PrismaClient) {}
 
   private wipeFavouritesFolder(): void {

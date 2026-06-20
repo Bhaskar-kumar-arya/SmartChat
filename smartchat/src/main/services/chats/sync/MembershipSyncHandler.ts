@@ -1,12 +1,13 @@
-import { SyncRepository, SyncChatMemberUpsert } from '../../sync/SyncRepository'
-import { ContactService } from '../../contacts/ContactService'
+import { ISyncRepository, SyncChatMemberUpsert } from '../../sync/ISyncRepository'
+import { IContactService } from '../../contacts/IContactService'
 import { BaileysGroupMetadata } from '../types'
 import { cleanJid } from '../../../utils'
+import { IMembershipSyncHandler } from './IMembershipSyncHandler'
 
-export class MembershipSyncHandler {
+export class MembershipSyncHandler implements IMembershipSyncHandler {
   constructor(
-    private readonly syncRepository: SyncRepository,
-    private readonly contactService: ContactService
+    private readonly syncRepository: ISyncRepository,
+    private readonly contactService: IContactService
   ) {}
 
   /**

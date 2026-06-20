@@ -1,13 +1,14 @@
 import { PrismaClient } from '@prisma/client'
-import { ContactService } from './ContactService'
+import { IContactService } from './IContactService'
 import { WASocket } from '../whatsapp/types'
+import { IProfileSyncService } from './IProfileSyncService'
 
-export class ProfileSyncService {
+export class ProfileSyncService implements IProfileSyncService {
   private imageCache = new Map<string, string>()
 
   constructor(
     private prisma: PrismaClient,
-    private contactService: ContactService
+    private contactService: IContactService
   ) {}
 
   /**

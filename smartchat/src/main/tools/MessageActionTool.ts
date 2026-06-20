@@ -1,5 +1,5 @@
 import { AITool } from '../services/ai/IToolRegistry';
-import { MessageActionService } from '../services/messages/MessageActionService';
+import { IMessageActionService } from '../services/messages/IMessageActionService';
 import { WASocket } from '../services/whatsapp/types';
 
 export class MessageActionTool implements AITool {
@@ -57,7 +57,7 @@ HOW TO USE:
 
   constructor(
     private getSock: () => WASocket | null,
-    private messageActionService: MessageActionService
+    private messageActionService: IMessageActionService
   ) { }
 
   async execute(args: any) {
