@@ -73,6 +73,10 @@ The user wants a summary of the past week's messages. I need to fetch all messag
 AVAILABLE TOOLS (injected as globals):
 `;
 
+const FILENAME_SCRIPT = 'smartscript.js';
+const SCRIPT_LINE_OFFSET = -1;
+const MSG_NO_RETURN_VALUE = '(script completed with no return value)';
+
 // ── Tool ───────────────────────────────────────────────────────────────────────
 
 export class ExecuteScriptTool implements AITool {
@@ -118,18 +122,80 @@ export class ExecuteScriptTool implements AITool {
 
   async execute(args: unknown): Promise<unknown> {
     if (!args || typeof args !== 'object') {
-      throw new Error('Invalid arguments passed to ExecuteScriptTool');
+      throw new Error('[ExecuteScriptTool] Invalid arguments passed to ExecuteScriptTool');
     }
     const { script, explanation } = args as Record<string, unknown>;
 
     if (!script || typeof script !== 'string') {
-      throw new Error('Missing required argument: script');
+      throw new Error('[ExecuteScriptTool] Missing required argument: script');
     }
 
     const logs: string[] = [];
     let toolCallCount = 0;
 
-    // ── Build sandboxed context ────────────────────────────────────────────
+    const sandbox = this.buildSandbox(
+      logs,
+      () => toolCallCount,
+      () => {
+        toolCallCount++;
+      }
+    );
+
+    const context = vm.createContext(sandbox);
+
+    // Wrap script in an async IIFE so top-level 'await' and 'return' work
+    const wrapped = `(async function __smartscript__() {\n${script}\n})()`;
+
+    let scriptPromise: Promise<unknown>;
+    try {
+      const compiled = this.compileScript(wrapped);
+      // runInContext returns a Promise (the IIFE result)
+      scriptPromise = compiled.runInContext(context) as Promise<unknown>;
+    } catch (syntaxErr: unknown) {
+      const syntaxErrMsg = syntaxErr instanceof Error ? syntaxErr.message : String(syntaxErr);
+      return {
+        explanation,
+        success: false,
+        error: `Syntax error: ${syntaxErrMsg}`,
+        logs,
+        toolCallCount
+      };
+    }
+
+    // Race the script against a wall-clock timeout (handles async hangs)
+    let result: unknown;
+    let timedOut = false;
+
+    try {
+      result = await this.runScriptWithTimeout(scriptPromise, () => {
+        timedOut = true;
+      });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      return {
+        explanation,
+        success: false,
+        timedOut,
+        error: errMsg,
+        logs,
+        toolCallCount
+      };
+    }
+
+    return {
+      explanation,
+      success: true,
+      result: result !== undefined ? result : MSG_NO_RETURN_VALUE,
+      logs,
+      toolCallCount
+    };
+  }
+
+  private buildSandbox(
+    logs: string[],
+    getCallCount: () => number,
+    incrementCallCount: () => void
+  ): Record<string, unknown> {
     const sandbox: Record<string, unknown> = {
       // Safe JS built-ins only
       Promise,
@@ -167,73 +233,39 @@ export class ExecuteScriptTool implements AITool {
       if (tool.name === this.name) continue;
 
       sandbox[tool.name] = async (toolArgs: unknown) => {
-        if (toolCallCount >= MAX_TOOL_CALLS) {
+        if (getCallCount() >= MAX_TOOL_CALLS) {
           throw new Error(
-            `[executeScript] Tool call limit (${MAX_TOOL_CALLS}) reached. Script halted to prevent runaway execution.`
+            `[ExecuteScriptTool] Tool call limit (${MAX_TOOL_CALLS}) reached. Script halted to prevent runaway execution.`
           );
         }
-        toolCallCount++;
-        logs.push(`[tool:${tool.name}] call #${toolCallCount}`);
+        incrementCallCount();
+        logs.push(`[tool:${tool.name}] call #${getCallCount()}`);
         return tool.execute(toolArgs);
       };
     }
 
-    const context = vm.createContext(sandbox);
+    return sandbox;
+  }
 
-    // Wrap script in an async IIFE so top-level 'await' and 'return' work
-    const wrapped = `(async function __smartscript__() {\n${script}\n})()`;
+  private compileScript(wrappedScript: string): vm.Script {
+    return new vm.Script(wrappedScript, {
+      filename: FILENAME_SCRIPT,
+      lineOffset: SCRIPT_LINE_OFFSET
+    });
+  }
 
-    let scriptPromise: Promise<unknown>;
-    try {
-      const compiled = new vm.Script(wrapped, {
-        filename: 'smartscript.js',
-        lineOffset: -1  // offset so line numbers in errors match user's script
-      });
-      // runInContext returns a Promise (the IIFE result)
-      scriptPromise = compiled.runInContext(context) as Promise<unknown>;
-    } catch (syntaxErr: unknown) {
-      const syntaxErrMsg = syntaxErr instanceof Error ? syntaxErr.message : String(syntaxErr);
-      return {
-        explanation,
-        success: false,
-        error: `Syntax error: ${syntaxErrMsg}`,
-        logs,
-        toolCallCount
-      };
-    }
-
-    // Race the script against a wall-clock timeout (handles async hangs)
-    let result: unknown;
-    let timedOut = false;
-
-    try {
-      result = await Promise.race([
-        scriptPromise,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => {
-            timedOut = true;
-            reject(new Error(`Script exceeded ${MAX_EXECUTION_MS / 1000}s timeout.`));
-          }, MAX_EXECUTION_MS)
-        )
-      ]);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      return {
-        explanation,
-        success: false,
-        timedOut,
-        error: errMsg,
-        logs,
-        toolCallCount
-      };
-    }
-
-    return {
-      explanation,
-      success: true,
-      result: result !== undefined ? result : '(script completed with no return value)',
-      logs,
-      toolCallCount
-    };
+  private async runScriptWithTimeout(
+    scriptPromise: Promise<unknown>,
+    onTimeout: () => void
+  ): Promise<unknown> {
+    return Promise.race([
+      scriptPromise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => {
+          onTimeout();
+          reject(new Error(`[ExecuteScriptTool] Script exceeded ${MAX_EXECUTION_MS / 1000}s timeout.`));
+        }, MAX_EXECUTION_MS)
+      )
+    ]);
   }
 }

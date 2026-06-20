@@ -112,6 +112,20 @@ function ensureBuffer(val: unknown): Buffer | null {
 
 // ─── service ────────────────────────────────────────────────────────────────
 
+const MSG_TYPE_STICKER = 'stickerMessage'
+const MEDIA_TYPE_STICKER = 'sticker'
+const MEDIA_PREFIX_APP = 'app://media/'
+const DIR_NAME_MEDIA = 'media'
+const CDN_DIRECT_STREAM_SUBSTRING = '/o1/'
+const GROUP_JID_SUFFIX = '@g.us'
+
+/**
+ * Service for downloading, caching, and opening message media.
+ *
+ * Error handling contract:
+ * - Methods throw Error with [MediaService] prefix for socket/message/download issues.
+ * - Silent failures or boolean return values are used only in non-critical paths like openFile.
+ */
 export class MediaService implements IMediaService {
   private favoriteStickerQueue: Array<{ msgId: string; sock: WASocket }> = []
   private activeDownloadsCount = 0
@@ -182,42 +196,52 @@ export class MediaService implements IMediaService {
     }
   }
 
+  private extractStickerSha(mediaMsg: any): string | null {
+    if (!mediaMsg || !mediaMsg.fileSha256) return null
+    const sha = mediaMsg.fileSha256
+    if (typeof sha === 'string') {
+      return sha
+    }
+    if (Buffer.isBuffer(sha)) {
+      return sha.toString('base64')
+    }
+    if (
+      sha &&
+      typeof sha === 'object' &&
+      'type' in sha &&
+      sha.type === 'Buffer' &&
+      'data' in sha &&
+      Array.isArray((sha as { data: unknown }).data)
+    ) {
+      return Buffer.from((sha as { data: number[] }).data).toString('base64')
+    }
+    if (sha instanceof Uint8Array || Array.isArray(sha)) {
+      return Buffer.from(sha as Uint8Array).toString('base64')
+    }
+    return null
+  }
+
   async downloadFavoriteStickersFromSync(messages: Message[], sock: WASocket | null): Promise<void> {
     if (!sock) return
 
     // 1. Gather all unique sticker SHA hashes and map them to their corresponding messages
     const shaToMsgMap = new Map<string, Message[]>()
     for (const msg of messages) {
-      if (msg.messageType === 'stickerMessage') {
-        try {
-          const rawMessage = JSON.parse(msg.content) as Record<string, unknown>
-          const unwrapped = unwrapMessage(rawMessage)
-          const stickerMsg = unwrapped.stickerMessage
-          if (stickerMsg && stickerMsg.fileSha256) {
-            let shaStr = ''
-            const sha = stickerMsg.fileSha256
-            if (typeof sha === 'string') {
-              shaStr = sha
-            } else if (Buffer.isBuffer(sha)) {
-              shaStr = sha.toString('base64')
-            } else if (sha && typeof sha === 'object' && 'type' in sha && sha.type === 'Buffer' && 'data' in sha && Array.isArray((sha as { data: unknown }).data)) {
-              shaStr = Buffer.from((sha as { data: number[] }).data).toString('base64')
-            } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
-              shaStr = Buffer.from(sha as Uint8Array).toString('base64')
-            }
+      if (msg.messageType !== MSG_TYPE_STICKER) continue
+      try {
+        const rawMessage = JSON.parse(msg.content) as Record<string, unknown>
+        const unwrapped = unwrapMessage(rawMessage)
+        const shaStr = this.extractStickerSha(unwrapped.stickerMessage)
+        if (!shaStr) continue
 
-            if (shaStr) {
-              let list = shaToMsgMap.get(shaStr)
-              if (!list) {
-                list = []
-                shaToMsgMap.set(shaStr, list)
-              }
-              list.push(msg)
-            }
-          }
-        } catch (err) {
-          console.error('[MediaService] Error checking sticker for sync auto-download:', err)
+        let list = shaToMsgMap.get(shaStr)
+        if (!list) {
+          list = []
+          shaToMsgMap.set(shaStr, list)
         }
+        list.push(msg)
+      } catch (err) {
+        console.error('[MediaService] Error checking sticker for sync auto-download:', err)
       }
     }
 
@@ -243,17 +267,28 @@ export class MediaService implements IMediaService {
     }
   }
 
+  private async handleStickerAutoCopy(mediaMsg: Record<string, unknown>, filePath: string): Promise<void> {
+    try {
+      const shaStr = this.extractStickerSha(mediaMsg)
+      if (shaStr) {
+        await this.favoriteStickerService.handleDownloadedSticker(shaStr, filePath)
+      }
+    } catch (err) {
+      console.error('[MediaService] Failed during favorite sticker auto-copy check:', err)
+    }
+  }
+
   async downloadAndCacheMedia(msgId: string, sock: WASocket | null): Promise<EnrichedMessage> {
-    if (!sock) throw new Error('WhatsApp socket is not connected')
+    if (!sock) throw new Error('[MediaService] WhatsApp socket is not connected')
 
     const dbMsg = await this.messageQueryRepository.findMessageById(msgId)
-    if (!dbMsg || !dbMsg.content) throw new Error('Message not found')
+    if (!dbMsg || !dbMsg.content) throw new Error('[MediaService] Message not found')
 
     const rawMessage = JSON.parse(dbMsg.content) as Record<string, unknown>
     const unwrapped = unwrapMessage(rawMessage)
 
     const resolved = resolveMediaType(unwrapped)
-    if (!resolved) throw new Error('Not a media message')
+    if (!resolved) throw new Error('[MediaService] Not a media message')
 
     const { mediaType, mediaMsg } = resolved
 
@@ -261,7 +296,7 @@ export class MediaService implements IMediaService {
       mediaMsg.mediaKey = ensureBuffer(mediaMsg.mediaKey)
     }
 
-    const mediaDir = join(app.getPath('userData'), 'media')
+    const mediaDir = join(app.getPath('userData'), DIR_NAME_MEDIA)
     if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
 
     const fileName = this.messageParserService.getSafeMediaFileName(msgId, mediaType, mediaMsg)
@@ -272,35 +307,15 @@ export class MediaService implements IMediaService {
     }
 
     // Self-healing: if this is a sticker and it matches a favorite sticker, copy it to favourites
-    if (mediaType === 'sticker') {
-      try {
-        let shaStr = ''
-        if (mediaMsg.fileSha256) {
-          const sha = mediaMsg.fileSha256
-          if (typeof sha === 'string') {
-            shaStr = sha
-          } else if (Buffer.isBuffer(sha)) {
-            shaStr = sha.toString('base64')
-          } else if (sha && typeof sha === 'object' && 'type' in sha && sha.type === 'Buffer' && 'data' in sha && Array.isArray((sha as { data: unknown }).data)) {
-            shaStr = Buffer.from((sha as { data: number[] }).data).toString('base64')
-          } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
-            shaStr = Buffer.from(sha as Uint8Array).toString('base64')
-          }
-        }
-
-        if (shaStr) {
-          await this.favoriteStickerService.handleDownloadedSticker(shaStr, filePath)
-        }
-      } catch (err) {
-        console.error('[MediaService] Failed during favorite sticker auto-copy check:', err)
-      }
+    if (mediaType === MEDIA_TYPE_STICKER) {
+      await this.handleStickerAutoCopy(mediaMsg, filePath)
     }
 
     // Stamp the local URI back onto the resolved media message payload so the DB gets updated
-    mediaMsg.localURI = `app://media/${fileName}`
+    mediaMsg.localURI = `${MEDIA_PREFIX_APP}${fileName}`
 
     const updated = await this.messageRepository.updateContentAndFetchWithSender(msgId, JSON.stringify(rawMessage))
-    if (!updated) throw new Error('Failed to fetch updated message after media content update')
+    if (!updated) throw new Error('[MediaService] Failed to fetch updated message after media content update')
 
     const nameMap = await this.contactService.batchResolveNames(
       [updated.participant || updated.chatJid],
@@ -320,16 +335,27 @@ export class MediaService implements IMediaService {
     mediaType: MediaType,
     filePath: string
   ): Promise<void> {
+    const success = await this.downloadPrimaryCdn(msgId, mediaMsg, mediaType, filePath)
+    if (success) return
 
-    // ── Primary attempt ────────────────────────────────────────────────────
-    // downloadContentFromMessage already falls back to directPath internally if the
-    // URL is not a valid mmg.whatsapp.net link — so we don't need a manual rewrite.
+    await this.downloadRetryUpdate(msgId, sock, dbMsg, rawMessage, mediaMsg, mediaType, filePath)
+  }
+
+  private async downloadPrimaryCdn(
+    msgId: string,
+    mediaMsg: Record<string, unknown>,
+    mediaType: MediaType,
+    filePath: string
+  ): Promise<boolean> {
     try {
-      const stream = await downloadContentFromMessage(mediaMsg as unknown as Parameters<typeof downloadContentFromMessage>[0], mediaType as unknown as Parameters<typeof downloadContentFromMessage>[1])
+      const stream = await downloadContentFromMessage(
+        mediaMsg as unknown as Parameters<typeof downloadContentFromMessage>[0],
+        mediaType as unknown as Parameters<typeof downloadContentFromMessage>[1]
+      )
       const buffer = await streamToBuffer(stream)
-      if (buffer.length === 0) throw new Error('Downloaded stream was 0 bytes')
+      if (buffer.length === 0) throw new Error('[MediaService] Downloaded stream was 0 bytes')
       fs.writeFileSync(filePath, buffer)
-      return
+      return true
     } catch (primaryErr: unknown) {
       const primaryErrObj = primaryErr as Record<string, any> | null | undefined
       const statusCode: number | undefined =
@@ -340,19 +366,24 @@ export class MediaService implements IMediaService {
         throw primaryErr
       }
 
-      const isDirectStream = (primaryErrObj?.data?.url as string | undefined)?.includes('/o1/')
+      const isDirectStream = (primaryErrObj?.data?.url as string | undefined)?.includes(CDN_DIRECT_STREAM_SUBSTRING)
       console.warn(
         `[MediaService] Primary download failed (HTTP ${statusCode}${isDirectStream ? ', direct-stream /o1/' : ''}) for msg ${msgId} — attempting updateMediaMessage re-upload`
       )
+      return false
     }
+  }
 
-    // ── Retry via updateMediaMessage ───────────────────────────────────────
-    // This sends a WebSocket signal to WhatsApp servers asking the sender's phone
-    // to re-upload the media to the CDN and return a fresh URL.
-    //
+  private async downloadRetryUpdate(
+    msgId: string,
+    sock: WASocket,
+    dbMsg: { id: string; chatJid: string; fromMe: boolean; participant: string | null },
+    rawMessage: unknown,
+    mediaMsg: Record<string, unknown>,
+    mediaType: MediaType,
+    filePath: string
+  ): Promise<void> {
     // Requires a valid mediaKey: the response is AES-GCM encrypted with it.
-    // History-sync stubs sometimes carry a corrupted/placeholder key → decryption
-    // will fail with "Unsupported state or unable to authenticate data".
     if (!mediaMsg.mediaKey) {
       throw new Error(
         `[MediaService] Cannot download msg ${msgId}: mediaKey is missing. ` +
@@ -362,8 +393,6 @@ export class MediaService implements IMediaService {
 
     try {
       // Synthesize a standard media message structure if the media is nested inside a templateMessage.
-      // This is because Baileys' updateMediaMessage depends on assertMediaContent, which lacks support
-      // for extracting media from newer template schemas like interactiveMessageTemplate.
       const rawMessageObj = rawMessage as Record<string, unknown>
       const isTemplate = !!rawMessageObj.templateMessage
       const updatePayload = isTemplate
@@ -375,7 +404,7 @@ export class MediaService implements IMediaService {
           id: dbMsg.id,
           remoteJid: dbMsg.chatJid,
           fromMe: dbMsg.fromMe,
-          participant: dbMsg.chatJid.endsWith('@g.us')
+          participant: dbMsg.chatJid.endsWith(GROUP_JID_SUFFIX)
             ? (dbMsg.participant || undefined)
             : undefined
         },
@@ -398,7 +427,7 @@ export class MediaService implements IMediaService {
       }
 
       if (!updatedMediaMsg) {
-        throw new Error('updateMediaMessage returned no downloadable media node')
+        throw new Error('[MediaService] updateMediaMessage returned no downloadable media node')
       }
 
       const stream = await downloadContentFromMessage(
@@ -406,7 +435,7 @@ export class MediaService implements IMediaService {
         updatedMediaType as unknown as Parameters<typeof downloadContentFromMessage>[1]
       )
       const buffer = await streamToBuffer(stream)
-      if (buffer.length === 0) throw new Error('Re-uploaded stream was 0 bytes')
+      if (buffer.length === 0) throw new Error('[MediaService] Re-uploaded stream was 0 bytes')
       fs.writeFileSync(filePath, buffer)
 
       // Merge the refreshed media metadata back so callers see the new URL
@@ -434,7 +463,7 @@ export class MediaService implements IMediaService {
       const fileName = decodeURIComponent(localURI.split('/').pop() || '')
       if (!fileName) return false
 
-      const filePath = join(app.getPath('userData'), 'media', fileName)
+      const filePath = join(app.getPath('userData'), DIR_NAME_MEDIA, fileName)
       if (fs.existsSync(filePath)) {
         await shell.openPath(filePath)
         return true

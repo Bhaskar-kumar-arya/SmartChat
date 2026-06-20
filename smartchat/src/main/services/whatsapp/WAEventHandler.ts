@@ -29,6 +29,22 @@ import { IMessageProcessingService } from '../messages/IMessageProcessingService
 import type { IWAEventBus } from './IWAEventBus'
 import { AppStateSyncParser } from './AppStateSyncParser'
 
+const TYPE_APPEND = 'append';
+const SUBTYPE_REVOKE = 'revoke';
+const SUBTYPE_EDIT = 'edit';
+const PROTOCOL_REVOKE_STRING = 'REVOKE';
+const PROTOCOL_EDIT_STRING = 'MESSAGE_EDIT';
+const MUTE_TIMESTAMP_THRESHOLD = 10000000000;
+const MULTIPLIER_32BIT = 4294967296;
+const MS_IN_SEC = 1000;
+
+/**
+ * WAEventHandler translates raw Baileys socket event payloads into domain events on the WAEventBus.
+ *
+ * Error handling contract:
+ * - Emits failures silently via console.error with [WAEventHandler] prefix for individual message parsing errors
+ *   to ensure a single corrupted message doesn't crash socket event processing.
+ */
 export class WAEventHandler {
   constructor(
     private messageProcessingService: IMessageProcessingService,
@@ -44,81 +60,75 @@ export class WAEventHandler {
   ): Promise<void> {
     const { messages, type } = data
 
-    // 'append' = backlog catch-up after reconnect. Fast bulk path.
-    if (type === 'append') {
-      // 1. Bulk-persist standard messages first
-      await this.bus.emit('messages:append', { messages, sock })
-
-      // 2. Process special messages (edits, revokes, reactions) sequentially
-      for (const msg of messages) {
-        if (this.messageParserService.isSpecialMessage(msg)) {
-          try {
-            const processed = await this.messageProcessingService.processMessage(msg, sock)
-            if (processed && 'type' in processed) {
-              if (processed.subType === 'revoke') {
-                await this.bus.emit('message:deleted', {
-                  messageId: processed.targetId,
-                  chatJid: processed.chatJid || cleanJid(processed.key.remoteJid),
-                  fromMe: processed.key.fromMe ?? false
-                })
-              } else if (processed.subType === 'edit') {
-                await this.bus.emit('message:edited', {
-                  messageId: processed.targetId,
-                  chatJid: processed.chatJid || cleanJid(processed.key?.remoteJid || ''),
-                  editedTextContent: processed.editedTextContent ?? null,
-                  editedContent: processed.editedContent ?? null,
-                  sock
-                })
-              }
-            }
-          } catch (err) {
-            console.error('[WAEventHandler] Error processing special message in backlog:', err)
-          }
-        }
-      }
+    if (type === TYPE_APPEND) {
+      await this.processBacklogMessages(messages, sock)
       return
     }
 
-    // 'notify' = real-time new messages. Process individually.
     for (const msg of messages) {
       try {
-        const processed = await this.messageProcessingService.processMessage(msg, sock)
-        if (!processed) continue
-
-        if ('type' in processed) {
-          // Protocol messages: revoke or edit
-          if (processed.subType === 'revoke') {
-            await this.bus.emit('message:deleted', {
-              messageId: processed.targetId,
-              chatJid: processed.chatJid || cleanJid(processed.key.remoteJid),
-              fromMe: processed.key.fromMe ?? false
-            })
-          } else if (processed.subType === 'edit') {
-            await this.bus.emit('message:edited', {
-              messageId: processed.targetId,
-              chatJid: processed.chatJid || cleanJid(processed.key?.remoteJid || ''),
-              editedTextContent: processed.editedTextContent ?? null,
-              editedContent: processed.editedContent ?? null,
-              sock
-            })
-          }
-          continue
-        }
-
-        // Regular incoming message
-        await this.bus.emit('message:incoming', {
-          chatJid: processed.chatJid,
-          senderJid: cleanJid(processed.participant || processed.chatJid),
-          messageType: processed.messageType,
-          textContent: processed.textContent,
-          fromMe: processed.fromMe,
-          timestamp: processed.timestamp,
-          processed,
-          sock
-        })
+        await this.processRealtimeMessage(msg, sock)
       } catch (err) {
         console.error('[WAEventHandler] Error processing message in messages.upsert:', err)
       }
+    }
+  }
+
+  private async processBacklogMessages(messages: BaileysMessage[], sock: WASocket): Promise<void> {
+    // 1. Bulk-persist standard messages first
+    await this.bus.emit('messages:append', { messages, sock })
+
+    // 2. Process special messages (edits, revokes, reactions) sequentially
+    for (const msg of messages) {
+      if (!this.messageParserService.isSpecialMessage(msg)) continue
+      try {
+        const processed = await this.messageProcessingService.processMessage(msg, sock)
+        if (processed) {
+          await this.handleProcessedSpecialMessage(processed, sock)
+        }
+      } catch (err) {
+        console.error('[WAEventHandler] Error processing special message in backlog:', err)
+      }
+    }
+  }
+
+  private async processRealtimeMessage(msg: BaileysMessage, sock: WASocket): Promise<void> {
+    const processed = await this.messageProcessingService.processMessage(msg, sock)
+    if (!processed) return
+
+    if ('type' in processed) {
+      await this.handleProcessedSpecialMessage(processed, sock)
+      return
+    }
+
+    // Regular incoming message
+    await this.bus.emit('message:incoming', {
+      chatJid: processed.chatJid,
+      senderJid: cleanJid(processed.participant || processed.chatJid),
+      messageType: processed.messageType,
+      textContent: processed.textContent,
+      fromMe: processed.fromMe,
+      timestamp: processed.timestamp,
+      processed,
+      sock
+    })
+  }
+
+  private async handleProcessedSpecialMessage(processed: any, sock: WASocket): Promise<void> {
+    if (processed.subType === SUBTYPE_REVOKE) {
+      await this.bus.emit('message:deleted', {
+        messageId: processed.targetId,
+        chatJid: processed.chatJid || cleanJid(processed.key.remoteJid),
+        fromMe: processed.key.fromMe ?? false
+      })
+    } else if (processed.subType === SUBTYPE_EDIT) {
+      await this.bus.emit('message:edited', {
+        messageId: processed.targetId,
+        chatJid: processed.chatJid || cleanJid(processed.key?.remoteJid || ''),
+        editedTextContent: processed.editedTextContent ?? null,
+        editedContent: processed.editedContent ?? null,
+        sock
+      })
     }
   }
 
@@ -127,52 +137,56 @@ export class WAEventHandler {
   async handleMessagesUpdate(updates: any[], sock: WASocket): Promise<void> {
     for (const update of updates) {
       try {
-        // Status change (server ack, delivery, read)
-        if (update.update?.status !== undefined && update.key?.id) {
-          await this.bus.emit('message:status', {
-            key: update.key,
-            baileysStatus: update.update.status
-          })
-        }
-
-        const protocol = update.update?.protocolMessage
-        if (!protocol) continue
-        const key = protocol.key
-        if (!key?.id) continue
-
-        const isRevoke = protocol.type === PROTOCOL_TYPE_REVOKE || protocol.type === 'REVOKE'
-        const isEdit = protocol.type === PROTOCOL_TYPE_EDIT || protocol.type === 'MESSAGE_EDIT'
-
-        if (isRevoke) {
-          console.log('[WAEventHandler] Message revoked:', key.id)
-          const chatJid = cleanJid(update.key?.remoteJid || key.remoteJid)
-          await this.bus.emit('message:deleted', {
-            messageId: key.id,
-            chatJid,
-            fromMe: key.fromMe ?? false
-          })
-        } else if (isEdit) {
-          console.log('[WAEventHandler] Message edited:', key.id)
-          const editedMsg = protocol.editedMessage
-          if (editedMsg) {
-            const textContent =
-              editedMsg.conversation ||
-              editedMsg.extendedTextMessage?.text ||
-              editedMsg.imageMessage?.caption ||
-              editedMsg.videoMessage?.caption ||
-              null
-            const chatJid = cleanJid(update.key?.remoteJid || key.remoteJid)
-            await this.bus.emit('message:edited', {
-              messageId: key.id,
-              chatJid,
-              editedTextContent: textContent,
-              editedContent: editedMsg,
-              sock
-            })
-          }
-        }
+        await this.handleMessageUpdateItem(update, sock)
       } catch (err) {
         console.error('[WAEventHandler] Error processing messages.update:', err)
+      }
+    }
+  }
+
+  private async handleMessageUpdateItem(update: any, sock: WASocket): Promise<void> {
+    // Status change (server ack, delivery, read)
+    if (update.update?.status !== undefined && update.key?.id) {
+      await this.bus.emit('message:status', {
+        key: update.key,
+        baileysStatus: update.update.status
+      })
+    }
+
+    const protocol = update.update?.protocolMessage
+    if (!protocol) return
+    const key = protocol.key
+    if (!key?.id) return
+
+    const isRevoke = protocol.type === PROTOCOL_TYPE_REVOKE || protocol.type === PROTOCOL_REVOKE_STRING
+    const isEdit = protocol.type === PROTOCOL_TYPE_EDIT || protocol.type === PROTOCOL_EDIT_STRING
+
+    if (isRevoke) {
+      console.log('[WAEventHandler] Message revoked:', key.id)
+      const chatJid = cleanJid(update.key?.remoteJid || key.remoteJid)
+      await this.bus.emit('message:deleted', {
+        messageId: key.id,
+        chatJid,
+        fromMe: key.fromMe ?? false
+      })
+    } else if (isEdit) {
+      console.log('[WAEventHandler] Message edited:', key.id)
+      const editedMsg = protocol.editedMessage
+      if (editedMsg) {
+        const textContent =
+          editedMsg.conversation ||
+          editedMsg.extendedTextMessage?.text ||
+          editedMsg.imageMessage?.caption ||
+          editedMsg.videoMessage?.caption ||
+          null
+        const chatJid = cleanJid(update.key?.remoteJid || key.remoteJid)
+        await this.bus.emit('message:edited', {
+          messageId: key.id,
+          chatJid,
+          editedTextContent: textContent,
+          editedContent: editedMsg,
+          sock
+        })
       }
     }
   }
@@ -214,7 +228,7 @@ export class WAEventHandler {
           if (rawMute !== null) {
             const num = getNumericValue(rawMute)
             if (!isNaN(num)) {
-              muteSec = num > 10000000000 ? Math.floor(num / 1000) : num
+              muteSec = num > MUTE_TIMESTAMP_THRESHOLD ? Math.floor(num / MS_IN_SEC) : num
             }
           }
           normalizedUpdate.muteExpiration = muteSec
@@ -236,7 +250,7 @@ export class WAEventHandler {
           if (rawMute !== null) {
             const num = getNumericValue(rawMute)
             if (!isNaN(num)) {
-              muteSec = num > 10000000000 ? Math.floor(num / 1000) : num
+              muteSec = num > MUTE_TIMESTAMP_THRESHOLD ? Math.floor(num / MS_IN_SEC) : num
             }
           }
           raw.muteExpiration = muteSec
@@ -312,7 +326,7 @@ function getNumericValue(val: unknown): number {
     if ('low' in obj && 'high' in obj) {
       const low = obj.low as number
       const high = obj.high as number
-      return high * 4294967296 + (low >>> 0)
+      return high * MULTIPLIER_32BIT + (low >>> 0)
     }
   }
   return Number(val)

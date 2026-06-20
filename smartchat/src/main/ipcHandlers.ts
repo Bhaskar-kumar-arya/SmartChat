@@ -12,133 +12,135 @@ import { AIChatMessageInput } from './services/ai/IAIChatSessionService'
 import { ExportSession, ExportMessage } from './services/ai/IAIChatExportService'
 import { NotificationPreferences } from './services/notification/INotificationService'
 
+const DIR_NAME_TEMP = 'temp'
+const PREFIX_VOICE = 'voice_'
+const EXT_OGG = '.ogg'
+const EVENT_EMBEDDING_PROGRESS = 'embedding-progress'
+const EVENT_EMBEDDING_STATE = 'embedding-state'
+
 export function registerIpcHandlers(
   services: ServiceContainer,
   getSock: () => WASocket | null,
   waConnectionManager: WhatsAppConnectionManager
 ): void {
-  // ── Get Chat List (paginated, sorted by latest timestamp) ────────────
+  registerChatAndMessageHandlers(services, getSock)
+  registerMediaAndFileHandlers(services, getSock)
+  registerStickerHandlers(services)
+  registerAuthAndProfileHandlers(services, getSock, waConnectionManager)
+  registerSearchAndVectorHandlers(services, getSock)
+  registerAIServiceHandlers(services, getSock)
+  registerAIChatSessionHandlers(services)
+  registerNotificationHandlers(services, getSock)
+}
+
+function registerChatAndMessageHandlers(
+  services: ServiceContainer,
+  getSock: () => WASocket | null
+): void {
   ipcMain.handle('get-chats', async (_event, page: number = 1, pageSize: number = 50) => {
     return services.chatService.getChatList(page, pageSize)
   })
 
-  // ── Get Messages for a Chat (paginated) ──────────────────────────────
-  ipcMain.handle(
-    'get-messages',
-    async (_event, jid: string, page: number = 1, pageSize: number = 50) => {
-      return services.messageQueryService.getChatMessages(jid, page, pageSize, getSock())
-    }
-  )
+  ipcMain.handle('get-messages', async (_event, jid: string, page: number = 1, pageSize: number = 50) => {
+    return services.messageQueryService.getChatMessages(jid, page, pageSize, getSock())
+  })
 
-  // ── Send Message ─────────────────────────────────────────────────────
   ipcMain.handle('send-message', async (_event, jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()
-    if (!sock) throw new Error('WhatsApp socket is not connected')
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
     return services.messageActionService.sendMessageWorkflow(sock, jid, text, quotedMsgId, mentions)
   })
 
-  // ── Edit Message ─────────────────────────────────────────────────────
   ipcMain.handle('edit-message', async (_event, jid: string, messageId: string, newText: string) => {
     const sock = getSock()
-    if (!sock) throw new Error('WhatsApp socket is not connected')
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
     return await services.messageActionService.editMessage(sock, messageId, newText, jid)
   })
 
-  // ── Delete Message ───────────────────────────────────────────────────
   ipcMain.handle('delete-message', async (_event, jid: string, messageId: string) => {
     const sock = getSock()
-    if (!sock) throw new Error('WhatsApp socket is not connected')
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
     await services.messageActionService.deleteMessage(sock, messageId, jid)
     return true
   })
 
-  // ── React Message ────────────────────────────────────────────────────
   ipcMain.handle('react-message', async (_event, jid: string, messageId: string, reaction: string) => {
     const sock = getSock()
-    if (!sock) throw new Error('WhatsApp socket is not connected')
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
     return await services.messageActionService.reactToMessage(sock, messageId, reaction, jid)
   })
 
-  // ── Send Media Message ───────────────────────────────────────────────
   ipcMain.handle('send-media-message', async (_event, jid: string, filePath: string, caption?: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()
-    if (!sock) throw new Error('WhatsApp socket is not connected')
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
     return services.messageActionService.sendMediaMessageWorkflow(sock, jid, filePath, caption, quotedMsgId, mentions)
   })
 
-  // ── Save Temp File ───────────────────────────────────────────────────
+  ipcMain.handle('mark-read', async (_event, jid: string) => {
+    return services.chatService.markRead(jid)
+  })
+
+  ipcMain.handle('mute-chat', async (_event, jid: string, durationMs: number) => {
+    const sock = getSock()
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
+    await sock.chatModify({ mute: durationMs }, jid)
+    return true
+  })
+
+  ipcMain.handle('unmute-chat', async (_event, jid: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
+    await sock.chatModify({ mute: null }, jid)
+    return true
+  })
+
+  ipcMain.handle('pin-chat', async (_event, jid: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
+    await sock.chatModify({ pin: true }, jid)
+    return true
+  })
+
+  ipcMain.handle('unpin-chat', async (_event, jid: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
+    await sock.chatModify({ pin: false }, jid)
+    return true
+  })
+}
+
+function registerMediaAndFileHandlers(
+  services: ServiceContainer,
+  getSock: () => WASocket | null
+): void {
   ipcMain.handle('save-temp-file', async (_event, buffer: Buffer | ArrayBuffer | Uint8Array, fileName: string) => {
-    const tempDir = join(app.getPath('userData'), 'temp')
+    const tempDir = join(app.getPath('userData'), DIR_NAME_TEMP)
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
 
     const filePath = join(tempDir, fileName)
     const data = buffer instanceof Uint8Array ? buffer : Buffer.from(buffer)
     fs.writeFileSync(filePath, data)
 
-    if (fileName.startsWith('voice_') && fileName.endsWith('.ogg')) {
+    if (fileName.startsWith(PREFIX_VOICE) && fileName.endsWith(EXT_OGG)) {
       return audioTranscoderService.transcodeToWAPtt(filePath, tempDir)
     }
 
     return filePath
   })
 
-  // ── Download URL to Temp ─────────────────────────────────────────────
   ipcMain.handle('download-url-to-temp', async (_event, url: string, fileName: string) => {
-    const tempDir = join(app.getPath('userData'), 'temp')
+    const tempDir = join(app.getPath('userData'), DIR_NAME_TEMP)
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
 
     const filePath = join(tempDir, fileName)
     const response = await fetch(url)
-    if (!response.ok) throw new Error(`Failed to download file: ${response.statusText}`)
+    if (!response.ok) throw new Error(`[IPC] Failed to download file: ${response.statusText}`)
     
     const arrayBuffer = await response.arrayBuffer()
     fs.writeFileSync(filePath, Buffer.from(arrayBuffer))
     return filePath
   })
 
-  // ── Mark Chat as Read ───────────────────────────────────────────────
-  ipcMain.handle('mark-read', async (_event, jid: string) => {
-    return services.chatService.markRead(jid)
-  })
-
-  // ── Mute Chat ────────────────────────────────────────────────────────
-  ipcMain.handle('mute-chat', async (_event, jid: string, durationMs: number) => {
-    const sock = getSock()
-    if (!sock) throw new Error('WhatsApp socket is not connected')
-    await sock.chatModify({ mute: durationMs }, jid)
-    return true
-  })
-
-  // ── Unmute Chat ──────────────────────────────────────────────────────
-  ipcMain.handle('unmute-chat', async (_event, jid: string) => {
-    const sock = getSock()
-    if (!sock) throw new Error('WhatsApp socket is not connected')
-    await sock.chatModify({ mute: null }, jid)
-    return true
-  })
-
-  // ── Pin Chat ─────────────────────────────────────────────────────────
-  ipcMain.handle('pin-chat', async (_event, jid: string) => {
-    const sock = getSock()
-    if (!sock) throw new Error('WhatsApp socket is not connected')
-    await sock.chatModify({ pin: true }, jid)
-    return true
-  })
-
-  // ── Unpin Chat ───────────────────────────────────────────────────────
-  ipcMain.handle('unpin-chat', async (_event, jid: string) => {
-    const sock = getSock()
-    if (!sock) throw new Error('WhatsApp socket is not connected')
-    await sock.chatModify({ pin: false }, jid)
-    return true
-  })
-
-  // ── Get My JID ───────────────────────────────────────────────────────
-  ipcMain.handle('get-my-jid', async () => {
-    return services.contactService.getMePhoneNumberJid(getSock())
-  })
-
-  // ── Select File Dialog ───────────────────────────────────────────────
   ipcMain.handle('select-file', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
@@ -148,13 +150,17 @@ export function registerIpcHandlers(
     return (canceled || filePaths.length === 0) ? null : filePaths
   })
 
-  // ── Download Media ───────────────────────────────────────────────────
   ipcMain.handle('download-media', async (_event, msgId: string) => {
     const sock = getSock()
     return services.mediaService.downloadAndCacheMedia(msgId, sock)
   })
 
-  // ── Favorite Stickers ────────────────────────────────────────────────
+  ipcMain.handle('open-file', async (_event, localURI: string) => {
+    return services.mediaService.openFile(localURI)
+  })
+}
+
+function registerStickerHandlers(services: ServiceContainer): void {
   ipcMain.handle('add-sticker-to-favorites', async (_event, msgId: string) => {
     return services.favoriteStickerService.addStickerToFavorites(msgId)
   })
@@ -174,13 +180,17 @@ export function registerIpcHandlers(
   ipcMain.handle('get-favorite-stickers', async () => {
     return services.favoriteStickerService.getFavoriteStickers()
   })
+}
 
-  // ── Open File with System Default ──────────────────────────────────
-  ipcMain.handle('open-file', async (_event, localURI: string) => {
-    return services.mediaService.openFile(localURI)
+function registerAuthAndProfileHandlers(
+  services: ServiceContainer,
+  getSock: () => WASocket | null,
+  waConnectionManager: WhatsAppConnectionManager
+): void {
+  ipcMain.handle('get-my-jid', async () => {
+    return services.contactService.getMePhoneNumberJid(getSock())
   })
 
-  // ── Logout ──────────────────────────────────────────────────────────
   ipcMain.handle('logout', async () => {
     const sock = getSock()
     if (sock) await sock.logout().catch((err: unknown) => { console.warn('[IPC] sock.logout failed:', err) })
@@ -188,19 +198,31 @@ export function registerIpcHandlers(
     return true
   })
 
-  // ── Get Profile Picture ─────────────────────────────────────────────
   ipcMain.handle('get-profile-picture', async (_event, jid: string, type: 'preview' | 'image' = 'preview', forceRefresh: boolean = false) => {
     const sock = getSock()
     return services.profileSyncService.getProfilePicture(jid, type, sock, forceRefresh)
   })
 
-  // ── Get Group Participants ────────────────────────────────────────────
   ipcMain.handle('get-group-participants', async (_event, jid: string) => {
     const sock = getSock()
     return services.chatService.getGroupParticipants(jid, sock)
   })
 
-  // ── Global Search ────────────────────────────────────────────────────
+  ipcMain.handle('get-sync-full-history', async () => {
+    return services.authSettingsService.getSyncFullHistory()
+  })
+
+  ipcMain.handle('set-sync-full-history', async (_event, full: boolean) => {
+    await services.authSettingsService.setSyncFullHistory(full)
+    waConnectionManager.connect()
+    return true
+  })
+}
+
+function registerSearchAndVectorHandlers(
+  services: ServiceContainer,
+  getSock: () => WASocket | null
+): void {
   ipcMain.handle('search-all', async (_event, query: string, mode: 'normal' | 'deep' = 'normal', filters?: { jids?: string[], fromDate?: string, toDate?: string }) => {
     const sock = getSock()
     const parsedFilters = filters ? {
@@ -219,25 +241,13 @@ export function registerIpcHandlers(
     return services.searchService.searchMentionChats(query)
   })
 
-  // ── Sync Mode Configuration ─────────────────────────────────────────
-  ipcMain.handle('get-sync-full-history', async () => {
-    return services.authSettingsService.getSyncFullHistory()
-  })
-
-  ipcMain.handle('set-sync-full-history', async (_event, full: boolean) => {
-    await services.authSettingsService.setSyncFullHistory(full)
-    waConnectionManager.connect()
-    return true
-  })
-
-  // ── Index Embeddings ────────────────────────────────────────────────
   ipcMain.handle('index-embeddings', async (_event) => {
     const win = BrowserWindow.getAllWindows()[0]
     try {
       await services.embeddingService.indexAll((pct) => {
-        win?.webContents.send('embedding-progress', pct)
+        win?.webContents.send(EVENT_EMBEDDING_PROGRESS, pct)
       })
-      win?.webContents.send('embedding-progress', 100)
+      win?.webContents.send(EVENT_EMBEDDING_PROGRESS, 100)
     } catch (err) {
       console.error('[IPC] index-embeddings failed:', err)
     }
@@ -250,20 +260,23 @@ export function registerIpcHandlers(
       console.error('[IPC] Failed to clear vectors:', err)
     }
   })
+}
 
-  // ── AI Handlers ───────────────────────────────────────────────────────
-
+function registerAIServiceHandlers(
+  services: ServiceContainer,
+  getSock: () => WASocket | null
+): void {
   AIToolInitializer.initializeAll(getSock, services);
 
   services.embeddingService.setOnActiveStateSync((isActive) => {
     BrowserWindow.getAllWindows().forEach(win => {
-      win.webContents.send('embedding-state', isActive)
+      win.webContents.send(EVENT_EMBEDDING_STATE, isActive)
     })
   })
 
   ipcMain.handle('execute-tool', async (_event, toolName: string, args: Record<string, unknown> | undefined) => {
     const tool = toolRegistry.getTool(toolName);
-    if (!tool) throw new Error(`Tool ${toolName} not found`);
+    if (!tool) throw new Error(`[IPC] Tool ${toolName} not found`);
     return await tool.execute(args || {});
   });
 
@@ -325,7 +338,7 @@ export function registerIpcHandlers(
     } catch (err) {
       const errorVal = err as Error;
       if (errorVal.name === 'AbortError' || errorVal.message?.includes('abort')) {
-        event.sender.send(`${channelId}-end`); // Treat abort as normal end for the frontend
+        event.sender.send(`${channelId}-end`);
       } else {
         event.sender.send(`${channelId}-error`, errorVal.message || String(errorVal));
       }
@@ -340,8 +353,9 @@ export function registerIpcHandlers(
   ipcMain.handle('get-chat-context', async (_event, jid: string) => {
     return services.messageQueryService.getChatMessages(jid, 1, 100, getSock(), true, false)
   })
+}
 
-  // ── AI Chat Session Handlers ─────────────────────────────────────────
+function registerAIChatSessionHandlers(services: ServiceContainer): void {
   ipcMain.handle('ai-session-create', async (_event, title: string, modelId?: string) => {
     return await services.aiChatSessionService.createSession(title, modelId);
   });
@@ -397,7 +411,12 @@ export function registerIpcHandlers(
   ipcMain.handle('duplicate-exported-ai-chat', async (_event, sessionId: string) => {
     return await services.aiChatExportService.duplicateExportedChat(sessionId)
   })
+}
 
+function registerNotificationHandlers(
+  services: ServiceContainer,
+  getSock: () => WASocket | null
+): void {
   ipcMain.handle('get-message-receipts', async (_event, messageId: string) => {
     return services.receiptService.getMessageReceipts(messageId, getSock())
   })
