@@ -19,7 +19,7 @@ import {
   ChatUpdatePayload,
   MessageReceiptUpdate
 } from './types'
-import { cleanJid } from '../../utils'
+import { cleanJid, unwrapMessage, getMessageType, extractTextContent } from '../../utils'
 import {
   PROTOCOL_TYPE_REVOKE,
   PROTOCOL_TYPE_EDIT
@@ -151,6 +151,34 @@ export class WAEventHandler {
         key: update.key,
         baileysStatus: update.update.status
       })
+    }
+
+    // Check if this is a retried decrypted message update
+    if (update.update?.message && !update.update?.protocolMessage && update.key?.id) {
+      const messageId = update.key.id
+      const chatJid = cleanJid(update.key.remoteJid)
+
+      let rawMessage: Record<string, unknown> | null = null
+      try {
+        rawMessage = JSON.parse(JSON.stringify(update.update.message))
+      } catch {
+        rawMessage = update.update.message as Record<string, unknown>
+      }
+
+      const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
+      const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
+
+      if (messageType !== 'senderKeyDistributionMessage') {
+        const textContent = extractTextContent(unwrapped)
+        await this.bus.emit('message:decrypted', {
+          messageId,
+          chatJid,
+          messageType,
+          textContent,
+          content: rawMessage ?? {},
+          sock
+        })
+      }
     }
 
     const protocol = update.update?.protocolMessage

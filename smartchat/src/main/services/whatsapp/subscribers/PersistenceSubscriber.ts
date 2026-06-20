@@ -20,6 +20,7 @@ import type {
   MessageEditedEvent,
   ChatUpdatedEvent,
   ChatUpsertedEvent,
+  MessageDecryptedEvent
 } from '../WAEventTypes'
 import type { IMessageWriterService } from '../../messages/IMessageWriterService'
 import type { IChatService } from '../../chats/IChatService'
@@ -35,6 +36,7 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
     bus.on('message:incoming', this.onIncoming.bind(this))
     bus.on('message:deleted',  this.onDeleted.bind(this))
     bus.on('message:edited',   this.onEdited.bind(this))
+    bus.on('message:decrypted', this.onDecrypted.bind(this))
     bus.on('chat:updated',     this.onChatUpdated.bind(this))
     bus.on('chat:upserted',    this.onChatUpserted.bind(this))
   }
@@ -105,6 +107,19 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
       )
     } catch (err) {
       console.error('[PersistenceSubscriber] Error updating DB for edited message:', err)
+    }
+  }
+
+  private async onDecrypted(event: MessageDecryptedEvent): Promise<void> {
+    try {
+      await this.messageWriterService.decryptMessageInDb(
+        event.messageId,
+        event.messageType,
+        event.textContent,
+        event.content
+      )
+    } catch (err) {
+      console.error('[PersistenceSubscriber] Error updating DB for decrypted message:', err)
     }
   }
 }

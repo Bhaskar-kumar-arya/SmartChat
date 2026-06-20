@@ -53,5 +53,7 @@ export const MESSAGE_TYPE_LABELS: Record<string, string> = {
   liveLocationMessage: 'Live Location',
   pollCreationMessage: 'Poll',
   pollUpdateMessage: 'Poll Update',
-  reactionMessage: 'Reaction'
+  reactionMessage: 'Reaction',
+  ciphertext: 'Waiting for this message. This may take a while.'
 }
+

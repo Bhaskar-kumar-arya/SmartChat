@@ -134,6 +134,8 @@ export class SyncMessagesHandler {
 
       let finalId = String(key.id)
       let finalMessageType = getMessageType(unwrappedMessage)
+      if (finalMessageType === 'senderKeyDistributionMessage') continue
+
       let finalContent = JSON.stringify(message ?? {})
       let finalTextContent = extractTextContent(unwrappedMessage)
       let finalFromMe = key.fromMe === true
@@ -144,13 +146,13 @@ export class SyncMessagesHandler {
         : remoteJid
       let finalParticipant = finalParticipantRaw ? cleanJid(finalParticipantRaw) : null
       let isEdited = false
-
       const stubType = mTyped.messageStubType
-      const stubParams = mTyped.messageStubParameters
-      let isDeleted =
-        stubType === WAMessageStubType.REVOKE ||
-        (stubType === WAMessageStubType.CIPHERTEXT &&
-          (stubParams?.includes('Message absent from node') ?? false))
+      let isDeleted = stubType === WAMessageStubType.REVOKE
+
+      if (stubType === WAMessageStubType.CIPHERTEXT) {
+        finalMessageType = 'ciphertext'
+        finalTextContent = 'Waiting for this message. This may take a while.'
+      }
 
       // Handle embedded protocol messages (edit / revoke)
       const protocolMessage = message?.protocolMessage

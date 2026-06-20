@@ -20,6 +20,7 @@ import type {
   PresenceEvent,
   MessageStatusUpdatedEvent,
   ReactionProcessedEvent,
+  MessageDecryptedEvent
 } from '../WAEventTypes'
 import type { IContactService } from '../../contacts/IContactService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
@@ -38,6 +39,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     bus.on('message:incoming', this.onIncoming.bind(this))
     bus.on('message:deleted',  this.onDeleted.bind(this))
     bus.on('message:edited',   this.onEdited.bind(this))
+    bus.on('message:decrypted', this.onEdited.bind(this))
     bus.on('chat:updated',     this.onChatUpdated.bind(this))
     bus.on('presence:update',  this.onPresence.bind(this))
     bus.on('message:status-updated', this.onStatusUpdated.bind(this))
@@ -82,7 +84,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     })
   }
 
-  private async onEdited(event: MessageEditedEvent): Promise<void> {
+  private async onEdited(event: MessageEditedEvent | MessageDecryptedEvent): Promise<void> {
     const win = this.window
     if (!win) return
     try {

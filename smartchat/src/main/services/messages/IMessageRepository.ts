@@ -10,6 +10,12 @@ export interface IMessageWriteRepository {
     textContent: string | null,
     editedContent: Record<string, unknown> | null
   ): Promise<void>
+  decryptMessage(
+    messageId: string,
+    messageType: string,
+    textContent: string | null,
+    content: Record<string, unknown>
+  ): Promise<void>
   updateMessageContent(messageId: string, content: string): Promise<void>
   bulkSyncMessages(rows: MessageUpsertData[]): Promise<void>
   updateMessageDeleted(id: string): Promise<void>

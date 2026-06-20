@@ -70,14 +70,18 @@ export class MessageParser {
       : remoteJid
 
     const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
-    const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
-    const textContent = this.extractTextContent(unwrapped)
+    let messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
+    if (messageType === 'senderKeyDistributionMessage') return null
+
+    let textContent = this.extractTextContent(unwrapped)
     const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
 
-    const isDeleted =
-      msg.messageStubType === WAMessageStubType.REVOKE ||
-      (msg.messageStubType === WAMessageStubType.CIPHERTEXT &&
-        (msg.messageStubParameters?.includes('Message absent from node') ?? false))
+    const isDeleted = msg.messageStubType === WAMessageStubType.REVOKE
+
+    if (msg.messageStubType === WAMessageStubType.CIPHERTEXT) {
+      messageType = 'ciphertext'
+      textContent = 'Waiting for this message. This may take a while.'
+    }
 
     const status = mapBaileysStatus(msg.status)
 

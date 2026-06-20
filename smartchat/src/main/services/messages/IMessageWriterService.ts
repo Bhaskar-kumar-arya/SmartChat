@@ -7,6 +7,13 @@ export interface IMessageWriterService {
     editedContent: Record<string, unknown> | null
   ): Promise<void>
 
+  decryptMessageInDb(
+    messageId: string,
+    messageType: string,
+    textContent: string | null,
+    content: Record<string, unknown>
+  ): Promise<void>
+
   bulkPersistMessages(msgs: unknown[]): Promise<void>
 }
 

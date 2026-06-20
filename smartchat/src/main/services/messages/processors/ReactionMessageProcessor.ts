@@ -29,10 +29,7 @@ export class ReactionMessageProcessor implements IMessageProcessorStrategy {
       await dependencies.reactionRepository.upsertReaction(targetId, reactorId, emoji ?? null, context.timestamp)
     }
 
-    const isDeleted =
-      context.msg.messageStubType === WAMessageStubType.REVOKE ||
-      (context.msg.messageStubType === WAMessageStubType.CIPHERTEXT &&
-        (context.msg.messageStubParameters?.includes('Message absent from node') ?? false))
+    const isDeleted = context.msg.messageStubType === WAMessageStubType.REVOKE
 
     return {
       id: context.msg.key.id!,

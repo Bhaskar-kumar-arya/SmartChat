@@ -137,6 +137,11 @@ const MESSAGE_REGISTRY: Record<string, React.ComponentType<MessageRendererProps>
   ),
   text: ({ msg, ctx }) => (
     msg.textContent ? <TextMessage text={msg.textContent} mentions={ctx?.mentions} /> : null
+  ),
+  ciphertext: ({ msg }) => (
+    <p className="message-text message-waiting-retry" style={{ fontStyle: 'italic', opacity: 0.8 }}>
+      {msg.textContent || 'Waiting for this message. This may take a while.'}
+    </p>
   )
 }
 
@@ -330,6 +335,7 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
     if (isDocument) return 'document'
     if (isAudio) return 'audio'
     if (isTextMessage) return 'text'
+    if (msg.messageType === 'ciphertext') return 'ciphertext'
     return null
   }
 
@@ -367,18 +373,20 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
       )
     }
 
+    if (msg.isDeleted && !msg.fromMe) {
+      return (
+        <div className="message-deleted-badge">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+          <span className="message-deleted-text">This message was deleted</span>
+        </div>
+      )
+    }
+
     const typeKey = getMessageTypeKey()
     const Renderer = typeKey ? MESSAGE_REGISTRY[typeKey] : null
 
     return (
       <div className="message-content-vertical">
-        {msg.isDeleted && !msg.fromMe && (
-          <div className="message-deleted-badge">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-            <span className="message-deleted-text">This message was deleted</span>
-          </div>
-        )}
-
         {Renderer ? (
           <Renderer
             msg={msg}

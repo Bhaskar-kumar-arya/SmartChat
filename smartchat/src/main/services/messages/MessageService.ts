@@ -1,4 +1,4 @@
-import { proto } from '@whiskeysockets/baileys'
+import { proto, WAMessageStubType } from '@whiskeysockets/baileys'
 import { IContactService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IEmbeddingService } from '../search/EmbeddingService'
@@ -111,11 +111,19 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     const textContent = this.parser.extractTextContent(unwrapped)
 
     // Determine message type
-    const messageType = unwrapped
+    let messageType = unwrapped
        ? (unwrapped
            ? Object.keys(unwrapped).find(k => k !== 'messageContextInfo') ?? 'unknown'
            : 'unknown')
        : 'unknown'
+
+    if (messageType === 'senderKeyDistributionMessage') return null
+
+    let finalTextContent = textContent
+    if (baileysMsg.messageStubType === WAMessageStubType.CIPHERTEXT) {
+      messageType = 'ciphertext'
+      finalTextContent = 'Waiting for this message. This may take a while.'
+    }
 
     const timestamp = parseBaileysTimestamp(baileysMsg.messageTimestamp ?? 0)
 
@@ -129,7 +137,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
       senderId,
       timestamp,
       messageType,
-      textContent
+      textContent: finalTextContent
     }
 
     const dependencies: IMessageServiceDependencyAccessor = {
@@ -181,6 +189,18 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     editedContent: Record<string, unknown> | null
   ): Promise<void> {
     await this.repository.editMessage(messageId, textContent, editedContent)
+  }
+
+  /**
+   * Updates a message's content when decrypted.
+   */
+  async decryptMessageInDb(
+    messageId: string,
+    messageType: string,
+    textContent: string | null,
+    content: Record<string, unknown>
+  ): Promise<void> {
+    await this.repository.decryptMessage(messageId, messageType, textContent, content)
   }
 
   /**

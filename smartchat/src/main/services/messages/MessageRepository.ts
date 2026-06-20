@@ -158,6 +158,29 @@ export class MessageRepository implements IMessageRepository {
   }
 
   /**
+   * Updates a message's content and type once it is successfully decrypted.
+   */
+  async decryptMessage(
+    messageId: string,
+    messageType: string,
+    textContent: string | null,
+    content: Record<string, unknown>
+  ): Promise<void> {
+    await this.prisma.message
+      .updateMany({
+        where: { id: messageId },
+        data: {
+          content: JSON.stringify(content),
+          textContent,
+          messageType
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn(`[MessageRepository] Failed to update decrypted message ${messageId}:`, err)
+      })
+  }
+
+  /**
    * Update an arbitrary set of fields on a message by ID.
    * Used for post-send localURI injection after media upload.
    */

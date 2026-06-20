@@ -15,10 +15,7 @@ export class StandardMessageProcessor implements IMessageProcessorStrategy {
     context: IMessageProcessingContext,
     dependencies: IMessageServiceDependencyAccessor
   ): Promise<ProcessedMessage | ProtocolResult | null> {
-    const isDeleted =
-      context.msg.messageStubType === WAMessageStubType.REVOKE ||
-      (context.msg.messageStubType === WAMessageStubType.CIPHERTEXT &&
-        context.msg.messageStubParameters?.includes('Message absent from node'))
+    const isDeleted = context.msg.messageStubType === WAMessageStubType.REVOKE
     const status = mapBaileysStatus(context.msg.status)
 
     await dependencies.repository.upsertMessage({
@@ -42,10 +39,7 @@ export class StandardMessageProcessor implements IMessageProcessorStrategy {
       })
     }
 
-    const isDeletedResult =
-      context.msg.messageStubType === WAMessageStubType.REVOKE ||
-      (context.msg.messageStubType === WAMessageStubType.CIPHERTEXT &&
-        (context.msg.messageStubParameters?.includes('Message absent from node') ?? false))
+    const isDeletedResult = context.msg.messageStubType === WAMessageStubType.REVOKE
 
     return {
       id: context.msg.key.id!,

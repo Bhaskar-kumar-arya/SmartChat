@@ -21,7 +21,8 @@ import {
   MessageEditedEvent,
   MessageStatusEvent,
   MessageStatusUpdatedEvent,
-  ReactionProcessedEvent
+  ReactionProcessedEvent,
+  MessageDecryptedEvent
 } from './events/messageEvents'
 import { ChatUpdatedEvent, ChatUpsertedEvent } from './events/chatEvents'
 import { ContactUpsertedEvent, ContactUpdatedEvent, LidMappingEvent } from './events/contactEvents'
@@ -50,6 +51,7 @@ export interface WAEventMap {
   'messages:append':     AppendMessagesEvent
   'message:deleted':     MessageDeletedEvent
   'message:edited':      MessageEditedEvent
+  'message:decrypted':   MessageDecryptedEvent
   'message:status':      MessageStatusEvent
   'message:status-updated': MessageStatusUpdatedEvent
   'chat:updated':        ChatUpdatedEvent

@@ -77,3 +77,15 @@ export interface ReactionProcessedEvent {
   targetTextContent?: string | null
   content: string
 }
+
+/**
+ * Fired when a message is successfully decrypted.
+ */
+export interface MessageDecryptedEvent {
+  messageId: string
+  chatJid: string
+  messageType: string
+  textContent: string | null
+  content: Record<string, unknown>
+  sock: WASocket
+}
