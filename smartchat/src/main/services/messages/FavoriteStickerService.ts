@@ -13,6 +13,20 @@ async function streamToBuffer(stream: AsyncIterable<Buffer>): Promise<Buffer> {
   return Buffer.concat(chunks)
 }
 
+interface StickerMessageLike {
+  localURI?: string | null;
+  fileSha256?: unknown;
+  mediaKey?: unknown;
+}
+
+interface FavoriteStickerDTO {
+  id: string;
+  fileSha256: string;
+  fileName: string;
+  localURI: string;
+  createdAt: number;
+}
+
 export class FavoriteStickerService {
   constructor(private prisma: PrismaClient) {}
 
@@ -28,7 +42,7 @@ export class FavoriteStickerService {
     return dir
   }
 
-  private getStickerFileName(stickerMsg: any, msgId?: string): string {
+  private getStickerFileName(stickerMsg: StickerMessageLike, msgId?: string): string {
     if (stickerMsg.localURI && stickerMsg.localURI.startsWith('app://media/')) {
       return stickerMsg.localURI.replace('app://media/', '')
     }
@@ -39,9 +53,14 @@ export class FavoriteStickerService {
         fileHash = sha.replace(/[/\\?%*:|"<>+]/g, '-').substring(0, 64)
       } else if (Buffer.isBuffer(sha)) {
         fileHash = sha.toString('hex')
-      } else if (sha && typeof sha === 'object' && sha.type === 'Buffer' && Array.isArray(sha.data)) {
-        fileHash = Buffer.from(sha.data).toString('hex')
-      } else if (sha instanceof Uint8Array || Array.isArray(sha)) {
+      } else if (sha && typeof sha === 'object') {
+        const shaObj = sha as Record<string, unknown>
+        if (shaObj.type === 'Buffer' && Array.isArray(shaObj.data)) {
+          fileHash = Buffer.from(shaObj.data as number[]).toString('hex')
+        } else if (sha instanceof Uint8Array) {
+          fileHash = Buffer.from(sha).toString('hex')
+        }
+      } else if (Array.isArray(sha)) {
         fileHash = Buffer.from(sha).toString('hex')
       }
     } else if (msgId) {
@@ -50,15 +69,20 @@ export class FavoriteStickerService {
     return `hash_${fileHash}.webp`
   }
 
-  private getShaString(stickerMsg: any): string {
+  private getShaString(stickerMsg: StickerMessageLike): string {
     if (stickerMsg.fileSha256) {
       const sha = stickerMsg.fileSha256
       if (typeof sha === 'string') return sha
       if (Buffer.isBuffer(sha)) return sha.toString('base64')
-      if (sha && typeof sha === 'object' && sha.type === 'Buffer' && Array.isArray(sha.data)) {
-        return Buffer.from(sha.data).toString('base64')
+      if (sha && typeof sha === 'object') {
+        const shaObj = sha as Record<string, unknown>
+        if (shaObj.type === 'Buffer' && Array.isArray(shaObj.data)) {
+          return Buffer.from(shaObj.data as number[]).toString('base64')
+        } else if (sha instanceof Uint8Array) {
+          return Buffer.from(sha).toString('base64')
+        }
       }
-      if (sha instanceof Uint8Array || Array.isArray(sha)) {
+      if (Array.isArray(sha)) {
         return Buffer.from(sha).toString('base64')
       }
     }
@@ -69,9 +93,9 @@ export class FavoriteStickerService {
     const dbMsg = await this.prisma.message.findUnique({ where: { id: msgId } })
     if (!dbMsg || !dbMsg.content) throw new Error('Message not found')
 
-    const rawMessage = JSON.parse(dbMsg.content)
-    const unwrapped = unwrapMessage(rawMessage)
-    const stickerMsg = unwrapped.stickerMessage
+    const rawMessage = JSON.parse(dbMsg.content) as Record<string, unknown>
+    const unwrapped = unwrapMessage(rawMessage) as Record<string, unknown>
+    const stickerMsg = unwrapped.stickerMessage as StickerMessageLike | undefined
     if (!stickerMsg) throw new Error('Message is not a sticker')
 
     const fileSha256 = this.getShaString(stickerMsg)
@@ -104,9 +128,9 @@ export class FavoriteStickerService {
     const dbMsg = await this.prisma.message.findUnique({ where: { id: msgId } })
     if (!dbMsg || !dbMsg.content) throw new Error('Message not found')
 
-    const rawMessage = JSON.parse(dbMsg.content)
-    const unwrapped = unwrapMessage(rawMessage)
-    const stickerMsg = unwrapped.stickerMessage
+    const rawMessage = JSON.parse(dbMsg.content) as Record<string, unknown>
+    const unwrapped = unwrapMessage(rawMessage) as Record<string, unknown>
+    const stickerMsg = unwrapped.stickerMessage as StickerMessageLike | undefined
     if (!stickerMsg) throw new Error('Message is not a sticker')
 
     const fileSha256 = this.getShaString(stickerMsg)
@@ -138,7 +162,7 @@ export class FavoriteStickerService {
       if (fs.existsSync(filePath)) {
         try {
           fs.unlinkSync(filePath)
-        } catch (e) {
+        } catch (e: unknown) {
           console.error('[FavoriteStickerService] Failed to delete file:', filePath, e)
         }
       }
@@ -151,9 +175,9 @@ export class FavoriteStickerService {
     const dbMsg = await this.prisma.message.findUnique({ where: { id: msgId } })
     if (!dbMsg || !dbMsg.content) return false
 
-    const rawMessage = JSON.parse(dbMsg.content)
-    const unwrapped = unwrapMessage(rawMessage)
-    const stickerMsg = unwrapped.stickerMessage
+    const rawMessage = JSON.parse(dbMsg.content) as Record<string, unknown>
+    const unwrapped = unwrapMessage(rawMessage) as Record<string, unknown>
+    const stickerMsg = unwrapped.stickerMessage as StickerMessageLike | undefined
     if (!stickerMsg) return false
 
     const fileSha256 = this.getShaString(stickerMsg)
@@ -163,7 +187,7 @@ export class FavoriteStickerService {
     return count > 0
   }
 
-  async getFavoriteStickers(): Promise<any[]> {
+  async getFavoriteStickers(): Promise<FavoriteStickerDTO[]> {
     const favs = await this.prisma.favoriteSticker.findMany({
       orderBy: { createdAt: 'desc' }
     })
@@ -177,7 +201,7 @@ export class FavoriteStickerService {
     }))
   }
 
-  private ensureBuffer(val: any): Buffer | null {
+  private ensureBuffer(val: unknown): Buffer | null {
     if (!val) return null
     if (Buffer.isBuffer(val)) return val
     if (val instanceof Uint8Array) return Buffer.from(val.buffer, val.byteOffset, val.byteLength)
@@ -188,8 +212,9 @@ export class FavoriteStickerService {
       return Buffer.from(val, 'base64')
     }
     if (typeof val === 'object') {
-      if (val.type === 'Buffer' && Array.isArray(val.data)) {
-        return Buffer.from(val.data)
+      const obj = val as Record<string, unknown>
+      if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+        return Buffer.from(obj.data as number[])
       }
       if (Array.isArray(val)) {
         return Buffer.from(val)
@@ -200,8 +225,8 @@ export class FavoriteStickerService {
 
   async syncFavoriteSticker(
     fileSha256: string,
-    stickerAction: any,
-    sock: any
+    stickerAction: Record<string, unknown> & { mediaKey?: unknown; fileSha256?: unknown },
+    sock: unknown
   ): Promise<boolean> {
     if (!stickerAction) return false
 
@@ -218,14 +243,17 @@ export class FavoriteStickerService {
         if (stickerAction.mediaKey) {
           stickerAction.mediaKey = this.ensureBuffer(stickerAction.mediaKey)
         }
-        const stream = await downloadContentFromMessage(stickerAction, 'sticker')
+        const stream = await downloadContentFromMessage(stickerAction as Parameters<typeof downloadContentFromMessage>[0], 'sticker')
         const buffer = await streamToBuffer(stream)
         if (buffer.length > 0) {
           fs.writeFileSync(destPath, buffer)
           downloadSuccess = true
         }
-      } catch (err: any) {
-        console.warn(`[FavoriteStickerService] Failed to download synced sticker for SHA ${fileSha256}: HTTP ${err?.output?.statusCode ?? err?.statusCode ?? 'unknown'}`)
+      } catch (err: unknown) {
+        const errorObj = err as Record<string, unknown>
+        const outputObj = errorObj?.output as Record<string, unknown> | undefined
+        const statusCode = outputObj?.statusCode ?? errorObj?.statusCode ?? 'unknown'
+        console.warn(`[FavoriteStickerService] Failed to download synced sticker for SHA ${fileSha256}: HTTP ${statusCode}`)
       }
     }
 

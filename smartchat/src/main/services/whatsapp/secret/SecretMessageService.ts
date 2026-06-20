@@ -13,7 +13,7 @@ export class SecretMessageService {
     this.registerStrategy(new MessageEditStrategy())
   }
 
-  public registerStrategy(strategy: ISecretMessageStrategy) {
+  public registerStrategy(strategy: ISecretMessageStrategy): void {
     this.strategies.set(strategy.getSecretType(), strategy)
   }
 
@@ -24,15 +24,15 @@ export class SecretMessageService {
    * Decrypts and handles a SecretEncryptedMessage or EncReactionMessage using registered strategies.
    */
   async handleSecretMessage(
-    msg: any, // BaileysMessage
+    msg: proto.IWebMessageInfo, // BaileysMessage
     sock: WASocket | null
   ): Promise<ProcessedMessage | ProtocolResult | null> {
-    let envelope: any = null
+    let envelope: proto.Message.ISecretEncryptedMessage | proto.Message.IEncReactionMessage | null | undefined = null
     let strategyKey: number | string | null = null
 
     if (msg.message?.secretEncryptedMessage) {
       envelope = msg.message.secretEncryptedMessage
-      strategyKey = this.resolveTypeKey(envelope.secretEncType)
+      strategyKey = this.resolveTypeKey(msg.message.secretEncryptedMessage.secretEncType)
     } else if (msg.message?.encReactionMessage) {
       envelope = msg.message.encReactionMessage
       strategyKey = 'encReactionMessage'
@@ -47,12 +47,17 @@ export class SecretMessageService {
     }
 
     const targetId = targetKey.id
-    const remoteJid = cleanJid(targetKey.remoteJid || msg.key.remoteJid || '')
+    const remoteJid = cleanJid(targetKey.remoteJid || msg.key?.remoteJid || '')
     const fromMe = targetKey.fromMe ?? false
-    const sender = msg.key.participant || msg.key.remoteJid || ''
+    const sender = msg.key?.participant || msg.key?.remoteJid || ''
+
+    if (strategyKey === null) {
+      console.warn('[SecretMessageService] Strategy key is null.')
+      return null
+    }
 
     // Resolve strategy
-    const strategy = this.strategies.get(strategyKey!)
+    const strategy = this.strategies.get(strategyKey)
     if (!strategy) {
       console.warn(`[SecretMessageService] No strategy registered for key: ${strategyKey}`)
       return null
@@ -66,19 +71,24 @@ export class SecretMessageService {
       })
 
       if (originalMsg && originalMsg.content) {
-        const parsed = JSON.parse(originalMsg.content)
+        const parsed = JSON.parse(originalMsg.content) as Record<string, unknown>
         const rawSecret =
-          parsed.messageContextInfo?.messageSecret ||
-          parsed.message?.messageContextInfo?.messageSecret
+          (parsed.messageContextInfo as Record<string, unknown> | undefined)?.messageSecret ||
+          (parsed.message as Record<string, unknown> | undefined)?.messageContextInfo ? ((parsed.message as Record<string, unknown>).messageContextInfo as Record<string, unknown>).messageSecret : undefined
 
         messageSecret = this.getBufferFromSecret(rawSecret)
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(`[SecretMessageService] Error loading original message ${targetId}:`, err)
     }
 
     if (!messageSecret) {
       console.warn(`[SecretMessageService] Original message secret not found for target ${targetId}. Cannot decrypt.`)
+      return null
+    }
+
+    if (!envelope.encPayload || !envelope.encIv) {
+      console.warn(`[SecretMessageService] Encrypted envelope lacks encPayload or encIv.`)
       return null
     }
 
@@ -93,9 +103,19 @@ export class SecretMessageService {
         sender,
         strategy.getSigningLabel()
       )
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(`[SecretMessageService] Decryption failed for target ${targetId}:`, err)
       return null
+    }
+
+    const ts = msg.messageTimestamp
+    let tsNum: number
+    if (ts && typeof ts === 'object' && 'low' in ts) {
+      tsNum = (ts as { low: number }).low
+    } else if (typeof ts === 'number') {
+      tsNum = ts
+    } else {
+      tsNum = Math.floor(Date.now() / 1000)
     }
 
     const context: SecretMessageContext = {
@@ -103,7 +123,7 @@ export class SecretMessageService {
       remoteJid,
       fromMe,
       senderJid: cleanJid(sender),
-      timestamp: BigInt(msg.messageTimestamp ?? Math.floor(Date.now() / 1000))
+      timestamp: BigInt(tsNum)
     }
 
     return strategy.handle(decryptedBytes, context, sock)
@@ -138,20 +158,21 @@ export class SecretMessageService {
 
     try {
       return attemptDecryption(rawSender)
-    } catch (err: any) {
+    } catch (err: unknown) {
       const cleaned = cleanJid(rawSender)
       if (cleaned !== rawSender) {
         try {
           return attemptDecryption(cleaned)
-        } catch (retryErr: any) {
-          throw new Error(`Failed to decrypt secret message with both raw and cleaned sender JIDs: ${retryErr?.message || retryErr}`)
+        } catch (retryErr: unknown) {
+          const retryErrMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          throw new Error(`Failed to decrypt secret message with both raw and cleaned sender JIDs: ${retryErrMsg}`)
         }
       }
       throw err
     }
   }
 
-  private getBufferFromSecret(rawSecret: any): Buffer | null {
+  private getBufferFromSecret(rawSecret: unknown): Buffer | null {
     if (!rawSecret) return null
     if (Buffer.isBuffer(rawSecret)) return rawSecret
     if (rawSecret instanceof Uint8Array) return Buffer.from(rawSecret)
@@ -174,12 +195,13 @@ export class SecretMessageService {
       // Fallback
       return Buffer.from(rawSecret)
     }
-    if (typeof rawSecret === 'object') {
-      if (rawSecret.type === 'Buffer' && Array.isArray(rawSecret.data)) {
-        return Buffer.from(rawSecret.data)
+    if (rawSecret && typeof rawSecret === 'object') {
+      const obj = rawSecret as Record<string, unknown>
+      if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+        return Buffer.from(obj.data as number[])
       }
-      if (Object.keys(rawSecret).every(k => !isNaN(Number(k)))) {
-        const arr = Object.values(rawSecret).map(Number)
+      if (Object.keys(obj).every(k => !isNaN(Number(k)))) {
+        const arr = Object.values(obj).map(Number)
         return Buffer.from(arr)
       }
     }
@@ -189,10 +211,11 @@ export class SecretMessageService {
     return null
   }
 
-  private resolveTypeKey(rawType: any): number | string {
+  private resolveTypeKey(rawType: unknown): number | string {
     if (typeof rawType === 'string') {
       // Resolve string enum to its numeric representation if possible
-      const resolved = proto.Message.SecretEncryptedMessage.SecretEncType[rawType]
+      const typeEnum = proto.Message.SecretEncryptedMessage.SecretEncType as unknown as Record<string, string | number | undefined>
+      const resolved = typeEnum[rawType]
       return resolved !== undefined ? resolved : rawType
     }
     return typeof rawType === 'number' ? rawType : 0

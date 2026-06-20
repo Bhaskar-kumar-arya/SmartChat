@@ -15,7 +15,7 @@ export interface AIProvider {
   /**
    * Returns the system prompt for this provider.
    */
-  getSystemPrompt(useThinkMode: boolean, userDetails?: any): string;
+  getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string;
 
   /**
    * Cleans up resources (e.g., unloading models on exit).
@@ -28,7 +28,7 @@ export interface AIProvider {
   generateResponseStream(
     prompt: string,
     history: Array<{ role: string; content: string; isSystem?: boolean }>,
-    options: { model?: string; [key: string]: any },
+    options: { model?: string; [key: string]: unknown },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void>;
@@ -39,7 +39,7 @@ export interface AIProvider {
   generateResponse(
     prompt: string,
     history: Array<{ role: string; content: string; isSystem?: boolean }>,
-    options: { model?: string; [key: string]: any },
+    options: { model?: string; [key: string]: unknown },
     signal?: AbortSignal
   ): Promise<string>;
 

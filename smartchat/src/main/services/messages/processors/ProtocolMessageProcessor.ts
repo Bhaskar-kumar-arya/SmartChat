@@ -1,3 +1,4 @@
+import { proto } from '@whiskeysockets/baileys'
 import { ProcessedMessage } from '../../../domain/types'
 import { ProtocolResult } from '../../whatsapp/types'
 import { IMessageProcessingContext, IMessageProcessorStrategy, IMessageServiceDependencyAccessor } from './IMessageProcessorStrategy'
@@ -24,7 +25,7 @@ export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
             subType: 'revoke',
             targetId,
             chatJid: context.remoteJid,
-            key: protocol.key as any
+            key: protocol.key as proto.IMessageKey
           }
         } else if (type === 14 || type === 'MESSAGE_EDIT') {
           const editedMsg = protocol.editedMessage as Record<string, unknown> | undefined
@@ -39,9 +40,9 @@ export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
             subType: 'edit',
             targetId,
             chatJid: context.remoteJid,
-            key: protocol.key as any,
+            key: protocol.key as proto.IMessageKey,
             editedTextContent: editContent,
-            editedContent: editedMsg as any
+            editedContent: editedMsg as proto.IMessage
           }
         }
       } catch (err: unknown) {

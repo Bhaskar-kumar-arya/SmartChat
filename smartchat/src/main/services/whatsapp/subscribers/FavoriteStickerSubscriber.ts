@@ -38,8 +38,12 @@ export class FavoriteStickerSubscriber implements IWAEventSubscriber {
     } else if (stickerAction) {
       console.log(`[FavoriteStickerSubscriber] Sticker favorited on phone: ${fileSha256}`)
       // Asynchronously sync the favorite sticker to avoid blocking other events on the bus
-      this.favoriteStickerService.syncFavoriteSticker(fileSha256, stickerAction, sock)
-        .catch((err) => {
+      this.favoriteStickerService.syncFavoriteSticker(
+        fileSha256,
+        stickerAction as Record<string, unknown> & { mediaKey?: unknown; fileSha256?: unknown },
+        sock
+      )
+        .catch((err: unknown) => {
           console.error('[FavoriteStickerSubscriber] Failed to sync favorite sticker:', err)
         })
     }

@@ -30,10 +30,19 @@ export interface SearchFilters {
 
 export type SearchMode = 'normal' | 'deep'
 
+export interface MentionResult {
+  jid: string
+  name: string
+  pushName?: string | null
+  verifiedName?: string | null
+  phoneNumber?: string | null
+  profilePictureUrl?: string | null
+}
+
 export interface ISearchService {
   searchAll(query: string, mode: SearchMode, sock: WASocket | null, filters?: SearchFilters): Promise<SearchResults>
-  searchMentionContacts(query: string): Promise<any[]>
-  searchMentionChats(query: string): Promise<any[]>
+  searchMentionContacts(query: string): Promise<MentionResult[]>
+  searchMentionChats(query: string): Promise<MentionResult[]>
 }
 
 function buildTimestampFilter(filters?: SearchFilters): { gte?: bigint; lte?: bigint } | undefined {
@@ -44,7 +53,7 @@ function buildTimestampFilter(filters?: SearchFilters): { gte?: bigint; lte?: bi
   return clause
 }
 
-function buildMessageWhereClause(filters?: SearchFilters, extraWhere: Record<string, any> = {}) {
+function buildMessageWhereClause(filters?: SearchFilters, extraWhere: Record<string, unknown> = {}) {
   const tsFilter = buildTimestampFilter(filters)
   return {
     textContent: { not: null },
@@ -52,6 +61,18 @@ function buildMessageWhereClause(filters?: SearchFilters, extraWhere: Record<str
     ...(tsFilter ? { timestamp: tsFilter } : {}),
     ...extraWhere
   }
+}
+
+interface DBMessageWithChatAndSender {
+  id: string
+  chatJid: string
+  textContent?: string | null
+  timestamp?: bigint | null
+  sender?: unknown
+  chat?: {
+    name?: string | null
+    type?: string | null
+  } | null
 }
 
 export class SearchService implements ISearchService {
@@ -129,7 +150,7 @@ export class SearchService implements ISearchService {
 
     const messages = await this.messageRepository.findMessagesWithChatAndSender(where, 30)
 
-    return messages.map((msg: any) => {
+    return (messages as unknown as DBMessageWithChatAndSender[]).map((msg) => {
         let name = msg.chat?.name
         if (!name && msg.chat?.type === 'DM' && msg.sender) {
             name = ContactService.getDisplayName(msg.sender, msg.chatJid.split('@')[0])
@@ -170,7 +191,9 @@ export class SearchService implements ISearchService {
       const scoredIds = scoredResults.map((r) => r.messageId)
       const messages = await this.messageRepository.findMessagesByIdsWithChatAndSender(scoredIds)
 
-      const msgMap = new Map(messages.map((m: any) => [m.id, m]))
+      const msgMap = new Map<string, DBMessageWithChatAndSender>(
+        (messages as unknown as DBMessageWithChatAndSender[]).map((m) => [m.id, m])
+      )
 
       return scoredResults
         .map((res) => {
@@ -194,13 +217,13 @@ export class SearchService implements ISearchService {
           }
         })
         .filter(Boolean) as SearchResultItem[]
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[SearchService] Native vector search failed:', err)
       return []
     }
   }
 
-  async searchMentionContacts(query: string): Promise<any[]> {
+  async searchMentionContacts(query: string): Promise<MentionResult[]> {
     const q = query.trim()
     if (!q) return []
 
@@ -211,7 +234,7 @@ export class SearchService implements ISearchService {
     const chats = await this.chatRepository.searchChats(q, 20)
 
     const seenJids = new Set<string>()
-    const results: any[] = []
+    const results: MentionResult[] = []
 
     // Process Identities first
     for (const ident of identities) {
@@ -277,7 +300,7 @@ export class SearchService implements ISearchService {
     return results.slice(0, 20)
   }
 
-  async searchMentionChats(query: string): Promise<any[]> {
+  async searchMentionChats(query: string): Promise<MentionResult[]> {
     return this.searchMentionContacts(query)
   }
 }

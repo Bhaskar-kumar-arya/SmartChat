@@ -40,7 +40,7 @@ const dbPath = (() => {
             console.error(`[Database] Template db not found at ${templatePath} or ${fallbackTemplatePath}`);
           }
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("[Database] Failed to copy template database:", err);
       }
     }
@@ -60,12 +60,19 @@ const baseAdapter = new PrismaBetterSqlite3({
  * This allows us to access the underlying better-sqlite3 instance ('client')
  * and load the sqlite-vec extension directly into it.
  */
+interface ConnectionWithClient {
+  client?: {
+    loadExtension: (path: string) => void;
+  };
+}
+
 const adapter = new Proxy(baseAdapter, {
   get(target, prop, receiver) {
     const value = Reflect.get(target, prop, receiver);
     if (prop === "connect" || prop === "connectToShadowDb") {
       return async (...args: unknown[]) => {
-        const conn = await (value as Function).apply(target, args);
+        const valueFn = value as (...args: unknown[]) => unknown;
+        const conn = await valueFn.apply(target, args) as ConnectionWithClient | null | undefined;
         if (conn && conn.client) {
           try {
             let loadablePath = sqliteVec.getLoadablePath();
@@ -74,7 +81,7 @@ const adapter = new Proxy(baseAdapter, {
             }
             conn.client.loadExtension(loadablePath);
             console.log("[AdapterPatch] sqlite-vec successfully loaded into connection");
-          } catch (e) {
+          } catch (e: unknown) {
             console.error("[AdapterPatch] Failed to load sqlite-vec into connection:", e);
           }
         }
@@ -108,7 +115,7 @@ export const initVectorDb = async (embeddingService?: IEmbeddingService) => {
         `SELECT count(*) FROM vec_messages WHERE vector MATCH ? AND k=1`,
         dummyVector
       );
-    } catch (e) {
+    } catch (e: unknown) {
       const errorVal = e as Error;
       if (errorVal.message.includes("Dimension mismatch")) {
         console.warn("[VectorDB] Dimension mismatch detected. Recreating table with 768 dims...");
@@ -137,7 +144,7 @@ export const initVectorDb = async (embeddingService?: IEmbeddingService) => {
         await embeddingService.syncVectors();
       }
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error("[VectorDB] Failed to initialize vector table:", err);
   }
 };
@@ -155,7 +162,7 @@ export const usePrismaAuthState = async (): Promise<{
         return JSON.parse(data.data, BufferJSON.reviver);
       }
       return null;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error reading auth state:", error);
       return null;
     }
@@ -169,7 +176,7 @@ export const usePrismaAuthState = async (): Promise<{
         update: { data: serialized },
         create: { id, data: serialized },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error writing auth state:", error);
     }
   };
@@ -188,36 +195,39 @@ export const usePrismaAuthState = async (): Promise<{
           data[id] = value;
         })
       );
-      return data as { [id: string]: any };
+      return data;
     },
     set: async (data: { [category: string]: { [id: string]: any } }): Promise<void> => {
       // Aggregate ALL key mutations into a single prisma.$transaction() call.
       // This replaces N individual SQLite lock/write/unlock cycles with ONE,
       // which is the primary fix for the slow 1-5 message trickle on reconnect.
-      const ops: Prisma.PrismaPromise<any>[] = [];
+      const ops: Prisma.PrismaPromise<unknown>[] = [];
       for (const category in data) {
-        for (const id in data[category as keyof typeof data]) {
-          const value = data[category as keyof typeof data]?.[id];
-          const key = `${category}-${id}`;
-          if (value !== null && value !== undefined) {
-            const serialized = JSON.stringify(value, BufferJSON.replacer);
-            ops.push(
-              prisma.authState.upsert({
-                where: { id: key },
-                update: { data: serialized },
-                create: { id: key, data: serialized },
-              })
-            );
-          } else {
-            // deleteMany won't throw if the row doesn't exist
-            ops.push(prisma.authState.deleteMany({ where: { id: key } }));
+        const categoryData = data[category];
+        if (categoryData) {
+          for (const id in categoryData) {
+            const value = categoryData[id];
+            const key = `${category}-${id}`;
+            if (value !== null && value !== undefined) {
+              const serialized = JSON.stringify(value, BufferJSON.replacer);
+              ops.push(
+                prisma.authState.upsert({
+                  where: { id: key },
+                  update: { data: serialized },
+                  create: { id: key, data: serialized },
+                })
+              );
+            } else {
+              // deleteMany won't throw if the row doesn't exist
+              ops.push(prisma.authState.deleteMany({ where: { id: key } }));
+            }
           }
         }
       }
       if (ops.length > 0) {
         try {
           await prisma.$transaction(ops);
-        } catch (err) {
+        } catch (err: unknown) {
           console.error('[AuthState] Batch keystore transaction failed:', err);
         }
       }

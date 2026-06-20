@@ -231,8 +231,11 @@ export class QueryDatabaseTool implements AITool {
 
   // ── Execution ─────────────────────────────────────────────────────────────────
 
-  async execute(args: any): Promise<any> {
-    const { sql, explanation, params } = args;
+  async execute(args: unknown): Promise<unknown> {
+    if (!args || typeof args !== 'object') {
+      throw new Error('Invalid arguments passed to QueryDatabaseTool');
+    }
+    const { sql, explanation, params } = args as Record<string, unknown>;
 
     if (!sql || typeof sql !== 'string') {
       throw new Error('Missing required argument: sql');
@@ -268,18 +271,21 @@ export class QueryDatabaseTool implements AITool {
     }
 
     // ── Execute ───────────────────────────────────────────────────────────────
-    let rows: any[];
+    let rows: unknown[];
     try {
-      rows = await prisma.$queryRawUnsafe<any[]>(finalSql, ...(Array.isArray(params) ? params : []));
-    } catch (err: any) {
-      throw new Error(`SQL execution failed: ${err?.message || String(err)}`);
+      rows = await prisma.$queryRawUnsafe<unknown[]>(finalSql, ...(Array.isArray(params) ? params : []));
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      throw new Error(`SQL execution failed: ${errMsg}`);
     }
 
     // Serialize BigInt timestamps to strings for safe JSON transport
     const serialized = rows.map(row => {
-      const out: Record<string, any> = {};
-      for (const [key, val] of Object.entries(row)) {
-        out[key] = typeof val === 'bigint' ? val.toString() : val;
+      const out: Record<string, unknown> = {};
+      if (row && typeof row === 'object') {
+        for (const [key, val] of Object.entries(row as Record<string, unknown>)) {
+          out[key] = typeof val === 'bigint' ? val.toString() : val;
+        }
       }
       return out;
     });

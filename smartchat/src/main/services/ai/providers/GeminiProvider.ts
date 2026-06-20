@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai'
 import { AIProvider, ModelInfo } from './Provider'
 import { toolRegistry } from '../AIToolService'
 import { IAIKeyService } from '../IAIKeyService'
+import { UserDetails } from '../SystemPromptBuilder'
 
 export class GeminiProvider implements AIProvider {
   private ai: GoogleGenAI;
@@ -24,20 +25,20 @@ export class GeminiProvider implements AIProvider {
     return `[${label}]: ${content}`;
   }
 
-  private formatHistory(history: Array<{ role: string; content: string; isSystem?: boolean }>) {
+  private formatHistory(history: Array<{ role: string; content: string; isSystem?: boolean }>): Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> {
     return (history || []).map(msg => {
       const isMsgSystem = msg.isSystem === true;
-      const role = msg.role === 'user' ? 'user' : 'model';
+      const role: 'user' | 'model' = msg.role === 'user' ? 'user' : 'model';
       // Note: Full prompt building is still handled in AIService before calling provider
       return {
         role,
-        parts: [{ text: this.wrapWithRole(msg.content, isMsgSystem, role as any) }]
+        parts: [{ text: this.wrapWithRole(msg.content, isMsgSystem, role) }]
       };
     });
   }
 
-  getSystemPrompt(useThinkMode: boolean, userDetails?: any): string {
-    return toolRegistry.getSystemInstructions(useThinkMode, userDetails);
+  getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
+    return toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
   }
 
   async cleanup(): Promise<void> {
@@ -47,7 +48,7 @@ export class GeminiProvider implements AIProvider {
   async generateResponse(
     prompt: string,
     history: Array<{ role: string; content: string; isSystem?: boolean }>,
-    options: { model?: string; useThinkMode?: boolean; isSystem?: boolean; signal?: AbortSignal; userDetails?: any },
+    options: { model?: string; [key: string]: unknown },
     _signal?: AbortSignal
   ): Promise<string> {
     const formattedHistory = this.formatHistory(history);
@@ -60,7 +61,8 @@ export class GeminiProvider implements AIProvider {
     // Prepare contents including history and current prompt
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
     
-    const rawModel = (options?.model || "gemini:gemma-4-31b-it").replace(/^gemini:/, '');
+    const rawModelOption = typeof options?.model === 'string' ? options.model : "gemini:gemma-4-31b-it";
+    const rawModel = rawModelOption.replace(/^gemini:/, '');
     const response = await this.ai.models.generateContent({
       model: rawModel,
       contents,
@@ -73,7 +75,7 @@ export class GeminiProvider implements AIProvider {
   async generateResponseStream(
     prompt: string,
     history: Array<{ role: string; content: string; isSystem?: boolean }>,
-    options: { model?: string; useThinkMode?: boolean; isSystem?: boolean; signal?: AbortSignal; userDetails?: any },
+    options: { model?: string; [key: string]: unknown },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void> {
@@ -87,8 +89,9 @@ export class GeminiProvider implements AIProvider {
     // Prepare contents including history and current prompt
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
     
-    const actualSignal = options?.signal || signal;
-    const rawModel = (options?.model || "gemini:gemma-4-31b-it").replace(/^gemini:/, '');
+    const actualSignal = options?.signal instanceof AbortSignal ? options.signal : signal;
+    const rawModelOption = typeof options?.model === 'string' ? options.model : "gemini:gemma-4-31b-it";
+    const rawModel = rawModelOption.replace(/^gemini:/, '');
     const responseStream = await this.ai.models.generateContentStream({
       model: rawModel,
       contents,

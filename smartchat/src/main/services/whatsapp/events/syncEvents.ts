@@ -1,14 +1,14 @@
 import { WASocket } from '../types'
 
 export interface AppStateSyncEvent {
-  syncAction: any
+  syncAction: unknown
   sock: WASocket
 }
 
 export interface FavoriteStickerSyncEvent {
   fileSha256: string
   isFavorite: boolean
-  stickerAction?: any
+  stickerAction?: unknown
   sock: WASocket
 }
 
@@ -54,7 +54,7 @@ export interface LabelEditSyncEvent {
 
 export interface SettingSyncEvent {
   settingType: string
-  value: any
+  value: unknown
 }
 
 export interface LockSyncEvent {

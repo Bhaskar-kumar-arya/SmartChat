@@ -1,6 +1,7 @@
 import { Chat, LMStudioClient } from '@lmstudio/sdk'
 import { AIProvider, ModelInfo } from './Provider'
 import { toolRegistry } from '../AIToolService'
+import { UserDetails } from '../SystemPromptBuilder'
 
 export class LMStudioProvider implements AIProvider {
   private client: LMStudioClient;
@@ -35,8 +36,8 @@ export class LMStudioProvider implements AIProvider {
 
     try {
       const model = await this.client.llm.load(modelKey, { 
-        config: { contextLength: requestedLength, flashAttention : true, gpu: { ratio: "max" } }, 
-        ttl: 600 // 10 mins TTL
+         config: { contextLength: requestedLength, flashAttention : true, gpu: { ratio: "max" } }, 
+         ttl: 600 // 10 mins TTL
       });
       this.loadedModels.set(modelKey, { model, contextLength: requestedLength });
       return model;
@@ -46,8 +47,8 @@ export class LMStudioProvider implements AIProvider {
     }
   }
 
-  getSystemPrompt(useThinkMode: boolean, userDetails?: any): string {
-    return toolRegistry.getSystemInstructions(useThinkMode, userDetails);
+  getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
+    return toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
   }
 
 
@@ -80,14 +81,15 @@ export class LMStudioProvider implements AIProvider {
   async generateResponse(
     prompt: string,
     history: Array<{ role: string; content: string }>,
-    options: { model?: string; contextLength?: number; useThinkMode?: boolean; signal?: AbortSignal; userDetails?: any },
+    options: { model?: string; [key: string]: unknown },
     signal?: AbortSignal
   ): Promise<string> {
-    const modelKey = options?.model;
+    const modelKey = typeof options?.model === 'string' ? options.model : undefined;
     if (!modelKey) throw new Error('No model specified for LM Studio');
 
     const cleanModelKey = modelKey.replace(/^lmstudio:/, '');
-    const model = await this.getOrLoadModel(cleanModelKey, options?.contextLength);
+    const contextLength = typeof options?.contextLength === 'number' ? options.contextLength : undefined;
+    const model = await this.getOrLoadModel(cleanModelKey, contextLength);
     const chat = Chat.empty();
     
     const useThinkMode = options?.useThinkMode !== false;
@@ -104,6 +106,7 @@ export class LMStudioProvider implements AIProvider {
     chat.append('user', prompt);
 
     let finalResponse = '';
+    const optionsSignal = options?.signal instanceof AbortSignal ? options.signal : undefined;
 
     
     const prediction = model.respond(chat, {
@@ -111,8 +114,8 @@ export class LMStudioProvider implements AIProvider {
         effort : 'high'
       },
       temperature : 0.0,
-      rawTools: this.getRawToolsInfo() as any,
-      signal: options?.signal || signal,
+      rawTools: this.getRawToolsInfo() as unknown as Exclude<Parameters<typeof model.respond>[1], undefined>['rawTools'],
+      signal: optionsSignal || signal,
       onPredictionFragment: (fragment) => {
          if (fragment.content) {
             finalResponse += fragment.content;
@@ -131,7 +134,7 @@ export class LMStudioProvider implements AIProvider {
           const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
           finalResponse += xml;
       },
-    } as any);
+    } as unknown as Parameters<typeof model.respond>[1]);
 
     await prediction;
     return finalResponse;
@@ -140,15 +143,16 @@ export class LMStudioProvider implements AIProvider {
   async generateResponseStream(
     prompt: string,
     history: Array<{ role: string; content: string }>,
-    options: { model?: string; contextLength?: number; useThinkMode?: boolean; signal?: AbortSignal; userDetails?: any },
+    options: { model?: string; [key: string]: unknown },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void> {
-    const modelKey = options?.model;
+    const modelKey = typeof options?.model === 'string' ? options.model : undefined;
     if (!modelKey) throw new Error('No model specified for LM Studio');
 
     const cleanModelKey = modelKey.replace(/^lmstudio:/, '');
-    const model = await this.getOrLoadModel(cleanModelKey, options?.contextLength);
+    const contextLength = typeof options?.contextLength === 'number' ? options.contextLength : undefined;
+    const model = await this.getOrLoadModel(cleanModelKey, contextLength);
     const chat = Chat.empty();
 
     const useThinkMode = options?.useThinkMode !== false;
@@ -162,14 +166,15 @@ export class LMStudioProvider implements AIProvider {
     }
 
     chat.append('user', prompt);
+    const optionsSignal = options?.signal instanceof AbortSignal ? options.signal : undefined;
 
     const prediction = model.respond(chat, {
       reasoning : {
         effort : 'high'
       },
       temperature : 0.0,
-      rawTools: this.getRawToolsInfo() as any,
-      signal: options?.signal || signal,
+      rawTools: this.getRawToolsInfo() as unknown as Exclude<Parameters<typeof model.respond>[1], undefined>['rawTools'],
+      signal: optionsSignal || signal,
       onPredictionFragment: (fragment) => {
          if (fragment.content) {
             onChunk(fragment.content);
@@ -188,7 +193,7 @@ export class LMStudioProvider implements AIProvider {
           const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
           onChunk(xml);
       }
-    } as any);
+    } as unknown as Parameters<typeof model.respond>[1]);
 
     await prediction;
   }

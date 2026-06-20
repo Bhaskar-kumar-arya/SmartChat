@@ -16,6 +16,9 @@ export class SecretMessageProcessor implements IMessageProcessorStrategy {
     context: IMessageProcessingContext,
     dependencies: IMessageServiceDependencyAccessor
   ): Promise<ProcessedMessage | ProtocolResult | null> {
-    return dependencies.secretMessageService.handleSecretMessage(context.msg, context.sock)
+    return dependencies.secretMessageService.handleSecretMessage(
+      context.msg as unknown as Parameters<typeof dependencies.secretMessageService.handleSecretMessage>[0],
+      context.sock
+    )
   }
 }

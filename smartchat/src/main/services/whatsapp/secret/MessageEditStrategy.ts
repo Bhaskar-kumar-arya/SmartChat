@@ -30,13 +30,25 @@ export class MessageEditStrategy implements ISecretMessageStrategy {
     // 1. protocolMessage.editedMessage  (common for secretEncryptedMessage)
     // 2. top-level editedMessage.message (sometimes seen in older clients)
     // 3. the decoded message itself (direct conversation payload)
+    interface MessageWithEdited {
+      editedMessage?: {
+        message?: proto.IMessage | null;
+      } | proto.IMessage | null;
+    }
+
     let editedMsg: proto.IMessage = decryptedMessage
     if (decryptedMessage.protocolMessage?.editedMessage) {
       editedMsg = decryptedMessage.protocolMessage.editedMessage
-    } else if ((decryptedMessage as any).editedMessage?.message) {
-      editedMsg = (decryptedMessage as any).editedMessage.message
-    } else if ((decryptedMessage as any).editedMessage) {
-      editedMsg = (decryptedMessage as any).editedMessage
+    } else {
+      const extendedMsg = decryptedMessage as unknown as MessageWithEdited
+      if (extendedMsg.editedMessage) {
+        const innerEdit = extendedMsg.editedMessage as Record<string, unknown>
+        if (innerEdit && 'message' in innerEdit && innerEdit.message) {
+          editedMsg = innerEdit.message as proto.IMessage
+        } else {
+          editedMsg = extendedMsg.editedMessage as proto.IMessage
+        }
+      }
     }
 
     const editContent =

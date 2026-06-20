@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { AIProvider, ModelInfo } from './Provider';
 import { toolRegistry } from '../AIToolService';
 import { IAIKeyService } from '../IAIKeyService';
+import { UserDetails } from '../SystemPromptBuilder';
 
 export class DeepSeekProvider implements AIProvider {
   private client: OpenAI;
@@ -21,8 +22,8 @@ export class DeepSeekProvider implements AIProvider {
     return modelId.startsWith('deepseek:');
   }
 
-  getSystemPrompt(useThinkMode: boolean, userDetails?: any): string {
-    return toolRegistry.getSystemInstructions(useThinkMode, userDetails);
+  getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
+    return toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
   }
 
   async cleanup(): Promise<void> {
@@ -48,7 +49,7 @@ export class DeepSeekProvider implements AIProvider {
     return messages;
   }
 
-  private getToolsForDeepSeek() {
+  private getToolsForDeepSeek(): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
     return toolRegistry.getAllTools().map(t => ({
       type: 'function' as const,
       function: {
@@ -66,10 +67,11 @@ export class DeepSeekProvider implements AIProvider {
   async generateResponse(
     prompt: string,
     history: Array<{ role: string; content: string }>,
-    options: { model?: string; useThinkMode?: boolean; signal?: AbortSignal; userDetails?: any },
+    options: { model?: string; [key: string]: unknown },
     signal?: AbortSignal
   ): Promise<string> {
-    const rawModel = this.stripPrefix(options?.model || 'deepseek-v4-pro');
+    const modelOption = typeof options?.model === 'string' ? options.model : 'deepseek-v4-pro';
+    const rawModel = this.stripPrefix(modelOption);
     const useThinkMode = options?.useThinkMode !== false;
     const systemPrompt = this.getSystemPrompt(useThinkMode, options?.userDetails);
     const messages = this.formatMessages(prompt, history, systemPrompt);
@@ -78,7 +80,8 @@ export class DeepSeekProvider implements AIProvider {
     const isReasoner = rawModel.includes('reasoner');
     const tools = isReasoner ? [] : this.getToolsForDeepSeek();
 
-    const actualSignal = options?.signal || signal;
+    const optionsSignal = options?.signal instanceof AbortSignal ? options.signal : undefined;
+    const actualSignal = optionsSignal || signal;
 
     const response = await this.client.chat.completions.create({
       model: rawModel,
@@ -104,7 +107,7 @@ export class DeepSeekProvider implements AIProvider {
           let argsObj = {};
           try {
             argsObj = JSON.parse(tc.function.arguments);
-          } catch (e) {
+          } catch (e: unknown) {
             console.warn('Failed to parse DeepSeek tool call arguments:', tc.function.arguments);
           }
           const xml = `\n<tool_call>\n{\n  "tool": "${tc.function.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
@@ -119,11 +122,12 @@ export class DeepSeekProvider implements AIProvider {
   async generateResponseStream(
     prompt: string,
     history: Array<{ role: string; content: string }>,
-    options: { model?: string; useThinkMode?: boolean; signal?: AbortSignal; userDetails?: any },
+    options: { model?: string; [key: string]: unknown },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal
   ): Promise<void> {
-    const rawModel = this.stripPrefix(options?.model || 'deepseek-v4-pro');
+    const modelOption = typeof options?.model === 'string' ? options.model : 'deepseek-v4-pro';
+    const rawModel = this.stripPrefix(modelOption);
     const useThinkMode = options?.useThinkMode !== false;
     const systemPrompt = this.getSystemPrompt(useThinkMode, options?.userDetails);
     const messages = this.formatMessages(prompt, history, systemPrompt);
@@ -131,7 +135,8 @@ export class DeepSeekProvider implements AIProvider {
     const isReasoner = rawModel.includes('reasoner');
     const tools = isReasoner ? [] : this.getToolsForDeepSeek();
 
-    const actualSignal = options?.signal || signal;
+    const optionsSignal = options?.signal instanceof AbortSignal ? options.signal : undefined;
+    const actualSignal = optionsSignal || signal;
 
     const stream = await this.client.chat.completions.create({
       model: rawModel,
@@ -205,7 +210,7 @@ export class DeepSeekProvider implements AIProvider {
         let argsObj = {};
         try {
           argsObj = JSON.parse(tc.function.arguments);
-        } catch (e) {
+        } catch (e: unknown) {
           console.warn('Failed to parse DeepSeek streamed tool call arguments:', tc.function.arguments);
         }
         const xml = `\n<tool_call>\n{\n  "tool": "${tc.function.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
@@ -239,7 +244,7 @@ export class DeepSeekProvider implements AIProvider {
         return 0;
       });
       return models;
-    } catch (error) {
+    } catch (error: unknown) {
       console.warn('[DeepSeekProvider] Could not fetch models from DeepSeek:', error);
       // Fallback model list
       return [

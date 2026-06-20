@@ -116,8 +116,11 @@ export class ExecuteScriptTool implements AITool {
 
   // ── Execution ──────────────────────────────────────────────────────────────
 
-  async execute(args: any): Promise<any> {
-    const { script, explanation } = args;
+  async execute(args: unknown): Promise<unknown> {
+    if (!args || typeof args !== 'object') {
+      throw new Error('Invalid arguments passed to ExecuteScriptTool');
+    }
+    const { script, explanation } = args as Record<string, unknown>;
 
     if (!script || typeof script !== 'string') {
       throw new Error('Missing required argument: script');
@@ -127,7 +130,7 @@ export class ExecuteScriptTool implements AITool {
     let toolCallCount = 0;
 
     // ── Build sandboxed context ────────────────────────────────────────────
-    const sandbox: Record<string, any> = {
+    const sandbox: Record<string, unknown> = {
       // Safe JS built-ins only
       Promise,
       JSON,
@@ -145,9 +148,9 @@ export class ExecuteScriptTool implements AITool {
       isNaN,
       isFinite,
       console: {
-        log: (...a: any[]) => logs.push('[log] ' + a.map(String).join(' ')),
-        warn: (...a: any[]) => logs.push('[warn] ' + a.map(String).join(' ')),
-        error: (...a: any[]) => logs.push('[error] ' + a.map(String).join(' ')),
+        log: (...a: unknown[]) => logs.push('[log] ' + a.map(String).join(' ')),
+        warn: (...a: unknown[]) => logs.push('[warn] ' + a.map(String).join(' ')),
+        error: (...a: unknown[]) => logs.push('[error] ' + a.map(String).join(' ')),
       },
       // Explicitly block dangerous globals
       require: undefined,
@@ -163,7 +166,7 @@ export class ExecuteScriptTool implements AITool {
     for (const tool of toolRegistry.getAllTools()) {
       if (tool.name === this.name) continue;
 
-      sandbox[tool.name] = async (toolArgs: any) => {
+      sandbox[tool.name] = async (toolArgs: unknown) => {
         if (toolCallCount >= MAX_TOOL_CALLS) {
           throw new Error(
             `[executeScript] Tool call limit (${MAX_TOOL_CALLS}) reached. Script halted to prevent runaway execution.`
@@ -180,26 +183,27 @@ export class ExecuteScriptTool implements AITool {
     // Wrap script in an async IIFE so top-level 'await' and 'return' work
     const wrapped = `(async function __smartscript__() {\n${script}\n})()`;
 
-    let scriptPromise: Promise<any>;
+    let scriptPromise: Promise<unknown>;
     try {
       const compiled = new vm.Script(wrapped, {
         filename: 'smartscript.js',
         lineOffset: -1  // offset so line numbers in errors match user's script
       });
       // runInContext returns a Promise (the IIFE result)
-      scriptPromise = compiled.runInContext(context);
-    } catch (syntaxErr: any) {
+      scriptPromise = compiled.runInContext(context) as Promise<unknown>;
+    } catch (syntaxErr: unknown) {
+      const syntaxErrMsg = syntaxErr instanceof Error ? syntaxErr.message : String(syntaxErr);
       return {
         explanation,
         success: false,
-        error: `Syntax error: ${syntaxErr?.message || String(syntaxErr)}`,
+        error: `Syntax error: ${syntaxErrMsg}`,
         logs,
         toolCallCount
       };
     }
 
     // Race the script against a wall-clock timeout (handles async hangs)
-    let result: any;
+    let result: unknown;
     let timedOut = false;
 
     try {
@@ -212,12 +216,13 @@ export class ExecuteScriptTool implements AITool {
           }, MAX_EXECUTION_MS)
         )
       ]);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       return {
         explanation,
         success: false,
         timedOut,
-        error: err?.message || String(err),
+        error: errMsg,
         logs,
         toolCallCount
       };
