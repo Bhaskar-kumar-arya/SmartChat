@@ -1,7 +1,8 @@
 import { PrismaClient, Message } from '@prisma/client'
 import { IMessageQueryRepository } from './IMessageQueryRepository'
+import { IRawSqlExecutor } from './IRawSqlExecutor'
 
-export class MessageQueryRepository implements IMessageQueryRepository {
+export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlExecutor {
   constructor(private readonly prisma: PrismaClient) {}
 
   /**

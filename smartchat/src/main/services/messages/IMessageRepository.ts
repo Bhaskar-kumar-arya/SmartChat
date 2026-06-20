@@ -1,21 +1,7 @@
-import { Message } from '@prisma/client'
+import { DBMessageWithSender, MessageUpsertData } from '../../domain/types'
+export type { MessageUpsertData }
 
-export interface MessageUpsertData {
-  id: string
-  chatJid: string
-  fromMe: boolean
-  senderId: number | null
-  participant: string | null
-  timestamp: bigint
-  messageType: string
-  content: string
-  textContent: string | null
-  status: string | null
-  isDeleted: boolean
-  isEdited?: boolean
-}
-
-export interface IMessageRepository {
+export interface IMessageWriteRepository {
   upsertMessage(data: MessageUpsertData): Promise<void>
   bulkCreateMessages(rows: MessageUpsertData[]): Promise<void>
   revokeMessage(messageId: string): Promise<void>
@@ -31,9 +17,11 @@ export interface IMessageRepository {
     id: string,
     textContent: string,
     content: string
-  ): Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null>
+  ): Promise<DBMessageWithSender | null>
   updateContentAndFetchWithSender(
     id: string,
     content: string
-  ): Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null>
+  ): Promise<DBMessageWithSender | null>
 }
+
+export interface IMessageRepository extends IMessageWriteRepository {}

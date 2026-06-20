@@ -2,6 +2,8 @@ import type { WAEventMap } from './WAEventTypes'
 
 export type AsyncHandler<T> = (data: T) => Promise<void> | void
 
+export type WAEventBusFactory = () => IWAEventBus
+
 export interface IWAEventBus {
   /**
    * Register a handler for a typed event.

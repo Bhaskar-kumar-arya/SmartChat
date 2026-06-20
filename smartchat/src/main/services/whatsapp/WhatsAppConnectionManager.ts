@@ -14,8 +14,7 @@ import {
 } from '../../constants'
 import { DataWipeService } from '../DataWipeService'
 import { WAEventHandler } from './WAEventHandler'
-import { WAEventBus } from './WAEventBus'
-import type { IWAEventBus } from './IWAEventBus'
+import type { IWAEventBus, WAEventBusFactory } from './IWAEventBus'
 import { createSubscribers, SubscriberServices } from './subscribers'
 import { HistorySyncManager } from './HistorySyncManager'
 import { BaileysPatcher } from './BaileysPatcher'
@@ -43,7 +42,8 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
     private readonly messageQueryRepository: IMessageQueryRepository,
     private readonly dataWipeService: DataWipeService,
     private historySyncManager: HistorySyncManager,
-    private wiringService: WAEventWiringService
+    private wiringService: WAEventWiringService,
+    private readonly eventBusFactory: WAEventBusFactory
   ) {}
 
   public setWindow(window: BrowserWindow): void {
@@ -163,7 +163,7 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
     this.currentSock = sock
 
     // Create the event bus and wire up all subscribers for this connection
-    const bus = new WAEventBus()
+    const bus = this.eventBusFactory()
     this.currentBus = bus
     createSubscribers(bus, this.deps, () => this.mainWindow)
 

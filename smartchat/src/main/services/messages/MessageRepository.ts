@@ -1,7 +1,8 @@
-import { PrismaClient, Message } from '@prisma/client'
+import { PrismaClient } from '@prisma/client'
 import { unwrapMessage } from '../../utils'
 import { MediaMessageWithLocalUri } from '../whatsapp/types'
 import { IMessageRepository, MessageUpsertData } from './IMessageRepository'
+import { DBMessageWithSender } from '../../domain/types'
 
 /**
  * MessageRepository — Single Responsibility: all Prisma/database write/mutation
@@ -288,12 +289,12 @@ export class MessageRepository implements IMessageRepository {
     id: string,
     textContent: string,
     content: string
-  ): Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null> {
+  ): Promise<DBMessageWithSender | null> {
     return this.prisma.message.update({
       where: { id },
       data: { textContent, content, isEdited: true },
       include: { sender: true }
-    }) as Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null>
+    }) as Promise<DBMessageWithSender | null>
   }
 
   /**
@@ -303,11 +304,11 @@ export class MessageRepository implements IMessageRepository {
   async updateContentAndFetchWithSender(
     id: string,
     content: string
-  ): Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null> {
+  ): Promise<DBMessageWithSender | null> {
     return this.prisma.message.update({
       where: { id },
       data: { content },
       include: { sender: true }
-    }) as Promise<(Message & { sender: import('@prisma/client').Identity | null }) | null>
+    }) as Promise<DBMessageWithSender | null>
   }
 }

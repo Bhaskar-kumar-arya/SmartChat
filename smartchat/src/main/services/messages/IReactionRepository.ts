@@ -1,3 +1,10 @@
+export interface ReactionSyncData {
+  targetId: string
+  reactorId: number
+  emoji: string
+  timestamp: bigint
+}
+
 export interface LastReactionInfo {
   text: string
   timestamp: bigint
@@ -15,14 +22,19 @@ export interface LastReactionInfo {
   }
 }
 
-export interface ReactionSyncData {
-  targetId: string
-  reactorId: number
-  emoji: string
-  timestamp: bigint
+export interface IReactionQueryRepository {
+  findReactionsForMessages(messageIds: string[]): Promise<Array<{
+    messageId: string
+    text: string
+    timestamp: bigint
+    senderId: number
+    sender: { displayName: string | null; pushName: string | null; phoneNumber: string | null }
+  }>>
+
+  findLastReaction(chatJid: string): Promise<LastReactionInfo | null>
 }
 
-export interface IReactionRepository {
+export interface IReactionWriteRepository {
   upsertReaction(
     messageId: string,
     reactorId: number,
@@ -32,18 +44,10 @@ export interface IReactionRepository {
 
   deleteReactions(messageId: string, senderId: number): Promise<void>
 
-  findReactionsForMessages(messageIds: string[]): Promise<Array<{
-    messageId: string
-    text: string
-    timestamp: bigint
-    senderId: number
-    sender: { displayName: string | null; pushName: string | null; phoneNumber: string | null }
-  }>>
-
   bulkSyncReactions(
     pendingReactions: ReactionSyncData[],
     currentBatchIds: Set<string>
   ): Promise<void>
-
-  findLastReaction(chatJid: string): Promise<LastReactionInfo | null>
 }
+
+export interface IReactionRepository extends IReactionQueryRepository, IReactionWriteRepository {}

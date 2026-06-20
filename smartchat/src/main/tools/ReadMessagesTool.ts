@@ -1,5 +1,6 @@
 import { AITool } from '../services/ai/IToolRegistry';
 import { IMessageQueryRepository } from '../services/messages/IMessageQueryRepository';
+import { IRawSqlExecutor } from '../services/messages/IRawSqlExecutor';
 import { IIdentityRepository } from '../services/contacts/IIdentityRepository';
 import { IAliasRepository } from '../services/contacts/IAliasRepository';
 import { IChatRepository } from '../services/chats/IChatRepository';
@@ -80,7 +81,7 @@ FORMATTING BEHAVIOR:
   constructor(
     _getSock: () => WASocket | null,
     private readonly formatterRegistry: MessageFormatterRegistry,
-    private readonly messageRepository: IMessageQueryRepository,
+    private readonly messageRepository: IMessageQueryRepository & IRawSqlExecutor,
     private readonly identityRepository: IIdentityRepository,
     private readonly aliasRepository: IAliasRepository,
     private readonly chatRepository: IChatRepository

@@ -61,6 +61,7 @@ import { MessageRepository } from './services/messages/MessageRepository'
 import { IMessageRepository } from './services/messages/IMessageRepository'
 import { MessageQueryRepository } from './services/messages/MessageQueryRepository'
 import { IMessageQueryRepository } from './services/messages/IMessageQueryRepository'
+import { IRawSqlExecutor } from './services/messages/IRawSqlExecutor'
 import { MessageVectorRepository } from './services/messages/MessageVectorRepository'
 import { IMessageVectorRepository } from './services/messages/IMessageVectorRepository'
 
@@ -236,7 +237,7 @@ export type ServiceContainer = {
   communityRepository: ICommunityRepository
   chatMemberRepository: IChatMemberRepository
   messageRepository: IMessageRepository
-  messageQueryRepository: IMessageQueryRepository
+  messageQueryRepository: IMessageQueryRepository & IRawSqlExecutor
   messageVectorRepository: IMessageVectorRepository
   receiptRepository: IReceiptRepository
   reactionRepository: IReactionRepository

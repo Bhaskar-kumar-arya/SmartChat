@@ -5,6 +5,7 @@ import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { WhatsAppConnectionManager } from './services/whatsapp/WhatsAppConnectionManager'
+import { WAEventBus } from './services/whatsapp/WAEventBus'
 import { prisma, initVectorDb } from './auth'
 import { registerIpcHandlers } from './ipcHandlers'
 import { createServices } from './ServiceContainer'
@@ -185,7 +186,8 @@ app.whenReady().then(() => {
     services.messageQueryRepository,
     services.dataWipeService,
     services.historySyncManager,
-    services.waEventWiringService
+    services.waEventWiringService,
+    () => new WAEventBus()
   )
   registerIpcHandlers(services, getSock, waConnectionManager)
   initVectorDb(services.embeddingService)

@@ -1,4 +1,4 @@
-import { Identity, IdentityAlias } from '@prisma/client'
+import { Identity, IdentityAlias } from '../../domain/types'
 
 export interface IdentityCreateInput {
   phoneNumber?: string | null
@@ -29,13 +29,18 @@ export interface ReferenceCounts {
   reactions: number
 }
 
-export interface IIdentityRepository {
+export interface IIdentityQueryRepository {
   findMeIdentity(): Promise<IdentityWithAliases | null>
   findIdentityByPhoneNumber(phoneNumber: string): Promise<Identity | null>
   findIdentityById(id: number): Promise<Identity | null>
-  createIdentity(data: IdentityCreateInput): Promise<Identity>
-  updateIdentity(id: number, data: IdentityUpdateInput): Promise<Identity>
-  deleteIdentity(id: number): Promise<Identity>
   countIdentityReferences(id: number): Promise<ReferenceCounts>
   searchIdentities(query: string, take?: number): Promise<IdentityWithAliases[]>
 }
+
+export interface IIdentityWriteRepository {
+  createIdentity(data: IdentityCreateInput): Promise<Identity>
+  updateIdentity(id: number, data: IdentityUpdateInput): Promise<Identity>
+  deleteIdentity(id: number): Promise<Identity>
+}
+
+export interface IIdentityRepository extends IIdentityQueryRepository, IIdentityWriteRepository {}
