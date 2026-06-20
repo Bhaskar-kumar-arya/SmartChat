@@ -2,12 +2,12 @@
 
 ## Phase Tracker
 - [x] Phase 1: Shared Types Segregation
-- [ ] Phase 2: Repository Interface Segregation
-- [ ] Phase 3: Event Bus Abstraction
-- [ ] Phase 4: Leaf Services
-- [ ] Phase 5: Mid-Level Services
-- [ ] Phase 6: Pipeline Orchestrators
-- [ ] Phase 7: ServiceContainer Wiring
+- [x] Phase 2: Repository Interface Segregation
+- [x] Phase 3: Event Bus Abstraction
+- [x] Phase 4: Leaf Services
+- [x] Phase 5: Mid-Level Services
+- [x] Phase 6: Pipeline Orchestrators
+- [x] Phase 7: ServiceContainer Wiring
 
 ---
 
@@ -707,6 +707,7 @@ Effort: Low
 **What changes:**
 - Segregate read query operations and write command operations for all repositories (e.g. `IChatReadRepository` vs `IChatWriteRepository`).
 - Remove ORM type dependencies from interface definitions and replace them with plain domain interfaces or DTOs.
+**Completed:** 2026-06-20 — Segregated all 8 interfaces, cleaned Prisma ORM types, updated concrete repository classes, verified build with typecheck. Blockers: none.
 **Verification:** `npx tsc --noEmit` returns zero errors
 
 ## Phase 3: Event Bus Abstraction
@@ -718,6 +719,8 @@ Effort: Low
 - Ensure all event subscribers depend strictly on the `IWAEventBus` interface and do not reference the concrete `WAEventBus` class.
 - Verify event mapping keys are fully decoupled from Baileys-specific events.
 **Verification:** `npx tsc --noEmit` returns zero errors
+**Completed:** 2026-06-20 — Abstracted WAEventBus via IWAEventBus interface, introduced WAEventBusFactory, and updated WhatsAppConnectionManager/index.ts to use the factory to resolve the concrete class, fully decoupling event subscribers, handlers, and connection manager from the concrete EventBus implementation. Blockers: none.
+
 
 ## Phase 4: Leaf Services
 **Objective:** Fix SRP and DIP in leaf-level services (no other services depend on them).
@@ -730,6 +733,7 @@ Effort: Low
 - Generalize AI model provider keys into open dictionary records (`Record<string, string>`) to support extensibility.
 - Decouple formatters from external Baileys message shapes.
 **Verification:** `npx tsc --noEmit` returns zero errors
+**Completed:** 2026-06-20 — Extracted EmbeddingWorkerManager from EmbeddingService; generalized ProviderKeys to Record<string, string> in IAIKeyService and updated AIKeyService; decoupled MessageFormatter and concrete message formatters from Baileys message shapes using IFormattedMessageContent interface. Blockers: none.
 
 ## Phase 5: Mid-Level Services
 **Objective:** Fix SRP, OCP, and DIP in mid-level orchestrators.
@@ -745,6 +749,7 @@ Effort: Low
 - Separate AI tool registry coordination from system prompt formatting logic, and remove static builder calls.
 - Decouple model info from hardcoded lists of providers.
 **Verification:** `npx tsc --noEmit` returns zero errors
+**Completed:** 2026-06-20 — Extracted JID strategies from ContactService and injected them via constructor; moved cache management to ContactCache; segregated IChatService; decoupled ToolRegistry and SystemPromptBuilder; generalized Provider in ModelInfo. Blockers: none.
 
 ## Phase 6: High-Level Pipeline Orchestrators
 **Objective:** Refactor the highest-complexity coordinators (message synchronization and parsing pipeline).
@@ -755,6 +760,8 @@ Effort: Low
 - Segregate `IMessageQueryService` and `IMessageWriterService` interfaces to isolate message parsing, database reading, media metadata resolution, and database writes.
 - Remove external socket dependencies (`WASocket`, `BaileysMessage`) from service contracts.
 **Verification:** `npx tsc --noEmit` returns zero errors
+**Completed:** 2026-06-20 — Segregated message interfaces into Parser, Processing, Query, and Writer interfaces; decoupled contracts from Baileys socket/message types; refactored handlers, subscribers, and tests. Blockers: none.
+
 
 ## Phase 7: ServiceContainer Wiring
 **Objective:** Bind all container keys to interface types, not concrete classes.
@@ -764,4 +771,5 @@ Effort: Low
 - Update `ServiceContainer` type registry definition so all keys map to interface abstractions (e.g. `IAIService`, `ISearchService`, `IHistorySyncManager`).
 - Bind concrete class instances to their corresponding interfaces during bootstrapping in `createServices`.
 - Ensure no caller code directly imports or depends on concrete service/repository implementations.
+**Completed:** 2026-06-20 — Extracted interfaces for all remaining services/repositories; updated constructor dependencies of all services to use interfaces; refactored ServiceContainer to bind only to interface abstractions; verified everything compiles and passes all unit/integration tests. Blockers: none.
 **Verification:** `npx tsc --noEmit` returns zero errors

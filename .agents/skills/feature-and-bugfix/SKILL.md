@@ -351,23 +351,46 @@ src/
 
 ---
 
-## Section 8 — Implementation Rules
+## Section 8 — Documentation Maintenance
 
-### 8.1 No Speculative Code (YAGNI)
+As the codebase evolves, documentation must remain a source of truth. If your feature or bugfix introduces new files, dependencies, public interfaces, or architectural choices, you must update the documentation in the same session:
+
+### 8.1 — Update `docs/architecture/modules.md` (Module Map)
+You must update this file if you:
+- Create a new directory under `src/` (add its purpose, exports, internals, and imports).
+- Add new files or interfaces to an existing directory (update **Internal only** or **Public exports** list).
+- Change dependencies between directories (update **Consumes from** or **Consumed by** lists).
+
+### 8.2 — Update `docs/architecture/ai-context.md` (AI Context)
+You must update this file if you:
+- Introduce a new core design pattern, hard constraint, or extension point.
+- Add or modify a major module that other parts of the application consume (update the **Module Map** table).
+- Remember to keep the file **under 100 lines** total.
+
+### 8.3 — Update `docs/architecture/ADR.md` (Decision Records)
+You must update this file if you:
+- Make a significant architectural choice (e.g., introducing a new external library, switching a global communication pattern, changing the data caching strategy).
+- Create a new entry using the standard ADR format: Date, Status, Context, Decision, Consequences (Enables, Constrains, Watch for).
+
+---
+
+## Section 9 — Implementation Rules
+
+### 9.1 No Speculative Code (YAGNI)
 - Only implement what the active task requires.
 - Do not add "future-proof" abstractions, optional parameters, or hooks that nothing currently uses.
 
-### 8.2 Root Cause, Not Patch
+### 9.2 Root Cause, Not Patch
 - Never wrap a buggy path in a generic `try-catch` to hide the symptom.
 - Use `console.log` / `console.error` liberally during debugging to trace actual values, then remove them once the root cause is confirmed.
 
-### 8.3 Design Pattern Fit
+### 9.3 Design Pattern Fit
 - Before implementing, consider whether an event-driven, queue-based, state machine, pub/sub, or repository pattern fits better than a direct call chain.
 - The easiest implementation path is often the worst architectural choice.
 
 ---
 
-## Section 9 — End-of-Session Checklist (part of the Task artifact)
+## Section 10 — End-of-Session Checklist (part of the Task artifact)
 
 Before ending any session where code was written, verify all of the following:
 
@@ -381,6 +404,7 @@ Before ending any session where code was written, verify all of the following:
 - [ ] **Every new public interface is in a dedicated `.ts` type file** or barrel — not inline in implementation files.
 - [ ] **No barrel file exports concrete classes** — only interfaces and types.
 - [ ] **No regression of established patterns** — if `ai-context.md` documents constraints, verify none were violated.
+- [ ] **Documentation updated** — if any files, public interfaces, dependencies, or architectural decisions were added/modified, `modules.md`, `ai-context.md`, or `ADR.md` have been updated accordingly.
 - [ ] **Tests pass** — read `package.json` to discover the test command and run it. Report the result.
 
 > [!IMPORTANT]
@@ -388,7 +412,7 @@ Before ending any session where code was written, verify all of the following:
 
 ---
 
-## Section 10 — Anti-Patterns That Cause Massive Refactors
+## Section 11 — Anti-Patterns That Cause Massive Refactors
 
 These are the exact patterns that lead to large-scale, painful refactors. Flag them immediately and never introduce them:
 
