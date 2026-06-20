@@ -1,11 +1,6 @@
 import { BrowserWindow } from 'electron'
-import makeWASocketImport, { DisconnectReason, fetchLatestBaileysVersion, Browsers, ConnectionState } from '@whiskeysockets/baileys'
-
-const makeWASocket = (typeof makeWASocketImport === 'function'
-  ? makeWASocketImport
-  : (makeWASocketImport as any).default) as typeof makeWASocketImport
+import { DisconnectReason, ConnectionState } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
-import NodeCache from 'node-cache'
 import { usePrismaAuthState } from '../../auth'
 import { WASocket } from './types'
 import {
@@ -21,8 +16,9 @@ import { BaileysPatcher } from './BaileysPatcher'
 import { IWAEventWiringService, ConnectionCallbacks } from './IWAEventWiringService'
 import { IAuthSettingsService } from '../auth/IAuthSettingsService'
 import { IChatRepository } from '../chats/IChatRepository'
-import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
 import type { IEmbeddingService } from '../search/EmbeddingService'
+import { IWASocketFactory } from './IWASocketFactory'
+import { IWACatchUpManager } from './IWACatchUpManager'
 
 export interface WhatsAppConnectionDependencies extends SubscriberServices {
   embeddingService: IEmbeddingService
@@ -34,23 +30,22 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
   private isFreshLogin = false
   private mainWindow: BrowserWindow | null = null
   private currentBus: IWAEventBus | null = null
-  private isWaitingForCatchUp = false
-  private catchUpTimeout: NodeJS.Timeout | null = null
-  private hasReceivedPendingNotifications = false
 
   constructor(
     private deps: WhatsAppConnectionDependencies,
     private readonly authSettingsService: IAuthSettingsService,
     private readonly chatRepository: IChatRepository,
-    private readonly messageQueryRepository: IMessageQueryRepository,
     private readonly dataWipeService: IDataWipeService,
     private historySyncManager: IHistorySyncManager,
     private wiringService: IWAEventWiringService,
-    private readonly eventBusFactory: WAEventBusFactory
+    private readonly eventBusFactory: WAEventBusFactory,
+    private readonly socketFactory: IWASocketFactory,
+    private readonly catchUpManager: IWACatchUpManager
   ) { }
 
   public setWindow(window: BrowserWindow): void {
     this.mainWindow = window
+    this.catchUpManager.setWindow(window)
   }
 
   public getSocket(): WASocket | null {
@@ -111,13 +106,9 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
 
     const { state, saveCreds } = await usePrismaAuthState()
     let version: [number, number, number] = [2, 3000, 1035194821]
-    let isLatest = false
     try {
-      console.log('[Connection] Fetching latest WhatsApp version from Baileys...')
-      const latest = await fetchLatestBaileysVersion()
-      version = latest.version as [number, number, number]
-      isLatest = latest.isLatest
-      console.log(`[Connection] Successfully fetched WA v${version.join('.')}, isLatest: ${isLatest}`)
+      version = await this.socketFactory.fetchVersion()
+      console.log(`[Connection] Successfully fetched WA v${version.join('.')}`)
     } catch (err) {
       console.warn('[Connection] Failed to fetch latest WhatsApp version (possibly offline). Using fallback version.', err)
     }
@@ -138,30 +129,12 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
 
     const syncFullHistory = await this.authSettingsService.getSyncFullHistory()
 
-    const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
-
-    const sock = makeWASocket({
+    const sock = this.socketFactory.createSocket(
       version,
-      auth: state,
-      printQRInTerminal: false,
-      generateHighQualityLinkPreview: true,
-      browser: Browsers.macOS('Desktop'),
+      state,
       syncFullHistory,
-      shouldSyncHistoryMessage: () => shouldSyncHistory,
-      cachedGroupMetadata: async (jid) => groupCache.get(jid),
-      getMessage: async (key) => {
-        if (!key.id) return undefined
-        try {
-          const msg = await this.messageQueryRepository.findMessageById(key.id)
-          if (msg && msg.content) {
-            return JSON.parse(msg.content)
-          }
-        } catch (err) {
-          console.error('Error fetching message for retry/reaction:', err)
-        }
-        return undefined
-      }
-    })
+      shouldSyncHistory
+    )
 
     this.currentSock = sock
 
@@ -191,12 +164,7 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
   }
 
   public async handleConnectionClose(lastDisconnect: any): Promise<void> {
-    if (this.catchUpTimeout) {
-      clearTimeout(this.catchUpTimeout)
-      this.catchUpTimeout = null
-    }
-    this.isWaitingForCatchUp = false
-    this.hasReceivedPendingNotifications = false
+    this.catchUpManager.reset()
 
     const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
     const errorData = (lastDisconnect?.error as unknown as { data?: { tag?: string } })?.data
@@ -241,7 +209,7 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
         const isHistorySyncCompleted = await this.authSettingsService.getHistorySyncCompleted()
 
         if (isHistorySyncCompleted) {
-          if (this.hasReceivedPendingNotifications) {
+          if (this.catchUpManager.hasReceivedPending()) {
             console.log('[Connection] Already received pending notifications. Skipping catchup.')
             this.deps.embeddingService.setPaused(false)
             this.mainWindow.webContents.send('wa-sync-progress', {
@@ -251,7 +219,7 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
             })
             this.mainWindow.webContents.send('wa-sync-complete')
           } else {
-            this.initiateCatchUp(syncFullHistory)
+            this.catchUpManager.start(syncFullHistory)
           }
         } else {
           console.log(`[Connection] Reconnect: history sync NOT completed, continuing sync`)
@@ -267,46 +235,7 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
   }
 
   public async handleConnectionUpdate(update: Partial<ConnectionState>): Promise<void> {
-    const { receivedPendingNotifications } = update
-    if (receivedPendingNotifications !== undefined) {
-      this.hasReceivedPendingNotifications = receivedPendingNotifications
-    }
-
-    if (receivedPendingNotifications === true && this.isWaitingForCatchUp) {
-      console.log('[Connection] Received pending notifications (catch-up complete).')
-      this.isWaitingForCatchUp = false
-      if (this.catchUpTimeout) {
-        clearTimeout(this.catchUpTimeout)
-        this.catchUpTimeout = null
-      }
-      this.deps.embeddingService.setPaused(false)
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        const syncFullHistory = await this.authSettingsService.getSyncFullHistory()
-        this.mainWindow.webContents.send('wa-sync-progress', { progress: 100, syncType: 6, syncFullHistory })
-        this.mainWindow.webContents.send('wa-sync-complete')
-      }
-    }
-  }
-
-  private initiateCatchUp(syncFullHistory: boolean): void {
-    console.log('[Connection] Reconnect: history sync previously completed. Waiting for offline catch-up...')
-    this.isWaitingForCatchUp = true
-    this.deps.embeddingService.setPaused(true)
-    if (this.catchUpTimeout) clearTimeout(this.catchUpTimeout)
-    this.catchUpTimeout = setTimeout(() => {
-      if (this.isWaitingForCatchUp) {
-        console.warn('[Connection] Catch-up safety timeout reached. Forcing transition.')
-        this.isWaitingForCatchUp = false
-        this.deps.embeddingService.setPaused(false)
-        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-          this.mainWindow.webContents.send('wa-sync-progress', { progress: 100, syncType: 6, syncFullHistory })
-          this.mainWindow.webContents.send('wa-sync-complete')
-        }
-      }
-    }, 30000)
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('wa-sync-status', 'Syncing missed messages...')
-    }
+    await this.catchUpManager.handleUpdate(update)
   }
 
   public skipSync(): void {

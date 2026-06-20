@@ -98,6 +98,10 @@ import { HistorySyncManager } from './services/whatsapp/HistorySyncManager'
 import { IHistorySyncManager } from './services/whatsapp/IHistorySyncManager'
 import { WAEventWiringService } from './services/whatsapp/WAEventWiringService'
 import { IWAEventWiringService } from './services/whatsapp/IWAEventWiringService'
+import { IWASocketFactory } from './services/whatsapp/IWASocketFactory'
+import { WASocketFactory } from './services/whatsapp/WASocketFactory'
+import { IWACatchUpManager } from './services/whatsapp/IWACatchUpManager'
+import { WACatchUpManager } from './services/whatsapp/WACatchUpManager'
 
 import { IKeyStorage } from './services/ai/IKeyStorage'
 import { FSKeyStorage } from './services/ai/FSKeyStorage'
@@ -233,6 +237,8 @@ export function createServices(
   const aiChatExportService = new AIChatExportService()
 
   // 4. WhatsApp Event Lifecycle & Sync Services
+  const socketFactory: IWASocketFactory = new WASocketFactory(messageQueryRepository)
+  const catchUpManager: IWACatchUpManager = new WACatchUpManager(embeddingService, authSettingsService)
   const historySyncManager = new HistorySyncManager(services, getMainWindow, authSettingsService)
   const waEventWiringService = new WAEventWiringService(historySyncManager)
 
@@ -275,7 +281,9 @@ export function createServices(
     messageFormatterRegistry,
     historySyncManager,
     waEventWiringService,
-    aiKeyService
+    aiKeyService,
+    socketFactory,
+    catchUpManager
   })
 
   return services
@@ -321,4 +329,6 @@ export type ServiceContainer = {
   historySyncManager: IHistorySyncManager
   waEventWiringService: IWAEventWiringService
   aiKeyService: IAIKeyService
+  socketFactory: IWASocketFactory
+  catchUpManager: IWACatchUpManager
 }
