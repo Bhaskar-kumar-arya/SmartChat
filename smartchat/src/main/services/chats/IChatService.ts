@@ -1,8 +1,8 @@
-import { ChatUpdatePayload, WASocket } from '../whatsapp/types'
-import { ChatListItem } from '../../ipc/types'
+import { ChatUpdatePayload, SocketAccessor } from '../whatsapp/types'
+import { ChatListEntry } from '../../domain/types'
 
 export interface IChatQueryService {
-  getChatList(page?: number, pageSize?: number): Promise<ChatListItem[]>
+  getChatList(page?: number, pageSize?: number): Promise<ChatListEntry[]>
   isChatMuted(jid: string): Promise<boolean>
 }
 
@@ -16,8 +16,9 @@ export interface IChatMutationService {
 export interface IGroupParticipantResolver {
   getGroupParticipants(
     jid: string,
-    sock: WASocket | null
+    sock: SocketAccessor
   ): Promise<Array<{ jid: string; name: string; isAdmin: boolean; isMe: boolean }>>
 }
 
 export interface IChatService extends IChatQueryService, IChatMutationService, IGroupParticipantResolver {}
+

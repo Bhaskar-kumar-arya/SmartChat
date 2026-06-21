@@ -10,6 +10,7 @@ import { AIChatContext, AIHistoryMessage, AIMention } from './services/ai/IAISer
 import { AIChatMessageInput } from './services/ai/IAIChatSessionService'
 import { ExportSession, ExportMessage } from './services/ai/IAIChatExportService'
 import { NotificationPreferences } from './services/notification/INotificationService'
+import { ChatListItem } from './ipc/types'
 
 const DIR_NAME_TEMP = 'temp'
 const PREFIX_VOICE = 'voice_'
@@ -36,8 +37,30 @@ function registerChatAndMessageHandlers(
   services: ServiceContainer,
   getSock: () => WASocket | null
 ): void {
-  ipcMain.handle('get-chats', async (_event, page: number = 1, pageSize: number = 50) => {
-    return services.chatService.getChatList(page, pageSize)
+  ipcMain.handle('get-chats', async (_event, page: number = 1, pageSize: number = 50): Promise<ChatListItem[]> => {
+    const list = await services.chatService.getChatList(page, pageSize)
+    return list.map(item => ({
+      jid: item.jid,
+      name: item.name,
+      unreadCount: item.unreadCount,
+      timestamp: item.timestamp,
+      lastMessage: item.lastMessage,
+      lastMessageType: item.lastMessageType,
+      lastMessageTimestamp: item.lastMessageTimestamp,
+      pinned: item.pinned,
+      muteExpiration: item.muteExpiration,
+      profilePictureUrl: item.profilePictureUrl,
+      isCommunity: item.isCommunity,
+      isAnnounce: item.isAnnounce,
+      linkedParentJid: item.linkedParentJid,
+      lastMessageSender: item.lastMessageSender,
+      lastMessageStatus: item.lastMessageStatus,
+      lastMessageFromMe: item.lastMessageFromMe,
+      lastMessageId: item.lastMessageId,
+      lastMessageTargetType: item.lastMessageTargetType,
+      lastMessageTargetText: item.lastMessageTargetText,
+      lastMessageReactionText: item.lastMessageReactionText
+    }))
   })
 
   ipcMain.handle('get-messages', async (_event, jid: string, page: number = 1, pageSize: number = 50) => {
@@ -203,8 +226,7 @@ function registerAuthAndProfileHandlers(
   })
 
   ipcMain.handle('get-group-participants', async (_event, jid: string) => {
-    const sock = getSock()
-    return services.chatService.getGroupParticipants(jid, sock)
+    return services.chatService.getGroupParticipants(jid, getSock)
   })
 
   ipcMain.handle('get-sync-full-history', async () => {

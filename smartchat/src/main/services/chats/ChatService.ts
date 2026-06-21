@@ -1,7 +1,7 @@
 import { cleanJid, parseCommunityMetadata } from '../../utils'
 import { IContactService } from '../contacts/IContactService'
-import { ChatUpdatePayload, WASocket } from '../whatsapp/types'
-import { ChatListItem } from '../../ipc/types'
+import { ChatUpdatePayload, SocketAccessor } from '../whatsapp/types'
+import { ChatListEntry } from '../../domain/types'
 import { IChatRepository } from './IChatRepository'
 import { ICommunityRepository } from './ICommunityRepository'
 import { ChatListEnricher } from './ChatListEnricher'
@@ -141,13 +141,11 @@ export class ChatService implements IChatService {
     await this.chatRepository.updateTimestamp(cleanedJid, timestamp)
   }
 
-
-
   /**
    * Retrieves the chat list (paginated).
    */
-  async getChatList(page: number = 1, pageSize: number = 50): Promise<ChatListItem[]> {
-    return this.chatListEnricher.getChatList(page, pageSize)
+  async getChatList(page: number = 1, pageSize: number = 50): Promise<ChatListEntry[]> {
+    return this.chatListEnricher.getChatList(page, pageSize) as unknown as Promise<ChatListEntry[]>
   }
 
   /**
@@ -155,19 +153,20 @@ export class ChatService implements IChatService {
    */
   async getGroupParticipants(
     jid: string,
-    sock: WASocket | null
+    sock: SocketAccessor
   ): Promise<Array<{ jid: string; name: string; isAdmin: boolean; isMe: boolean }>> {
-    if (!sock || !jid.endsWith('@g.us')) return []
+    const s = sock()
+    if (!s || !jid.endsWith('@g.us')) return []
     try {
-      const metadata = await sock.groupMetadata(jid)
+      const metadata = await s.groupMetadata(jid)
       const participants = metadata.participants as Array<{ id: string; admin?: 'admin' | 'superadmin' | null }>
       const jids = participants.map(p => p.id)
-      const nameMap = await this.contactService.batchResolveNames(jids, sock)
+      const nameMap = await this.contactService.batchResolveNames(jids, s)
       return participants.map(p => ({
         jid: p.id,
         name: nameMap.get(p.id) || p.id.split('@')[0],
         isAdmin: !!p.admin,
-        isMe: !!sock.user && p.id === sock.user.id
+        isMe: !!s.user && p.id === s.user.id
       }))
     } catch (err) {
       return []
