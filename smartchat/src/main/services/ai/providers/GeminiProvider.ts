@@ -1,13 +1,16 @@
 import { GoogleGenAI } from '@google/genai'
 import { AIProvider, ModelInfo } from './Provider'
-import { toolRegistry } from '../AIToolService'
+import { IToolRegistry } from '../IToolRegistry'
 import { IAIKeyService } from '../IAIKeyService'
 import { UserDetails } from '../SystemPromptBuilder'
 
 export class GeminiProvider implements AIProvider {
   private ai: GoogleGenAI;
   private fetchedModelIds = new Set<string>();
-  constructor(private readonly aiKeyService: IAIKeyService) {
+  constructor(
+    private readonly aiKeyService: IAIKeyService,
+    private readonly toolRegistry: IToolRegistry
+  ) {
     const key = this.aiKeyService.getKey('gemini');
     this.ai = new GoogleGenAI({ apiKey: key }); 
   }
@@ -38,7 +41,7 @@ export class GeminiProvider implements AIProvider {
   }
 
   getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
-    return toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
+    return this.toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
   }
 
   async cleanup(): Promise<void> {

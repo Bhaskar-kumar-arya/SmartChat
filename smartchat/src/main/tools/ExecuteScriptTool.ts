@@ -1,6 +1,5 @@
 import vm from 'vm';
-import { AITool } from '../services/ai/IToolRegistry';
-import { toolRegistry } from '../services/ai/AIToolService';
+import { AITool, IToolRegistry } from '../services/ai/IToolRegistry';
 
 const MAX_EXECUTION_MS = 60_000; // 60 second wall-clock timeout
 const MAX_TOOL_CALLS = 10000;       // prevent runaway loops
@@ -85,6 +84,8 @@ export class ExecuteScriptTool implements AITool {
 
   description: string = DESCRIPTION_BASE + '(initializing — tool list not yet available)';
 
+  constructor(private readonly toolRegistry: IToolRegistry) {}
+
   parametersSchema = {
     type: 'object',
     properties: {
@@ -104,7 +105,7 @@ export class ExecuteScriptTool implements AITool {
 
   async initialize(): Promise<void> {
     // Build the tool list AFTER all tools are registered (called from AIToolInitializer)
-    const injectedTools = toolRegistry
+    const injectedTools = this.toolRegistry
       .getAllTools()
       .filter(t => t.name !== this.name) // no recursive script execution
       .map(t => t.name)
@@ -229,7 +230,7 @@ export class ExecuteScriptTool implements AITool {
     };
 
     // Inject each registered tool as an async global (except ourselves)
-    for (const tool of toolRegistry.getAllTools()) {
+    for (const tool of this.toolRegistry.getAllTools()) {
       if (tool.name === this.name) continue;
 
       sandbox[tool.name] = async (toolArgs: unknown) => {

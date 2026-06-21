@@ -1,4 +1,3 @@
-import { toolRegistry } from './AIToolService';
 import { SendMessageTool } from '../../tools/SendMessageTool';
 import { ReadMessagesTool } from '../../tools/ReadMessagesTool';
 import { QueryDatabaseTool } from '../../tools/QueryDatabaseTool';
@@ -29,17 +28,17 @@ export class AIToolInitializer {
     const messageActionTool = new MessageActionTool(getSock, services.messageActionService);
     // ExecuteScriptTool must be instantiated last — its initialize() builds the
     // injected-tool list from the registry, so all other tools must be registered first.
-    const executeScriptTool = new ExecuteScriptTool();
+    const executeScriptTool = new ExecuteScriptTool(services.toolRegistry);
 
     // 2. Register tools
-    toolRegistry.registerTool(sendMessageTool);
-    toolRegistry.registerTool(readMessagesTool);
-    toolRegistry.registerTool(queryDatabaseTool);
-    toolRegistry.registerTool(messageActionTool);
-    toolRegistry.registerTool(executeScriptTool);
+    services.toolRegistry.registerTool(sendMessageTool);
+    services.toolRegistry.registerTool(readMessagesTool);
+    services.toolRegistry.registerTool(queryDatabaseTool);
+    services.toolRegistry.registerTool(messageActionTool);
+    services.toolRegistry.registerTool(executeScriptTool);
 
     // 3. Run optional async initialization on tools that need it (fire-and-forget)
-    for (const tool of toolRegistry.getAllTools()) {
+    for (const tool of services.toolRegistry.getAllTools()) {
       if (tool.initialize) {
         tool.initialize().catch(err =>
           console.error(`[AIToolInitializer] Failed to initialize tool "${tool.name}":`, err)

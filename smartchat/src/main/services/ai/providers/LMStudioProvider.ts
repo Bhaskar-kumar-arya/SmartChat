@@ -1,13 +1,13 @@
 import { Chat, LMStudioClient } from '@lmstudio/sdk'
 import { AIProvider, ModelInfo } from './Provider'
-import { toolRegistry } from '../AIToolService'
+import { IToolRegistry } from '../IToolRegistry'
 import { UserDetails } from '../SystemPromptBuilder'
 
 export class LMStudioProvider implements AIProvider {
   private client: LMStudioClient;
   private loadedModels: Map<string, { model: Awaited<ReturnType<LMStudioClient['llm']['load']>>, contextLength: number }> = new Map();
 
-  constructor() {
+  constructor(private readonly toolRegistry: IToolRegistry) {
     this.client = new LMStudioClient();
   }
 
@@ -48,7 +48,7 @@ export class LMStudioProvider implements AIProvider {
   }
 
   getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
-    return toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
+    return this.toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
   }
 
 
@@ -67,7 +67,7 @@ export class LMStudioProvider implements AIProvider {
   private getRawToolsInfo() {
     return {
       type: "toolArray",
-      tools: toolRegistry.getAllTools().map(t => ({
+      tools: this.toolRegistry.getAllTools().map(t => ({
         type: "function",
         function: {
           name: t.name,

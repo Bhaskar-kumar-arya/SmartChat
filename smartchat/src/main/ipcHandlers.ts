@@ -2,7 +2,6 @@ import { ipcMain, app, dialog, BrowserWindow } from 'electron'
 import fs from 'fs'
 import { join } from 'path'
 import { ServiceContainer } from './ServiceContainer'
-import { toolRegistry } from './services/ai/AIToolService'
 import { AIToolInitializer } from './services/ai/AIToolInitializer'
 import { audioTranscoderService } from './services/audio/AudioTranscoderService'
 import { WASocket } from './services/whatsapp/types'
@@ -275,13 +274,13 @@ function registerAIServiceHandlers(
   })
 
   ipcMain.handle('execute-tool', async (_event, toolName: string, args: Record<string, unknown> | undefined) => {
-    const tool = toolRegistry.getTool(toolName);
+    const tool = services.toolRegistry.getTool(toolName);
     if (!tool) throw new Error(`[IPC] Tool ${toolName} not found`);
     return await tool.execute(args || {});
   });
 
   ipcMain.handle('get-ai-tools', async () => {
-    return toolRegistry.getAllTools().map(t => ({
+    return services.toolRegistry.getAllTools().map(t => ({
       name: t.name,
       description: t.description,
       requiresPermission: t.requiresPermission

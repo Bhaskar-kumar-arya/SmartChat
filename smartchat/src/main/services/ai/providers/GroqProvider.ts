@@ -1,13 +1,16 @@
 import Groq from 'groq-sdk';
 import { AIProvider, ModelInfo } from './Provider';
-import { toolRegistry } from '../AIToolService';
+import { IToolRegistry } from '../IToolRegistry';
 import { IAIKeyService } from '../IAIKeyService';
 import { UserDetails } from '../SystemPromptBuilder';
 
 export class GroqProvider implements AIProvider {
   private client: Groq;
 
-  constructor(private readonly aiKeyService: IAIKeyService) {
+  constructor(
+    private readonly aiKeyService: IAIKeyService,
+    private readonly toolRegistry: IToolRegistry
+  ) {
     const apiKey = this.aiKeyService.getKey('groq');
     this.client = new Groq({ apiKey });
   }
@@ -22,7 +25,7 @@ export class GroqProvider implements AIProvider {
   }
 
   getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
-    return toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
+    return this.toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
   }
 
   async cleanup(): Promise<void> {
@@ -49,7 +52,7 @@ export class GroqProvider implements AIProvider {
   }
 
   private getToolsForGroq(): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
-    return toolRegistry.getAllTools().map(t => ({
+    return this.toolRegistry.getAllTools().map(t => ({
       type: 'function' as const,
       function: {
         name: t.name,

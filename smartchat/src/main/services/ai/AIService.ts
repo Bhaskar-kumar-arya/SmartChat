@@ -7,6 +7,7 @@ import { AIProvider, ModelInfo } from './providers/Provider'
 import { IAIKeyService } from './IAIKeyService'
 import { IContactService } from '../contacts/IContactService'
 import { IAIService, AIMention, AIChatContext, AIHistoryMessage } from './IAIService'
+import { IToolRegistry } from './IToolRegistry'
 
 export class AIService implements IAIService {
   private providers: Record<string, AIProvider> = {}
@@ -16,13 +17,14 @@ export class AIService implements IAIService {
 
   constructor(
     private readonly aiKeyService: IAIKeyService,
-    private readonly contactService: IContactService
+    private readonly contactService: IContactService,
+    private readonly toolRegistry: IToolRegistry
   ) {
-    this.registerProvider('gemini', new GeminiProvider(this.aiKeyService));
-    this.registerProvider('groq', new GroqProvider(this.aiKeyService));
-    this.registerProvider('mistral', new MistralProvider(this.aiKeyService));
-    this.registerProvider('deepseek', new DeepSeekProvider(this.aiKeyService));
-    this.registerProvider('lmstudio', new LMStudioProvider()); // Fallback / local
+    this.registerProvider('gemini', new GeminiProvider(this.aiKeyService, this.toolRegistry));
+    this.registerProvider('groq', new GroqProvider(this.aiKeyService, this.toolRegistry));
+    this.registerProvider('mistral', new MistralProvider(this.aiKeyService, this.toolRegistry));
+    this.registerProvider('deepseek', new DeepSeekProvider(this.aiKeyService, this.toolRegistry));
+    this.registerProvider('lmstudio', new LMStudioProvider(this.toolRegistry)); // Fallback / local
   }
 
   registerProvider(key: string, provider: AIProvider): void {

@@ -1,6 +1,5 @@
 import { IToolRegistry, AITool } from './IToolRegistry'
 import { ISystemPromptBuilder, UserDetails } from './ISystemPromptBuilder'
-import { SystemPromptBuilder } from './SystemPromptBuilder'
 
 export class ToolRegistry implements IToolRegistry {
   private tools: Map<string, AITool> = new Map();
@@ -34,4 +33,3 @@ export class ToolRegistry implements IToolRegistry {
   }
 }
 
-export const toolRegistry = new ToolRegistry(new SystemPromptBuilder());

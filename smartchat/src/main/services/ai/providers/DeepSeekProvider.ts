@@ -1,13 +1,16 @@
 import OpenAI from 'openai';
 import { AIProvider, ModelInfo } from './Provider';
-import { toolRegistry } from '../AIToolService';
+import { IToolRegistry } from '../IToolRegistry';
 import { IAIKeyService } from '../IAIKeyService';
 import { UserDetails } from '../SystemPromptBuilder';
 
 export class DeepSeekProvider implements AIProvider {
   private client: OpenAI;
 
-  constructor(private readonly aiKeyService: IAIKeyService) {
+  constructor(
+    private readonly aiKeyService: IAIKeyService,
+    private readonly toolRegistry: IToolRegistry
+  ) {
     const apiKey = this.aiKeyService.getKey('deepseek');
     const baseURL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
     this.client = new OpenAI({ apiKey, baseURL });
@@ -23,7 +26,7 @@ export class DeepSeekProvider implements AIProvider {
   }
 
   getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
-    return toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
+    return this.toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
   }
 
   async cleanup(): Promise<void> {
@@ -50,7 +53,7 @@ export class DeepSeekProvider implements AIProvider {
   }
 
   private getToolsForDeepSeek(): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
-    return toolRegistry.getAllTools().map(t => ({
+    return this.toolRegistry.getAllTools().map(t => ({
       type: 'function' as const,
       function: {
         name: t.name,

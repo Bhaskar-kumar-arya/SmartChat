@@ -112,6 +112,9 @@ import { IAIKeyService } from './services/ai/IAIKeyService'
 import { AIKeyService } from './services/ai/AIKeyService'
 import { IReceiptRepository } from './services/messages/IReceiptRepository'
 import { ReceiptRepository } from './services/messages/ReceiptRepository'
+import { IToolRegistry } from './services/ai/IToolRegistry'
+import { ToolRegistry } from './services/ai/AIToolService'
+import { SystemPromptBuilder } from './services/ai/SystemPromptBuilder'
 
 export function createServices(
   prisma: PrismaClient,
@@ -236,7 +239,8 @@ export function createServices(
   const profileSyncService = new ProfileSyncService(prisma, contactService)
 
   // 3. AI services
-  const aiService = new AIService(aiKeyService, contactService)
+  const toolRegistry: IToolRegistry = new ToolRegistry(new SystemPromptBuilder())
+  const aiService = new AIService(aiKeyService, contactService, toolRegistry)
   const aiChatSessionService = new AIChatSessionService(prisma)
   const aiChatExportService = new AIChatExportService()
 
@@ -275,6 +279,7 @@ export function createServices(
     messageActionService,
     mediaService,
     searchService,
+    toolRegistry,
     aiService,
     aiChatSessionService,
     aiChatExportService,
@@ -323,6 +328,7 @@ export type ServiceContainer = {
   messageActionService: IMessageActionService
   mediaService: IMediaService
   searchService: ISearchService
+  toolRegistry: IToolRegistry
   aiService: IAIService
   aiChatSessionService: IAIChatSessionService
   aiChatExportService: IAIChatExportService
