@@ -1,14 +1,13 @@
 import React, { createContext, useContext } from 'react'
-import { api } from '../services/api.service'
 import { IAPIService } from '../services/IAPIService'
 
 type APIServiceType = IAPIService
 
 const APIContext = createContext<APIServiceType | undefined>(undefined)
 
-export function APIProvider({ children }: { children: React.ReactNode }) {
+export function APIProvider({ service, children }: { service: IAPIService; children: React.ReactNode }) {
   return (
-    <APIContext.Provider value={api}>
+    <APIContext.Provider value={service}>
       {children}
     </APIContext.Provider>
   )
