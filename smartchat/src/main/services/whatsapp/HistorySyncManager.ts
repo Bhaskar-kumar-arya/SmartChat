@@ -17,14 +17,14 @@ import type { ICommunityRepository } from '../chats/ICommunityRepository'
 import type { IMessageRepository } from '../messages/IMessageRepository'
 import type { IReactionRepository } from '../messages/IReactionRepository'
 import type { IMediaService } from '../messages/IMediaService'
-import type { IEmbeddingService } from '../search/IEmbeddingService'
+import type { IEmbeddingOperationalControl } from '../search/IEmbeddingService'
 import type { IGroupHydrationService } from '../chats/IGroupHydrationService'
 import type { IIdentityReconciliationService } from '../contacts/IIdentityReconciliationService'
 import { IHistorySyncManager } from './IHistorySyncManager'
 
 export interface HistorySyncDependencies {
   mediaService: IMediaService
-  embeddingService: IEmbeddingService
+  embeddingService: IEmbeddingOperationalControl
   contactService: IContactService
   aliasRepository: IAliasRepository
   chatRepository: IChatRepository

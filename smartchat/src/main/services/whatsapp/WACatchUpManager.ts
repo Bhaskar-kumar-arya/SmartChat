@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { ConnectionState } from '@whiskeysockets/baileys'
 import { IWACatchUpManager } from './IWACatchUpManager'
-import { IEmbeddingService } from '../search/IEmbeddingService'
+import { IEmbeddingOperationalControl } from '../search/IEmbeddingService'
 import { IAuthSettingsService } from '../auth/IAuthSettingsService'
 
 export class WACatchUpManager implements IWACatchUpManager {
@@ -11,7 +11,7 @@ export class WACatchUpManager implements IWACatchUpManager {
   private mainWindow: BrowserWindow | null = null
 
   constructor(
-    private readonly embeddingService: IEmbeddingService,
+    private readonly embeddingService: IEmbeddingOperationalControl,
     private readonly authSettingsService: IAuthSettingsService
   ) {}
 

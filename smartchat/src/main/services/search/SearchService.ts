@@ -1,6 +1,6 @@
 import { IContactService } from '../contacts/IContactService'
 import { getDisplayName } from '../../utils/contactUtils'
-import { IEmbeddingService } from './IEmbeddingService'
+import { IEmbeddingComputer } from './IEmbeddingService'
 import { WASocket } from '../whatsapp/types'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
@@ -35,7 +35,7 @@ export class SearchService implements ISearchService {
     private readonly messageVectorRepository: IMessageVectorRepository,
     private readonly identityRepository: IIdentityRepository,
     private readonly contactService: IContactService,
-    private readonly embeddingService: IEmbeddingService
+    private readonly embeddingService: IEmbeddingComputer
   ) {}
 
   private buildMessageFilter(filters?: SearchFilters, textContentContains?: string): MessageQueryFilter {

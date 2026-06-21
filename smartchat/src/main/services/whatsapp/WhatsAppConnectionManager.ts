@@ -16,12 +16,12 @@ import { BaileysPatcher } from './BaileysPatcher'
 import { IWAEventWiringService, ConnectionCallbacks } from './IWAEventWiringService'
 import { IAuthSettingsService } from '../auth/IAuthSettingsService'
 import { IChatRepository } from '../chats/IChatRepository'
-import type { IEmbeddingService } from '../search/IEmbeddingService'
+import type { IEmbeddingOperationalControl } from '../search/IEmbeddingService'
 import { IWASocketFactory } from './IWASocketFactory'
 import { IWACatchUpManager } from './IWACatchUpManager'
 
 export interface WhatsAppConnectionDependencies extends SubscriberServices {
-  embeddingService: IEmbeddingService
+  embeddingService: IEmbeddingOperationalControl
 }
 
 export class WhatsAppConnectionManager implements ConnectionCallbacks {

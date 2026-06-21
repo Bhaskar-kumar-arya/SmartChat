@@ -1,7 +1,7 @@
 import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { IContactService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
-import { IEmbeddingService } from '../search/IEmbeddingService'
+import { IMessageIndexer } from '../search/IEmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { cleanJid } from '../../utils/jidUtils'
 import { parseBaileysTimestamp, unwrapMessage } from '../../utils/messageUtils'
@@ -54,7 +54,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
   constructor(
     private readonly contactService: IContactService,
     private readonly chatRepository: IChatRepository,
-    private readonly embeddingService: IEmbeddingService,
+    private readonly embeddingService: IMessageIndexer,
     private readonly secretMessageService: SecretMessageService,
     private readonly getBus: () => IWAEventBus | null,
     private readonly parser: MessageParser,

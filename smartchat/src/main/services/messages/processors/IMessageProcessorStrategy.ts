@@ -3,7 +3,7 @@ import { ProcessedMessage } from '../../../domain/db.types'
 import { IIdentityRepository } from '../../contacts/IIdentityRepository'
 import { IMessageRepository } from '../IMessageRepository'
 import { IReactionRepository } from '../IReactionRepository'
-import { IEmbeddingService } from '../../search/IEmbeddingService'
+import { IMessageIndexer } from '../../search/IEmbeddingService'
 import { SecretMessageService } from '../../whatsapp/secret/SecretMessageService'
 
 export interface IMessageProcessingContext {
@@ -23,7 +23,7 @@ export interface IMessageServiceDependencyAccessor {
   identityRepository: IIdentityRepository
   repository: IMessageRepository
   reactionRepository: IReactionRepository
-  embeddingService: IEmbeddingService
+  embeddingService: IMessageIndexer
   secretMessageService: SecretMessageService
 }
 
