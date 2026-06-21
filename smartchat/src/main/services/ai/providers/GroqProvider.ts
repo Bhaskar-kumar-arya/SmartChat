@@ -1,12 +1,12 @@
 import Groq from 'groq-sdk';
 import { ModelInfo } from './IBaseAIProvider';
+import { IApiKeyAwareProvider } from './IApiKeyAwareProvider';
 import { IStreamingProvider } from './IStreamingProvider';
 import { IFullResponseProvider } from './IFullResponseProvider';
 import { IToolRegistry } from '../IToolRegistry';
 import { IAIKeyService } from '../IAIKeyService';
-import { UserDetails } from '../SystemPromptBuilder';
 
-export class GroqProvider implements IStreamingProvider, IFullResponseProvider {
+export class GroqProvider implements IStreamingProvider, IFullResponseProvider, IApiKeyAwareProvider {
   private client: Groq;
 
   constructor(
@@ -26,9 +26,7 @@ export class GroqProvider implements IStreamingProvider, IFullResponseProvider {
     return modelId.startsWith('groq:');
   }
 
-  getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
-    return this.toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
-  }
+
 
   async cleanup(): Promise<void> {
     // No local resources to unload
@@ -76,8 +74,7 @@ export class GroqProvider implements IStreamingProvider, IFullResponseProvider {
   ): Promise<string> {
     const modelOption = typeof options?.model === 'string' ? options.model : 'openai/gpt-oss-120b';
     const rawModel = this.stripPrefix(modelOption);
-    const useThinkMode = options?.useThinkMode !== false;
-    const systemPrompt = this.getSystemPrompt(useThinkMode, options?.userDetails);
+    const systemPrompt = typeof options?.systemPrompt === 'string' ? options.systemPrompt : '';
     const messages = this.formatMessages(prompt, history, systemPrompt);
     const tools = this.getToolsForGroq();
 
@@ -122,8 +119,7 @@ export class GroqProvider implements IStreamingProvider, IFullResponseProvider {
   ): Promise<void> {
     const modelOption = typeof options?.model === 'string' ? options.model : 'openai/gpt-oss-120b';
     const rawModel = this.stripPrefix(modelOption);
-    const useThinkMode = options?.useThinkMode !== false;
-    const systemPrompt = this.getSystemPrompt(useThinkMode, options?.userDetails);
+    const systemPrompt = typeof options?.systemPrompt === 'string' ? options.systemPrompt : '';
     const messages = this.formatMessages(prompt, history, systemPrompt);
     const tools = this.getToolsForGroq();
 

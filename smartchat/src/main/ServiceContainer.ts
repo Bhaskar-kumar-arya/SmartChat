@@ -114,6 +114,7 @@ import { IReceiptRepository } from './services/messages/IReceiptRepository'
 import { ReceiptRepository } from './services/messages/ReceiptRepository'
 import { IToolRegistry } from './services/ai/IToolRegistry'
 import { ToolRegistry } from './services/ai/AIToolService'
+import { ISystemInstructionBuilder } from './services/ai/ISystemInstructionBuilder'
 import { SystemPromptBuilder } from './services/ai/SystemPromptBuilder'
 import { ReactProtocolStrategy } from './services/ai/prompts/ReactProtocolStrategy'
 import { StandardProtocolStrategy } from './services/ai/prompts/StandardProtocolStrategy'
@@ -244,7 +245,7 @@ export function createServices(
   const reactStrategy = new ReactProtocolStrategy()
   const standardStrategy = new StandardProtocolStrategy()
   const promptBuilder = new SystemPromptBuilder(reactStrategy, standardStrategy)
-  const toolRegistry: IToolRegistry = new ToolRegistry(promptBuilder)
+  const toolRegistry: IToolRegistry & ISystemInstructionBuilder = new ToolRegistry(promptBuilder)
   const aiService = new AIService(aiKeyService, contactService, toolRegistry)
   const aiChatSessionService = new AIChatSessionService(prisma)
   const aiChatExportService = new AIChatExportService()

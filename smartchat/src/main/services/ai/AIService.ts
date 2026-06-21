@@ -4,12 +4,15 @@ import { GroqProvider } from './providers/GroqProvider'
 import { MistralProvider } from './providers/MistralProvider'
 import { DeepSeekProvider } from './providers/DeepSeekProvider'
 import { IBaseAIProvider, ModelInfo } from './providers/IBaseAIProvider'
+import { IApiKeyAwareProvider } from './providers/IApiKeyAwareProvider'
 import { IStreamingProvider } from './providers/IStreamingProvider'
 import { IFullResponseProvider } from './providers/IFullResponseProvider'
 import { IAIKeyService } from './IAIKeyService'
 import { IContactService } from '../contacts/IContactService'
 import { IAIService, AIMention, AIChatContext, AIHistoryMessage } from './IAIService'
 import { IToolRegistry } from './IToolRegistry'
+import { ISystemInstructionBuilder } from './ISystemInstructionBuilder'
+import { UserDetails } from './ISystemPromptBuilder'
 
 export class AIService implements IAIService {
   private providers: Record<string, IBaseAIProvider> = {}
@@ -20,7 +23,7 @@ export class AIService implements IAIService {
   constructor(
     private readonly aiKeyService: IAIKeyService,
     private readonly contactService: IContactService,
-    private readonly toolRegistry: IToolRegistry
+    private readonly toolRegistry: IToolRegistry & ISystemInstructionBuilder
   ) {
     this.registerProvider('gemini', new GeminiProvider(this.aiKeyService, this.toolRegistry));
     this.registerProvider('groq', new GroqProvider(this.aiKeyService, this.toolRegistry));
@@ -41,9 +44,9 @@ export class AIService implements IAIService {
   setProviderKey(provider: string, key: string): boolean {
     if (provider in this.providers) {
       this.aiKeyService.saveKey(provider, key);
-      const updateMethod = this.providers[provider].updateApiKey;
-      if (updateMethod) {
-        updateMethod.call(this.providers[provider], key);
+      const providerInstance = this.providers[provider];
+      if (providerInstance && 'updateApiKey' in providerInstance && typeof (providerInstance as any).updateApiKey === 'function') {
+        (providerInstance as unknown as IApiKeyAwareProvider).updateApiKey(key);
       }
       return true;
     }
@@ -212,14 +215,25 @@ export class AIService implements IAIService {
         signal = controller.signal;
       }
 
-      const userDetails = await this.getUserDetails()
+      const userDetailsRaw = await this.getUserDetails()
+      const userDetails: UserDetails | undefined = userDetailsRaw
+        ? {
+            phoneNumber: userDetailsRaw.phoneNumber || '',
+            lid: userDetailsRaw.lid || '',
+            phoneJid: userDetailsRaw.phoneJid || '',
+            linkedJid: userDetailsRaw.linkedJid || ''
+          }
+        : undefined
+
+      const useThinkMode = options?.useThinkMode !== false
+      const systemPrompt = this.toolRegistry.getSystemInstructions(useThinkMode, userDetails)
       
       let result: string;
       if ('generateResponse' in provider && typeof provider.generateResponse === 'function') {
         result = await (provider as IFullResponseProvider).generateResponse(
           fullPrompt,
           processedHistory,
-          { ...options, model: modelId, userDetails },
+          { ...options, model: modelId, userDetails, systemPrompt },
           signal
         );
       } else if ('generateResponseStream' in provider && typeof provider.generateResponseStream === 'function') {
@@ -228,7 +242,7 @@ export class AIService implements IAIService {
         await (provider as IStreamingProvider).generateResponseStream(
           fullPrompt,
           processedHistory,
-          { ...options, model: modelId, userDetails },
+          { ...options, model: modelId, userDetails, systemPrompt },
           (chunk) => { fullText += chunk; },
           signal
         );
@@ -280,12 +294,24 @@ export class AIService implements IAIService {
       }
 
       try {
-        const userDetails = await this.getUserDetails()
+        const userDetailsRaw = await this.getUserDetails()
+        const userDetails: UserDetails | undefined = userDetailsRaw
+          ? {
+              phoneNumber: userDetailsRaw.phoneNumber || '',
+              lid: userDetailsRaw.lid || '',
+              phoneJid: userDetailsRaw.phoneJid || '',
+              linkedJid: userDetailsRaw.linkedJid || ''
+            }
+          : undefined
+
+        const useThinkMode = options?.useThinkMode !== false
+        const systemPrompt = this.toolRegistry.getSystemInstructions(useThinkMode, userDetails)
+
         if ('generateResponseStream' in provider && typeof provider.generateResponseStream === 'function') {
           await (provider as IStreamingProvider).generateResponseStream(
             fullPrompt,
             processedHistory,
-            { ...options, model: modelId, userDetails },
+            { ...options, model: modelId, userDetails, systemPrompt },
             onChunk,
             signal
           );
@@ -294,7 +320,7 @@ export class AIService implements IAIService {
           const fullText = await (provider as IFullResponseProvider).generateResponse(
             fullPrompt,
             processedHistory,
-            { ...options, model: modelId, userDetails },
+            { ...options, model: modelId, userDetails, systemPrompt },
             signal
           );
           onChunk(fullText);

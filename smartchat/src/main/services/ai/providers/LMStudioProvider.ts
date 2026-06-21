@@ -3,7 +3,6 @@ import { ModelInfo } from './IBaseAIProvider'
 import { IStreamingProvider } from './IStreamingProvider'
 import { IFullResponseProvider } from './IFullResponseProvider'
 import { IToolRegistry } from '../IToolRegistry'
-import { UserDetails } from '../SystemPromptBuilder'
 
 export class LMStudioProvider implements IStreamingProvider, IFullResponseProvider {
   private client: LMStudioClient;
@@ -49,9 +48,7 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
     }
   }
 
-  getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
-    return this.toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
-  }
+
 
 
   async cleanup(): Promise<void> {
@@ -94,8 +91,7 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
     const model = await this.getOrLoadModel(cleanModelKey, contextLength);
     const chat = Chat.empty();
     
-    const useThinkMode = options?.useThinkMode !== false;
-    const systemInstructions = this.getSystemPrompt(useThinkMode, options?.userDetails);
+    const systemInstructions = typeof options?.systemPrompt === 'string' ? options.systemPrompt : undefined;
     if (systemInstructions) {
       chat.append('system', systemInstructions);
     }
@@ -163,8 +159,7 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
     const model = await this.getOrLoadModel(cleanModelKey, contextLength);
     const chat = Chat.empty();
 
-    const useThinkMode = options?.useThinkMode !== false;
-    const systemInstructions = this.getSystemPrompt(useThinkMode, options?.userDetails);
+    const systemInstructions = typeof options?.systemPrompt === 'string' ? options.systemPrompt : undefined;
     if (systemInstructions) {
       chat.append('system', systemInstructions);
     }

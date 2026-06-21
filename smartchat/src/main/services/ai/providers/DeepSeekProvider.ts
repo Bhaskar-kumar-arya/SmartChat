@@ -1,12 +1,12 @@
 import OpenAI from 'openai';
 import { ModelInfo } from './IBaseAIProvider';
+import { IApiKeyAwareProvider } from './IApiKeyAwareProvider';
 import { IStreamingProvider } from './IStreamingProvider';
 import { IFullResponseProvider } from './IFullResponseProvider';
 import { IToolRegistry } from '../IToolRegistry';
 import { IAIKeyService } from '../IAIKeyService';
-import { UserDetails } from '../SystemPromptBuilder';
 
-export class DeepSeekProvider implements IStreamingProvider, IFullResponseProvider {
+export class DeepSeekProvider implements IStreamingProvider, IFullResponseProvider, IApiKeyAwareProvider {
   private client: OpenAI;
 
   constructor(
@@ -27,9 +27,7 @@ export class DeepSeekProvider implements IStreamingProvider, IFullResponseProvid
     return modelId.startsWith('deepseek:');
   }
 
-  getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
-    return this.toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
-  }
+
 
   async cleanup(): Promise<void> {
     // No local resources to unload
@@ -77,8 +75,7 @@ export class DeepSeekProvider implements IStreamingProvider, IFullResponseProvid
   ): Promise<string> {
     const modelOption = typeof options?.model === 'string' ? options.model : 'deepseek-v4-pro';
     const rawModel = this.stripPrefix(modelOption);
-    const useThinkMode = options?.useThinkMode !== false;
-    const systemPrompt = this.getSystemPrompt(useThinkMode, options?.userDetails);
+    const systemPrompt = typeof options?.systemPrompt === 'string' ? options.systemPrompt : '';
     const messages = this.formatMessages(prompt, history, systemPrompt);
     
     // Tools are supported for deepseek-v4-pro/deepseek-chat
@@ -133,8 +130,7 @@ export class DeepSeekProvider implements IStreamingProvider, IFullResponseProvid
   ): Promise<void> {
     const modelOption = typeof options?.model === 'string' ? options.model : 'deepseek-v4-pro';
     const rawModel = this.stripPrefix(modelOption);
-    const useThinkMode = options?.useThinkMode !== false;
-    const systemPrompt = this.getSystemPrompt(useThinkMode, options?.userDetails);
+    const systemPrompt = typeof options?.systemPrompt === 'string' ? options.systemPrompt : '';
     const messages = this.formatMessages(prompt, history, systemPrompt);
     
     const isReasoner = rawModel.includes('reasoner');

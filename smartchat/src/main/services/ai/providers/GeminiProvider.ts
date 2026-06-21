@@ -1,17 +1,17 @@
 import { GoogleGenAI } from '@google/genai'
 import { ModelInfo } from './IBaseAIProvider'
+import { IApiKeyAwareProvider } from './IApiKeyAwareProvider'
 import { IStreamingProvider } from './IStreamingProvider'
 import { IFullResponseProvider } from './IFullResponseProvider'
 import { IToolRegistry } from '../IToolRegistry'
 import { IAIKeyService } from '../IAIKeyService'
-import { UserDetails } from '../SystemPromptBuilder'
 
-export class GeminiProvider implements IStreamingProvider, IFullResponseProvider {
+export class GeminiProvider implements IStreamingProvider, IFullResponseProvider, IApiKeyAwareProvider {
   private ai: GoogleGenAI;
   private fetchedModelIds = new Set<string>();
   constructor(
     private readonly aiKeyService: IAIKeyService,
-    private readonly toolRegistry: IToolRegistry
+    _toolRegistry: IToolRegistry
   ) {
     const key = this.aiKeyService.getKey('gemini');
     this.ai = new GoogleGenAI({ apiKey: key }); 
@@ -42,9 +42,7 @@ export class GeminiProvider implements IStreamingProvider, IFullResponseProvider
     });
   }
 
-  getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string {
-    return this.toolRegistry.getSystemInstructions(useThinkMode, userDetails as UserDetails | undefined);
-  }
+
 
   async cleanup(): Promise<void> {
     // Gemini handles cleanup on its end
@@ -60,8 +58,7 @@ export class GeminiProvider implements IStreamingProvider, IFullResponseProvider
     const isPromptSystem = options?.isSystem === true;
     const finalPrompt = this.wrapWithRole(prompt, isPromptSystem, 'user');
 
-    const useThinkMode = options?.useThinkMode !== false;
-    const systemInstructions = this.getSystemPrompt(useThinkMode, options?.userDetails);
+    const systemInstructions = typeof options?.systemPrompt === 'string' ? options.systemPrompt : undefined;
     
     // Prepare contents including history and current prompt
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
@@ -88,8 +85,7 @@ export class GeminiProvider implements IStreamingProvider, IFullResponseProvider
     const isPromptSystem = options?.isSystem === true;
     const finalPrompt = this.wrapWithRole(prompt, isPromptSystem, 'user');
 
-    const useThinkMode = options?.useThinkMode !== false;
-    const systemInstructions = this.getSystemPrompt(useThinkMode, options?.userDetails);
+    const systemInstructions = typeof options?.systemPrompt === 'string' ? options.systemPrompt : undefined;
     
     // Prepare contents including history and current prompt
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];

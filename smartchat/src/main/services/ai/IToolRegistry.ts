@@ -1,5 +1,3 @@
-import { UserDetails } from './SystemPromptBuilder'
-
 export interface AITool {
   name: string;
   description: string;
@@ -15,5 +13,4 @@ export interface IToolRegistry {
   getTool(name: string): AITool | undefined
   getAllTools(): AITool[]
   getToolDefinitions(): Record<string, unknown>[]
-  getSystemInstructions(useThinkMode?: boolean, userDetails?: UserDetails): string
 }

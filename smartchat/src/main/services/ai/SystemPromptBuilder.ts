@@ -9,8 +9,6 @@ import {
   MESSAGE_ROLES_SECTION
 } from './prompts/SystemPromptContent'
 
-export type { UserDetails }
-
 export class SystemPromptBuilder implements ISystemPromptBuilder {
   constructor(
     private readonly reactStrategy: IProtocolStrategy,

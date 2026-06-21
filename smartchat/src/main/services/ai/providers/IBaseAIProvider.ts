@@ -13,11 +13,6 @@ export interface IBaseAIProvider {
   canHandleModel(modelId: string): boolean;
 
   /**
-   * Returns the system prompt for this provider.
-   */
-  getSystemPrompt(useThinkMode: boolean, userDetails?: unknown): string;
-
-  /**
    * Cleans up resources (e.g., unloading models on exit).
    */
   cleanup(): Promise<void>;
@@ -26,9 +21,5 @@ export interface IBaseAIProvider {
    * Returns a list of available models for this provider.
    */
   getAvailableModels(): Promise<ModelInfo[]>;
-
-  /**
-   * Dynamically re-initializes client SDK when user changes settings keys.
-   */
-  updateApiKey?(apiKey: string): void;
 }
+

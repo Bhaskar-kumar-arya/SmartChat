@@ -1,7 +1,8 @@
 import { IToolRegistry, AITool } from './IToolRegistry'
 import { ISystemPromptBuilder, UserDetails } from './ISystemPromptBuilder'
+import { ISystemInstructionBuilder } from './ISystemInstructionBuilder'
 
-export class ToolRegistry implements IToolRegistry {
+export class ToolRegistry implements IToolRegistry, ISystemInstructionBuilder {
   private tools: Map<string, AITool> = new Map();
 
   constructor(private readonly promptBuilder: ISystemPromptBuilder) {}
