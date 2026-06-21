@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChatItem, ModelInfo, AIChatOptions, AIChatMessage, ToolDefinition, SelectedContext, AIContextItem } from '../../types'
+import { ChatItem, SelectedContext } from '../../types/chatTypes'
+import { ModelInfo, AIChatOptions, AIChatMessage, ToolDefinition, AIContextItem } from '../../types/aiTypes'
 import AISmartInput, { AISmartInputRef } from './AISmartInput'
 import AIMessageBubble from './AIMessageBubble'
 import AISettingsModal from './AISettingsModal'

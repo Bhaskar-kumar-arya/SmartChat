@@ -2,7 +2,8 @@ import React, {
   useState, useRef, useEffect, useCallback,
   KeyboardEvent, useImperativeHandle, forwardRef
 } from 'react'
-import { ChatItem, ModelInfo, SelectedContext } from '../../types'
+import { ChatItem, SelectedContext } from '../../types/chatTypes'
+import { ModelInfo } from '../../types/aiTypes'
 import { useAPI } from '../../context/APIContext'
 import { useMentionSession } from '../../hooks/useMentionSession'
 

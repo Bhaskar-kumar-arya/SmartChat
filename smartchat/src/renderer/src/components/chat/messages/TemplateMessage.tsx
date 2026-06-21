@@ -4,7 +4,8 @@ import { ImageMessage, VideoMessage, DocumentMessage } from './MediaMessages'
 import { TextMessage } from './TextMessage'
 import { formatTime } from '../../../utils/formatters'
 import { MessageStatusTick } from '../../common/MessageStatusTick'
-import { HydratedButton, InteractiveButton, TemplateMessageProps } from '../../../types'
+import { HydratedButton, InteractiveButton } from '../../../types/mediaTypes'
+import { TemplateMessageProps } from '../../../types/componentProps'
 
 interface ParsedButton {
   type: 'quick_reply' | 'url' | 'call'

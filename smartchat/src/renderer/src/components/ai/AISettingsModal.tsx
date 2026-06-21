@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AIChatOptions, ModelInfo } from '../../types';
+import { AIChatOptions, ModelInfo } from '../../types/aiTypes';
 import { useAPI } from '../../context/APIContext';
 
 interface AISettingsModalProps {

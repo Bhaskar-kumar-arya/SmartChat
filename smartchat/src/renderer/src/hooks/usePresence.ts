@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAPI } from '../context/APIContext'
-import { PresenceMap, PresenceUpdate } from '../types'
+import { PresenceMap, PresenceUpdate } from '../types/chatTypes'
 
 /**
  * Hook to manage real-time presence updates and their automatic expiration.

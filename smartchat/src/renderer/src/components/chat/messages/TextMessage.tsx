@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Emoji, EmojiStyle } from 'emoji-picker-react'
 import emojiRegex from 'emoji-regex'
-import { TextMessageProps } from '../../../types'
+import { TextMessageProps } from '../../../types/componentProps'
 import { emojiToUnified } from '../../../utils/emojiUtils'
 
 /**

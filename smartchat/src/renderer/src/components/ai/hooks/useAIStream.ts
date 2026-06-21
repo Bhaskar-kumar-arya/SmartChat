@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { AIChatMessage, AIChatOptions, ToolDefinition, AIContextItem, SelectedContext } from '../../../types'
+import { AIChatMessage, AIChatOptions, ToolDefinition, AIContextItem } from '../../../types/aiTypes'
+import { SelectedContext } from '../../../types/chatTypes'
 import { useAPI } from '../../../context/APIContext'
 
 interface UseAIStreamProps {

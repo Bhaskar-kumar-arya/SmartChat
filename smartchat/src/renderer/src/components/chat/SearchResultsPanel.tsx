@@ -1,4 +1,4 @@
-import { SearchResultItem, SearchMode } from '../../types'
+import { SearchResultItem, SearchMode } from '../../types/chatTypes'
 import { formatChatTime } from '../../utils/formatters'
 
 interface SearchResultsPanelProps {

@@ -1,4 +1,4 @@
-import { MessageReceiptInfo } from '../../types'
+import { MessageReceiptInfo } from '../../types/chatTypes'
 import { formatReceiptTime, formatReceiptDate } from '../../utils/formatters'
 import { EmojiText } from '../common/EmojiText'
 

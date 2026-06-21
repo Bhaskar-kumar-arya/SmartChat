@@ -1,4 +1,4 @@
-import { MessageItem, MessageType } from '../types'
+import { MessageItem, MessageType } from '../types/chatTypes'
 
 /**
  * Generates a text preview representation of a message for the chat list sidebar.

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { AIChatSessionItem, AIChatMessage } from '../../../types'
+import { AIChatSessionItem, AIChatMessage } from '../../../types/aiTypes'
 import { useAPI } from '../../../context/APIContext'
 
 export function useAIChatSessions() {

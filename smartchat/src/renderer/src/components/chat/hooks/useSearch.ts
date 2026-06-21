@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAPI } from '../../../context/APIContext'
-import { SearchFilters, SearchMode, SearchResults } from '../../../types'
+import { SearchFilters, SearchMode, SearchResults } from '../../../types/chatTypes'
 
 const DEBOUNCE_MS = 300
 const DEEP_DEBOUNCE_MS = 600

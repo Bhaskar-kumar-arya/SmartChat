@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { SearchFilters, SearchMode } from '../../types'
+import { SearchFilters, SearchMode } from '../../types/chatTypes'
 
 interface SearchFiltersPanelProps {
   filters: SearchFilters

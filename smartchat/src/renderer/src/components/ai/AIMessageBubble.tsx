@@ -31,7 +31,8 @@ function renderWithMentions(content: string, mentions: SelectedContext[]): React
 import remarkGfm from 'remark-gfm'
 import AIToolCard from './AIToolCard'
 import AISmartInput from './AISmartInput'
-import { AIChatMessage, ToolDefinition, SelectedContext, ChatItem } from '../../types'
+import { AIChatMessage, ToolDefinition } from '../../types/aiTypes'
+import { SelectedContext, ChatItem } from '../../types/chatTypes'
 
 interface AIMessageBubbleProps {
   message: AIChatMessage

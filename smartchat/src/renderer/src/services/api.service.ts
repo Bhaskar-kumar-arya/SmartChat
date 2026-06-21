@@ -1,4 +1,5 @@
-import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo, AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionItem, PresenceUpdate, AIContextItem, SelectedContext, NotificationPreferences } from '../types'
+import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo, PresenceUpdate, SelectedContext, NotificationPreferences } from '../types/chatTypes'
+import { AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionItem, AIContextItem } from '../types/aiTypes'
 
 // This service wraps the window.api (Electron bridge) to provide a clean abstraction.
 // It allows us to mock the API in tests and decouple from the global window object.

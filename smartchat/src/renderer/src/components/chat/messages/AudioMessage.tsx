@@ -1,7 +1,7 @@
 import WaveformPlayer from '../../common/WaveformPlayer'
 import { ProfilePicture } from '../../common/ProfilePicture'
 
-import { AudioMessageProps } from '../../../types'
+import { AudioMessageProps } from '../../../types/componentProps'
 
 export const AudioMessage = ({ localURI, senderJid, onDownload, isDownloading, rawMsg }: AudioMessageProps) => {
   const audioMsg = rawMsg?.audioMessage

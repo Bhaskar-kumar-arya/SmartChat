@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAPI } from '../../../context/APIContext'
-import { MessageItem } from '../../../types'
+import { MessageItem } from '../../../types/chatTypes'
 
 /**
  * Hook to manage messages for a specific chat.

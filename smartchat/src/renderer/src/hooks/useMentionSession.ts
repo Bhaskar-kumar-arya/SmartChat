@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ChatItem, SelectedContext } from '../types'
+import { ChatItem, SelectedContext } from '../types/chatTypes'
 import { filterAndRank } from '../utils/mentionUtils'
 
 interface UseMentionSessionOptions {

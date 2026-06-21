@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useAPI } from '../../../context/APIContext'
-import { ChatItem, MessageItem } from '../../../types'
+import { ChatItem, MessageItem } from '../../../types/chatTypes'
 import { formatSenderName } from '../../../utils/formatters'
 import { formatMessagePreview } from '../../../utils/messagePreview'
 

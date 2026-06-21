@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { Emoji, EmojiStyle } from 'emoji-picker-react'
-import { MessageItem as IMessageItem } from '../../types'
+import { MessageItem as IMessageItem } from '../../types/chatTypes'
 import { formatDate } from '../../utils/formatters'
 import MessageItem from './MessageItem'
 import { emojiToUnified } from '../../utils/emojiUtils'

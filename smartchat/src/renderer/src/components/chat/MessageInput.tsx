@@ -5,7 +5,7 @@ import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'
 import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
 import { useAPI } from '../../context/APIContext'
-import { MessageItem } from '../../types'
+import { MessageItem } from '../../types/chatTypes'
 import { EmojiText } from '../common/EmojiText'
 import { emojiToUnified } from '../../utils/emojiUtils'
 import {

@@ -1,5 +1,5 @@
 import { Emoji, EmojiStyle } from 'emoji-picker-react'
-import { ReactionItem } from '../../types'
+import { ReactionItem } from '../../types/chatTypes'
 import { emojiToUnified } from '../../utils/emojiUtils'
 
 interface ReactionsDisplayProps {
