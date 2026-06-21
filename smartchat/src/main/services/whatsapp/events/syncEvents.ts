@@ -66,3 +66,16 @@ export interface NotificationSettingSyncEvent {
   chatJid: string
   setting: string
 }
+
+export interface SyncEventMap {
+  'app-state:sync': AppStateSyncEvent
+  'app-state:favorite-sticker': FavoriteStickerSyncEvent
+  'app-state:mute': MuteSyncEvent
+  'app-state:star': StarSyncEvent
+  'app-state:call-log': CallLogSyncEvent
+  'app-state:label-edit': LabelEditSyncEvent
+  'app-state:setting': SettingSyncEvent
+  'app-state:lock': LockSyncEvent
+  'app-state:notification-setting': NotificationSettingSyncEvent
+}
+

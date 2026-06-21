@@ -9,3 +9,9 @@ export interface GroupParticipantsEvent {
   participants: string[]
   action: 'add' | 'remove' | 'promote' | 'demote' | string
 }
+
+export interface GroupEventMap {
+  'group:updated': GroupUpdatedEvent
+  'group:participants': GroupParticipantsEvent
+}
+

@@ -90,3 +90,15 @@ export interface MessageDecryptedEvent {
   content: Record<string, unknown>
   sock: ISocketUserContext
 }
+
+export interface MessageEventMap {
+  'message:incoming': IncomingMessageEvent
+  'messages:append': AppendMessagesEvent
+  'message:deleted': MessageDeletedEvent
+  'message:edited': MessageEditedEvent
+  'message:decrypted': MessageDecryptedEvent
+  'message:status': MessageStatusEvent
+  'message:status-updated': MessageStatusUpdatedEvent
+  'reaction:processed': ReactionProcessedEvent
+}
+

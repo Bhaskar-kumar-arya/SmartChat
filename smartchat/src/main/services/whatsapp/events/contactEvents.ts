@@ -11,3 +11,10 @@ export interface ContactUpdatedEvent {
 export interface LidMappingEvent {
   mappings: Array<{ lid: string; pn: string }>
 }
+
+export interface ContactEventMap {
+  'contact:upserted': ContactUpsertedEvent
+  'contact:updated': ContactUpdatedEvent
+  'lid:mapped': LidMappingEvent
+}
+

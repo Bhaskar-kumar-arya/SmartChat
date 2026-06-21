@@ -21,3 +21,11 @@ export interface CallEvent {
   calls: BaileysCall[]
 }
 
+export interface MiscEventMap {
+  'reaction:update': ReactionEvent
+  'presence:update': PresenceEvent
+  'receipt:update': ReceiptEvent
+  'call:event': CallEvent
+}
+
+

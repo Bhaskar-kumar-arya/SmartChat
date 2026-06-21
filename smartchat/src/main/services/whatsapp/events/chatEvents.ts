@@ -9,3 +9,9 @@ export interface ChatUpsertedEvent {
   jid: string
   raw: ChatUpdatePayload
 }
+
+export interface ChatEventMap {
+  'chat:updated': ChatUpdatedEvent
+  'chat:upserted': ChatUpsertedEvent
+}
+
