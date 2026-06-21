@@ -1,9 +1,11 @@
 import { Chat, LMStudioClient } from '@lmstudio/sdk'
-import { AIProvider, ModelInfo } from './Provider'
+import { ModelInfo } from './Provider'
+import { IStreamingProvider } from './IStreamingProvider'
+import { IFullResponseProvider } from './IFullResponseProvider'
 import { IToolRegistry } from '../IToolRegistry'
 import { UserDetails } from '../SystemPromptBuilder'
 
-export class LMStudioProvider implements AIProvider {
+export class LMStudioProvider implements IStreamingProvider, IFullResponseProvider {
   private client: LMStudioClient;
   private loadedModels: Map<string, { model: Awaited<ReturnType<LMStudioClient['llm']['load']>>, contextLength: number }> = new Map();
 

@@ -1,3 +1,6 @@
+import { IStreamingProvider } from './IStreamingProvider';
+import { IFullResponseProvider } from './IFullResponseProvider';
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -6,7 +9,7 @@ export interface ModelInfo {
   isLocal: boolean;
 }
 
-export interface AIProvider {
+export interface IBaseAIProvider {
   /**
    * Determines if this provider can handle the given model ID.
    */
@@ -23,27 +26,6 @@ export interface AIProvider {
   cleanup(): Promise<void>;
 
   /**
-   * Generates a streaming response.
-   */
-  generateResponseStream(
-    prompt: string,
-    history: Array<{ role: string; content: string; isSystem?: boolean }>,
-    options: { model?: string; [key: string]: unknown },
-    onChunk: (chunk: string) => void,
-    signal?: AbortSignal
-  ): Promise<void>;
-
-  /**
-   * Generates a full response.
-   */
-  generateResponse(
-    prompt: string,
-    history: Array<{ role: string; content: string; isSystem?: boolean }>,
-    options: { model?: string; [key: string]: unknown },
-    signal?: AbortSignal
-  ): Promise<string>;
-
-  /**
    * Returns a list of available models for this provider.
    */
   getAvailableModels(): Promise<ModelInfo[]>;
@@ -53,3 +35,5 @@ export interface AIProvider {
    */
   updateApiKey?(apiKey: string): void;
 }
+
+export interface AIProvider extends IStreamingProvider, IFullResponseProvider {}

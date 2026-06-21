@@ -1,10 +1,12 @@
 import OpenAI from 'openai';
-import { AIProvider, ModelInfo } from './Provider';
+import { ModelInfo } from './Provider';
+import { IStreamingProvider } from './IStreamingProvider';
+import { IFullResponseProvider } from './IFullResponseProvider';
 import { IToolRegistry } from '../IToolRegistry';
 import { IAIKeyService } from '../IAIKeyService';
 import { UserDetails } from '../SystemPromptBuilder';
 
-export class DeepSeekProvider implements AIProvider {
+export class DeepSeekProvider implements IStreamingProvider, IFullResponseProvider {
   private client: OpenAI;
 
   constructor(

@@ -3,14 +3,16 @@ import { LMStudioProvider } from './providers/LMStudioProvider'
 import { GroqProvider } from './providers/GroqProvider'
 import { MistralProvider } from './providers/MistralProvider'
 import { DeepSeekProvider } from './providers/DeepSeekProvider'
-import { AIProvider, ModelInfo } from './providers/Provider'
+import { IBaseAIProvider, ModelInfo } from './providers/Provider'
+import { IStreamingProvider } from './providers/IStreamingProvider'
+import { IFullResponseProvider } from './providers/IFullResponseProvider'
 import { IAIKeyService } from './IAIKeyService'
 import { IContactService } from '../contacts/IContactService'
 import { IAIService, AIMention, AIChatContext, AIHistoryMessage } from './IAIService'
 import { IToolRegistry } from './IToolRegistry'
 
 export class AIService implements IAIService {
-  private providers: Record<string, AIProvider> = {}
+  private providers: Record<string, IBaseAIProvider> = {}
   private providerOrder: string[] = []
   private currentModelId: string = 'gemini:gemma-4-31b-it' // Default
   private activeRequests: Map<string, AbortController> = new Map()
@@ -27,7 +29,7 @@ export class AIService implements IAIService {
     this.registerProvider('lmstudio', new LMStudioProvider(this.toolRegistry)); // Fallback / local
   }
 
-  registerProvider(key: string, provider: AIProvider): void {
+  registerProvider(key: string, provider: IBaseAIProvider): void {
     this.providers[key] = provider;
     this.providerOrder.push(key);
   }
@@ -75,7 +77,7 @@ export class AIService implements IAIService {
     return `lmstudio:${modelId}`;
   }
 
-  private getProviderForModel(modelId: string): AIProvider {
+  private getProviderForModel(modelId: string): IBaseAIProvider {
     const normalized = this.normalizeModelId(modelId);
     for (const key of this.providerOrder) {
       if (this.providers[key].canHandleModel(normalized)) {
@@ -199,7 +201,29 @@ export class AIService implements IAIService {
       }
 
       const userDetails = await this.getUserDetails()
-      const result = await provider.generateResponse(fullPrompt, processedHistory, { ...options, model: modelId, userDetails }, signal);
+      
+      let result: string;
+      if ('generateResponse' in provider && typeof provider.generateResponse === 'function') {
+        result = await (provider as IFullResponseProvider).generateResponse(
+          fullPrompt,
+          processedHistory,
+          { ...options, model: modelId, userDetails },
+          signal
+        );
+      } else if ('generateResponseStream' in provider && typeof provider.generateResponseStream === 'function') {
+        // Fallback: Buffer stream to full response
+        let fullText = '';
+        await (provider as IStreamingProvider).generateResponseStream(
+          fullPrompt,
+          processedHistory,
+          { ...options, model: modelId, userDetails },
+          (chunk) => { fullText += chunk; },
+          signal
+        );
+        result = fullText;
+      } else {
+        throw new Error(`Provider for model ${modelId} does not support full response generation`);
+      }
       
       if (options?.requestId) {
         this.activeRequests.delete(options.requestId);
@@ -245,7 +269,26 @@ export class AIService implements IAIService {
 
       try {
         const userDetails = await this.getUserDetails()
-        await provider.generateResponseStream(fullPrompt, processedHistory, { ...options, model: modelId, userDetails }, onChunk, signal);
+        if ('generateResponseStream' in provider && typeof provider.generateResponseStream === 'function') {
+          await (provider as IStreamingProvider).generateResponseStream(
+            fullPrompt,
+            processedHistory,
+            { ...options, model: modelId, userDetails },
+            onChunk,
+            signal
+          );
+        } else if ('generateResponse' in provider && typeof provider.generateResponse === 'function') {
+          // Fallback: full response as a single chunk
+          const fullText = await (provider as IFullResponseProvider).generateResponse(
+            fullPrompt,
+            processedHistory,
+            { ...options, model: modelId, userDetails },
+            signal
+          );
+          onChunk(fullText);
+        } else {
+          throw new Error(`Provider for model ${modelId} does not support stream response generation`);
+        }
       } finally {
         if (options?.requestId) {
           this.activeRequests.delete(options.requestId);

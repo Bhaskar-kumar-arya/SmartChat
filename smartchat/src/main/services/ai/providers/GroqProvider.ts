@@ -1,10 +1,12 @@
 import Groq from 'groq-sdk';
-import { AIProvider, ModelInfo } from './Provider';
+import { ModelInfo } from './Provider';
+import { IStreamingProvider } from './IStreamingProvider';
+import { IFullResponseProvider } from './IFullResponseProvider';
 import { IToolRegistry } from '../IToolRegistry';
 import { IAIKeyService } from '../IAIKeyService';
 import { UserDetails } from '../SystemPromptBuilder';
 
-export class GroqProvider implements AIProvider {
+export class GroqProvider implements IStreamingProvider, IFullResponseProvider {
   private client: Groq;
 
   constructor(

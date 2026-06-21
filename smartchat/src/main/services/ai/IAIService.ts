@@ -1,4 +1,4 @@
-import { AIProvider, ModelInfo } from './providers/Provider'
+import { IBaseAIProvider, ModelInfo } from './providers/Provider'
 
 export interface AIMention {
   jid: string
@@ -27,7 +27,7 @@ export interface AIHistoryMessage {
 }
 
 export interface IAIService {
-  registerProvider(key: string, provider: AIProvider): void
+  registerProvider(key: string, provider: IBaseAIProvider): void
   
   getProviderKeys(): Record<string, string>
   
