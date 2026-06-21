@@ -97,6 +97,103 @@ export class ContactService implements IContactService {
   /**
    * Handles contacts.upsert and contacts.update logic.
    */
+  private async findExistingIdentityId(
+    id: string,
+    phoneNumber: string | null,
+    lid: string | null
+  ): Promise<number | null> {
+    if (phoneNumber) {
+      if (this.cache.hasIdentityId(phoneNumber)) {
+        return this.cache.getIdentityId(phoneNumber)!
+      }
+      const existingById = await this.identityRepository.findIdentityByPhoneNumber(phoneNumber)
+      if (existingById) {
+        this.cache.setIdentityId(phoneNumber, existingById.id)
+        return existingById.id
+      }
+    }
+
+    if (lid || id.endsWith('@lid')) {
+      const searchLid = lid || id
+      if (this.cache.hasIdentityId(searchLid)) {
+        return this.cache.getIdentityId(searchLid)!
+      }
+      const existingByAlias = await this.aliasRepository.findIdentityAlias(searchLid)
+      if (existingByAlias) {
+        this.cache.setIdentityId(searchLid, existingByAlias.identityId)
+        return existingByAlias.identityId
+      }
+    }
+
+    if (this.cache.hasIdentityId(id)) {
+      return this.cache.getIdentityId(id)!
+    }
+    const existingByAlias = await this.aliasRepository.findIdentityAlias(id)
+    if (existingByAlias) {
+      this.cache.setIdentityId(id, existingByAlias.identityId)
+      return existingByAlias.identityId
+    }
+
+    if (phoneNumber) {
+      const lidMapEntry = await this.lidMapRepository.findLidMap(phoneNumber)
+      if (lidMapEntry) {
+        const lidAlias = await this.aliasRepository.findIdentityAlias(lidMapEntry.lid)
+        if (lidAlias) {
+          this.cache.setIdentityId(phoneNumber, lidAlias.identityId)
+          return lidAlias.identityId
+        }
+      }
+    }
+
+    return null
+  }
+
+  private async createOrUpdateIdentity(
+    identityId: number | null,
+    id: string,
+    phoneNumber: string | null,
+    lid: string | null,
+    newName: string | null | undefined,
+    newNotify: string | null | undefined,
+    newVerifiedName: string | null | undefined,
+    options: { overwriteName?: boolean }
+  ): Promise<number> {
+    if (!identityId) {
+      const newIdentity = await this.identityRepository.createIdentity({
+        phoneNumber,
+        displayName: newName,
+        pushName: newNotify,
+        verifiedName: newVerifiedName
+      })
+      const newId = newIdentity.id
+      if (phoneNumber) this.cache.setIdentityId(phoneNumber, newId)
+      this.cache.setIdentityId(id, newId)
+      if (lid) this.cache.setIdentityId(lid, newId)
+      return newId
+    }
+
+    const updateData: {
+      phoneNumber?: string
+      pushName?: string | null
+      verifiedName?: string | null
+      displayName?: string | null
+    } = {}
+    if (phoneNumber) updateData.phoneNumber = phoneNumber
+    if (newNotify !== undefined) updateData.pushName = newNotify
+    if (newVerifiedName !== undefined) updateData.verifiedName = newVerifiedName
+    if (newName !== undefined && options.overwriteName) {
+      updateData.displayName = newName
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await this.identityRepository.updateIdentity(identityId, updateData)
+    }
+    return identityId
+  }
+
+  /**
+   * Handles contacts.upsert and contacts.update logic.
+   */
   async upsertContact(
     contact: {
       id: string
@@ -118,98 +215,21 @@ export class ContactService implements IContactService {
     const newNotify = contact.notify ?? contact.pushName
     const newVerifiedName = contact.verifiedName
 
-    // 1. Identify or Create the Canonical Identity
-    let identityId: number | null = null
+    const existingId = await this.findExistingIdentityId(id, phoneNumber, lid)
+    const identityId = await this.createOrUpdateIdentity(
+      existingId,
+      id,
+      phoneNumber,
+      lid,
+      newName,
+      newNotify,
+      newVerifiedName,
+      options
+    )
 
-    // Look for existing identity by phone number
-    if (phoneNumber) {
-      if (this.cache.hasIdentityId(phoneNumber)) {
-        identityId = this.cache.getIdentityId(phoneNumber)!
-      } else {
-        const existingById = await this.identityRepository.findIdentityByPhoneNumber(phoneNumber)
-        if (existingById) {
-          identityId = existingById.id
-          this.cache.setIdentityId(phoneNumber, identityId)
-        }
-      }
-    }
-
-    // Look for existing identity by LID alias if not found by PN
-    if (!identityId && (lid || id.endsWith('@lid'))) {
-      const searchLid = lid || id
-      if (this.cache.hasIdentityId(searchLid)) {
-        identityId = this.cache.getIdentityId(searchLid)!
-      } else {
-        const existingByAlias = await this.aliasRepository.findIdentityAlias(searchLid)
-        if (existingByAlias) {
-          identityId = existingByAlias.identityId
-          this.cache.setIdentityId(searchLid, identityId)
-        }
-      }
-    }
-
-    // Still not found? Look for existing identity by the JID alias itself
-    if (!identityId) {
-      if (this.cache.hasIdentityId(id)) {
-        identityId = this.cache.getIdentityId(id)!
-      } else {
-        const existingByAlias = await this.aliasRepository.findIdentityAlias(id)
-        if (existingByAlias) {
-          identityId = existingByAlias.identityId
-          this.cache.setIdentityId(id, identityId)
-        }
-      }
-    }
-
-    // 4. Check LidMap: if this is a PN JID, a LID stub may already exist for this number.
-    //    Reuse that stub instead of creating a duplicate PN identity.
-    if (!identityId && phoneNumber) {
-      const lidMapEntry = await this.lidMapRepository.findLidMap(phoneNumber)
-      if (lidMapEntry) {
-        const lidAlias = await this.aliasRepository.findIdentityAlias(lidMapEntry.lid)
-        if (lidAlias) {
-          identityId = lidAlias.identityId
-          this.cache.setIdentityId(phoneNumber, identityId)
-        }
-      }
-    }
-
-    // Create the Identity if it doesn't exist
-    if (!identityId) {
-      const newIdentity = await this.identityRepository.createIdentity({
-        phoneNumber: phoneNumber,
-        displayName: newName,
-        pushName: newNotify,
-        verifiedName: newVerifiedName
-      })
-      identityId = newIdentity.id
-      if (phoneNumber) this.cache.setIdentityId(phoneNumber, identityId)
-      this.cache.setIdentityId(id, identityId)
-      if (lid) this.cache.setIdentityId(lid, identityId)
-    } else {
-      // Update existing identity
-      const updateData: {
-        phoneNumber?: string
-        pushName?: string | null
-        verifiedName?: string | null
-        displayName?: string | null
-      } = {}
-      if (phoneNumber) updateData.phoneNumber = phoneNumber // Ensure PN is attached if we just discovered it
-      if (newNotify !== undefined) updateData.pushName = newNotify
-      if (newVerifiedName !== undefined) updateData.verifiedName = newVerifiedName
-      if (newName !== undefined && options.overwriteName) {
-        updateData.displayName = newName
-      }
-
-      if (Object.keys(updateData).length > 0) {
-        await this.identityRepository.updateIdentity(identityId, updateData)
-      }
-    }
-
-    // 2. Ensure Aliases are created and pointing to the correct identity
     const ensureAlias = async (jid: string, type: string) => {
-      await this.aliasRepository.upsertIdentityAlias(jid, type, identityId as number)
-      this.cache.setIdentityId(jid, identityId as number)
+      await this.aliasRepository.upsertIdentityAlias(jid, type, identityId)
+      this.cache.setIdentityId(jid, identityId)
     }
 
     const matchedStrategy = this.strategies.find(s => s.supports(id))
@@ -217,7 +237,6 @@ export class ContactService implements IContactService {
       await ensureAlias(id, matchedStrategy.aliasType)
     }
 
-    // If payload contains a LID, ensure that alias is created too
     if (lid) {
       await ensureAlias(lid, 'LID')
     }
@@ -334,6 +353,20 @@ export class ContactService implements IContactService {
     return cleaned;
   }
 
+  private async findMeIdentityId(myJid: string, myLid: string | null): Promise<number | null> {
+    const existingJidAlias = await this.aliasRepository.findIdentityAlias(myJid)
+    if (existingJidAlias) {
+      return existingJidAlias.identityId
+    }
+    if (myLid) {
+      const existingLidAlias = await this.aliasRepository.findIdentityAlias(myLid)
+      if (existingLidAlias) {
+        return existingLidAlias.identityId
+      }
+    }
+    return null
+  }
+
   /**
    * Registers/updates the logged-in user's identity as `isMe: true`.
    */
@@ -347,22 +380,8 @@ export class ContactService implements IContactService {
 
     console.log(`[ContactService] Registering logged-in user: jid=${myJid}, lid=${myLid}, name=${name}`);
 
-    let identityId: number | null = null;
+    let identityId = await this.findMeIdentityId(myJid, myLid)
 
-    // 1. Try to find existing identity alias
-    const existingJidAlias = await this.aliasRepository.findIdentityAlias(myJid)
-    if (existingJidAlias) {
-      identityId = existingJidAlias.identityId;
-    }
-
-    if (!identityId && myLid) {
-      const existingLidAlias = await this.aliasRepository.findIdentityAlias(myLid)
-      if (existingLidAlias) {
-        identityId = existingLidAlias.identityId;
-      }
-    }
-
-    // 2. Upsert the Identity row with isMe = true
     if (!identityId) {
       const newIdentity = await this.identityRepository.createIdentity({
         phoneNumber: myJid,
@@ -377,7 +396,6 @@ export class ContactService implements IContactService {
       });
     }
 
-    // 3. Ensure aliases are pointing to the isMe identity
     await this.aliasRepository.upsertIdentityAlias(myJid, 'PN', identityId)
 
     if (myLid) {

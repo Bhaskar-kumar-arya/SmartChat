@@ -33,71 +33,82 @@ interface SchemaDescriptions {
   columns: Record<string, string>;
 }
 
-function parsePrismaDocComments(): Record<string, SchemaDescriptions> {
-  // Walk up from __dirname to find prisma/schema.prisma (works in dev & prod)
+interface ParserState {
+  pendingDoc: string | undefined;
+  currentModel: string | undefined;
+  result: Record<string, SchemaDescriptions>;
+}
+
+function findSchemaPath(): string | undefined {
   const candidates = [
     path.resolve(__dirname, '../../../prisma/schema.prisma'),  // dev: src/main/tools → root
     path.resolve(__dirname, '../../prisma/schema.prisma'),
     path.resolve(__dirname, '../prisma/schema.prisma'),
     path.resolve(process.cwd(), 'prisma/schema.prisma'),
   ];
+  return candidates.find(p => fs.existsSync(p));
+}
 
-  const schemaPath = candidates.find(p => fs.existsSync(p));
+function processSchemaLine(line: string, state: ParserState): void {
+  // Accumulate /// doc comment
+  if (line.startsWith('///')) {
+    const doc = line.replace(/^\/\/\/\s*/, '').trim();
+    state.pendingDoc = state.pendingDoc ? `${state.pendingDoc}\n${doc}` : doc;
+    return;
+  }
+
+  // model Foo {
+  const modelMatch = line.match(/^model\s+(\w+)\s*\{/);
+  if (modelMatch) {
+    state.currentModel = modelMatch[1];
+    state.result[state.currentModel] ??= { columns: {} };
+    if (state.pendingDoc) state.result[state.currentModel].description = state.pendingDoc;
+    state.pendingDoc = undefined;
+    return;
+  }
+
+  // Closing brace — leave model scope
+  if (line === '}') {
+    state.currentModel = undefined;
+    state.pendingDoc = undefined;
+    return;
+  }
+
+  // Field line inside a model (e.g. `jid String @id`)
+  if (state.currentModel && state.pendingDoc) {
+    // Field names are plain identifiers; skip Prisma directives (@@id, @@index …)
+    const fieldMatch = line.match(/^([a-zA-Z_]\w*)\s/);
+    if (fieldMatch) {
+      state.result[state.currentModel].columns[fieldMatch[1]] = state.pendingDoc;
+    }
+  }
+
+  // Any non-doc, non-empty line clears the pending comment
+  if (line && !line.startsWith('//')) state.pendingDoc = undefined;
+}
+
+function parsePrismaDocComments(): Record<string, SchemaDescriptions> {
+  const schemaPath = findSchemaPath();
   if (!schemaPath) {
     console.warn('[QueryDatabaseTool] Could not locate schema.prisma — descriptions will be omitted.');
     return {};
   }
 
   const lines = fs.readFileSync(schemaPath, 'utf-8').split('\n');
-  const result: Record<string, SchemaDescriptions> = {};
-
-  let pendingDoc: string | undefined;
-  let currentModel: string | undefined;
+  const state: ParserState = {
+    pendingDoc: undefined,
+    currentModel: undefined,
+    result: {}
+  };
 
   for (const raw of lines) {
-    const line = raw.trim();
-
-    // Accumulate /// doc comment
-    if (line.startsWith('///')) {
-      const doc = line.replace(/^\/\/\/\s*/, '').trim();
-      pendingDoc = pendingDoc ? `${pendingDoc}\n${doc}` : doc;
-      continue;
-    }
-
-    // model Foo {
-    const modelMatch = line.match(/^model\s+(\w+)\s*\{/);
-    if (modelMatch) {
-      currentModel = modelMatch[1];
-      result[currentModel] ??= { columns: {} };
-      if (pendingDoc) result[currentModel].description = pendingDoc;
-      pendingDoc = undefined;
-      continue;
-    }
-
-    // Closing brace — leave model scope
-    if (line === '}') {
-      currentModel = undefined;
-      pendingDoc = undefined;
-      continue;
-    }
-
-    // Field line inside a model (e.g. `jid String @id`)
-    if (currentModel && pendingDoc) {
-      // Field names are plain identifiers; skip Prisma directives (@@id, @@index …)
-      const fieldMatch = line.match(/^([a-zA-Z_]\w*)\s/);
-      if (fieldMatch) {
-        result[currentModel].columns[fieldMatch[1]] = pendingDoc;
-      }
-    }
-
-    // Any non-doc, non-empty line clears the pending comment
-    if (line && !line.startsWith('//')) pendingDoc = undefined;
+    processSchemaLine(raw.trim(), state);
   }
 
   console.log(
-    `[QueryDatabaseTool] Parsed /// docs from schema.prisma: ${Object.keys(result).length} models.`
+    `[QueryDatabaseTool] Parsed /// docs from schema.prisma: ${Object.keys(state.result).length} models.`
   );
-  return result;
+  return state.result;
 }
 
 const BASE_DESCRIPTION = `Execute a read-only SQL SELECT query against the local SQLite database.
@@ -183,6 +194,34 @@ export class QueryDatabaseTool implements AITool {
 
   // ── Schema Introspection ───────────────────────────────────────────────────────
 
+  private async introspectTable(
+    tableName: string,
+    prismaDoc: Record<string, SchemaDescriptions>
+  ): Promise<string> {
+    const columns = await prisma.$queryRawUnsafe<ColumnInfo[]>(
+      `PRAGMA table_info(${JSON.stringify(tableName)})`
+    );
+
+    // Look up parsed /// docs for this model (Prisma model names match table names)
+    const modelDoc = prismaDoc[tableName];
+    const colDocs  = modelDoc?.columns ?? {};
+
+    const colDefs = columns.map(col => {
+      const parts = [col.name, col.type.toUpperCase() || 'TEXT'];
+      if (col.pk) parts.push('PK');
+      if (col.notnull && !col.pk) parts.push('NOT NULL');
+      const desc = colDocs[col.name];
+      if (desc) parts.push(`-- ${desc}`);
+      return parts.join(' ');
+    });
+
+    const tableHeader = modelDoc?.description
+      ? `  ${tableName}  -- ${modelDoc.description}`
+      : `  ${tableName}`;
+
+    return `${tableHeader}\n    (${colDefs.join(',\n     ')})`;
+  }
+
   private async introspectSchema(prismaDoc: Record<string, SchemaDescriptions>): Promise<string> {
     // 1. Fetch all user-facing tables from sqlite_master
     const tables = await prisma.$queryRawUnsafe<{ name: string }[]>(
@@ -196,34 +235,11 @@ export class QueryDatabaseTool implements AITool {
 
     if (tables.length === 0) return 'DATABASE SCHEMA: (no tables found)';
 
-    // 2. For each table, fetch column info via PRAGMA and merge /// docs
     const tableLines: string[] = [];
-
     for (const { name } of tables) {
       if (EXCLUDED_TABLE_PREFIXES.some(prefix => name.toLowerCase().startsWith(prefix))) continue;
-
-      const columns = await prisma.$queryRawUnsafe<ColumnInfo[]>(
-        `PRAGMA table_info(${JSON.stringify(name)})`
-      );
-
-      // Look up parsed /// docs for this model (Prisma model names match table names)
-      const modelDoc = prismaDoc[name];
-      const colDocs  = modelDoc?.columns ?? {};
-
-      const colDefs = columns.map(col => {
-        const parts = [col.name, col.type.toUpperCase() || 'TEXT'];
-        if (col.pk) parts.push('PK');
-        if (col.notnull && !col.pk) parts.push('NOT NULL');
-        const desc = colDocs[col.name];
-        if (desc) parts.push(`-- ${desc}`);
-        return parts.join(' ');
-      });
-
-      const tableHeader = modelDoc?.description
-        ? `  ${name}  -- ${modelDoc.description}`
-        : `  ${name}`;
-
-      tableLines.push(`${tableHeader}\n    (${colDefs.join(',\n     ')})`);
+      const tableBlock = await this.introspectTable(name, prismaDoc);
+      tableLines.push(tableBlock);
     }
 
     return `DATABASE SCHEMA (live, auto-introspected from schema.prisma):\n${tableLines.join('\n')}`;

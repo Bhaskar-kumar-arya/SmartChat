@@ -426,7 +426,7 @@ FORMATTING BEHAVIOR:
   }
 
   // ── Helper Resolvers ────────────────────────────────────────────────────────
-  private async resolveNamesAndChats(messages: Message[]) {
+  private collectUniqueJids(messages: Message[]): Set<string> {
     const uniqueJids = new Set<string>();
     for (const m of messages) {
       if (m.chatJid) uniqueJids.add(m.chatJid);
@@ -445,7 +445,10 @@ FORMATTING BEHAVIOR:
         }
       }
     }
+    return uniqueJids;
+  }
 
+  private async buildNameMap(uniqueJids: Set<string>): Promise<Map<string, string>> {
     const nameMap = new Map<string, string>();
 
     // Pre-populate Me aliases
@@ -469,10 +472,16 @@ FORMATTING BEHAVIOR:
         }
       }
     }
+    return nameMap;
+  }
 
+  private async buildChatInfoMap(
+    uniqueJids: Set<string>,
+    nameMap: Map<string, string>
+  ): Promise<Map<string, { name: string; type: string }>> {
     const chats = await this.chatRepository.findChatsByJids(Array.from(uniqueJids));
-
     const chatInfoMap = new Map<string, { name: string; type: string }>();
+
     for (const c of chats) {
       let name = c.name || '';
       if (c.type === CHAT_TYPE_DM) {
@@ -482,7 +491,13 @@ FORMATTING BEHAVIOR:
       }
       chatInfoMap.set(c.jid, { name, type: c.type });
     }
+    return chatInfoMap;
+  }
 
+  private async resolveNamesAndChats(messages: Message[]) {
+    const uniqueJids = this.collectUniqueJids(messages);
+    const nameMap = await this.buildNameMap(uniqueJids);
+    const chatInfoMap = await this.buildChatInfoMap(uniqueJids, nameMap);
     return { nameMap, chatInfoMap };
   }
 

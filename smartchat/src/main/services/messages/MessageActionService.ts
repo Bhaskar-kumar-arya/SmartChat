@@ -19,8 +19,20 @@ import { stickerMetadataService } from './StickerMetadataService'
 import { getMediaSendOptions } from './MediaHelper'
 import { LocalFileStorage } from '../storage/LocalFileStorage'
 import { IMessageActionService, IMessageActionSocket } from './IMessageActionService'
+import { ProcessedMessage } from '../../domain/db.types'
 
 
+const JID_SUFFIX_GROUP = '@g.us'
+const JID_SUFFIX_LID = '@lid'
+const APP_FAVOURITES_PREFIX = 'app://favourites/'
+const APP_MEDIA_PREFIX = 'app://media/'
+
+/**
+ * Service for orchestrating message action workflows (delete, edit, forward, react, send).
+ *
+ * Error handling contract:
+ * - Methods throw Error on any logical, network, or validation failures.
+ */
 export class MessageActionService implements IMessageActionService {
   private readonly fileStorage: LocalFileStorage
 
@@ -60,7 +72,7 @@ export class MessageActionService implements IMessageActionService {
       remoteJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe,
       id: messageId,
-      participant: dbMsg.chatJid.endsWith('@g.us') ? (dbMsg.participant || undefined) : undefined
+      participant: dbMsg.chatJid.endsWith(JID_SUFFIX_GROUP) ? (dbMsg.participant || undefined) : undefined
     };
 
     await sock.sendMessage(resolvedJid, { delete: msgKey });
@@ -82,6 +94,24 @@ export class MessageActionService implements IMessageActionService {
     };
   }
 
+  private getUpdatedEditContent(contentJson: string, newText: string): string {
+    const updatedContent = JSON.parse(contentJson || '{}');
+    if (updatedContent.conversation !== undefined) {
+      updatedContent.conversation = newText;
+    } else if (updatedContent.extendedTextMessage) {
+      updatedContent.extendedTextMessage.text = newText;
+    } else if (updatedContent.imageMessage) {
+      updatedContent.imageMessage.caption = newText;
+    } else if (updatedContent.videoMessage) {
+      updatedContent.videoMessage.caption = newText;
+    } else if (updatedContent.documentMessage) {
+      updatedContent.documentMessage.caption = newText;
+    } else {
+      updatedContent.conversation = newText;
+    }
+    return JSON.stringify(updatedContent);
+  }
+
   /**
    * Edits the text content of a message.
    */
@@ -101,7 +131,7 @@ export class MessageActionService implements IMessageActionService {
       remoteJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe,
       id: messageId,
-      participant: dbMsg.chatJid.endsWith('@g.us') ? (dbMsg.participant || undefined) : undefined
+      participant: dbMsg.chatJid.endsWith(JID_SUFFIX_GROUP) ? (dbMsg.participant || undefined) : undefined
     };
 
     const result = await sock.sendMessage(resolvedJid, {
@@ -111,23 +141,10 @@ export class MessageActionService implements IMessageActionService {
 
     if (!result) throw new Error('Failed to edit message via WhatsApp socket');
 
-    const updatedContent = JSON.parse(dbMsg.content || '{}');
-    if (updatedContent.conversation !== undefined) {
-      updatedContent.conversation = newText;
-    } else if (updatedContent.extendedTextMessage) {
-      updatedContent.extendedTextMessage.text = newText;
-    } else if (updatedContent.imageMessage) {
-      updatedContent.imageMessage.caption = newText;
-    } else if (updatedContent.videoMessage) {
-      updatedContent.videoMessage.caption = newText;
-    } else if (updatedContent.documentMessage) {
-      updatedContent.documentMessage.caption = newText;
-    } else {
-      updatedContent.conversation = newText;
-    }
+    const updatedContentJson = this.getUpdatedEditContent(dbMsg.content || '{}', newText);
 
     const updated = await this.messageRepository.updateAndFetchMessageWithSender(
-      messageId, newText, JSON.stringify(updatedContent)
+      messageId, newText, updatedContentJson
     )
     if (!updated) throw new Error('Failed to fetch updated message after edit')
 
@@ -138,13 +155,65 @@ export class MessageActionService implements IMessageActionService {
       messageId,
       chatJid: enriched.chatJid,
       editedTextContent: newText,
-      editedContent: updatedContent as WAMessageContent,
+      editedContent: JSON.parse(updatedContentJson) as WAMessageContent,
       sock
     }).catch((err) => {
       console.error('[MessageActionService] Failed to emit message:edited event:', err)
     });
 
     return enriched;
+  }
+
+  private async forwardToDestination(
+    sock: IMessageActionSocket,
+    messageId: string,
+    waMessage: any,
+    destJid: string
+  ): Promise<{ jid: string; messageId: string }> {
+    const resolvedDest = await this.contactService.resolveLidFromJid(destJid);
+    const sentMsg = await sock.sendMessage(resolvedDest, { forward: waMessage });
+    if (!sentMsg) {
+      throw new Error(`Failed to forward message ${messageId} to ${resolvedDest}`);
+    }
+
+    const processed = await this.messageProcessingService.processMessage(sentMsg, sock);
+    if (!processed || 'type' in processed) {
+      throw new Error('Failed to process forwarded message');
+    }
+    await this.chatService.updateTimestamp(resolvedDest, processed.timestamp);
+
+    const nameMap = await this.contactService.batchResolveNames(
+      [processed.participant || resolvedDest],
+      sock
+    );
+    const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap);
+    this.getBus()?.emit('message:incoming', {
+      chatJid: enriched.chatJid,
+      senderJid: cleanJid(enriched.participant || enriched.chatJid),
+      messageType: enriched.messageType,
+      textContent: processed.textContent,
+      fromMe: enriched.fromMe,
+      timestamp: BigInt(enriched.timestamp),
+      processed: processed,
+      sock
+    }).catch((err) => {
+      console.error('[MessageActionService] Failed to emit message:incoming event:', err);
+    });
+
+    return {
+      jid: resolvedDest,
+      messageId: processed.id
+    };
+  }
+
+  private getForwardDestinations(targetJids: string[], jid?: string): string[] {
+    if (targetJids && Array.isArray(targetJids) && targetJids.length > 0) {
+      return targetJids;
+    }
+    if (jid) {
+      return [jid];
+    }
+    throw new Error('Missing destination for forwarding: targetJids or jid must be specified');
   }
 
   /**
@@ -169,52 +238,11 @@ export class MessageActionService implements IMessageActionService {
       messageTimestamp: Number(dbMsg.timestamp)
     };
 
-    let destinations: string[] = [];
-    if (targetJids && Array.isArray(targetJids) && targetJids.length > 0) {
-      destinations = targetJids;
-    } else if (jid) {
-      destinations = [jid];
-    } else {
-      throw new Error('Missing destination for forwarding: targetJids or jid must be specified');
-    }
-
+    const destinations = this.getForwardDestinations(targetJids, jid);
     const results: { jid: string; messageId: string }[] = [];
     for (const destJid of destinations) {
-      const resolvedDest = await this.contactService.resolveLidFromJid(destJid);
-
-      const sentMsg = await sock.sendMessage(resolvedDest, { forward: waMessage });
-      if (!sentMsg) {
-        throw new Error(`Failed to forward message ${messageId} to ${resolvedDest}`);
-      }
-
-      const processed = await this.messageProcessingService.processMessage(sentMsg, sock);
-      if (!processed || 'type' in processed) {
-        throw new Error('Failed to process forwarded message');
-      }
-      await this.chatService.updateTimestamp(resolvedDest, processed.timestamp);
-
-      const nameMap = await this.contactService.batchResolveNames(
-        [processed.participant || resolvedDest],
-        sock
-      );
-      const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap);
-      this.getBus()?.emit('message:incoming', {
-        chatJid: enriched.chatJid,
-        senderJid: cleanJid(enriched.participant || enriched.chatJid),
-        messageType: enriched.messageType,
-        textContent: processed.textContent,
-        fromMe: enriched.fromMe,
-        timestamp: BigInt(enriched.timestamp),
-        processed: processed,
-        sock
-      }).catch((err) => {
-        console.error('[MessageActionService] Failed to emit message:incoming event:', err)
-      });
-
-      results.push({
-        jid: resolvedDest,
-        messageId: processed.id
-      });
+      const res = await this.forwardToDestination(sock, messageId, waMessage, destJid);
+      results.push(res);
     }
 
     return {
@@ -222,6 +250,34 @@ export class MessageActionService implements IMessageActionService {
       detail: `Message ${messageId} successfully forwarded to ${destinations.length} destination(s)`,
       results
     };
+  }
+
+  private async resolveReactorId(sock: IMessageActionSocket): Promise<number> {
+    const meIdent = await this.identityRepository.findMeIdentity();
+    if (meIdent) return meIdent.id;
+
+    const myRawJid = sock?.user?.id;
+    const myJidClean = myRawJid ? myRawJid.split(':')[0] : null;
+    if (myJidClean) {
+      const reactorId = await this.contactService.getIdentityIdByJid(myJidClean);
+      if (reactorId) return reactorId;
+
+      const myLid = (sock?.user as unknown as { lid?: string })?.lid?.split(':')[0];
+      if (myLid) {
+        const reactorIdByLid = await this.contactService.getIdentityIdByJid(myLid);
+        if (reactorIdByLid) return reactorIdByLid;
+      }
+    }
+    throw new Error('Failed to resolve logged-in user identity to record the reaction');
+  }
+
+  private async updateReactionDb(messageId: string, reactorId: number, reaction: string): Promise<void> {
+    const timestamp = BigInt(Math.floor(Date.now() / 1000));
+    if (!reaction) {
+      await this.reactionRepository.deleteReactions(messageId, reactorId);
+    } else {
+      await this.reactionRepository.upsertReaction(messageId, reactorId, reaction, timestamp);
+    }
   }
 
   /**
@@ -243,7 +299,7 @@ export class MessageActionService implements IMessageActionService {
       remoteJid: dbMsg.chatJid,
       fromMe: dbMsg.fromMe,
       id: messageId,
-      participant: dbMsg.chatJid.endsWith('@g.us') ? (dbMsg.participant || undefined) : undefined
+      participant: dbMsg.chatJid.endsWith(JID_SUFFIX_GROUP) ? (dbMsg.participant || undefined) : undefined
     };
 
     // Send the reaction message via WhatsApp
@@ -256,40 +312,8 @@ export class MessageActionService implements IMessageActionService {
 
     if (!result) throw new Error('Failed to send reaction via WhatsApp socket');
 
-    // Update the database Reaction table
-    // 1. Resolve our own identity ID
-    let reactorId: number | null = null;
-    const meIdent = await this.identityRepository.findMeIdentity();
-    if (meIdent) {
-      reactorId = meIdent.id;
-    } else {
-      const myRawJid = sock?.user?.id;
-      const myJidClean = myRawJid ? myRawJid.split(':')[0] : null;
-      if (myJidClean) {
-        reactorId = await this.contactService.getIdentityIdByJid(myJidClean);
-        if (!reactorId) {
-          const myLid = (sock?.user as unknown as { lid?: string })?.lid?.split(':')[0];
-          if (myLid) reactorId = await this.contactService.getIdentityIdByJid(myLid);
-        }
-      }
-    }
-
-    if (!reactorId) {
-      throw new Error('Failed to resolve logged-in user identity to record the reaction');
-    }
-
-    const timestamp = BigInt(Math.floor(Date.now() / 1000));
-
-    if (!reaction) {
-      // Remove reaction
-      await this.reactionRepository.deleteReactions(messageId, reactorId);
-    } else {
-      // Upsert reaction
-      await this.reactionRepository
-        .upsertReaction(messageId, reactorId, reaction, timestamp);
-    }
-
-    // Reactions are fully handled by ReceiptSubscriber via the reaction:update bus event.
+    const reactorId = await this.resolveReactorId(sock);
+    await this.updateReactionDb(messageId, reactorId, reaction);
 
     return {
       success: true,
@@ -299,6 +323,44 @@ export class MessageActionService implements IMessageActionService {
       messageId,
       reaction
     };
+  }
+
+  private async buildQuotedContextInfo(
+    quotedMsgId: string,
+    targetJid: string,
+    sock: IMessageActionSocket
+  ): Promise<WAContextInfo | undefined> {
+    const qm = await this.messageQueryRepository.findMessageById(quotedMsgId)
+    if (!qm || !qm.content) return undefined
+
+    try { 
+      const rawQuoted = JSON.parse(qm.content)
+      const msgType = Object.keys(rawQuoted)[0]
+      if (msgType && rawQuoted[msgType] && typeof rawQuoted[msgType] === 'object') {
+        delete rawQuoted[msgType].contextInfo
+      }
+      const quotedMessage = parseProtoMessage(rawQuoted)
+
+      let participant = qm.participant ? cleanJid(qm.participant) : undefined
+      if (qm.fromMe) {
+        participant = targetJid.endsWith(JID_SUFFIX_LID) && sock.user?.lid 
+          ? cleanJid(sock.user.lid) 
+          : (sock.user?.id ? cleanJid(sock.user.id) : undefined)
+      } else if (!targetJid.endsWith(JID_SUFFIX_GROUP)) {
+        participant = targetJid
+      }
+
+      if (participant) {
+        return {
+          stanzaId: quotedMsgId,
+          participant: cleanJid(participant),
+          quotedMessage
+        }
+      }
+    } catch (e) {
+      console.error('[buildQuotedContextInfo] Failed to construct contextInfo:', e)
+    }
+    return undefined
   }
 
   /**
@@ -312,40 +374,7 @@ export class MessageActionService implements IMessageActionService {
     mentions?: string[]
   ): Promise<EnrichedMessage> {
     const targetJid = await this.contactService.resolveLidFromJid(jid)
-
-    let contextInfo: WAContextInfo | undefined = undefined
-    if (quotedMsgId) {
-      const qm = await this.messageQueryRepository.findMessageById(quotedMsgId)
-      if (qm && qm.content) {
-        try { 
-          const rawQuoted = JSON.parse(qm.content)
-          const msgType = Object.keys(rawQuoted)[0]
-          if (msgType && rawQuoted[msgType] && typeof rawQuoted[msgType] === 'object') {
-            delete rawQuoted[msgType].contextInfo
-          }
-          const quotedMessage = parseProtoMessage(rawQuoted)
-
-          let participant = qm.participant ? cleanJid(qm.participant) : undefined
-          if (qm.fromMe) {
-            participant = targetJid.endsWith('@lid') && sock.user?.lid 
-              ? cleanJid(sock.user.lid) 
-              : (sock.user?.id ? cleanJid(sock.user.id) : undefined)
-          } else if (!targetJid.endsWith('@g.us')) {
-            participant = targetJid
-          }
-
-          if (participant) {
-            contextInfo = {
-              stanzaId: quotedMsgId,
-              participant: cleanJid(participant),
-              quotedMessage
-            }
-          }
-        } catch (e) {
-          console.error('[sendMessageWorkflow] Failed to construct contextInfo:', e)
-        }
-      }
-    }
+    const contextInfo = quotedMsgId ? await this.buildQuotedContextInfo(quotedMsgId, targetJid, sock) : undefined
 
     const messageContent: Extract<AnyMessageContent, { text: string }> = { text }
     if (mentions && mentions.length > 0) messageContent.mentions = mentions
@@ -377,6 +406,40 @@ export class MessageActionService implements IMessageActionService {
     return enriched
   }
 
+  private async cacheSentMediaFile(processed: ProcessedMessage, finalPathToSend: string): Promise<void> {
+    const parsedContent = JSON.parse(processed.content)
+    const unwrapped = unwrapMessage(parsedContent)
+    const mediaType = 
+      unwrapped.imageMessage ? 'image' :
+      unwrapped.stickerMessage ? 'sticker' :
+      unwrapped.videoMessage ? 'video' :
+      unwrapped.documentMessage ? 'document' :
+      unwrapped.audioMessage ? 'audio' : null
+
+    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
+
+    if (mediaType && mediaMsg) {
+      try {
+        const mediaDir = this.fileStorage.getMediaDir()
+        this.fileStorage.ensureDir(mediaDir)
+
+        const fileName = this.messageParserService.getSafeMediaFileName(processed.id, mediaType, mediaMsg)
+        const cachedFilePath = join(mediaDir, fileName)
+
+        this.fileStorage.copyFile(finalPathToSend, cachedFilePath)
+
+        ;(mediaMsg as MediaMessageWithLocalUri).localURI = `${APP_MEDIA_PREFIX}${fileName}`
+
+        const updatedContent = JSON.stringify(parsedContent)
+        await this.messageRepository.updateMessageContent(processed.id, updatedContent)
+
+        processed.content = updatedContent
+      } catch (err: unknown) {
+        console.error('[MessageActionService] Failed to cache sent media file:', err)
+      }
+    }
+  }
+
   /**
    * Orchestrates the complete media message sending workflow, including loading files, options extraction, sending, database logs, and UI updates.
    */
@@ -389,42 +452,9 @@ export class MessageActionService implements IMessageActionService {
     mentions?: string[]
   ): Promise<EnrichedMessage> {
     const targetJid = await this.contactService.resolveLidFromJid(jid)
+    const contextInfo = quotedMsgId ? await this.buildQuotedContextInfo(quotedMsgId, targetJid, sock) : undefined
 
-    let contextInfo: WAContextInfo | undefined = undefined
-    if (quotedMsgId) {
-        const qm = await this.messageQueryRepository.findMessageById(quotedMsgId)
-        if (qm && qm.content) {
-          try { 
-            const rawQuoted = JSON.parse(qm.content)
-            const msgType = Object.keys(rawQuoted)[0]
-            if (msgType && rawQuoted[msgType] && typeof rawQuoted[msgType] === 'object') {
-              delete rawQuoted[msgType].contextInfo
-            }
-            const quotedMessage = parseProtoMessage(rawQuoted)
-
-            let participant = qm.participant ? cleanJid(qm.participant) : undefined
-            if (qm.fromMe) {
-              participant = targetJid.endsWith('@lid') && sock.user?.lid 
-                ? cleanJid(sock.user.lid) 
-                : (sock.user?.id ? cleanJid(sock.user.id) : undefined)
-            } else if (!targetJid.endsWith('@g.us')) {
-              participant = targetJid
-            }
-
-            if (participant) {
-              contextInfo = {
-                stanzaId: quotedMsgId,
-                participant: cleanJid(participant),
-                quotedMessage
-              }
-            }
-          } catch (e) {
-            console.error('[sendMediaMessageWorkflow] Failed to construct contextInfo:', e)
-          }
-        }
-    }
-
-    const isAppUri = filePath.startsWith('app://favourites/') || filePath.startsWith('app://media/')
+    const isAppUri = filePath.startsWith(APP_FAVOURITES_PREFIX) || filePath.startsWith(APP_MEDIA_PREFIX)
     let finalPathToSend = isAppUri ? this.fileStorage.resolveMediaPath(filePath) : filePath
     const isAlreadyProcessed = isAppUri
 
@@ -456,37 +486,7 @@ export class MessageActionService implements IMessageActionService {
       throw new Error('Failed to process sent message')
     }
 
-    const parsedContent = JSON.parse(processed.content)
-    const unwrapped = unwrapMessage(parsedContent)
-    const mediaType = 
-      unwrapped.imageMessage ? 'image' :
-      unwrapped.stickerMessage ? 'sticker' :
-      unwrapped.videoMessage ? 'video' :
-      unwrapped.documentMessage ? 'document' :
-      unwrapped.audioMessage ? 'audio' : null
-
-    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
-
-    if (mediaType && mediaMsg) {
-      try {
-        const mediaDir = this.fileStorage.getMediaDir()
-        this.fileStorage.ensureDir(mediaDir)
-
-        const fileName = this.messageParserService.getSafeMediaFileName(processed.id, mediaType, mediaMsg)
-        const cachedFilePath = join(mediaDir, fileName)
-
-        this.fileStorage.copyFile(finalPathToSend, cachedFilePath)
-
-        ;(mediaMsg as MediaMessageWithLocalUri).localURI = `app://media/${fileName}`
-
-        const updatedContent = JSON.stringify(parsedContent)
-        await this.messageRepository.updateMessageContent(processed.id, updatedContent)
-
-        processed.content = updatedContent
-      } catch (err: unknown) {
-        console.error('[MessageActionService] Failed to cache sent media file:', err)
-      }
-    }
+    await this.cacheSentMediaFile(processed, finalPathToSend)
 
     if (isTempFile) this.fileStorage.deleteFile(finalPathToSend)
 

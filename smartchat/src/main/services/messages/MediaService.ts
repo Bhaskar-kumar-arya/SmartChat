@@ -223,10 +223,7 @@ export class MediaService implements IMediaService {
     return null
   }
 
-  async downloadFavoriteStickersFromSync(messages: Message[], sock: IMediaSocket | null): Promise<void> {
-    if (!sock) return
-
-    // 1. Gather all unique sticker SHA hashes and map them to their corresponding messages
+  private buildShaToMsgMap(messages: Message[]): Map<string, Message[]> {
     const shaToMsgMap = new Map<string, Message[]>()
     for (const msg of messages) {
       if (msg.messageType !== MSG_TYPE_STICKER) continue
@@ -246,22 +243,25 @@ export class MediaService implements IMediaService {
         console.error('[MediaService] Error checking sticker for sync auto-download:', err)
       }
     }
+    return shaToMsgMap
+  }
 
+  async downloadFavoriteStickersFromSync(messages: Message[], sock: IMediaSocket | null): Promise<void> {
+    if (!sock) return
+
+    const shaToMsgMap = this.buildShaToMsgMap(messages)
     if (shaToMsgMap.size === 0) return
 
-    // 2. Query all matching favorite stickers in a single DB query
     try {
       const favRecords = await this.favoriteStickerService.findFavoritesByHashes(
         Array.from(shaToMsgMap.keys())
       )
 
-      // 3. For each match, queue the download
       for (const fav of favRecords) {
         const msgs = shaToMsgMap.get(fav.fileSha256)
-        if (msgs) {
-          for (const msg of msgs) {
-            this.queueFavoriteStickerDownload(msg.id, sock)
-          }
+        if (!msgs) continue
+        for (const msg of msgs) {
+          this.queueFavoriteStickerDownload(msg.id, sock)
         }
       }
     } catch (err) {
@@ -278,6 +278,15 @@ export class MediaService implements IMediaService {
     } catch (err) {
       console.error('[MediaService] Failed during favorite sticker auto-copy check:', err)
     }
+  }
+
+  private prepareMediaDirectoryAndFileName(msgId: string, mediaType: MediaType, mediaMsg: Record<string, unknown>): { filePath: string; fileName: string } {
+    const mediaDir = join(app.getPath('userData'), DIR_NAME_MEDIA)
+    if (!fs.existsSync(mediaDir)) {
+      fs.mkdirSync(mediaDir, { recursive: true })
+    }
+    const fileName = this.messageParserService.getSafeMediaFileName(msgId, mediaType, mediaMsg)
+    return { filePath: join(mediaDir, fileName), fileName }
   }
 
   async downloadAndCacheMedia(msgId: string, sock: IMediaSocket | null): Promise<EnrichedMessage> {
@@ -298,31 +307,22 @@ export class MediaService implements IMediaService {
       mediaMsg.mediaKey = ensureBuffer(mediaMsg.mediaKey)
     }
 
-    const mediaDir = join(app.getPath('userData'), DIR_NAME_MEDIA)
-    if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
-
-    const fileName = this.messageParserService.getSafeMediaFileName(msgId, mediaType, mediaMsg)
-    const filePath = join(mediaDir, fileName)
+    const { filePath, fileName } = this.prepareMediaDirectoryAndFileName(msgId, mediaType, mediaMsg)
 
     if (!fs.existsSync(filePath)) {
       await this._downloadToFile(msgId, sock, dbMsg, rawMessage, mediaMsg, mediaType, filePath)
     }
 
-    // Self-healing: if this is a sticker and it matches a favorite sticker, copy it to favourites
     if (mediaType === MEDIA_TYPE_STICKER) {
       await this.handleStickerAutoCopy(mediaMsg, filePath)
     }
 
-    // Stamp the local URI back onto the resolved media message payload so the DB gets updated
     mediaMsg.localURI = `${MEDIA_PREFIX_APP}${fileName}`
 
     const updated = await this.messageRepository.updateContentAndFetchWithSender(msgId, JSON.stringify(rawMessage))
     if (!updated) throw new Error('[MediaService] Failed to fetch updated message after media content update')
 
-    const nameMap = await this.contactService.batchResolveNames(
-      [updated.participant || updated.chatJid],
-      sock
-    )
+    const nameMap = await this.contactService.batchResolveNames([updated.participant || updated.chatJid], sock)
     return this.messageService.enrichMessage(updated, sock, nameMap)
   }
 
@@ -377,6 +377,30 @@ export class MediaService implements IMediaService {
     }
   }
 
+  private buildUpdatePayload(rawMessage: unknown, mediaType: MediaType, mediaMsg: Record<string, unknown>, isTemplate: boolean): Record<string, unknown> {
+    const rawMessageObj = rawMessage as Record<string, unknown>
+    return isTemplate
+      ? { [`${mediaType}Message`]: mediaMsg }
+      : rawMessageObj
+  }
+
+  private extractUpdatedMetadata(updatedMsg: BaileysWebMessageInfo, isTemplate: boolean, mediaType: MediaType): { updatedMediaMsg: Record<string, unknown> | null; updatedMediaType: MediaType } {
+    let updatedMediaMsg: Record<string, unknown> | null = null
+    let updatedMediaType = mediaType
+
+    if (isTemplate) {
+      updatedMediaMsg = updatedMsg.message?.[`${mediaType}Message`] as Record<string, unknown> | undefined || null
+    } else {
+      const updatedUnwrapped = unwrapMessage(updatedMsg.message as Record<string, unknown>)
+      const updatedResolved = resolveMediaType(updatedUnwrapped)
+      if (updatedResolved) {
+        updatedMediaMsg = updatedResolved.mediaMsg
+        updatedMediaType = updatedResolved.mediaType
+      }
+    }
+    return { updatedMediaMsg, updatedMediaType }
+  }
+
   private async downloadRetryUpdate(
     msgId: string,
     sock: IMediaSocket,
@@ -398,9 +422,7 @@ export class MediaService implements IMediaService {
       // Synthesize a standard media message structure if the media is nested inside a templateMessage.
       const rawMessageObj = rawMessage as Record<string, unknown>
       const isTemplate = !!rawMessageObj.templateMessage
-      const updatePayload = isTemplate
-        ? { [`${mediaType}Message`]: mediaMsg }
-        : rawMessageObj
+      const updatePayload = this.buildUpdatePayload(rawMessage, mediaType, mediaMsg, isTemplate)
 
       if (!sock.updateMediaMessage) {
         throw new Error('[MediaService] updateMediaMessage is not supported by the current socket context')
@@ -419,19 +441,7 @@ export class MediaService implements IMediaService {
       } as any)) as BaileysWebMessageInfo
 
       // Extract the updated media metadata back
-      let updatedMediaMsg: Record<string, unknown> | null = null
-      let updatedMediaType = mediaType
-
-      if (isTemplate) {
-        updatedMediaMsg = updatedMsg.message?.[`${mediaType}Message`] as Record<string, unknown> | undefined || null
-      } else {
-        const updatedUnwrapped = unwrapMessage(updatedMsg.message as Record<string, unknown>)
-        const updatedResolved = resolveMediaType(updatedUnwrapped)
-        if (updatedResolved) {
-          updatedMediaMsg = updatedResolved.mediaMsg
-          updatedMediaType = updatedResolved.mediaType
-        }
-      }
+      const { updatedMediaMsg, updatedMediaType } = this.extractUpdatedMetadata(updatedMsg, isTemplate, mediaType)
 
       if (!updatedMediaMsg) {
         throw new Error('[MediaService] updateMediaMessage returned no downloadable media node')

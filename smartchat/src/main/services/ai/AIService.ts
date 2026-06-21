@@ -188,6 +188,64 @@ export class AIService implements IAIService {
     return allModelsLists.flat();
   }
 
+  private async prepareGenerationContext(
+    prompt: string,
+    contextFiles?: AIChatContext[],
+    history?: AIHistoryMessage[],
+    mentions?: AIMention[],
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string }
+  ): Promise<{
+    modelId: string
+    provider: IBaseAIProvider
+    fullPrompt: string
+    processedHistory: AIHistoryMessage[]
+    signal?: AbortSignal
+    userDetails?: UserDetails
+    systemPrompt: string
+  }> {
+    const modelId = this.normalizeModelId(options?.model || this.currentModelId);
+    const provider = this.getProviderForModel(modelId);
+    
+    const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
+
+    const processedHistory = (history || []).map(msg => {
+      if (msg.role === 'user') {
+        return { ...msg, content: this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) };
+      }
+      return msg;
+    });
+
+    let signal: AbortSignal | undefined;
+    if (options?.requestId) {
+      const controller = new AbortController();
+      this.activeRequests.set(options.requestId, controller);
+      signal = controller.signal;
+    }
+
+    const userDetailsRaw = await this.getUserDetails()
+    const userDetails: UserDetails | undefined = userDetailsRaw
+      ? {
+          phoneNumber: userDetailsRaw.phoneNumber || '',
+          lid: userDetailsRaw.lid || '',
+          phoneJid: userDetailsRaw.phoneJid || '',
+          linkedJid: userDetailsRaw.linkedJid || ''
+        }
+      : undefined
+
+    const useThinkMode = options?.useThinkMode !== false
+    const systemPrompt = this.toolRegistry.getSystemInstructions(useThinkMode, userDetails)
+
+    return {
+      modelId,
+      provider,
+      fullPrompt,
+      processedHistory,
+      signal,
+      userDetails,
+      systemPrompt
+    };
+  }
+
   async generateResponse(
     prompt: string, 
     contextFiles?: AIChatContext[],
@@ -196,37 +254,15 @@ export class AIService implements IAIService {
     options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string }
   ): Promise<string> {
     try {
-      const modelId = this.normalizeModelId(options?.model || this.currentModelId);
-      const provider = this.getProviderForModel(modelId);
-      
-      const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
-
-      const processedHistory = (history || []).map(msg => {
-        if (msg.role === 'user') {
-          return { ...msg, content: this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) };
-        }
-        return msg;
-      });
-
-      let signal: AbortSignal | undefined;
-      if (options?.requestId) {
-        const controller = new AbortController();
-        this.activeRequests.set(options.requestId, controller);
-        signal = controller.signal;
-      }
-
-      const userDetailsRaw = await this.getUserDetails()
-      const userDetails: UserDetails | undefined = userDetailsRaw
-        ? {
-            phoneNumber: userDetailsRaw.phoneNumber || '',
-            lid: userDetailsRaw.lid || '',
-            phoneJid: userDetailsRaw.phoneJid || '',
-            linkedJid: userDetailsRaw.linkedJid || ''
-          }
-        : undefined
-
-      const useThinkMode = options?.useThinkMode !== false
-      const systemPrompt = this.toolRegistry.getSystemInstructions(useThinkMode, userDetails)
+      const {
+        modelId,
+        provider,
+        fullPrompt,
+        processedHistory,
+        signal,
+        userDetails,
+        systemPrompt
+      } = await this.prepareGenerationContext(prompt, contextFiles, history, mentions, options);
       
       let result: string;
       if ('generateResponse' in provider && typeof provider.generateResponse === 'function') {
@@ -274,39 +310,17 @@ export class AIService implements IAIService {
     onChunk: (chunk: string) => void = () => {}
   ): Promise<void> {
     try {
-      const modelId = this.normalizeModelId(options?.model || this.currentModelId);
-      const provider = this.getProviderForModel(modelId);
-
-      const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
-
-      const processedHistory = (history || []).map(msg => {
-        if (msg.role === 'user') {
-          return { ...msg, content: this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) };
-        }
-        return msg;
-      });
-
-      let signal: AbortSignal | undefined;
-      if (options?.requestId) {
-        const controller = new AbortController();
-        this.activeRequests.set(options.requestId, controller);
-        signal = controller.signal;
-      }
+      const {
+        modelId,
+        provider,
+        fullPrompt,
+        processedHistory,
+        signal,
+        userDetails,
+        systemPrompt
+      } = await this.prepareGenerationContext(prompt, contextFiles, history, mentions, options);
 
       try {
-        const userDetailsRaw = await this.getUserDetails()
-        const userDetails: UserDetails | undefined = userDetailsRaw
-          ? {
-              phoneNumber: userDetailsRaw.phoneNumber || '',
-              lid: userDetailsRaw.lid || '',
-              phoneJid: userDetailsRaw.phoneJid || '',
-              linkedJid: userDetailsRaw.linkedJid || ''
-            }
-          : undefined
-
-        const useThinkMode = options?.useThinkMode !== false
-        const systemPrompt = this.toolRegistry.getSystemInstructions(useThinkMode, userDetails)
-
         if ('generateResponseStream' in provider && typeof provider.generateResponseStream === 'function') {
           await (provider as IStreamingProvider).generateResponseStream(
             fullPrompt,

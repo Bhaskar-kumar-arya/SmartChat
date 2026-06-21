@@ -114,6 +114,133 @@ export class SyncMessagesHandler {
    * Parse one batch of raw proto messages into typed rows + collect reactions.
    * Pure CPU work — no DB calls.
    */
+  private _parseMessageProperties(
+    mTyped: BaileysWebMessageInfo,
+    remoteJid: string
+  ): {
+    id: string
+    messageType: string
+    content: string
+    textContent: string | null
+    fromMe: boolean
+    participant: string | null
+    isEdited: boolean
+    isDeleted: boolean
+  } | null {
+    const key = mTyped.key
+    if (!key?.id) return null
+
+    const message = mTyped.message
+    const unwrappedMessage = message ? (unwrapMessage(message) as Record<string, unknown>) : null
+
+    let finalId = String(key.id)
+    let finalMessageType = getMessageType(unwrappedMessage)
+    if (finalMessageType === 'senderKeyDistributionMessage') return null
+
+    let finalContent = JSON.stringify(message ?? {})
+    let finalTextContent = extractTextContent(unwrappedMessage)
+    let finalFromMe = key.fromMe === true
+    let finalParticipantRaw = key.participant
+      ? String(key.participant)
+      : remoteJid.endsWith('@g.us')
+      ? null
+      : remoteJid
+    let finalParticipant = finalParticipantRaw ? cleanJid(finalParticipantRaw) : null
+    let isEdited = false
+    let isDeleted = false
+
+    const stubType = mTyped.messageStubType
+    if (stubType === WAMessageStubType.REVOKE && !message?.protocolMessage) {
+      const targetId = Array.isArray(mTyped.messageStubParameters)
+        ? (mTyped.messageStubParameters[0] as string | undefined)
+        : undefined
+      if (targetId) {
+        finalId = targetId
+        finalMessageType = 'unknown'
+        finalContent = '{}'
+        finalTextContent = null
+        isDeleted = true
+      } else {
+        return null
+      }
+    }
+
+    if (stubType === WAMessageStubType.CIPHERTEXT) {
+      finalMessageType = 'ciphertext'
+      finalTextContent = 'Waiting for this message. This may take a while.'
+    }
+
+    const protocolMessage = message?.protocolMessage
+    if (protocolMessage?.key?.id) {
+      const typeVal = protocolMessage.type as unknown
+      const isEdit = typeVal === 14 || typeVal === 'MESSAGE_EDIT'
+      const isRevoke = typeVal === 0 || typeVal === 'REVOKE'
+
+      if (isEdit && protocolMessage.editedMessage) {
+        const editedUnwrapped = unwrapMessage(protocolMessage.editedMessage) as Record<string, unknown>
+        finalId = String(protocolMessage.key.id)
+        finalMessageType = getMessageType(editedUnwrapped)
+        finalContent = JSON.stringify(protocolMessage.editedMessage)
+        finalTextContent = extractTextContent(editedUnwrapped)
+        finalFromMe = protocolMessage.key.fromMe === true
+        const targetJid = cleanJid(String(protocolMessage.key.remoteJid ?? remoteJid))
+        const targetPRaw = protocolMessage.key.participant
+          ? String(protocolMessage.key.participant)
+          : targetJid.endsWith('@g.us') ? null : targetJid
+        finalParticipant = targetPRaw ? cleanJid(targetPRaw) : null
+        isEdited = true
+      } else if (isRevoke) {
+        finalId = String(protocolMessage.key.id)
+        finalFromMe = protocolMessage.key.fromMe === true
+        const targetJid = cleanJid(String(protocolMessage.key.remoteJid ?? remoteJid))
+        const targetPRaw = protocolMessage.key.participant
+          ? String(protocolMessage.key.participant)
+          : targetJid.endsWith('@g.us') ? null : targetJid
+        finalParticipant = targetPRaw ? cleanJid(targetPRaw) : null
+        isDeleted = true
+      }
+    }
+
+    return {
+      id: finalId,
+      messageType: finalMessageType,
+      content: finalContent,
+      textContent: finalTextContent,
+      fromMe: finalFromMe,
+      participant: finalParticipant,
+      isEdited,
+      isDeleted
+    }
+  }
+
+  private async _resolveSenderId(
+    participant: string | null,
+    fromMe: boolean,
+    identityCache: Map<string, number>
+  ): Promise<number | null> {
+    if (fromMe || !participant) return null
+    if (identityCache.has(participant)) {
+      return identityCache.get(participant) ?? null
+    }
+
+    await this.contactService
+      .upsertContact({ id: participant })
+      .catch((err: unknown) =>
+        console.error('[SyncMessagesHandler] Failed to upsert participant contact:', err)
+      )
+
+    const newId = await this.contactService.getIdentityIdByJid(participant)
+    if (newId) {
+      identityCache.set(participant, newId)
+      return newId
+    }
+    return null
+  }
+
+  /**
+   * Parse one batch of raw proto messages into typed rows + collect reactions.
+   * Pure CPU work — no DB calls.
+   */
   private async _parseBatch(
     batch: Array<Record<string, unknown>>,
     identityCache: Map<string, number>,
@@ -125,114 +252,18 @@ export class SyncMessagesHandler {
 
     for (const m of batch) {
       const mTyped = m as unknown as BaileysWebMessageInfo
-      const key = mTyped.key
-      if (!key?.id) continue
+      const remoteJid = cleanJid(String(mTyped.key?.remoteJid ?? ''))
+      if (!remoteJid) continue
 
-      const message = mTyped.message
-      const timestamp = parseBaileysTimestamp(mTyped.messageTimestamp ?? 0)
-      const remoteJid = cleanJid(String(key.remoteJid ?? ''))
+      const parsed = this._parseMessageProperties(mTyped, remoteJid)
+      if (!parsed) continue
 
-      const unwrappedMessage = message
-        ? (unwrapMessage(message) as Record<string, unknown>)
-        : null
-
-      let finalId = String(key.id)
-      let finalMessageType = getMessageType(unwrappedMessage)
-      if (finalMessageType === 'senderKeyDistributionMessage') continue
-
-      let finalContent = JSON.stringify(message ?? {})
-      let finalTextContent = extractTextContent(unwrappedMessage)
-      let finalFromMe = key.fromMe === true
-      let finalParticipantRaw = key.participant
-        ? String(key.participant)
-        : remoteJid.endsWith('@g.us')
-        ? null
-        : remoteJid
-      let finalParticipant = finalParticipantRaw ? cleanJid(finalParticipantRaw) : null
-      let isEdited = false
-      const stubType = mTyped.messageStubType
-      let isDeleted = false
-
-      // A stub-only REVOKE (no embedded protocolMessage) means "delete the message
-      // referenced in messageStubParameters[0]".  Persist a deleted placeholder row
-      // under the TARGET message ID so the UI shows "This message was deleted" — matching
-      // mobile client behaviour.
-      if (stubType === WAMessageStubType.REVOKE && !message?.protocolMessage) {
-        const targetId = Array.isArray(mTyped.messageStubParameters)
-          ? (mTyped.messageStubParameters[0] as string | undefined)
-          : undefined
-        if (targetId) {
-          finalId = targetId
-          finalMessageType = 'unknown'
-          finalContent = '{}'
-          finalTextContent = null
-          isDeleted = true
-        } else {
-          // No target ID — nothing useful to persist; skip the stub
-          continue
-        }
-      }
-
-      if (stubType === WAMessageStubType.CIPHERTEXT) {
-        finalMessageType = 'ciphertext'
-        finalTextContent = 'Waiting for this message. This may take a while.'
-      }
-
-      // Handle embedded protocol messages (edit / revoke)
-      const protocolMessage = message?.protocolMessage
-      if (protocolMessage?.key?.id) {
-        const typeVal = protocolMessage.type as unknown
-        const isEdit = typeVal === 14 || typeVal === 'MESSAGE_EDIT'
-        const isRevoke = typeVal === 0 || typeVal === 'REVOKE'
-
-        if (isEdit && protocolMessage.editedMessage) {
-          const editedUnwrapped = unwrapMessage(protocolMessage.editedMessage) as Record<string, unknown>
-          finalId = String(protocolMessage.key.id)
-          finalMessageType = getMessageType(editedUnwrapped)
-          finalContent = JSON.stringify(protocolMessage.editedMessage)
-          finalTextContent = extractTextContent(editedUnwrapped)
-          finalFromMe = protocolMessage.key.fromMe === true
-          const targetJid = cleanJid(String(protocolMessage.key.remoteJid ?? remoteJid))
-          const targetPRaw = protocolMessage.key.participant
-            ? String(protocolMessage.key.participant)
-            : targetJid.endsWith('@g.us') ? null : targetJid
-          finalParticipant = targetPRaw ? cleanJid(targetPRaw) : null
-          isEdited = true
-        } else if (isRevoke) {
-          finalId = String(protocolMessage.key.id)
-          finalFromMe = protocolMessage.key.fromMe === true
-          const targetJid = cleanJid(String(protocolMessage.key.remoteJid ?? remoteJid))
-          const targetPRaw = protocolMessage.key.participant
-            ? String(protocolMessage.key.participant)
-            : targetJid.endsWith('@g.us') ? null : targetJid
-          finalParticipant = targetPRaw ? cleanJid(targetPRaw) : null
-          isDeleted = true
-        }
-      }
-
-      // Resolve sender identity ID from in-memory cache first
-      let senderId: number | null = null
-      if (!finalFromMe && finalParticipant) {
-        if (identityCache.has(finalParticipant)) {
-          senderId = identityCache.get(finalParticipant) ?? null
-        } else {
-          await this.contactService
-            .upsertContact({ id: finalParticipant })
-            .catch((err: unknown) =>
-              console.error('[SyncMessagesHandler] Failed to upsert participant contact:', err)
-            )
-          const newId = await this.contactService.getIdentityIdByJid(finalParticipant)
-          if (newId) {
-            senderId = newId
-            identityCache.set(finalParticipant, newId)
-          }
-        }
-      }
+      const senderId = await this._resolveSenderId(parsed.participant, parsed.fromMe, identityCache)
 
       // Collect nested reactions embedded on the message
       const reactions = mTyped.reactions
       if (reactions && reactions.length > 0) {
-        await this._collectNestedReactions(reactions, finalId, meJid, identityCache, pendingReactions)
+        await this._collectNestedReactions(reactions, parsed.id, meJid, identityCache, pendingReactions)
       }
 
       // Ensure Chat row exists for messages whose chat wasn't in the sync payload
@@ -244,18 +275,18 @@ export class SyncMessagesHandler {
       }
 
       messageRows.push({
-        id: finalId,
+        id: parsed.id,
         chatJid: remoteJid,
-        fromMe: finalFromMe,
+        fromMe: parsed.fromMe,
         senderId,
-        participant: finalParticipant,
-        timestamp,
-        messageType: finalMessageType,
-        content: finalContent,
-        textContent: finalTextContent,
+        participant: parsed.participant,
+        timestamp: parseBaileysTimestamp(mTyped.messageTimestamp ?? 0),
+        messageType: parsed.messageType,
+        content: parsed.content,
+        textContent: parsed.textContent,
         status: mapBaileysStatus(mTyped.status),
-        isEdited,
-        isDeleted
+        isEdited: parsed.isEdited,
+        isDeleted: parsed.isDeleted
       })
     }
 
@@ -311,24 +342,7 @@ export class SyncMessagesHandler {
       if (reactionKey.fromMe && meJid) reactorJidRaw = meJid
 
       const reactorJid = reactorJidRaw ? cleanJid(reactorJidRaw) : null
-      let reactorId: number | null = null
-
-      if (reactorJid) {
-        if (identityCache.has(reactorJid)) {
-          reactorId = identityCache.get(reactorJid) ?? null
-        } else {
-          await this.contactService
-            .upsertContact({ id: reactorJid })
-            .catch((err: unknown) =>
-              console.error('[SyncMessagesHandler] Failed to upsert reactor contact:', err)
-            )
-          const newId = await this.contactService.getIdentityIdByJid(reactorJid)
-          if (newId) {
-            reactorId = newId
-            identityCache.set(reactorJid, newId)
-          }
-        }
-      }
+      const reactorId = await this._resolveSenderId(reactorJid, false, identityCache)
 
       if (reactorId) {
         let reactionTs = parseBaileysTimestamp(

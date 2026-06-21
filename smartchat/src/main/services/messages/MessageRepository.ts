@@ -11,6 +11,39 @@ import { DBMessageWithSender } from '../../domain/db.types'
 export class MessageRepository implements IMessageRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
+  private preserveLocalUri(existingJson: string, newContent: string): string {
+    try {
+      const existingParsed = JSON.parse(existingJson)
+      const existingUnwrapped = unwrapMessage(existingParsed)
+      const existingMedia = (
+        existingUnwrapped?.imageMessage ??
+        existingUnwrapped?.stickerMessage ??
+        existingUnwrapped?.videoMessage ??
+        existingUnwrapped?.documentMessage ??
+        existingUnwrapped?.audioMessage
+      ) as MediaMessageWithLocalUri | undefined
+
+      if (existingMedia?.localURI) {
+        const currentParsed = JSON.parse(newContent)
+        const currentUnwrapped = unwrapMessage(currentParsed)
+        const currentMedia = (
+          currentUnwrapped?.imageMessage ??
+          currentUnwrapped?.stickerMessage ??
+          currentUnwrapped?.videoMessage ??
+          currentUnwrapped?.documentMessage ??
+          currentUnwrapped?.audioMessage
+        ) as MediaMessageWithLocalUri | undefined
+        if (currentMedia) {
+          currentMedia.localURI = existingMedia.localURI
+          return JSON.stringify(currentParsed)
+        }
+      }
+    } catch (e: unknown) {
+      console.error('[MessageRepository] Failed to preserve localURI:', e)
+    }
+    return newContent
+  }
+
   /**
    * Upsert a single message into the database.
    * Preserves any `localURI` that was previously saved on media message content,
@@ -25,35 +58,7 @@ export class MessageRepository implements IMessageRepository {
       select: { content: true }
     })
     if (existing?.content && data.content) {
-      try {
-        const existingContent = JSON.parse(existing.content)
-        const existingUnwrapped = unwrapMessage(existingContent)
-        const existingMediaMsg = (
-          existingUnwrapped?.imageMessage ??
-          existingUnwrapped?.stickerMessage ??
-          existingUnwrapped?.videoMessage ??
-          existingUnwrapped?.documentMessage ??
-          existingUnwrapped?.audioMessage
-        ) as MediaMessageWithLocalUri | undefined
-
-        if (existingMediaMsg && existingMediaMsg.localURI) {
-          const currentParsed = JSON.parse(data.content)
-          const currentUnwrapped = unwrapMessage(currentParsed)
-          const currentMediaMsg = (
-            currentUnwrapped?.imageMessage ??
-            currentUnwrapped?.stickerMessage ??
-            currentUnwrapped?.videoMessage ??
-            currentUnwrapped?.documentMessage ??
-            currentUnwrapped?.audioMessage
-          ) as MediaMessageWithLocalUri | undefined
-          if (currentMediaMsg) {
-            currentMediaMsg.localURI = existingMediaMsg.localURI
-            contentToStore = JSON.stringify(currentParsed)
-          }
-        }
-      } catch (e: unknown) {
-        console.error('[MessageRepository] Failed to preserve localURI on upsert:', e)
-      }
+      contentToStore = this.preserveLocalUri(existing.content, data.content)
     }
 
     const { id, ...rest } = data
@@ -192,6 +197,55 @@ export class MessageRepository implements IMessageRepository {
       })
   }
 
+  private async insertNewMessages(newMessages: MessageUpsertData[]): Promise<void> {
+    if (newMessages.length === 0) return
+    await this.prisma.message.createMany({ data: newMessages }).catch(async () => {
+      const fallbackOps = newMessages.map(m =>
+        this.prisma.message.upsert({ where: { id: m.id }, update: m, create: m })
+      )
+      await this.prisma
+        .$transaction(fallbackOps)
+        .catch((err: unknown) =>
+          console.error('[MessageRepository] insertNewMessages fallback failed:', err)
+        )
+    })
+  }
+
+  private async updateExistingMessages(
+    existingMessages: MessageUpsertData[],
+    existingContentMap: Map<string, string>
+  ): Promise<void> {
+    if (existingMessages.length === 0) return
+
+    const updateOps = existingMessages.map(msg => {
+      const update: Record<string, unknown> = {}
+      if (msg.chatJid) update.chatJid = msg.chatJid
+      if (msg.senderId !== undefined) update.senderId = msg.senderId
+      if (msg.participant !== undefined) update.participant = msg.participant
+      if (msg.timestamp) update.timestamp = msg.timestamp
+      if (msg.messageType !== 'unknown') update.messageType = msg.messageType
+
+      let finalContent = msg.content
+      const existingJson = existingContentMap.get(msg.id)
+      if (existingJson) {
+        finalContent = this.preserveLocalUri(existingJson, msg.content)
+      }
+      update.content = finalContent
+      if (msg.textContent !== null) update.textContent = msg.textContent
+      update.fromMe = msg.fromMe
+      if (msg.isEdited !== undefined) update.isEdited = msg.isEdited
+      if (msg.isDeleted !== undefined) update.isDeleted = msg.isDeleted
+
+      return this.prisma.message.update({ where: { id: msg.id }, data: update })
+    })
+
+    await this.prisma
+      .$transaction(updateOps)
+      .catch((err: unknown) =>
+        console.error('[MessageRepository] updateExistingMessages transaction failed:', err)
+      )
+  }
+
   /**
    * Bulk-persist a batch of sync message rows:
    *  - `createMany` for rows that don't yet exist.
@@ -205,92 +259,18 @@ export class MessageRepository implements IMessageRepository {
     const batchIds = rows.map(m => m.id)
     const existingMsgs = await this.prisma.message.findMany({
       where: { id: { in: batchIds } },
-      select: { id: true }
+      select: { id: true, content: true }
     })
-    const existingIds = new Set(existingMsgs.map(m => m.id))
-
-    const newMessages = rows.filter(m => !existingIds.has(m.id))
-    const existingMessages = rows.filter(m => existingIds.has(m.id))
-
-    // Insert brand-new messages
-    if (newMessages.length > 0) {
-      await this.prisma.message.createMany({ data: newMessages }).catch(async () => {
-        const fallbackOps = newMessages.map(m =>
-          this.prisma.message.upsert({ where: { id: m.id }, update: m, create: m })
-        )
-        await this.prisma
-          .$transaction(fallbackOps)
-          .catch((err: unknown) =>
-            console.error('[MessageRepository] bulkSyncMessages createMany fallback failed:', err)
-          )
-      })
+    const existingContentMap = new Map<string, string>()
+    for (const row of existingMsgs) {
+      if (row.content) existingContentMap.set(row.id, row.content)
     }
 
-    // Update existing messages, preserving localURI on media content
-    if (existingMessages.length > 0) {
-      const dbExisting = await this.prisma.message.findMany({
-        where: { id: { in: existingMessages.map(m => m.id) } },
-        select: { id: true, content: true }
-      })
-      const existingContentMap = new Map<string, string>()
-      for (const row of dbExisting) {
-        if (row.content) existingContentMap.set(row.id, row.content)
-      }
+    const newMessages = rows.filter(m => !existingContentMap.has(m.id))
+    const existingMessages = rows.filter(m => existingContentMap.has(m.id))
 
-      const updateOps = existingMessages.map(msg => {
-        const update: Record<string, unknown> = {}
-        if (msg.chatJid) update.chatJid = msg.chatJid
-        if (msg.senderId !== undefined) update.senderId = msg.senderId
-        if (msg.participant !== undefined) update.participant = msg.participant
-        if (msg.timestamp) update.timestamp = msg.timestamp
-        if (msg.messageType !== 'unknown') update.messageType = msg.messageType
-
-        let finalContent = msg.content
-        const existingJson = existingContentMap.get(msg.id)
-        if (existingJson) {
-          try {
-            const existingParsed = JSON.parse(existingJson)
-            const existingUnwrapped = unwrapMessage(existingParsed)
-            const existingMedia = (
-              existingUnwrapped?.imageMessage ??
-              existingUnwrapped?.stickerMessage ??
-              existingUnwrapped?.videoMessage ??
-              existingUnwrapped?.documentMessage ??
-              existingUnwrapped?.audioMessage
-            ) as MediaMessageWithLocalUri | undefined
-            if (existingMedia?.localURI) {
-              const currentParsed = JSON.parse(msg.content)
-              const currentUnwrapped = unwrapMessage(currentParsed)
-              const currentMedia = (
-                currentUnwrapped?.imageMessage ??
-                currentUnwrapped?.stickerMessage ??
-                currentUnwrapped?.videoMessage ??
-                currentUnwrapped?.documentMessage ??
-                currentUnwrapped?.audioMessage
-              ) as MediaMessageWithLocalUri | undefined
-              if (currentMedia) {
-                currentMedia.localURI = existingMedia.localURI
-                finalContent = JSON.stringify(currentParsed)
-              }
-            }
-          } catch (e: unknown) {
-            console.error('[MessageRepository] Failed to preserve localURI during sync:', e)
-          }
-        }
-        update.content = finalContent
-        if (msg.textContent !== null) update.textContent = msg.textContent
-        update.fromMe = msg.fromMe
-        if (msg.isEdited !== undefined) update.isEdited = msg.isEdited
-        if (msg.isDeleted !== undefined) update.isDeleted = msg.isDeleted
-
-        return this.prisma.message.update({ where: { id: msg.id }, data: update })
-      })
-      await this.prisma
-        .$transaction(updateOps)
-        .catch((err: unknown) =>
-          console.error('[MessageRepository] bulkSyncMessages update transaction failed:', err)
-        )
-    }
+    await this.insertNewMessages(newMessages)
+    await this.updateExistingMessages(existingMessages, existingContentMap)
   }
 
   /**

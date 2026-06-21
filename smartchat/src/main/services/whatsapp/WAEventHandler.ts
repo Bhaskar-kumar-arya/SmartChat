@@ -206,6 +206,42 @@ export class WAEventHandler {
     }
   }
 
+  private async handleProtocolRevoke(key: proto.IMessageKey, itemKey: proto.IMessageKey | null | undefined): Promise<void> {
+    console.log('[WAEventHandler] Message revoked:', key.id)
+    const chatJid = cleanJid(itemKey?.remoteJid || key.remoteJid)
+    await this.bus.emit('message:deleted', {
+      messageId: key.id!,
+      chatJid,
+      fromMe: key.fromMe ?? false
+    })
+  }
+
+  private async handleProtocolEdit(
+    key: proto.IMessageKey,
+    protocol: proto.Message.IProtocolMessage,
+    itemKey: proto.IMessageKey | null | undefined,
+    sock: WASocket
+  ): Promise<void> {
+    console.log('[WAEventHandler] Message edited:', key.id)
+    const editedMsg = protocol.editedMessage
+    if (!editedMsg) return
+
+    const textContent =
+      editedMsg.conversation ||
+      editedMsg.extendedTextMessage?.text ||
+      editedMsg.imageMessage?.caption ||
+      editedMsg.videoMessage?.caption ||
+      null
+    const chatJid = cleanJid(itemKey?.remoteJid || key.remoteJid)
+    await this.bus.emit('message:edited', {
+      messageId: key.id!,
+      chatJid,
+      editedTextContent: textContent,
+      editedContent: editedMsg,
+      sock
+    })
+  }
+
   private async tryEmitProtocolMessage(
     itemKey: proto.IMessageKey | null | undefined,
     itemUpdate: Record<string, unknown> | null | undefined,
@@ -221,32 +257,9 @@ export class WAEventHandler {
     const isEdit = protocolType === PROTOCOL_TYPE_EDIT || protocolType === PROTOCOL_EDIT_STRING
 
     if (isRevoke) {
-      console.log('[WAEventHandler] Message revoked:', key.id)
-      const chatJid = cleanJid(itemKey?.remoteJid || key.remoteJid)
-      await this.bus.emit('message:deleted', {
-        messageId: key.id,
-        chatJid,
-        fromMe: key.fromMe ?? false
-      })
+      await this.handleProtocolRevoke(key, itemKey)
     } else if (isEdit) {
-      console.log('[WAEventHandler] Message edited:', key.id)
-      const editedMsg = protocol.editedMessage
-      if (editedMsg) {
-        const textContent =
-          editedMsg.conversation ||
-          editedMsg.extendedTextMessage?.text ||
-          editedMsg.imageMessage?.caption ||
-          editedMsg.videoMessage?.caption ||
-          null
-        const chatJid = cleanJid(itemKey?.remoteJid || key.remoteJid)
-        await this.bus.emit('message:edited', {
-          messageId: key.id,
-          chatJid,
-          editedTextContent: textContent,
-          editedContent: editedMsg,
-          sock
-        })
-      }
+      await this.handleProtocolEdit(key, protocol, itemKey, sock)
     }
   }
 

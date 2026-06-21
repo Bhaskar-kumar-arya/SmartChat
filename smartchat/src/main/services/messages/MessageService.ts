@@ -1,4 +1,4 @@
-import { WAMessageStubType } from '@whiskeysockets/baileys'
+import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
 import { IContactNameResolver, IContactQueryService, ISocketUserContext } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageIndexer } from '../search/IEmbeddingService'
@@ -71,18 +71,11 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
    * Processes a single incoming Baileys message: parses, resolves identity,
    * persists to DB, triggers semantic indexing, and returns a ProcessedMessage.
    */
-  async processMessage(
-    msg: unknown,
-    _sock: unknown | null
-  ): Promise<ProcessedMessage | ProtocolResult | null> {
-    const baileysMsg = msg as BaileysMessage
-    const sock = _sock as ISocketUserContext | null
-    const key = baileysMsg.key
-    if (!key?.id) return null
-
-    const remoteJid = cleanJid(key.remoteJid ?? '')
-
-    const rawMessage = this.parser['_safeSerialize'](baileysMsg.message)
+  private async resolveSenderIdentity(
+    key: proto.IMessageKey,
+    baileysMsg: BaileysMessage,
+    sock: ISocketUserContext
+  ): Promise<{ participantString: string | null; senderId: number | null }> {
     const participantString = await this.identityResolver.resolveSenderJid(key, sock)
 
     // Side-effect: upsert contact for push name
@@ -95,6 +88,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     }
 
     // Opportunistic LID↔PN identity extraction
+    const remoteJid = cleanJid(key.remoteJid ?? '')
     const senderPrimary = participantString ?? remoteJid
     const keyRefined = key as unknown as { participantAlt?: string; remoteJidAlt?: string; senderPn?: string }
     const altJid = keyRefined.participantAlt ?? keyRefined.remoteJidAlt
@@ -109,15 +103,57 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
       senderId = await this.identityResolver.resolveSenderId(participantString)
     }
 
+    return { participantString, senderId }
+  }
+
+  private async dispatchProcessors(
+    context: IMessageProcessingContext,
+    dependencies: IMessageServiceDependencyAccessor
+  ): Promise<ProcessedMessage | ProtocolResult | null> {
+    // 1. Process messages that don't require ensuring chat exists (e.g. secret, protocol)
+    for (const processor of this.processors) {
+      if (processor.requiresChat === false && processor.supports(context)) {
+        return processor.process(context, dependencies)
+      }
+    }
+
+    // Ensure chat exists
+    const chatType = context.remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
+    await this.chatRepository
+      .upsertChat(context.remoteJid, { type: chatType })
+      .catch((err: unknown) => {
+        console.error('[MessageService] Failed to upsert chat:', err)
+      })
+
+    // 2. Process messages that require ensuring chat exists (e.g. reaction, standard)
+    for (const processor of this.processors) {
+      if (processor.requiresChat !== false && processor.supports(context)) {
+        return processor.process(context, dependencies)
+      }
+    }
+
+    return null
+  }
+
+  async processMessage(msg: unknown, sock: ISocketUserContext | null): Promise<ProcessedMessage | ProtocolResult | null> {
+    if (!sock) return null
+    const baileysMsg = msg as BaileysMessage
+
+    const key = baileysMsg.key
+    if (!key?.id) return null
+
+    const remoteJid = cleanJid(key.remoteJid ?? '')
+    const rawMessage = this.parser['_safeSerialize'](baileysMsg.message)
+
+    const { participantString, senderId } = await this.resolveSenderIdentity(key, baileysMsg, sock)
+
     // Extract text content
     const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
     const textContent = this.parser.extractTextContent(unwrapped)
 
     // Determine message type
     let messageType = unwrapped
-       ? (unwrapped
-           ? Object.keys(unwrapped).find(k => k !== 'messageContextInfo') ?? 'unknown'
-           : 'unknown')
+       ? (Object.keys(unwrapped).find(k => k !== 'messageContextInfo') ?? 'unknown')
        : 'unknown'
 
     if (messageType === 'senderKeyDistributionMessage') return null
@@ -151,29 +187,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
       secretMessageService: this.secretMessageService
     }
 
-    // 1. Process messages that don't require ensuring chat exists (e.g. secret, protocol)
-    for (const processor of this.processors) {
-      if (processor.requiresChat === false && processor.supports(context)) {
-        return processor.process(context, dependencies)
-      }
-    }
-
-    // Ensure chat exists
-    const chatType = remoteJid.endsWith('@g.us') ? 'GROUP' : 'DM'
-    await this.chatRepository
-      .upsertChat(remoteJid, { type: chatType })
-      .catch((err: unknown) => {
-        console.error('[MessageService] Failed to upsert chat:', err)
-      })
-
-    // 2. Process messages that require ensuring chat exists (e.g. reaction, standard)
-    for (const processor of this.processors) {
-      if (processor.requiresChat !== false && processor.supports(context)) {
-        return processor.process(context, dependencies)
-      }
-    }
-
-    return null
+    return this.dispatchProcessors(context, dependencies)
   }
 
   /**
@@ -271,20 +285,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
   /**
    * Retrieves messages for a chat with enriched display names and reactions.
    */
-  async getChatMessages(
-    jid: string,
-    page: number = 1,
-    pageSize: number = 50,
-    sock: unknown | null = null,
-    resolveLid: boolean = false,
-    includeReactions: boolean = true
-  ): Promise<EnrichedMessage[]> {
-    const targetJid = resolveLid ? await this.contactService.resolveLidFromJid(jid) : jid
-    const skip = (page - 1) * pageSize
-
-    const messages = await this.queryRepository.findChatMessagesWithSender(targetJid, skip, pageSize)
-
-    // Collect JIDs needed for name resolution
+  private collectAdditionalJidsForResolve(messages: DBMessageWithSender[]): Set<string> {
     const additionalJids = new Set<string>()
     messages.forEach(m => {
       try {
@@ -314,6 +315,25 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
         // Non-fatal: malformed content
       }
     })
+    return additionalJids
+  }
+
+  /**
+   * Retrieves messages for a chat with enriched display names and reactions.
+   */
+  async getChatMessages(
+    jid: string,
+    page: number = 1,
+    pageSize: number = 50,
+    sock: unknown | null = null,
+    resolveLid: boolean = false,
+    includeReactions: boolean = true
+  ): Promise<EnrichedMessage[]> {
+    const targetJid = resolveLid ? await this.contactService.resolveLidFromJid(jid) : jid
+    const skip = (page - 1) * pageSize
+
+    const messages = await this.queryRepository.findChatMessagesWithSender(targetJid, skip, pageSize)
+    const additionalJids = this.collectAdditionalJidsForResolve(messages)
 
     const nameMap = await this.contactService.batchResolveNames(
       Array.from(additionalJids),
@@ -358,22 +378,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     return this.enricher.enrichMessage(msg, sock as ISocketUserContext | null, nameMap)
   }
 
-  /**
-   * Process an incoming reaction update event.
-   */
-  async processReaction(
-    reactionUpdate: unknown,
-    sock: unknown | null
-  ): Promise<void> {
-    const update = reactionUpdate as BaileysReactionUpdate
-    const targetId = update.key?.id
-    const reactionKey = update.reaction?.key
-    const text = update.reaction?.text
-    const ts = update.reaction?.senderTimestampMs
-
-    if (!targetId || !reactionKey) return
-
-    // LID ↔ PN reconciliation
+  private async reconcileLidPnForReaction(reactionKey: WAMessageKey): Promise<void> {
     const refinedKey = reactionKey as WAMessageKey & { participantAlt?: string }
     const lid = refinedKey.participant ?? refinedKey.participantAlt
     const pn = refinedKey.participantAlt ?? refinedKey.participant
@@ -392,6 +397,38 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
         console.warn('[MessageService] Failed to link Lid and Pn for reaction:', err)
       })
     }
+  }
+
+  private async resolveReactorIdForReaction(
+    reactionKey: WAMessageKey,
+    reactorJid: string | null,
+    sock: ISocketUserContext | null
+  ): Promise<number | null> {
+    if (reactionKey.fromMe) {
+      return this.identityResolver.resolveMeSenderId(sock)
+    }
+    if (reactorJid) {
+      return this.identityResolver.resolveSenderId(reactorJid)
+    }
+    return null
+  }
+
+  /**
+   * Process an incoming reaction update event.
+   */
+  async processReaction(
+    reactionUpdate: unknown,
+    sock: unknown | null
+  ): Promise<void> {
+    const update = reactionUpdate as BaileysReactionUpdate
+    const targetId = update.key?.id
+    const reactionKey = update.reaction?.key
+    const text = update.reaction?.text
+    const ts = update.reaction?.senderTimestampMs
+
+    if (!targetId || !reactionKey) return
+
+    await this.reconcileLidPnForReaction(reactionKey)
 
     // Parse reaction timestamp
     let timestamp = parseBaileysTimestamp(
@@ -405,14 +442,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
 
     // Resolve reactor JID
     const reactorJid = await this.identityResolver.resolveReactorJid(reactionKey, sock as ISocketUserContext | null)
-
-    // Resolve reactor identity ID
-    let reactorId: number | null = null
-    if (reactionKey.fromMe) {
-      reactorId = await this.identityResolver.resolveMeSenderId(sock as ISocketUserContext | null)
-    } else if (reactorJid) {
-      reactorId = await this.identityResolver.resolveSenderId(reactorJid)
-    }
+    const reactorId = await this.resolveReactorIdForReaction(reactionKey, reactorJid, sock as ISocketUserContext | null)
 
     // Persist via repository
     if (reactorId) {
