@@ -1,7 +1,7 @@
 import { ISyncRepository, SyncChatMemberUpsert } from '../../sync/ISyncRepository'
 import { IContactService } from '../../contacts/IContactService'
 import { BaileysGroupMetadata } from '../../whatsapp/types/group.types'
-import { cleanJid } from '../../../utils'
+import { cleanJid } from '../../../utils/jidUtils'
 import { IMembershipSyncHandler } from './IMembershipSyncHandler'
 
 export class MembershipSyncHandler implements IMembershipSyncHandler {

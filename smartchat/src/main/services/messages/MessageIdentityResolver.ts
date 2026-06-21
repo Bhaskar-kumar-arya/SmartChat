@@ -1,7 +1,7 @@
 import { IContactService } from '../contacts/IContactService'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { IIdentityReconciliationService } from '../contacts/IIdentityReconciliationService'
-import { cleanJid } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
 import { WASocket, WAMessageKey } from '../whatsapp/types'
 import { IMessageIdentityResolver } from './IMessageIdentityResolver'
 

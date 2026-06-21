@@ -1,4 +1,4 @@
-import { cleanJid } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
 import { WASocket, WASocketWithSignalRepository } from '../whatsapp/types'
 import { IAliasRepository } from './IAliasRepository'
 import { IContactNameResolver } from './IContactService'

@@ -1,5 +1,5 @@
 import { IContactService } from '../contacts/IContactService'
-import { cleanJid } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
 
 export interface LidPnMapping {
   lid: string

@@ -1,7 +1,8 @@
 import { IContactService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { ICommunityRepository } from '../chats/ICommunityRepository'
-import { cleanJid, parseBaileysTimestamp } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
+import { parseBaileysTimestamp } from '../../utils/messageUtils'
 
 export interface RawChatParticipant {
   userJid?: string

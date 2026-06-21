@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { unwrapMessage } from '../../utils'
+import { unwrapMessage } from '../../utils/messageUtils'
 import { MediaMessageWithLocalUri } from '../whatsapp/types'
 import { IMessageRepository, MessageUpsertData } from './IMessageRepository'
 import { DBMessageWithSender } from '../../domain/db.types'

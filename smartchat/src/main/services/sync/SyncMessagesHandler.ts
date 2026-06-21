@@ -6,7 +6,8 @@ import { IReactionRepository } from '../messages/IReactionRepository'
 import { IAliasRepository } from '../contacts/IAliasRepository'
 import { IChatRepository } from '../chats/IChatRepository'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
-import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
+import { parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from '../../utils/messageUtils'
 import { BaileysWebMessageInfo, BaileysReaction } from '../whatsapp/types'
 
 export interface PendingReaction {

@@ -21,7 +21,7 @@ import type { IContactService } from '../../contacts/IContactService'
 import type { IChatService } from '../../chats/IChatService'
 import type { IGroupMembershipService } from '../../chats/IGroupMembershipService'
 import type { IChatMemberRepository } from '../../chats/IChatMemberRepository'
-import { cleanJid } from '../../../utils'
+import { cleanJid } from '../../../utils/jidUtils'
 
 export class ContactGroupSubscriber implements IWAEventSubscriber {
   constructor(

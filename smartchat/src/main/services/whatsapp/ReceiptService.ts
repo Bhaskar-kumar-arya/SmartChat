@@ -1,4 +1,5 @@
-import { cleanJid, parseBaileysTimestamp } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
+import { parseBaileysTimestamp } from '../../utils/messageUtils'
 import { WASocket, MessageReceiptUpdate, BaileysMessage } from './types'
 import { ContactService } from '../contacts/ContactService'
 import { IWAEventBus } from './IWAEventBus'

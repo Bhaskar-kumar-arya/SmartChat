@@ -10,7 +10,7 @@ import { IFavoriteStickerService } from './IFavoriteStickerService'
 import { IContactService } from '../contacts/IContactService'
 import { WASocket, WAMessageContent, BaileysWebMessageInfo } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/message.types'
-import { unwrapMessage } from '../../utils'
+import { unwrapMessage } from '../../utils/messageUtils'
 import { Message } from '@prisma/client'
 import { IMediaService } from './IMediaService'
 

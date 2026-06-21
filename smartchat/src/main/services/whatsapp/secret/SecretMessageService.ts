@@ -4,7 +4,7 @@ import { ISecretMessageStrategy, SecretMessageContext } from './ISecretMessageSt
 import { MessageEditStrategy } from './MessageEditStrategy'
 import { ProcessedMessage } from '../../../domain/db.types'
 import { ProtocolResult } from '../types'
-import { cleanJid } from '../../../utils'
+import { cleanJid } from '../../../utils/jidUtils'
 import { ISecretMessageService } from './ISecretMessageService'
 
 export class SecretMessageService implements ISecretMessageService {

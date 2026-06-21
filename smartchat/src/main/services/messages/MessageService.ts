@@ -3,7 +3,8 @@ import { IContactService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IEmbeddingService } from '../search/IEmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
-import { cleanJid, parseBaileysTimestamp, unwrapMessage } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
+import { parseBaileysTimestamp, unwrapMessage } from '../../utils/messageUtils'
 import {
   WASocket,
   BaileysMessage,

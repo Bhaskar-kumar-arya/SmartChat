@@ -5,7 +5,7 @@ import { IIdentityRepository } from '../services/contacts/IIdentityRepository';
 import { IAliasRepository } from '../services/contacts/IAliasRepository';
 import { IChatRepository } from '../services/chats/IChatRepository';
 import { WASocket } from '../services/whatsapp/types';
-import { unwrapMessage, getMessageType } from '../utils';
+import { unwrapMessage, getMessageType } from '../utils/messageUtils';
 import { MessageFormatterRegistry } from '../services/messages/formatters/MessageFormatterRegistry';
 import { IFormattedMessageContent } from '../services/messages/formatters/MessageFormatter';
 import { Message } from '@prisma/client';

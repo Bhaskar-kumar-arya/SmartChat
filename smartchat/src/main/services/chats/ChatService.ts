@@ -1,4 +1,5 @@
-import { cleanJid, parseCommunityMetadata } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
+import { parseCommunityMetadata } from '../../utils/communityUtils'
 import { IContactService } from '../contacts/IContactService'
 import { ChatUpdatePayload, SocketAccessor } from '../whatsapp/types'
 import { ChatListEntry } from '../../domain/chatList.types'

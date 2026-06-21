@@ -1,5 +1,6 @@
 import { ContactService } from '../contacts/ContactService'
-import { cleanJid, unwrapMessage } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
+import { unwrapMessage } from '../../utils/messageUtils'
 import { WASocket, WAMessageContent } from '../whatsapp/types'
 import { DBMessageWithSender } from '../../domain/db.types'
 import { EnrichedMessage } from '../../ipc/message.types'

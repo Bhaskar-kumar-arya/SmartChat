@@ -25,7 +25,19 @@ export default defineConfig(
     },
     rules: {
       ...eslintPluginReactHooks.configs.recommended.rules,
-      ...eslintPluginReactRefresh.configs.vite.rules
+      ...eslintPluginReactRefresh.configs.vite.rules,
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/utils', '!@electron-toolkit/utils'],
+              message:
+                'Do not import from the main utils barrel file. Import from specific utility files instead (e.g. jidUtils, messageUtils, communityUtils).'
+            }
+          ]
+        }
+      ]
     }
   },
   eslintConfigPrettier

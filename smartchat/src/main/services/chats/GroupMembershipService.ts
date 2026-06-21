@@ -1,7 +1,7 @@
 import { IGroupMembershipService } from './IGroupMembershipService'
 import { IContactService } from '../contacts/IContactService'
 import { IChatMemberRepository } from './IChatMemberRepository'
-import { cleanJid } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
 import { ChatUpdatePayload } from '../whatsapp/types'
 
 export class GroupMembershipService implements IGroupMembershipService {

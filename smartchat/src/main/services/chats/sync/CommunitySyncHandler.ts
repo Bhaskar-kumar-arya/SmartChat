@@ -1,6 +1,7 @@
 import { ISyncRepository } from '../../sync/ISyncRepository'
 import { BaileysGroupMetadata } from '../../whatsapp/types/group.types'
-import { cleanJid, parseCommunityMetadata } from '../../../utils'
+import { cleanJid } from '../../../utils/jidUtils'
+import { parseCommunityMetadata } from '../../../utils/communityUtils'
 import { ICommunitySyncHandler } from './ICommunitySyncHandler'
 
 export class CommunitySyncHandler implements ICommunitySyncHandler {

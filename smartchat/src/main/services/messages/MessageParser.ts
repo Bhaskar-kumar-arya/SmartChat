@@ -1,6 +1,7 @@
 import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
-import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
+import { parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils/messageUtils'
 import { BaileysMessage, WAMessageContent } from '../whatsapp/types'
 
 /** Plain data object produced by parseMessageSync(). */

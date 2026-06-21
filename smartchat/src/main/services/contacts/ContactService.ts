@@ -1,4 +1,4 @@
-import { cleanJid } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
 import { WASocket } from '../whatsapp/types'
 import { IIdentityRepository } from './IIdentityRepository'
 import { IAliasRepository } from './IAliasRepository'

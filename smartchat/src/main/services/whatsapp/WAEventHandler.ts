@@ -19,7 +19,8 @@ import {
   ChatUpdatePayload,
   MessageReceiptUpdate
 } from './types'
-import { cleanJid, unwrapMessage, getMessageType, extractTextContent } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
+import { unwrapMessage, getMessageType, extractTextContent } from '../../utils/messageUtils'
 import {
   PROTOCOL_TYPE_REVOKE,
   PROTOCOL_TYPE_EDIT

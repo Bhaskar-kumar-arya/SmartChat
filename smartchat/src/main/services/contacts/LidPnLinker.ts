@@ -1,4 +1,4 @@
-import { cleanJid } from '../../utils'
+import { cleanJid } from '../../utils/jidUtils'
 import { IIdentityRepository } from './IIdentityRepository'
 import { IAliasRepository } from './IAliasRepository'
 import { ILidMapRepository } from './ILidMapRepository'

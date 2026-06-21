@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { app } from 'electron'
 import { join } from 'path'
 import * as fs from 'fs'
-import { unwrapMessage } from '../../utils'
+import { unwrapMessage } from '../../utils/messageUtils'
 import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 
 import { IFavoriteStickerService, FavoriteStickerDTO } from './IFavoriteStickerService'
