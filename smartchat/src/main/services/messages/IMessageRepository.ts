@@ -1,4 +1,5 @@
-import { DBMessageWithSender, MessageUpsertData } from '../../domain/types'
+import { MessageUpsertData } from '../../domain/types'
+import { IMessageCompoundRepository } from './IMessageCompoundRepository'
 export type { MessageUpsertData }
 
 export interface IMessageWriteRepository {
@@ -19,15 +20,6 @@ export interface IMessageWriteRepository {
   updateMessageContent(messageId: string, content: string): Promise<void>
   bulkSyncMessages(rows: MessageUpsertData[]): Promise<void>
   updateMessageDeleted(id: string): Promise<void>
-  updateAndFetchMessageWithSender(
-    id: string,
-    textContent: string,
-    content: string
-  ): Promise<DBMessageWithSender | null>
-  updateContentAndFetchWithSender(
-    id: string,
-    content: string
-  ): Promise<DBMessageWithSender | null>
 }
 
-export interface IMessageRepository extends IMessageWriteRepository {}
+export interface IMessageRepository extends IMessageWriteRepository, IMessageCompoundRepository {}

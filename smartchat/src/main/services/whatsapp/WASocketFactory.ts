@@ -2,7 +2,7 @@ import makeWASocketImport, { fetchLatestBaileysVersion, Browsers, Authentication
 import NodeCache from 'node-cache'
 import { WASocket } from './types'
 import { IWASocketFactory } from './IWASocketFactory'
-import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
+import { IMessageReadRepository } from '../messages/IMessageQueryRepository'
 
 const makeWASocket = (typeof makeWASocketImport === 'function'
   ? makeWASocketImport
@@ -10,7 +10,7 @@ const makeWASocket = (typeof makeWASocketImport === 'function'
 
 export class WASocketFactory implements IWASocketFactory {
   constructor(
-    private readonly messageQueryRepository: IMessageQueryRepository
+    private readonly messageQueryRepository: IMessageReadRepository
   ) {}
 
   public async fetchVersion(): Promise<[number, number, number]> {

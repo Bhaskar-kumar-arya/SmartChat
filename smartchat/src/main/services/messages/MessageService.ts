@@ -17,7 +17,8 @@ import { getSafeMediaFileName as getSafeMediaFileNameHelper } from './MediaHelpe
 import { MessageParser, ParsedMessage } from './MessageParser'
 import { IMessageRepository } from './IMessageRepository'
 import { IReactionRepository } from './IReactionRepository'
-import { IMessageQueryRepository } from './IMessageQueryRepository'
+import { IMessageReadRepository } from './IMessageQueryRepository'
+import { IMessageExistenceRepository } from './IMessageExistenceRepository'
 import { MessageEnricher } from './MessageEnricher'
 import { IMessageWriterService } from './IMessageWriterService'
 import { IMessageQueryService } from './IMessageQueryService'
@@ -55,7 +56,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     private readonly getBus: () => IWAEventBus | null,
     private readonly parser: MessageParser,
     private readonly repository: IMessageRepository,
-    private readonly queryRepository: IMessageQueryRepository,
+    private readonly queryRepository: IMessageReadRepository & IMessageExistenceRepository,
     private readonly reactionRepository: IReactionRepository,
     private readonly enricher: MessageEnricher,
     private readonly identityResolver: IMessageIdentityResolver,

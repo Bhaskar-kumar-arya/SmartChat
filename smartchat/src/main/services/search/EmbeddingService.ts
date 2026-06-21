@@ -1,5 +1,5 @@
 import { IMessageVectorRepository } from '../messages/IMessageVectorRepository'
-import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
+import { IMessageIndexRepository } from '../messages/IMessageIndexRepository'
 import { IEmbeddingWorkerManager } from './IEmbeddingWorkerManager'
 
 // ── SRP: this service ONLY handles embedding generation coordination, storage and retrieval ──
@@ -29,7 +29,7 @@ export class EmbeddingService implements IEmbeddingService {
 
   constructor(
     private readonly messageVectorRepository: IMessageVectorRepository,
-    private readonly messageQueryRepository: IMessageQueryRepository,
+    private readonly messageQueryRepository: IMessageIndexRepository,
     workerManager: IEmbeddingWorkerManager
   ) {
     this.workerManager = workerManager

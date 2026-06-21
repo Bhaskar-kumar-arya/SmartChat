@@ -24,14 +24,14 @@ import type {
 } from '../WAEventTypes'
 import type { IContactService } from '../../contacts/IContactService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
-import type { IMessageQueryRepository } from '../../messages/IMessageQueryRepository'
+import type { IMessageReadRepository } from '../../messages/IMessageQueryRepository'
 import { cleanJid } from '../../../utils'
 
 export class UIBroadcastSubscriber implements IWAEventSubscriber {
   constructor(
     private contactService: IContactService,
     private messageQueryService: IMessageQueryService,
-    private messageQueryRepository: IMessageQueryRepository,
+    private messageQueryRepository: IMessageReadRepository,
     private getMainWindow: () => BrowserWindow | null
   ) {}
 

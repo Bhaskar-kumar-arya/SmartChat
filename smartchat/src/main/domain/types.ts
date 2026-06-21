@@ -104,3 +104,34 @@ export interface Reaction {
   timestamp: bigint
 }
 
+export interface MessageQueryFilter {
+  chatJid?: string
+  chatJids?: string[]
+  fromDate?: bigint
+  toDate?: bigint
+  fromMe?: boolean
+  textContentContains?: string
+}
+
+export interface LastMessageWithSender {
+  id: string
+  textContent: string | null
+  messageType: string
+  timestamp: bigint
+  fromMe: boolean
+  participant: string | null
+  status: string | null
+  sender: {
+    displayName: string | null
+    pushName: string | null
+    verifiedName: string | null
+    phoneNumber: string | null
+  } | null
+}
+
+export interface MessageWithChatAndSender extends Message {
+  chat: Chat & { community: Community | null } | null
+  sender: Identity | null
+}
+
+

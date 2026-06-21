@@ -2,13 +2,13 @@ import { ChatListItem } from '../../ipc/types'
 import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
 import { IChatRepository } from './IChatRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'
-import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
+import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
 import { ContactService } from '../contacts/ContactService'
 
 export class ChatListEnricher {
   constructor(
     private readonly chatRepository: IChatRepository,
-    private readonly messageQueryRepository: IMessageQueryRepository,
+    private readonly messageQueryRepository: IMessageSearchRepository,
     private readonly reactionRepository: IReactionRepository,
     private readonly contactService: ContactService,
     private readonly formatterRegistry: MessageFormatterRegistry

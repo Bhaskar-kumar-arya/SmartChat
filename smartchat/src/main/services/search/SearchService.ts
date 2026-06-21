@@ -3,9 +3,10 @@ import { getDisplayName } from '../../utils/contactUtils'
 import { IEmbeddingService } from './EmbeddingService'
 import { WASocket } from '../whatsapp/types'
 import { IChatRepository } from '../chats/IChatRepository'
-import { IMessageQueryRepository } from '../messages/IMessageQueryRepository'
+import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { IMessageVectorRepository } from '../messages/IMessageVectorRepository'
+import { MessageQueryFilter } from '../../domain/types'
 import {
   ISearchService,
   SearchResultItem,
@@ -14,24 +15,6 @@ import {
   SearchMode,
   MentionResult
 } from './ISearchService'
-
-function buildTimestampFilter(filters?: SearchFilters): { gte?: bigint; lte?: bigint } | undefined {
-  if (!filters?.fromDate && !filters?.toDate) return undefined
-  const clause: { gte?: bigint; lte?: bigint } = {}
-  if (filters?.fromDate) clause.gte = BigInt(Math.floor(filters.fromDate.getTime() / 1000))
-  if (filters?.toDate) clause.lte = BigInt(Math.floor(filters.toDate.getTime() / 1000))
-  return clause
-}
-
-function buildMessageWhereClause(filters?: SearchFilters, extraWhere: Record<string, unknown> = {}) {
-  const tsFilter = buildTimestampFilter(filters)
-  return {
-    textContent: { not: null },
-    ...(filters?.jids?.length ? { chatJid: { in: filters.jids } } : {}),
-    ...(tsFilter ? { timestamp: tsFilter } : {}),
-    ...extraWhere
-  }
-}
 
 interface DBMessageWithChatAndSender {
   id: string
@@ -48,12 +31,21 @@ interface DBMessageWithChatAndSender {
 export class SearchService implements ISearchService {
   constructor(
     private readonly chatRepository: IChatRepository,
-    private readonly messageRepository: IMessageQueryRepository,
+    private readonly messageRepository: IMessageSearchRepository,
     private readonly messageVectorRepository: IMessageVectorRepository,
     private readonly identityRepository: IIdentityRepository,
     private readonly contactService: IContactService,
     private readonly embeddingService: IEmbeddingService
   ) {}
+
+  private buildMessageFilter(filters?: SearchFilters, textContentContains?: string): MessageQueryFilter {
+    return {
+      chatJids: filters?.jids,
+      fromDate: filters?.fromDate ? BigInt(Math.floor(filters.fromDate.getTime() / 1000)) : undefined,
+      toDate: filters?.toDate ? BigInt(Math.floor(filters.toDate.getTime() / 1000)) : undefined,
+      textContentContains
+    }
+  }
 
   async searchAll(
     query: string,
@@ -114,11 +106,9 @@ export class SearchService implements ISearchService {
     _sock: WASocket | null,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
-    const where = buildMessageWhereClause(filters, {
-      textContent: { contains: q }
-    })
+    const filter = this.buildMessageFilter(filters, q)
 
-    const messages = await this.messageRepository.findMessagesWithChatAndSender(where, 30)
+    const messages = await this.messageRepository.findMessagesWithChatAndSender(filter, 30)
 
     return (messages as unknown as DBMessageWithChatAndSender[]).map((msg) => {
         let name = msg.chat?.name
@@ -150,7 +140,8 @@ export class SearchService implements ISearchService {
 
     const hasFilters = !!(filters?.jids?.length || filters?.fromDate || filters?.toDate)
     if (hasFilters) {
-      candidateIds = await this.messageRepository.findMessageIdsOnly(buildMessageWhereClause(filters))
+      const filter = this.buildMessageFilter(filters)
+      candidateIds = await this.messageRepository.findMessageIdsOnly(filter)
       if (candidateIds.length === 0) return []
     }
 

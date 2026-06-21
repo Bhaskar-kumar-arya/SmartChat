@@ -4,8 +4,8 @@ import { join } from 'path'
 import fs from 'fs'
 import { IMessageQueryService } from './IMessageQueryService'
 import { IMessageParserService } from './IMessageParserService'
-import { IMessageRepository } from './IMessageRepository'
-import { IMessageQueryRepository } from './IMessageQueryRepository'
+import { IMessageCompoundRepository } from './IMessageCompoundRepository'
+import { IMessageReadRepository } from './IMessageQueryRepository'
 import { IFavoriteStickerService } from './IFavoriteStickerService'
 import { IContactService } from '../contacts/IContactService'
 import { WASocket } from '../whatsapp/types'
@@ -134,8 +134,8 @@ export class MediaService implements IMediaService {
   private queuePaused = false
 
   constructor(
-    private readonly messageRepository: IMessageRepository,
-    private readonly messageQueryRepository: IMessageQueryRepository,
+    private readonly messageRepository: IMessageCompoundRepository,
+    private readonly messageQueryRepository: IMessageReadRepository,
     private readonly messageService: IMessageQueryService,
     private readonly messageParserService: IMessageParserService,
     private readonly contactService: IContactService,

@@ -4,9 +4,10 @@ import { join } from 'path'
 import { IMessageProcessingService } from './IMessageProcessingService'
 import { IMessageParserService } from './IMessageParserService'
 import { IMessageQueryService } from './IMessageQueryService'
-import { IMessageRepository } from './IMessageRepository'
+import { IMessageWriteRepository } from './IMessageRepository'
+import { IMessageCompoundRepository } from './IMessageCompoundRepository'
 import { IReactionRepository } from './IReactionRepository'
-import { IMessageQueryRepository } from './IMessageQueryRepository'
+import { IMessageReadRepository } from './IMessageQueryRepository'
 import { IChatService } from '../chats/IChatService'
 import { proto, AnyMessageContent } from '@whiskeysockets/baileys'
 import { WASocket, MediaMessageWithLocalUri } from '../whatsapp/types'
@@ -23,9 +24,9 @@ export class MessageActionService implements IMessageActionService {
   private readonly fileStorage: LocalFileStorage
 
   constructor(
-    private readonly messageRepository: IMessageRepository,
+    private readonly messageRepository: IMessageWriteRepository & IMessageCompoundRepository,
     private readonly reactionRepository: IReactionRepository,
-    private readonly messageQueryRepository: IMessageQueryRepository,
+    private readonly messageQueryRepository: IMessageReadRepository,
     private readonly identityRepository: IIdentityRepository,
     private readonly contactService: IContactService,
     private readonly messageProcessingService: IMessageProcessingService,
