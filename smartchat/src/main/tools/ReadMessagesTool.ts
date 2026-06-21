@@ -493,7 +493,7 @@ FORMATTING BEHAVIOR:
       const qUnwrapped = unwrapMessage(quotedMessage);
       const qType = getMessageType(qUnwrapped);
       quotedText = this.formatterRegistry.format(
-        qUnwrapped,
+        qUnwrapped as any,
         {
           messageType: qType,
           textContent: qUnwrapped?.conversation || qUnwrapped?.extendedTextMessage?.text || null
@@ -533,7 +533,7 @@ FORMATTING BEHAVIOR:
 
   private formatMessageContent(m: Message, unwrapped: proto.IMessage | null | undefined): string {
     return this.formatterRegistry.format(
-      unwrapped || null,
+      (unwrapped || null) as any,
       {
         textContent: m.textContent,
         messageType: m.messageType,

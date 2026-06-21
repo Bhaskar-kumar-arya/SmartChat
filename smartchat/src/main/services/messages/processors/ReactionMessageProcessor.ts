@@ -15,9 +15,9 @@ export class ReactionMessageProcessor implements IMessageProcessorStrategy {
     context: IMessageProcessingContext,
     dependencies: IMessageServiceDependencyAccessor
   ): Promise<ProcessedMessage | ProtocolResult | null> {
-    const reactionMsg = context.rawMessage.reactionMessage as Record<string, unknown> | undefined
-    const targetId = (reactionMsg?.key as { id?: string } | undefined)?.id
-    const emoji = reactionMsg?.text as string | undefined
+    const reactionMsg = context.rawMessage?.reactionMessage
+    const targetId = reactionMsg?.key?.id
+    const emoji = reactionMsg?.text
 
     let reactorId = context.senderId
     if (context.msg.key.fromMe) {

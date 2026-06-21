@@ -12,7 +12,7 @@ export class MessageVectorRepository implements IMessageVectorRepository {
     candidateIds?: string[]
   ): Promise<Array<{ messageId: string; distance: number }>> {
     let filterSql = ''
-    const params: any[] = [queryVectorJson]
+    const params: unknown[] = [queryVectorJson]
 
     if (candidateIds && candidateIds.length > 0) {
       if (candidateIds.length < 2000) {

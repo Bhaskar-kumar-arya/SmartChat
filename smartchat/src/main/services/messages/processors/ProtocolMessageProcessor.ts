@@ -14,11 +14,11 @@ export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
     context: IMessageProcessingContext,
     _dependencies: IMessageServiceDependencyAccessor
   ): Promise<ProcessedMessage | ProtocolResult | null> {
-    const protocol = context.unwrapped.protocolMessage as Record<string, unknown> | undefined
-    const targetId = (protocol?.key as { id?: string } | undefined)?.id
+    const protocol = context.unwrapped?.protocolMessage
+    const targetId = protocol?.key?.id
     if (targetId && protocol) {
       try {
-        const type = protocol.type
+        const type = protocol.type as unknown as number | string
         if (type === 0 || type === 'REVOKE') {
           return {
             type: 'protocol',
@@ -28,12 +28,12 @@ export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
             key: protocol.key as proto.IMessageKey
           }
         } else if (type === 14 || type === 'MESSAGE_EDIT') {
-          const editedMsg = protocol.editedMessage as Record<string, unknown> | undefined
+          const editedMsg = protocol.editedMessage
           const editContent =
-            (editedMsg?.conversation as string | undefined) ??
-            ((editedMsg?.extendedTextMessage as Record<string, unknown> | undefined)?.text as string | undefined) ??
-            ((editedMsg?.imageMessage as Record<string, unknown> | undefined)?.caption as string | undefined) ??
-            ((editedMsg?.videoMessage as Record<string, unknown> | undefined)?.caption as string | undefined) ??
+            editedMsg?.conversation ??
+            editedMsg?.extendedTextMessage?.text ??
+            editedMsg?.imageMessage?.caption ??
+            editedMsg?.videoMessage?.caption ??
             null
           return {
             type: 'protocol',
@@ -42,7 +42,7 @@ export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
             chatJid: context.remoteJid,
             key: protocol.key as proto.IMessageKey,
             editedTextContent: editContent,
-            editedContent: editedMsg as proto.IMessage
+            editedContent: editedMsg ?? null
           }
         }
       } catch (err: unknown) {

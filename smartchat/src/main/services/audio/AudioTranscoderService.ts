@@ -44,7 +44,7 @@ export class AudioTranscoderService {
           }
           resolve(outPath)
         })
-        .on('error', (err: any) => {
+        .on('error', (err: Error) => {
           console.error('[AudioTranscoder] Transcoding error:', err)
           // Fallback: resolution with original path if transcoding fails
           resolve(inputPath)

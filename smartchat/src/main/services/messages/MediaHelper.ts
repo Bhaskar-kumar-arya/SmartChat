@@ -47,20 +47,21 @@ export function getMediaSendOptions(filePath: string, buffer: Buffer, caption?: 
 /**
  * Resolves the correct file extension for a media/document message based on its metadata.
  */
-export function resolveExtension(mediaType: string, mediaMsg: any): string {
+export function resolveExtension(mediaType: string, mediaMsg: unknown): string {
   if (mediaType === 'image') return 'jpg'
   if (mediaType === 'sticker') return 'webp'
   if (mediaType === 'video') return 'mp4'
   if (mediaType === 'audio') return 'ogg'
   
   if (mediaType === 'document') {
-      const mime = mediaMsg.mimetype || ''
+      const mediaObj = mediaMsg as Record<string, unknown> | null | undefined
+      const mime = (mediaObj?.mimetype as string | undefined) || ''
       if (mime.includes('pdf')) return 'pdf'
       if (mime.includes('word')) return 'docx'
       if (mime.includes('sheet')) return 'xlsx'
       if (mime.includes('text')) return 'txt'
       
-      const originalName = mediaMsg.fileName || ''
+      const originalName = (mediaObj?.fileName as string | undefined) || ''
       if (originalName.includes('.')) return originalName.split('.').pop() || 'dat'
   }
   

@@ -5,7 +5,7 @@ export interface AITool {
   description: string;
   parametersSchema: object;
   requiresPermission: boolean;
-  execute: (args: any) => Promise<any>;
+  execute: (args: Record<string, unknown>) => Promise<unknown>;
   /** Optional async setup (e.g. DB introspection). Called once after registration. */
   initialize?: () => Promise<void>;
 }
@@ -14,6 +14,6 @@ export interface IToolRegistry {
   registerTool(tool: AITool): void
   getTool(name: string): AITool | undefined
   getAllTools(): AITool[]
-  getToolDefinitions(): any[]
+  getToolDefinitions(): Record<string, unknown>[]
   getSystemInstructions(useThinkMode?: boolean, userDetails?: UserDetails): string
 }

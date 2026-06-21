@@ -151,8 +151,9 @@ export class EmbeddingService implements IEmbeddingService {
     try {
       let done = 0
       for (const m of pending) {
+        if (!m.textContent) continue
         try {
-          const vector = await this.embed(m.textContent!)
+          const vector = await this.embed(m.textContent)
           const vectorJson = JSON.stringify(vector)
 
           await this.messageVectorRepository.upsertVector(m.id, vectorJson)

@@ -41,8 +41,10 @@ CONSTRAINTS:
     private messageActionService: IMessageActionService
   ) {}
 
-  async execute(args: any) {
-    const { jid, text, mentions } = args;
+  async execute(args: Record<string, unknown>): Promise<unknown> {
+    const jid = args.jid as string | undefined;
+    const text = args.text as string | undefined;
+    const mentions = args.mentions as string[] | undefined;
     if (!jid || !text) throw new Error('Missing required arguments: jid, text');
 
     const sock = this.getSock();

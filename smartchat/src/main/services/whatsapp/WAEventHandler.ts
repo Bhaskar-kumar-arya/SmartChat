@@ -28,6 +28,7 @@ import { IMessageParserService } from '../messages/IMessageParserService'
 import { IMessageProcessingService } from '../messages/IMessageProcessingService'
 import type { IWAEventBus } from './IWAEventBus'
 import { AppStateSyncParser } from './AppStateSyncParser'
+import { proto } from '@whiskeysockets/baileys'
 
 const TYPE_APPEND = 'append';
 const SUBTYPE_REVOKE = 'revoke';
@@ -114,19 +115,20 @@ export class WAEventHandler {
     })
   }
 
-  private async handleProcessedSpecialMessage(processed: any, sock: WASocket): Promise<void> {
-    if (processed.subType === SUBTYPE_REVOKE) {
+  private async handleProcessedSpecialMessage(processed: unknown, sock: WASocket): Promise<void> {
+    const procObj = processed as Record<string, unknown>
+    if (procObj.subType === SUBTYPE_REVOKE) {
       await this.bus.emit('message:deleted', {
-        messageId: processed.targetId,
-        chatJid: processed.chatJid || cleanJid(processed.key.remoteJid),
-        fromMe: processed.key.fromMe ?? false
+        messageId: procObj.targetId as string,
+        chatJid: (procObj.chatJid as string | undefined) || cleanJid((procObj.key as proto.IMessageKey | undefined)?.remoteJid),
+        fromMe: (procObj.key as proto.IMessageKey | undefined)?.fromMe ?? false
       })
-    } else if (processed.subType === SUBTYPE_EDIT) {
+    } else if (procObj.subType === SUBTYPE_EDIT) {
       await this.bus.emit('message:edited', {
-        messageId: processed.targetId,
-        chatJid: processed.chatJid || cleanJid(processed.key?.remoteJid || ''),
-        editedTextContent: processed.editedTextContent ?? null,
-        editedContent: processed.editedContent ?? null,
+        messageId: procObj.targetId as string,
+        chatJid: (procObj.chatJid as string | undefined) || cleanJid((procObj.key as proto.IMessageKey | undefined)?.remoteJid || ''),
+        editedTextContent: (procObj.editedTextContent as string | undefined) ?? null,
+        editedContent: (procObj.editedContent as proto.IMessage | undefined) ?? null,
         sock
       })
     }
@@ -134,7 +136,7 @@ export class WAEventHandler {
 
   // ── messages.update ───────────────────────────────────────────────────────
 
-  async handleMessagesUpdate(updates: any[], sock: WASocket): Promise<void> {
+  async handleMessagesUpdate(updates: unknown[], sock: WASocket): Promise<void> {
     for (const update of updates) {
       try {
         await this.handleMessageUpdateItem(update, sock)
@@ -144,25 +146,33 @@ export class WAEventHandler {
     }
   }
 
-  private async handleMessageUpdateItem(update: any, sock: WASocket): Promise<void> {
+  private async handleMessageUpdateItem(update: unknown, sock: WASocket): Promise<void> {
+    const updateObj = update as Record<string, unknown>
+    const itemUpdate = updateObj.update as Record<string, unknown> | null | undefined
+    const itemKey = updateObj.key as proto.IMessageKey | null | undefined
+
     // Status change (server ack, delivery, read)
-    if (update.update?.status !== undefined && update.key?.id) {
+    if (itemUpdate?.status !== undefined && itemKey?.id) {
       await this.bus.emit('message:status', {
-        key: update.key,
-        baileysStatus: update.update.status
+        key: {
+          id: itemKey.id,
+          remoteJid: itemKey.remoteJid ?? null,
+          fromMe: itemKey.fromMe ?? false
+        },
+        baileysStatus: itemUpdate.status as number
       })
     }
 
     // Check if this is a retried decrypted message update
-    if (update.update?.message && !update.update?.protocolMessage && update.key?.id) {
-      const messageId = update.key.id
-      const chatJid = cleanJid(update.key.remoteJid)
+    if (itemUpdate?.message && !itemUpdate?.protocolMessage && itemKey?.id) {
+      const messageId = itemKey.id
+      const chatJid = cleanJid(itemKey.remoteJid)
 
       let rawMessage: Record<string, unknown> | null = null
       try {
-        rawMessage = JSON.parse(JSON.stringify(update.update.message))
+        rawMessage = JSON.parse(JSON.stringify(itemUpdate.message))
       } catch {
-        rawMessage = update.update.message as Record<string, unknown>
+        rawMessage = itemUpdate.message as Record<string, unknown>
       }
 
       const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
@@ -181,17 +191,18 @@ export class WAEventHandler {
       }
     }
 
-    const protocol = update.update?.protocolMessage
+    const protocol = itemUpdate?.protocolMessage as proto.Message.IProtocolMessage | null | undefined
     if (!protocol) return
     const key = protocol.key
     if (!key?.id) return
 
-    const isRevoke = protocol.type === PROTOCOL_TYPE_REVOKE || protocol.type === PROTOCOL_REVOKE_STRING
-    const isEdit = protocol.type === PROTOCOL_TYPE_EDIT || protocol.type === PROTOCOL_EDIT_STRING
+    const protocolType = protocol.type as unknown as number | string
+    const isRevoke = protocolType === PROTOCOL_TYPE_REVOKE || protocolType === PROTOCOL_REVOKE_STRING
+    const isEdit = protocolType === PROTOCOL_TYPE_EDIT || protocolType === PROTOCOL_EDIT_STRING
 
     if (isRevoke) {
       console.log('[WAEventHandler] Message revoked:', key.id)
-      const chatJid = cleanJid(update.key?.remoteJid || key.remoteJid)
+      const chatJid = cleanJid(itemKey?.remoteJid || key.remoteJid)
       await this.bus.emit('message:deleted', {
         messageId: key.id,
         chatJid,
@@ -207,7 +218,7 @@ export class WAEventHandler {
           editedMsg.imageMessage?.caption ||
           editedMsg.videoMessage?.caption ||
           null
-        const chatJid = cleanJid(update.key?.remoteJid || key.remoteJid)
+        const chatJid = cleanJid(itemKey?.remoteJid || key.remoteJid)
         await this.bus.emit('message:edited', {
           messageId: key.id,
           chatJid,
@@ -317,7 +328,7 @@ export class WAEventHandler {
     await this.bus.emit('reaction:update', { reactions, sock })
   }
 
-  async handlePresenceUpdate(data: { id: string; presences: Record<string, any> }, sock: WASocket): Promise<void> {
+  async handlePresenceUpdate(data: { id: string; presences: Record<string, unknown> }, sock: WASocket): Promise<void> {
     await this.bus.emit('presence:update', {
       id: data.id,
       presences: data.presences,
@@ -333,7 +344,7 @@ export class WAEventHandler {
     await this.bus.emit('call:event', { calls })
   }
 
-  async handleAppStateSync(syncEvents: any[], sock: WASocket): Promise<void> {
+  async handleAppStateSync(syncEvents: unknown[], sock: WASocket): Promise<void> {
     for (const e of syncEvents) {
       // 1. Emit generic/raw event first
       await this.bus.emit('app-state:sync', { syncAction: e, sock })

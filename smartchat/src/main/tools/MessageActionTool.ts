@@ -60,8 +60,13 @@ HOW TO USE:
     private messageActionService: IMessageActionService
   ) { }
 
-  async execute(args: any) {
-    const { action, messageId, jid, newText, targetJids, reaction } = args;
+  async execute(args: Record<string, unknown>): Promise<unknown> {
+    const action = args.action as string | undefined;
+    const messageId = args.messageId as string | undefined;
+    const jid = args.jid as string | undefined;
+    const newText = args.newText as string | undefined;
+    const targetJids = args.targetJids as string[] | undefined;
+    const reaction = args.reaction as string | undefined;
     if (!action || !messageId) {
       throw new Error('Missing required arguments: action, messageId');
     }

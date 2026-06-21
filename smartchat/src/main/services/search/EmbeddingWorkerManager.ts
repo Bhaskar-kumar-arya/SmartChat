@@ -38,7 +38,8 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
     this.initPromise = new Promise((resolve, reject) => {
       try {
         console.log(`[EmbeddingWorkerManager] Starting worker from: ${this.config.workerPath}`)
-        this.worker = new Worker(this.config.workerPath)
+        const currentWorker = new Worker(this.config.workerPath)
+        this.worker = currentWorker
 
         interface WorkerMessage {
           type: 'init_done' | 'progress' | 'embed_done' | 'error' | string
@@ -53,7 +54,7 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
           }
         }
 
-        this.worker.on('message', (msg: WorkerMessage) => {
+        currentWorker.on('message', (msg: WorkerMessage) => {
           if (msg.type === 'init_done') {
             console.log('[EmbeddingWorkerManager] Worker initialized.')
             resolve()
@@ -84,18 +85,18 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
           }
         })
 
-        this.worker.on('error', (err) => {
+        currentWorker.on('error', (err) => {
           console.error('[EmbeddingWorkerManager] Worker Critical Error:', err)
           reject(err)
         })
 
-        this.worker.on('exit', (code) => {
+        currentWorker.on('exit', (code) => {
           if (code !== 0) console.error(`[EmbeddingWorkerManager] Worker stopped with exit code ${code}`)
           this.worker = null
           this.initPromise = null
         })
 
-        this.worker.postMessage({
+        currentWorker.postMessage({
           type: 'init',
           payload: {
             modelName,
@@ -104,7 +105,7 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
           }
         })
       } catch (err) {
-        reject(err)
+        reject(err as Error)
       }
     })
 
@@ -112,7 +113,8 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
   }
 
   async embed(text: string): Promise<number[]> {
-    if (!this.worker) throw new Error('Worker not available')
+    const currentWorker = this.worker
+    if (!currentWorker) throw new Error('Worker not available')
 
     this.updateActiveState(1)
     const jobId = ++this.workerJobCounter
@@ -127,7 +129,7 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
           reject(e)
         } 
       })
-      this.worker!.postMessage({
+      currentWorker.postMessage({
         type: 'embed',
         id: jobId,
         payload: { text }

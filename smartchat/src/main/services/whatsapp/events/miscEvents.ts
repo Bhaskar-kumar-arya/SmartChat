@@ -7,7 +7,7 @@ export interface ReactionEvent {
 
 export interface PresenceEvent {
   id: string
-  presences: Record<string, any>
+  presences: Record<string, unknown>
   sock: WASocket
 }
 

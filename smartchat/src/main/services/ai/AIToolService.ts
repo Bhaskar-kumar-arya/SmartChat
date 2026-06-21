@@ -7,7 +7,7 @@ export class ToolRegistry implements IToolRegistry {
 
   constructor(private readonly promptBuilder: ISystemPromptBuilder) {}
 
-  registerTool(tool: AITool) {
+  registerTool(tool: AITool): void {
     this.tools.set(tool.name, tool);
   }
 
@@ -19,7 +19,7 @@ export class ToolRegistry implements IToolRegistry {
     return Array.from(this.tools.values());
   }
 
-  getToolDefinitions(): any[] {
+  getToolDefinitions(): Record<string, unknown>[] {
     return this.getAllTools().map(t => ({
       name: t.name,
       description: t.description,

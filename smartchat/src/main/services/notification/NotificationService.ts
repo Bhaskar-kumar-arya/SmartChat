@@ -7,6 +7,7 @@ import { INotificationProvider } from './INotificationProvider'
 import { ElectronNotificationProvider } from './ElectronNotificationProvider'
 import { unwrapMessage } from '../../utils'
 import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
+import { IFormattedMessageContent } from '../messages/formatters/MessageFormatter'
 
 const preferencesPath = join(app.getPath('userData'), 'notification_preferences.json')
 
@@ -113,7 +114,7 @@ export class NotificationService implements INotificationService {
     }
 
     const contentPreview = this.formatterRegistry.format(
-      unwrapped,
+      unwrapped as unknown as IFormattedMessageContent,
       {
         textContent: options.textContent,
         messageType: options.messageType || 'unknown',
@@ -130,7 +131,7 @@ export class NotificationService implements INotificationService {
       body = contentPreview
     }
 
-    const sendNotification = (iconImage?: any) => {
+    const sendNotification = (iconImage?: Electron.NativeImage) => {
       this.provider.send(
         title,
         body,
@@ -165,7 +166,7 @@ export class NotificationService implements INotificationService {
     }
   }
 
-  private async getIconFromUrl(url: string): Promise<any> {
+  private async getIconFromUrl(url: string): Promise<Electron.NativeImage | undefined> {
     try {
       const response = await fetch(url)
       if (!response.ok) return undefined

@@ -163,16 +163,17 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
     }
   }
 
-  public async handleConnectionClose(lastDisconnect: any): Promise<void> {
+  public async handleConnectionClose(lastDisconnect: unknown): Promise<void> {
     this.catchUpManager.reset()
 
-    const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
-    const errorData = (lastDisconnect?.error as unknown as { data?: { tag?: string } })?.data
+    const lastDisconnectObj = lastDisconnect as Record<string, unknown> | null | undefined
+    const statusCode = (lastDisconnectObj?.error as Boom | undefined)?.output?.statusCode
+    const errorData = (lastDisconnectObj?.error as Record<string, unknown> | undefined)?.data as Record<string, unknown> | undefined
     const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
     const isRestartRequired = statusCode === DisconnectReason.restartRequired
     const shouldReconnect = (statusCode !== DisconnectReason.loggedOut && !isConflict) || isRestartRequired
 
-    console.log(`[Connection] Closed | statusCode=${statusCode} | isRestart=${isRestartRequired} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect} | error=`, lastDisconnect?.error)
+    console.log(`[Connection] Closed | statusCode=${statusCode} | isRestart=${isRestartRequired} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect} | error=`, lastDisconnectObj?.error)
 
     if (shouldReconnect) {
       const delay = isRestartRequired ? RECONNECT_DELAY_RESTART_MS : RECONNECT_DELAY_DEFAULT_MS

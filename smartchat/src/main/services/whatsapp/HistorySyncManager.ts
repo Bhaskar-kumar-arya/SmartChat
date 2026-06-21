@@ -1,5 +1,5 @@
 import { BrowserWindow } from 'electron'
-import { handleHistorySync } from '../../historySync'
+import { handleHistorySync, HistorySyncData } from '../../historySync'
 import { WASocket } from './types'
 import {
   SYNC_TYPE_INITIAL,
@@ -86,7 +86,7 @@ export class HistorySyncManager implements IHistorySyncManager {
       this.syncTimeout = setTimeout(() => this.finishSync(sock, syncFullHistory), HISTORY_SYNC_TIMEOUT_MS)
 
       const syncResult = await handleHistorySync(
-        data as any,
+        data as HistorySyncData,
         this.deps.contactService,
         this.deps.aliasRepository,
         this.deps.chatRepository,

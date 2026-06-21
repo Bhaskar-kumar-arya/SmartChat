@@ -9,54 +9,54 @@ export interface FormatterMessageInput {
 export interface IFormattedMessageContent {
   contactMessage?: {
     displayName?: string | null;
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
   pollCreationMessage?: {
     name?: string | null;
-    options?: Array<{ optionName?: string | null; [key: string]: any }> | null;
-    [key: string]: any;
+    options?: Array<{ optionName?: string | null; [key: string]: unknown }> | null;
+    [key: string]: unknown;
   } | null;
   audioMessage?: {
     seconds?: number | null;
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
   imageMessage?: {
     caption?: string | null;
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
   reactionMessage?: {
     text?: string | null;
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
   documentMessage?: {
     fileName?: string | null;
     caption?: string | null;
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
   documentWithCaptionMessage?: {
     message?: {
       documentMessage?: {
         fileName?: string | null;
         caption?: string | null;
-        [key: string]: any;
+        [key: string]: unknown;
       } | null;
-      [key: string]: any;
+      [key: string]: unknown;
     } | null;
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
   videoMessage?: {
     caption?: string | null;
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
   ptvMessage?: {
     caption?: string | null;
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
   extendedTextMessage?: {
     canonicalUrl?: string | null;
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface MessageFormatter {

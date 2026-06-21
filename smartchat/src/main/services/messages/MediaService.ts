@@ -196,9 +196,11 @@ export class MediaService implements IMediaService {
     }
   }
 
-  private extractStickerSha(mediaMsg: any): string | null {
-    if (!mediaMsg || !mediaMsg.fileSha256) return null
-    const sha = mediaMsg.fileSha256
+  private extractStickerSha(mediaMsg: unknown): string | null {
+    if (!mediaMsg || typeof mediaMsg !== 'object') return null
+    const mediaObj = mediaMsg as Record<string, unknown>
+    if (!mediaObj.fileSha256) return null
+    const sha = mediaObj.fileSha256
     if (typeof sha === 'string') {
       return sha
     }
@@ -357,16 +359,17 @@ export class MediaService implements IMediaService {
       fs.writeFileSync(filePath, buffer)
       return true
     } catch (primaryErr: unknown) {
-      const primaryErrObj = primaryErr as Record<string, any> | null | undefined
-      const statusCode: number | undefined =
-        primaryErrObj?.output?.statusCode ?? primaryErrObj?.statusCode
+      const primaryErrObj = primaryErr as Record<string, unknown> | null | undefined
+      const outputObj = primaryErrObj?.output as Record<string, unknown> | undefined
+      const statusCode = (outputObj?.statusCode ?? primaryErrObj?.statusCode) as number | undefined
 
       // Only retry on known recoverable CDN errors
       if (statusCode !== 403 && statusCode !== 404 && statusCode !== 410) {
         throw primaryErr
       }
 
-      const isDirectStream = (primaryErrObj?.data?.url as string | undefined)?.includes(CDN_DIRECT_STREAM_SUBSTRING)
+      const dataObj = primaryErrObj?.data as Record<string, unknown> | undefined
+      const isDirectStream = (dataObj?.url as string | undefined)?.includes(CDN_DIRECT_STREAM_SUBSTRING)
       console.warn(
         `[MediaService] Primary download failed (HTTP ${statusCode}${isDirectStream ? ', direct-stream /o1/' : ''}) for msg ${msgId} — attempting updateMediaMessage re-upload`
       )
@@ -442,7 +445,7 @@ export class MediaService implements IMediaService {
       Object.assign(mediaMsg, updatedMediaMsg)
 
     } catch (retryErr: unknown) {
-      const retryErrObj = retryErr as Record<string, any> | null | undefined
+      const retryErrObj = retryErr as Record<string, unknown> | null | undefined
       const errMsg = retryErrObj?.message && typeof retryErrObj.message === 'string' ? retryErrObj.message : ''
       const isDecryptErr =
         errMsg.includes('authenticate') ||

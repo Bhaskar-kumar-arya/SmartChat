@@ -14,13 +14,16 @@ export class AppStateSyncParser {
    * Decodes index arrays, detects sync action names, and dispatches the
    * corresponding typed event on the event bus.
    */
-  static async parseAndDispatch(syncAction: any, sock: WASocket, bus: IWAEventBus): Promise<void> {
+  static async parseAndDispatch(syncAction: unknown, sock: WASocket, bus: IWAEventBus): Promise<void> {
     try {
+      const syncActionObj = syncAction as Record<string, unknown> | null | undefined
+      if (!syncActionObj) return
+
       let indexArray: string[] | null = null
-      if (Array.isArray(syncAction.index)) {
-        indexArray = syncAction.index
-      } else if (syncAction.syncAction && typeof syncAction.syncAction.index === 'string') {
-        const decoded = Buffer.from(syncAction.syncAction.index, 'base64').toString('utf8')
+      if (Array.isArray(syncActionObj.index)) {
+        indexArray = syncActionObj.index
+      } else if (syncActionObj.syncAction && typeof (syncActionObj.syncAction as Record<string, unknown>).index === 'string') {
+        const decoded = Buffer.from((syncActionObj.syncAction as Record<string, unknown>).index as string, 'base64').toString('utf8')
         const parsed = JSON.parse(decoded)
         if (Array.isArray(parsed)) {
           indexArray = parsed
@@ -30,14 +33,14 @@ export class AppStateSyncParser {
       if (!indexArray || indexArray.length === 0) return
 
       const actionName = indexArray[0]
-      const innerAction = syncAction.syncAction
-      const value = innerAction?.value
+      const innerAction = syncActionObj.syncAction as Record<string, unknown> | null | undefined
+      const value = innerAction?.value as Record<string, unknown> | null | undefined
 
       switch (actionName) {
         case 'favoriteSticker': {
           const fileSha256 = indexArray[1]
           if (!fileSha256) break
-          const stickerAction = value?.stickerAction
+          const stickerAction = value?.stickerAction as Record<string, unknown> | null | undefined
           const isFavorite = !!value && !!stickerAction && stickerAction.isFavorite !== false
           await bus.emit('app-state:favorite-sticker', {
             fileSha256,
@@ -51,7 +54,7 @@ export class AppStateSyncParser {
           const chatJid = indexArray[1]
           if (!chatJid) break
           const cleanChatJid = cleanJid(chatJid)
-          const muteAction = value?.muteAction
+          const muteAction = value?.muteAction as Record<string, unknown> | null | undefined
           const muted = !!muteAction?.muted
           let muteEndTimestamp: bigint | null = null
           if (muted && muteAction?.muteEndTimestamp !== undefined) {
@@ -88,7 +91,7 @@ export class AppStateSyncParser {
           const chatJid = indexArray[1]
           if (!chatJid) break
           const cleanChatJid = cleanJid(chatJid)
-          const pinAction = value?.pinAction
+          const pinAction = value?.pinAction as Record<string, unknown> | null | undefined
           const pinned = !!pinAction?.pinned
           const pinTimestamp = pinned ? (innerAction?.timestamp ? Number(innerAction.timestamp) : Math.floor(Date.now() / 1000)) : 0
 
@@ -104,7 +107,7 @@ export class AppStateSyncParser {
           const chatJid = indexArray[1]
           const messageId = indexArray[2]
           const fromMe = indexArray[3] === '1'
-          const starAction = value?.starAction
+          const starAction = value?.starAction as Record<string, unknown> | null | undefined
           const starred = !!starAction?.starred
           if (chatJid && messageId) {
             await bus.emit('app-state:star', {
@@ -119,7 +122,7 @@ export class AppStateSyncParser {
         case 'call_log': {
           const chatJid = indexArray[1]
           const callId = indexArray[2]
-          const callLogRecord = value?.callLogAction?.callLogRecord
+          const callLogRecord = (value?.callLogAction as Record<string, unknown> | undefined)?.callLogRecord as Record<string, unknown> | undefined
           if (chatJid && callId && callLogRecord) {
             const isIncoming = !!callLogRecord.isIncoming
             const duration = typeof callLogRecord.duration === 'string'
@@ -131,10 +134,13 @@ export class AppStateSyncParser {
                 : String(callLogRecord.startTime || 0)
             )
             const participants = Array.isArray(callLogRecord.participants)
-              ? callLogRecord.participants.map((p: any) => ({
-                userJid: p.userJid || '',
-                callResult: p.callResult || ''
-              }))
+              ? callLogRecord.participants.map((p: unknown) => {
+                const pObj = p as Record<string, unknown> | null | undefined
+                return {
+                  userJid: (pObj?.userJid as string | undefined) || '',
+                  callResult: (pObj?.callResult as string | undefined) || ''
+                }
+              })
               : []
 
             await bus.emit('app-state:call-log', {
@@ -142,16 +148,16 @@ export class AppStateSyncParser {
               callId,
               isIncoming,
               record: {
-                callResult: callLogRecord.callResult || '',
+                callResult: (callLogRecord.callResult as string | undefined) || '',
                 isDndMode: !!callLogRecord.isDndMode,
-                silenceReason: callLogRecord.silenceReason || '',
+                silenceReason: (callLogRecord.silenceReason as string | undefined) || '',
                 duration,
                 startTime,
                 isVideo: !!callLogRecord.isVideo,
                 isCallLink: !!callLogRecord.isCallLink,
-                callCreatorJid: callLogRecord.callCreatorJid || '',
+                callCreatorJid: (callLogRecord.callCreatorJid as string | undefined) || '',
                 participants,
-                callType: callLogRecord.callType || ''
+                callType: (callLogRecord.callType as string | undefined) || ''
               }
             })
           }
@@ -159,22 +165,22 @@ export class AppStateSyncParser {
         }
         case 'label_edit': {
           const labelId = indexArray[1]
-          const labelEditAction = value?.labelEditAction
+          const labelEditAction = value?.labelEditAction as Record<string, unknown> | null | undefined
           if (labelId && labelEditAction) {
             await bus.emit('app-state:label-edit', {
               labelId,
-              name: labelEditAction.name || '',
+              name: (labelEditAction.name as string | undefined) || '',
               color: typeof labelEditAction.color === 'number' ? labelEditAction.color : 0,
               deleted: !!labelEditAction.deleted,
               isActive: !!labelEditAction.isActive,
-              type: labelEditAction.type || ''
+              type: (labelEditAction.type as string | undefined) || ''
             })
           }
           break
         }
         case 'lock': {
           const chatJid = indexArray[1]
-          const lockChatAction = value?.lockChatAction
+          const lockChatAction = value?.lockChatAction as Record<string, unknown> | null | undefined
           if (chatJid && lockChatAction) {
             await bus.emit('app-state:lock', {
               chatJid,
@@ -185,11 +191,11 @@ export class AppStateSyncParser {
         }
         case 'notificationActivitySetting': {
           const chatJid = indexArray[1]
-          const notificationAction = value?.notificationActivitySettingAction
+          const notificationAction = value?.notificationActivitySettingAction as Record<string, unknown> | null | undefined
           if (chatJid && notificationAction) {
             await bus.emit('app-state:notification-setting', {
               chatJid,
-              setting: notificationAction.notificationActivitySetting || ''
+              setting: (notificationAction.notificationActivitySetting as string | undefined) || ''
             })
           }
           break

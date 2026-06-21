@@ -4,7 +4,7 @@ import { WAEventHandler } from './WAEventHandler'
 
 export interface ConnectionCallbacks {
   handleQr(qr: string): void
-  handleConnectionClose(lastDisconnect: any): Promise<void>
+  handleConnectionClose(lastDisconnect: unknown): Promise<void>
   handleConnectionOpen(sock: WASocket, syncFullHistory: boolean): Promise<void>
   handleConnectionUpdate(update: Partial<ConnectionState>): Promise<void>
 }

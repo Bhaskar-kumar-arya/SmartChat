@@ -4,7 +4,8 @@ import {
   AuthenticationState,
   AuthenticationCreds,
   makeCacheableSignalKeyStore,
-  proto
+  proto,
+  SignalKeyStore
 } from "@whiskeysockets/baileys";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
@@ -183,8 +184,8 @@ export const usePrismaAuthState = async (): Promise<{
 
   const creds: AuthenticationCreds =
     (await readData("creds")) || initAuthCreds();
-  const baseKeyStore = {
-    get: async (type: string, ids: string[]): Promise<{ [id: string]: any }> => {
+  const baseKeyStore: SignalKeyStore = {
+    get: async (type: string, ids: string[]) => {
       const data: Record<string, unknown> = {};
       await Promise.all(
         ids.map(async (id) => {
@@ -195,9 +196,9 @@ export const usePrismaAuthState = async (): Promise<{
           data[id] = value;
         })
       );
-      return data;
+      return data as Record<string, any>;
     },
-    set: async (data: { [category: string]: { [id: string]: any } }): Promise<void> => {
+    set: async (data) => {
       // Aggregate ALL key mutations into a single prisma.$transaction() call.
       // This replaces N individual SQLite lock/write/unlock cycles with ONE,
       // which is the primary fix for the slow 1-5 message trickle on reconnect.

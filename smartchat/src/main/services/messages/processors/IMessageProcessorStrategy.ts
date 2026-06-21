@@ -1,3 +1,4 @@
+import { proto } from '@whiskeysockets/baileys'
 import { BaileysMessage, ProtocolResult, WASocket } from '../../whatsapp/types'
 import { ProcessedMessage } from '../../../domain/types'
 import { IIdentityRepository } from '../../contacts/IIdentityRepository'
@@ -9,8 +10,8 @@ import { SecretMessageService } from '../../whatsapp/secret/SecretMessageService
 export interface IMessageProcessingContext {
   msg: BaileysMessage
   sock: WASocket | null
-  rawMessage: any
-  unwrapped: any
+  rawMessage: proto.IMessage | null | undefined
+  unwrapped: proto.IMessage | null | undefined
   remoteJid: string
   participantString: string | null
   senderId: number | null

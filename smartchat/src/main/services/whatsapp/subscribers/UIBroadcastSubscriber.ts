@@ -119,13 +119,13 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
 
       const enrichedPresences = Object.entries(presences).map(([participantJid, status]) => {
         const cleanParticipantJid = cleanJid(participantJid)
-        const s = status as any
+        const s = status as Record<string, unknown> | null | undefined
         return [
           cleanParticipantJid,
           {
             ...s,
             name: nameMap.get(cleanParticipantJid) || cleanParticipantJid.replace(/@.*$/, ''),
-            lastSeen: s.lastSeen ? s.lastSeen.toString() : undefined,
+            lastSeen: s?.lastSeen ? String(s.lastSeen) : undefined,
             timestamp: Date.now()
           }
         ]

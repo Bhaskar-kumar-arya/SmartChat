@@ -25,9 +25,10 @@ function getLogFile(): string {
   }
 }
 
-function logMain(message: string, error?: any) {
+function logMain(message: string, error?: unknown) {
   const timestamp = new Date().toISOString()
-  const errorMsg = error ? ` | Error: ${error.message || error}\n${error.stack || ''}` : ''
+  const errorObj = error instanceof Error ? error : null
+  const errorMsg = error ? ` | Error: ${errorObj?.message || String(error)}\n${errorObj?.stack || ''}` : ''
   const logLine = `[${timestamp}] ${message}${errorMsg}\n`
   console.log(message, error || '')
   try {

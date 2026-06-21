@@ -240,7 +240,7 @@ export class ExecuteScriptTool implements AITool {
         }
         incrementCallCount();
         logs.push(`[tool:${tool.name}] call #${getCallCount()}`);
-        return tool.execute(toolArgs);
+        return tool.execute(toolArgs as Record<string, unknown>);
       };
     }
 
