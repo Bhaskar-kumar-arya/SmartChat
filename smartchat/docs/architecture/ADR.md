@@ -4,28 +4,21 @@ This document records the major architectural decisions made during the SmartCha
 
 ---
 
-## ADR-1: Types & Utilities Segregation (Main & Renderer)
+## ADR-1: Types & Utilities Segregation
 
 **Date:** 2026-06-20
 **Status:** Accepted
 
 ### Context
-Monolithic type files (like `types.ts` in main and renderer) coupled UI components, domain definitions, and third-party libraries (e.g., Baileys). Importers of simple utility helpers (like `cleanJid`) were transitively coupled to heavy dependencies, complicating compilation and testing.
+Monolithic types coupled UI components, domain logic, and Baileys types. Simple helper imports transitively loaded heavy SDK dependencies.
 
 ### Decision
-Segregate monolithic types and utilities into layer-focused modules. Split main process types into Baileys-specific (`whatsapp.types.ts`) and clean domain types (`types.ts`). Split renderer types into granular modules (`chatTypes.ts`, `aiTypes.ts`, `mediaTypes.ts`, `componentProps.ts`), and extract formatting helpers into standalone utilities (like `contactUtils.ts`).
+Segregate types and utilities. Split main process types into `whatsapp.types.ts` and domain `entities.ts`/`db.types.ts`. Split renderer types into granular modules. Enforce direct utility imports.
 
 ### Consequences
-**Enables:**
-- Layer isolation between raw network protocols, internal utilities, and UI layout code.
-- Granular compile scopes and easier unit testing of utilities without loading socket libraries.
-
-**Constrains:**
-- Core services and UI components must never import library-specific or presentation-only types.
-- Main-process utilities must not import `@whiskeysockets/baileys` directly.
-
-**Watch for:**
-- Static type leaks when creating new utility helpers or component props.
+**Enables:** Clear layer boundaries, smaller compile scopes, and easier unit testing.
+**Constrains:** Services/UI must not import SDK-specific or presentation-only types.
+**Watch for:** Static type leaks in utility modules.
 
 ---
 
@@ -35,23 +28,15 @@ Segregate monolithic types and utilities into layer-focused modules. Split main 
 **Status:** Accepted
 
 ### Context
-Database repository interfaces (e.g., `IChatRepository`, `IMessageRepository`) mixed read operations with mutating write operations and directly leaked Prisma models to services. Furthermore, query methods used raw `any` parameters for Prisma query filters, compromising type safety.
+Repository interfaces (e.g. `IChatRepository`) mixed read/write actions, used generic `any` for ORM queries, and leaked Prisma models directly to services.
 
 ### Decision
-Apply the Interface Segregation Principle (ISP) to split repository interfaces into narrow, read-only and write-only contracts (e.g., `IMessageExistenceRepository`, `IMessageReadRepository`, `IMessageSearchRepository`, `IMessageIndexRepository`, and `IMessageCompoundRepository`). Map ORM model entities to clean domain DTOs inside repositories, and replace open `where: any` parameters with explicit typed filters (`MessageQueryFilter`).
+Apply Interface Segregation Principle (ISP) to repository interfaces, separating read and write contracts. Centralize Prisma access inside repositories, return clean domain DTOs, and type queries explicitly (`MessageQueryFilter`).
 
 ### Consequences
-**Enables:**
-- Compliance with ISP — services only declare dependencies on the query types they actually invoke.
-- Complete isolation of the service layer from database schema changes.
-- Direct mockability for unit testing service orchestrations without database setups.
-
-**Constrains:**
-- Services must never import Prisma models or Client objects directly.
-- Complex relationship lookups must be mapped to explicit domain DTO types.
-
-**Watch for:**
-- "Quick query" bypasses in service files or methods returning untyped `any`.
+**Enables:** Isolation of services from DB schema changes and direct mockability.
+**Constrains:** Services must never import Prisma Client or entities directly.
+**Watch for:** Bypassing interfaces to run raw SQL queries.
 
 ---
 
@@ -61,120 +46,174 @@ Apply the Interface Segregation Principle (ISP) to split repository interfaces i
 **Status:** Accepted
 
 ### Context
-Event-driven services directly imported and depended on the concrete `WAEventBus` class. This tightly bound connection handlers, history sync, and chat services to one event implementation, preventing modular testing.
+Event-driven services directly depended on the concrete `WAEventBus` class, which coupled connection handlers, sync modules, and chat services to one event implementation.
 
 ### Decision
-Introduce the `IWAEventBus` interface representing the pub/sub event handler contract, and instantiate the event bus using `WAEventBusFactory`. All subscribers and publishers depend strictly on this abstraction.
+Introduce the `IWAEventBus` interface representing the pub/sub event handler contract. Instantiate the bus via the DI container.
 
 ### Consequences
-**Enables:**
-- Mocking or replacing the event bus during integration and unit tests.
-- Decoupling event subscriber wire-up from event bus internals.
-
-**Constrains:**
-- Concrete event classes must not be imported across layer boundaries.
-- Subscribers must only consume `IWAEventBus`.
-
-**Watch for:**
-- Event loops caused by direct cross-dependencies inside subscribers.
+**Enables:** Decoupling event wiring, allowing easy mocking of the event bus during testing.
+**Constrains:** All subscribers and publishers must consume the `IWAEventBus` interface.
+**Watch for:** Memory leaks due to undeleted listeners or event loops.
 
 ---
 
-## ADR-4: Service Layer Decoupling & Transport Isolation
-
-**Date:** 2026-06-20 (Updated 2026-06-21)
-**Status:** Accepted
-
-### Context
-Core services (e.g., `ChatService`, `MessageService`) directly referenced third-party Baileys socket classes (`WASocket`, `BaileysMessage`) and IPC wire-format types (`ChatListItem`). This coupled core business logic to the transport library and frontend boundaries.
-
-### Decision
-Replace presentation wire formats and transport types in service contracts with domain-level DTOs (e.g., `ChatListEntry` instead of `ChatListItem`) and generic abstractions (e.g., `SocketAccessor` instead of `WASocket`). Map incoming socket payloads at the boundaries (e.g., in event subscribers) and presentation structures in the IPC handlers.
-
-### Consequences
-**Enables:**
-- Testing core workflows without running or mocking a live socket connection.
-- Changing or upgrading the underlying transport SDK without altering business services.
-
-**Constrains:**
-- Services must not import `@whiskeysockets/baileys` or IPC handler types.
-- Map transport data to domain models before passing it to services.
-
-**Watch for:**
-- Interface method changes leaking transport-level parameters.
-
----
-
-## ADR-5: CPU Work & DB Maintenance Isolation
+## ADR-4: WhatsApp Transport Type Isolation
 
 **Date:** 2026-06-21
 **Status:** Accepted
 
 ### Context
-Leaf services like `EmbeddingService` mixed core embedding generation with heavy CPU thread orchestration (spawning workers) and low-level database maintenance/synchronization (`syncVectors`). This violated the Single Responsibility Principle (SRP) by combining business rules with thread lifecycles and vector table updates.
+Raw Baileys library types (e.g. `proto.IMessageKey`, `proto.IMessage`) leaked through the event bus and service interfaces, making the codebase highly vulnerable to library updates.
 
 ### Decision
-Extract background thread operations to a dedicated `EmbeddingWorkerManager` and database vector table maintenance to `VectorSyncService` (implementing `IVectorSyncService`). Cleanly segregate `IEmbeddingService` into its own interface file.
+Introduce domain wrapper types (`WAMessageKey`, `WAMessageContent`) and map raw socket payloads at the adapter boundary before publishing to the event bus.
 
 ### Consequences
-**Enables:**
-- Scaling, testing, and modifying database vector synchronization independently from the embedding generator.
-- Safer background execution in worker threads without bloat in the main service logic.
-
-**Constrains:**
-- `EmbeddingService` must not reference SQLite vector synchronization tables directly.
-- Worker thread spawning must reside solely in `EmbeddingWorkerManager`.
-
-**Watch for:**
-- Spawning worker threads directly inside business services bypassing the manager.
+**Enables:** Complete isolation of core services from Baileys SDK internal data shapes.
+**Constrains:** Services must never import or reference the Baileys `proto` namespace.
+**Watch for:** New raw Baileys types leaking back into domain objects.
 
 ---
 
-## ADR-6: Interface-Driven Dependency Injection (DI)
-
-**Date:** 2026-06-20 (Updated 2026-06-21)
-**Status:** Accepted
-
-### Context
-`ServiceContainer` was wired with concrete classes, and global singletons (like `toolRegistry` in `AIToolService`) were exported at the file level. This bypassed the DI container, using the `new` operator directly, which prevented modular testing and led to hard-wired dependencies.
-
-### Decision
-Extract interfaces for all service and repository classes. Define the `ServiceContainer` type registry to map keys strictly to interface abstractions. Inject dependencies through constructors and register all shared services (including `IToolRegistry`) inside the container.
-
-### Consequences
-**Enables:**
-- Full mockability of the entire system container for integration tests.
-- Strict SOLID boundary enforcement across all feature modules.
-
-**Constrains:**
-- Classes must never call `new ConcreteClass()` in their bodies; they must receive interfaces via constructors.
-- The container must bootstrapped map keys to abstractions, not details.
-- Avoid file-level singleton instantiation.
-
-**Watch for:**
-- New services bypassing constructor injection.
-
----
-
-## ADR-7: AI Provider Capabilities & Prompt Strategy Segregation
+## ADR-5: Utility Barrel Direct Import Enforcement
 
 **Date:** 2026-06-21
 **Status:** Accepted
 
 ### Context
-The `AIProvider` interface was a monolith requiring both streaming and full-response generation, forcing single-mode providers (like streaming-only local LLMs) to write stub methods. In addition, prompt generation logic in `SystemPromptBuilder` was coupled to specific models and used closed ternary switches.
+The monolithic `utils.ts` barrel combined JID normalizers, message parsing, and community helpers, coupling lightweight utility consumers to heavy libraries.
 
 ### Decision
-Segregate the provider contract into `IStreamingProvider` and `IFullResponseProvider` interfaces. Decompose `SystemPromptBuilder` to call static content (`SystemPromptContent`), formatting helpers (`ToolDefinitionFormatter`), and strategy-based protocol implementations (`IProtocolStrategy` for Standard/React).
+Enforce direct imports of specific utility files (e.g. `utils/jidUtils`, `utils/messageUtils`) and deprecate the common `utils.ts` barrel.
 
 ### Consequences
-**Enables:**
-- Supporting single-mode AI providers without stubs and adding new prompt strategies (e.g., JSON mode) without editing the builder class.
-- Dynamic capability checking in the AI coordinator layer.
+**Enables:** Clean dependency paths and reduced compilation blast radius.
+**Constrains:** Core services must import directly from specific sub-utility files.
+**Watch for:** Developers reintroducing barrel exports for convenience.
 
-**Constrains:**
-- Prompt strategies must implement `IProtocolStrategy` and be resolved through the DI container.
+---
 
-**Watch for:**
-- Providers stubbing non-supported methods instead of declaring support for a single interface.
-- Inline prompt text overrides in `SystemPromptBuilder`.
+## ADR-6: AI Interface Segregation and Type Safety
+
+**Date:** 2026-06-21
+**Status:** Accepted
+
+### Context
+`IBaseAIProvider` mixed streaming and full-response generation, forcing single-mode providers to override empty stubs. Tool prompt builders bypassed type safety via `any[]`.
+
+### Decision
+Split `IBaseAIProvider` into capability-specific interfaces (`IStreamingProvider`, `IFullResponseProvider`). Extract `IApiKeyAwareProvider` and strongly type tool lists to `AITool[]`.
+
+### Consequences
+**Enables:** Clean provider implementations without stub overrides and type-safe prompt building.
+**Constrains:** Registered tools must implement the `AITool` contract.
+**Watch for:** Bypassing registry validation or using untyped prompts.
+
+---
+
+## ADR-7: Embedding Service Interface Segregation
+
+**Date:** 2026-06-21
+**Status:** Accepted
+
+### Context
+Monolithic `IEmbeddingService` combined vector computation, worker thread lifecycles, database synchronization, and model configuration under one contract.
+
+### Decision
+Split `IEmbeddingService` into four specific interfaces: `IEmbeddingComputer`, `IMessageIndexer`, `IEmbeddingModelConfig`, and `IEmbeddingOperationalControl`.
+
+### Consequences
+**Enables:** Fine-grained client dependencies; `SearchService` only consumes `IEmbeddingComputer`.
+**Constrains:** Constructors must request the narrowest sub-interface instead of the combined rollup.
+**Watch for:** Re-combining distinct responsibilities into a single interface.
+
+---
+
+## ADR-8: Contact Service Interface Segregation & Injection Narrowing
+
+**Date:** 2026-06-21
+**Status:** Accepted
+
+### Context
+Monolithic `IContactService` rollup had 14 methods and leaked the raw Baileys `WASocket` type in method parameters, violating domain-boundary rules.
+
+### Decision
+Split `IContactService` into `IContactQueryService`, `IContactMutationService`, `IContactNameResolver`, and `IContactCacheManager`. Replace `WASocket` parameters with `ISocketUserContext` and `IMediaSocket`.
+
+### Consequences
+**Enables:** Domain-driven contact resolution free from socket references.
+**Constrains:** Constructor injection must declare the narrowest sub-interface.
+**Watch for:** Accidentally passing raw socket connections instead of context.
+
+---
+
+## ADR-9: Chat Service Transport Decoupling
+
+**Date:** 2026-06-21
+**Status:** Accepted
+
+### Context
+The chat service boundary directly imported `SocketAccessor` and `ChatUpdatePayload` from the WhatsApp transport module, coupling domain logic to network libraries.
+
+### Decision
+Move `ChatUpdatePayload` to `domain/whatsapp.types.ts`. Introduce `IGroupMetadataFetcher` in the chat domain to resolve members, keeping sockets inside implementation classes.
+
+### Consequences
+**Enables:** Decoupling chat domain CRUD operations from connection lifecycles.
+**Constrains:** Sockets must not leak beyond concrete implementation files.
+**Watch for:** Re-introducing socket accessors inside chat repositories.
+
+---
+
+## ADR-10: Open-Closed Message Formatter Strategy & Registry
+
+**Date:** 2026-06-22
+**Status:** Accepted
+
+### Context
+`IFormattedMessageContent` explicitly declared every known WhatsApp content type. Adding a new formatter required modifying this shared interface, violating OCP.
+
+### Decision
+Replace `IFormattedMessageContent` with `Record<string, any>` (narrowed locally in formatters). Register concrete formatters dynamically in `MessageFormatterRegistry`.
+
+### Consequences
+**Enables:** Adding new formatters without modifying any shared files (strict OCP).
+**Constrains:** Formatters must narrow types locally with self-contained schemas.
+**Watch for:** Runtime type assertion failures due to missing property checks.
+
+---
+
+## ADR-11: WhatsApp Event Map Domain Composition
+
+**Date:** 2026-06-22
+**Status:** Accepted
+
+### Context
+Monolithic `WAEventMap` registry triggered broad recompilations of all event subscribers when any connection or sync event changed.
+
+### Decision
+Group events into domain interfaces (`MessageEventMap`, `ChatEventMap`, etc.) and compose `WAEventMap` via type intersection inside `WAEventTypes.ts`.
+
+### Consequences
+**Enables:** Domain changes only compile corresponding subscriber files, minimizing blast radius.
+**Constrains:** Event keys must be unique across all maps to prevent collisions.
+**Watch for:** Key collisions between distinct domain modules.
+
+---
+
+## ADR-12: Renderer Composition Root Decoupling
+
+**Date:** 2026-06-22
+**Status:** Accepted
+
+### Context
+React's `APIProvider` directly imported and instantiated the concrete `api` singleton, preventing mock client injection during unit testing and Storybook preview.
+
+### Decision
+Decouple `APIContext.tsx` from concrete service instances. Let `APIProvider` accept `IAPIService` as a prop, wired at the Composition Root (`main.tsx`).
+
+### Consequences
+**Enables:** Swapping the API client layer for mock structures during UI testing.
+**Constrains:** React components must never import from the concrete `api.service` directly.
+**Watch for:** Bypassing context hook to import concrete services.

@@ -22,17 +22,17 @@ Electron + React + TS | Decoupled, Layered SOLID | SQLite (Prisma ORM), better-s
 ## Module Map
 | Module | Public Interface | Owned Concrete Classes |
 |---|---|---|
-| `contacts` | `IContactService`, `IIdentityReconciliationService` | `ContactService`, `LidPnLinker`, `ContactNameResolver`, `ContactCache` |
-| `chats` | `IChatService`, `IGroupMembershipService`, `IGroupHydrationService` | `ChatService`, `GroupMembershipService`, `ChatListEnricher`, `GroupHydration` |
-| `messages` | `IMessageWriterService`, `IMessageQueryService`, `IMessageActionService`, `IMediaService` | `MessageService`, `MessageParser`, `MessageEnricher`, `MediaService`, `ActionService` |
-| `search` | `ISearchService`, `IEmbeddingService`, `IVectorSyncService` | `SearchService`, `EmbeddingService`, `VectorSyncService`, `EmbeddingWorkerManager` |
-| `ai` | `IAIService`, `IAIChatSessionService`, `IAIKeyService`, `IToolRegistry` | `AIService`, `AIChatSessionService`, `AIKeyService`, `ToolRegistry`, `SystemPromptBuilder` |
-| `whatsapp` | `IHistorySyncManager`, `IWAEventWiringService`, `ISecretMessageService` | `HistorySyncManager`, `WAEventWiringService`, `SecretMessageService`, `WACatchUpManager` |
+| `contacts` | `IContactQueryService`, `IContactMutationService`, `IContactNameResolver`, `IContactCacheManager`, `IIdentityReconciliationService` | `ContactService`, `LidPnLinker`, `ContactNameResolver`, `ContactCache`, `IdentityReconciliationService` |
+| `chats` | `IChatQueryService`, `IChatMutationService`, `IGroupParticipantResolver`, `IGroupMembershipService`, `IGroupHydrationService` | `ChatService`, `GroupMembershipService`, `ChatListEnricher`, `GroupHydrationService` |
+| `messages` | `IMessageWriterService`, `IMessageQueryService`, `IMessageActionService`, `IMediaService` | `MessageService`, `MessageParser`, `MessageEnricher`, `MediaService`, `MessageActionService` |
+| `search` | `ISearchService`, `IEmbeddingComputer`, `IMessageIndexer`, `IEmbeddingModelConfig`, `IEmbeddingOperationalControl` | `SearchService`, `EmbeddingService`, `VectorSyncService`, `EmbeddingWorkerManager` |
+| `ai` | `IAIService`, `IAIChatSessionService`, `IAIKeyService`, `IToolRegistry`, `ISystemInstructionBuilder` | `AIService`, `AIChatSessionService`, `AIKeyService`, `ToolRegistry`, `SystemPromptBuilder` |
+| `whatsapp` | `IHistorySyncManager`, `IWAEventWiringService`, `ISecretMessageService`, `IWAEventBus` | `HistorySyncManager`, `WAEventWiringService`, `SecretMessageService`, `WACatchUpManager`, `WAEventBus` |
 
 ## Extension Points
 | To add... | Do this |
 |---|---|
-| Message formatter | Create class implementing `MessageFormatter`, register in `formatters/index.ts`. |
+| Message formatter | Create class implementing `MessageFormatter`, register in `createMessageFormatterRegistry` in `formatters/index.ts`. |
 | JID parsing strategy | Create class implementing `IJidStrategy`, add to `strategies` array in `ServiceContainer.ts`. |
 | AI Provider adapter | Implement `IStreamingProvider` or `IFullResponseProvider` under `providers/`, wire in `AIService`. |
 | Prompt protocol strategy | Implement `IProtocolStrategy` under `prompts/`, wire into `SystemPromptBuilder` in `ServiceContainer`. |
