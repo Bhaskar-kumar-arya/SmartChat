@@ -192,7 +192,7 @@ app.whenReady().then(() => {
     services.catchUpManager
   )
   registerIpcHandlers(services, getSock, waConnectionManager)
-  initVectorDb(services.embeddingService)
+  initVectorDb(services.vectorSyncService)
 
   ipcMain.on('wa-skip-sync', () => {
     waConnectionManager.skipSync()

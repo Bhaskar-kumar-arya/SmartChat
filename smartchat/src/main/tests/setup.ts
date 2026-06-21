@@ -45,10 +45,18 @@ vi.mock('../services/search/EmbeddingService', () => {
       public setPaused = vi.fn()
       public isPaused = vi.fn().mockReturnValue(false)
       public queueMessageForEmbedding = vi.fn().mockResolvedValue(undefined)
-      public syncVectors = vi.fn().mockResolvedValue(undefined)
       public indexMessage = vi.fn().mockResolvedValue(undefined)
       public indexAll = vi.fn().mockResolvedValue(undefined)
       public clearAllVectors = vi.fn().mockResolvedValue(undefined)
+    }
+  }
+})
+
+// Mock VectorSyncService globally
+vi.mock('../services/search/VectorSyncService', () => {
+  return {
+    VectorSyncService: class MockVectorSyncService {
+      public sync = vi.fn().mockResolvedValue(undefined)
     }
   }
 })

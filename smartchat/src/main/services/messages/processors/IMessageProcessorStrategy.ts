@@ -4,7 +4,7 @@ import { ProcessedMessage } from '../../../domain/types'
 import { IIdentityRepository } from '../../contacts/IIdentityRepository'
 import { IMessageRepository } from '../IMessageRepository'
 import { IReactionRepository } from '../IReactionRepository'
-import { IEmbeddingService } from '../../search/EmbeddingService'
+import { IEmbeddingService } from '../../search/IEmbeddingService'
 import { SecretMessageService } from '../../whatsapp/secret/SecretMessageService'
 
 export interface IMessageProcessingContext {

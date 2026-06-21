@@ -16,7 +16,7 @@ import { BaileysPatcher } from './BaileysPatcher'
 import { IWAEventWiringService, ConnectionCallbacks } from './IWAEventWiringService'
 import { IAuthSettingsService } from '../auth/IAuthSettingsService'
 import { IChatRepository } from '../chats/IChatRepository'
-import type { IEmbeddingService } from '../search/EmbeddingService'
+import type { IEmbeddingService } from '../search/IEmbeddingService'
 import { IWASocketFactory } from './IWASocketFactory'
 import { IWACatchUpManager } from './IWACatchUpManager'
 

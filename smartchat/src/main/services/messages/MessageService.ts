@@ -1,7 +1,7 @@
 import { proto, WAMessageStubType } from '@whiskeysockets/baileys'
 import { IContactService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
-import { IEmbeddingService } from '../search/EmbeddingService'
+import { IEmbeddingService } from '../search/IEmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { cleanJid, parseBaileysTimestamp, unwrapMessage } from '../../utils'
 import {

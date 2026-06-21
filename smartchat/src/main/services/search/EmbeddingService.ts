@@ -1,20 +1,10 @@
 import { IMessageVectorRepository } from '../messages/IMessageVectorRepository'
 import { IMessageIndexRepository } from '../messages/IMessageIndexRepository'
 import { IEmbeddingWorkerManager } from './IEmbeddingWorkerManager'
+import { IEmbeddingService } from './IEmbeddingService'
 
 // ── SRP: this service ONLY handles embedding generation coordination, storage and retrieval ──
 
-export interface IEmbeddingService {
-  embed(text: string): Promise<number[]>
-  indexMessage(messageId: string, text: string): Promise<void>
-  indexAll(onProgress?: (pct: number) => void): Promise<void>
-  clearAllVectors(): Promise<void>
-  syncVectors(): Promise<void>
-  setModel(modelName: string): void
-  getModel(): string
-  setPaused(paused: boolean): void
-  setOnActiveStateSync(cb: (isActive: boolean) => void): void
-}
 
 /**
  * EmbeddingService coordinates embedding generation using a separate Worker thread
@@ -178,28 +168,6 @@ export class EmbeddingService implements IEmbeddingService {
   async clearAllVectors(): Promise<void> {
     await this.messageVectorRepository.clearAllVectors()
     console.log('[EmbeddingService] All vectors cleared.')
-  }
-
-  async syncVectors(): Promise<void> {
-    const vectors = await this.messageVectorRepository.getAllVectors()
-    console.log(`[EmbeddingService] Syncing ${vectors.length} vectors to virtual table...`)
-    for (const v of vectors) {
-      try {
-        const parsed = JSON.parse(v.vector)
-        if (Array.isArray(parsed) && parsed.length !== 768) {
-          console.warn(`[EmbeddingService] Dimension mismatch for message ${v.messageId} (expected 768, got ${parsed.length}). Deleting stale vector.`)
-          await this.messageVectorRepository.deleteVector(v.messageId).catch((err) => {
-            console.error(`[EmbeddingService] Failed to delete stale vector for ${v.messageId}:`, err)
-          })
-          continue
-        }
-        await this.messageVectorRepository.deleteFromVecMessages(v.messageId)
-        await this.messageVectorRepository.insertIntoVecMessages(v.messageId, v.vector)
-      } catch (err) {
-        console.error(`[EmbeddingService] Error syncing vector for ${v.messageId}:`, err)
-      }
-    }
-    console.log('[EmbeddingService] Sync complete.')
   }
 }
 

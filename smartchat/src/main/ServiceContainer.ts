@@ -11,7 +11,10 @@ import { IdentityReconciliationService } from './services/contacts/IdentityRecon
 import { IIdentityReconciliationService } from './services/contacts/IIdentityReconciliationService'
 import { ProfileSyncService } from './services/contacts/ProfileSyncService'
 import { IProfileSyncService } from './services/contacts/IProfileSyncService'
-import { EmbeddingService, IEmbeddingService } from './services/search/EmbeddingService'
+import { EmbeddingService } from './services/search/EmbeddingService'
+import { IEmbeddingService } from './services/search/IEmbeddingService'
+import { IVectorSyncService } from './services/search/IVectorSyncService'
+import { VectorSyncService } from './services/search/VectorSyncService'
 import { EmbeddingWorkerManager } from './services/search/EmbeddingWorkerManager'
 import { DataWipeService } from './services/DataWipeService'
 import { IDataWipeService } from './services/IDataWipeService'
@@ -177,6 +180,7 @@ export function createServices(
     messageQueryRepository,
     embeddingWorkerManager
   )
+  const vectorSyncService = new VectorSyncService(messageVectorRepository)
   const dataWipeService = new DataWipeService(prisma)
   const receiptService = new ReceiptService(receiptRepository, contactService, getBus)
   const notificationService = new NotificationService(getMainWindow, messageFormatterRegistry)
@@ -259,6 +263,7 @@ export function createServices(
     contactService,
     groupMembershipService,
     embeddingService,
+    vectorSyncService,
     dataWipeService,
     receiptService,
     chatService,
@@ -306,6 +311,7 @@ export type ServiceContainer = {
   contactService: IContactService
   groupMembershipService: IGroupMembershipService
   embeddingService: IEmbeddingService
+  vectorSyncService: IVectorSyncService
   dataWipeService: IDataWipeService
   receiptService: IReceiptService
   chatService: IChatService

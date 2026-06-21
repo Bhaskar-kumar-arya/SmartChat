@@ -1,6 +1,6 @@
 import { IContactService } from '../contacts/IContactService'
 import { getDisplayName } from '../../utils/contactUtils'
-import { IEmbeddingService } from './EmbeddingService'
+import { IEmbeddingService } from './IEmbeddingService'
 import { WASocket } from '../whatsapp/types'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
