@@ -1,12 +1,13 @@
 import { cleanJid } from '../../utils/jidUtils'
 import { parseCommunityMetadata } from '../../utils/communityUtils'
 import { IContactNameResolver } from '../contacts/IContactService'
-import { ChatUpdatePayload, SocketAccessor } from '../whatsapp/types'
+import { ChatUpdatePayload } from '../../domain/whatsapp.types'
+import { SocketAccessor } from '../whatsapp/types'
 import { ChatListEntry } from '../../domain/chatList.types'
 import { IChatRepository } from './IChatRepository'
 import { ICommunityRepository } from './ICommunityRepository'
 import { ChatListEnricher } from './ChatListEnricher'
-import { IChatService } from './IChatService'
+import { IChatService, GroupParticipant } from './IChatService'
 import { IGroupMembershipService } from './IGroupMembershipService'
 
 export class ChatService implements IChatService {
@@ -15,7 +16,8 @@ export class ChatService implements IChatService {
     private readonly communityRepository: ICommunityRepository,
     private readonly contactService: IContactNameResolver,
     private readonly groupMembershipService: IGroupMembershipService,
-    private readonly chatListEnricher: ChatListEnricher
+    private readonly chatListEnricher: ChatListEnricher,
+    private readonly sockAccessor: SocketAccessor
   ) {}
 
   /**
@@ -153,10 +155,9 @@ export class ChatService implements IChatService {
    * Fetches the participants of a group.
    */
   async getGroupParticipants(
-    jid: string,
-    sock: SocketAccessor
-  ): Promise<Array<{ jid: string; name: string; isAdmin: boolean; isMe: boolean }>> {
-    const s = sock()
+    jid: string
+  ): Promise<GroupParticipant[]> {
+    const s = this.sockAccessor()
     if (!s || !jid.endsWith('@g.us')) return []
     try {
       const metadata = await s.groupMetadata(jid)

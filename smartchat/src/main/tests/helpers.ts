@@ -104,7 +104,7 @@ export function createTestServiceContainer(
     webContents: { send: vi.fn() }
   } as any
 
-  const services = createServices(prisma, () => mockWindow, () => bus)
+  const services = createServices(prisma, () => mockWindow, () => bus, () => null)
   createSubscribers(bus, services, () => mockWindow)
 
   return services

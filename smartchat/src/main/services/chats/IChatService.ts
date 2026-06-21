@@ -1,4 +1,4 @@
-import { ChatUpdatePayload, SocketAccessor } from '../whatsapp/types'
+import { ChatUpdatePayload } from '../../domain/whatsapp.types'
 import { ChatListEntry } from '../../domain/chatList.types'
 
 export interface IChatQueryService {
@@ -13,12 +13,19 @@ export interface IChatMutationService {
   updateTimestamp(jid: string, timestamp: bigint): Promise<void>
 }
 
+export interface GroupParticipant {
+  jid: string
+  name: string
+  isAdmin: boolean
+  isMe: boolean
+}
+
 export interface IGroupParticipantResolver {
   getGroupParticipants(
-    jid: string,
-    sock: SocketAccessor
-  ): Promise<Array<{ jid: string; name: string; isAdmin: boolean; isMe: boolean }>>
+    jid: string
+  ): Promise<GroupParticipant[]>
 }
 
 export interface IChatService extends IChatQueryService, IChatMutationService, IGroupParticipantResolver {}
+
 

@@ -105,6 +105,7 @@ import { IWASocketFactory } from './services/whatsapp/IWASocketFactory'
 import { WASocketFactory } from './services/whatsapp/WASocketFactory'
 import { IWACatchUpManager } from './services/whatsapp/IWACatchUpManager'
 import { WACatchUpManager } from './services/whatsapp/WACatchUpManager'
+import { SocketAccessor } from './services/whatsapp/types'
 
 import { IKeyStorage } from './services/ai/IKeyStorage'
 import { FSKeyStorage } from './services/ai/FSKeyStorage'
@@ -122,7 +123,8 @@ import { StandardProtocolStrategy } from './services/ai/prompts/StandardProtocol
 export function createServices(
   prisma: PrismaClient,
   getMainWindow: () => BrowserWindow | null,
-  getBus: () => IWAEventBus | null
+  getBus: () => IWAEventBus | null,
+  getSock: SocketAccessor
 ): ServiceContainer {
   const services = {} as unknown as ServiceContainer
 
@@ -196,7 +198,7 @@ export function createServices(
 
   // 2. Services with service dependencies
   const chatListEnricher = new ChatListEnricher(chatRepository, messageQueryRepository, reactionRepository, contactService, messageFormatterRegistry)
-  const chatService = new ChatService(chatRepository, communityRepository, contactService, groupMembershipService, chatListEnricher)
+  const chatService = new ChatService(chatRepository, communityRepository, contactService, groupMembershipService, chatListEnricher, getSock)
   const communitySyncHandler = new CommunitySyncHandler(syncRepository)
   const chatSyncHandler = new ChatSyncHandler(syncRepository)
   const membershipSyncHandler = new MembershipSyncHandler(syncRepository, contactService)

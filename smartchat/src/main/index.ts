@@ -168,7 +168,7 @@ app.whenReady().then(() => {
 
   ipcMain.on('ping', () => console.log('pong'))
 
-  services = createServices(prisma, () => mainWindow, () => waConnectionManager?.getBus() ?? null)
+  services = createServices(prisma, () => mainWindow, () => waConnectionManager?.getBus() ?? null, getSock)
 
   // Initialize Tray Service
   trayService = new TrayService(

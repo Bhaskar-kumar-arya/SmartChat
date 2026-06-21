@@ -226,7 +226,7 @@ function registerAuthAndProfileHandlers(
   })
 
   ipcMain.handle('get-group-participants', async (_event, jid: string) => {
-    return services.chatService.getGroupParticipants(jid, getSock)
+    return services.chatService.getGroupParticipants(jid)
   })
 
   ipcMain.handle('get-sync-full-history', async () => {
