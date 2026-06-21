@@ -146,56 +146,84 @@ FORMATTING BEHAVIOR:
     const params = args.params as unknown[] | undefined;
 
     if (jid) {
-      const finalLimit = limit !== undefined ? Math.min(Math.max(1, limit), LIMIT_MAX_MESSAGE) : LIMIT_DEFAULT_MESSAGE;
-      const fetched = await this.messageRepository.findMessagesByChat(jid, finalLimit + 1);
-      const hasMore = fetched.length > finalLimit;
-      const resultMessages = hasMore ? fetched.slice(0, finalLimit) : fetched;
+      const { messagesToFormat, hasMore } = await this.getMessagesByJid(jid, limit);
       return {
-        messagesToFormat: [...resultMessages].reverse(),
+        messagesToFormat,
         isJidMode: true,
         hasMore
       };
     }
 
     if (sql) {
-      const trimmed = sql.trim();
-      const normalized = trimmed.toUpperCase().replace(/\s+/g, ' ');
-
-      if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
-        throw new Error(
-          `[ReadMessagesTool] Query rejected: Only SELECT or WITH...SELECT statements are allowed. Got: "${trimmed.slice(0, 40)}..."`
-        );
-      }
-
-      for (const kw of FORBIDDEN_KEYWORDS) {
-        const wordBoundaryRegex = new RegExp(`\\b${kw}\\b`);
-        if (wordBoundaryRegex.test(normalized)) {
-          throw new Error(
-            `[ReadMessagesTool] Query rejected: Forbidden keyword detected — "${kw}". Only read operations are permitted.`
-          );
-        }
-      }
-
-      const rows = await this.messageRepository.queryMessageIdsBySql(trimmed, Array.isArray(params) ? params : []);
-      if (rows.length > 0 && !rows.some((r) => r.id !== undefined && r.id !== null)) {
-        throw new Error('[ReadMessagesTool] Query rejected: The SQL query must return a column named "id" containing the message IDs.');
-      }
-
-      const msgIds = rows.map((r) => r.id as string).filter(Boolean);
-      if (msgIds.length > 0) {
-        const fetched = await this.messageRepository.findMessagesByIds(msgIds);
-        const idToMsg = new Map(fetched.map(m => [m.id, m]));
-        const ordered = msgIds.map(id => idToMsg.get(id)).filter((m): m is Message => m !== undefined);
-        return { messagesToFormat: ordered, isJidMode: false, hasMore: false };
-      }
-      return { messagesToFormat: [], isJidMode: false, hasMore: false };
+      const messagesToFormat = await this.getMessagesBySql(sql, params);
+      return {
+        messagesToFormat,
+        isJidMode: false,
+        hasMore: false
+      };
     }
 
     if (Array.isArray(messages)) {
-      return { messagesToFormat: messages, isJidMode: false, hasMore: false };
+      return {
+        messagesToFormat: messages,
+        isJidMode: false,
+        hasMore: false
+      };
     }
 
     throw new Error('[ReadMessagesTool] Missing required arguments: Provide jid, sql, or messages.');
+  }
+
+  private validateSqlQuery(sql: string): void {
+    const trimmed = sql.trim();
+    const normalized = trimmed.toUpperCase().replace(/\s+/g, ' ');
+
+    if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
+      throw new Error(
+        `[ReadMessagesTool] Query rejected: Only SELECT or WITH...SELECT statements are allowed. Got: "${trimmed.slice(0, 40)}..."`
+      );
+    }
+
+    for (const kw of FORBIDDEN_KEYWORDS) {
+      const wordBoundaryRegex = new RegExp(`\\b${kw}\\b`);
+      if (wordBoundaryRegex.test(normalized)) {
+        throw new Error(
+          `[ReadMessagesTool] Query rejected: Forbidden keyword detected — "${kw}". Only read operations are permitted.`
+        );
+      }
+    }
+  }
+
+  private async getMessagesBySql(sql: string, params: unknown[] | undefined): Promise<Message[]> {
+    const trimmed = sql.trim();
+    this.validateSqlQuery(trimmed);
+
+    const rows = await this.messageRepository.queryMessageIdsBySql(trimmed, Array.isArray(params) ? params : []);
+    if (rows.length > 0 && !rows.some((r) => r.id !== undefined && r.id !== null)) {
+      throw new Error('[ReadMessagesTool] Query rejected: The SQL query must return a column named "id" containing the message IDs.');
+    }
+
+    const msgIds = rows.map((r) => r.id as string).filter(Boolean);
+    if (msgIds.length > 0) {
+      const fetched = await this.messageRepository.findMessagesByIds(msgIds);
+      const idToMsg = new Map(fetched.map(m => [m.id, m]));
+      return msgIds.map(id => idToMsg.get(id)).filter((m): m is Message => m !== undefined);
+    }
+    return [];
+  }
+
+  private async getMessagesByJid(
+    jid: string,
+    limit: number | undefined
+  ): Promise<{ messagesToFormat: Message[]; hasMore: boolean }> {
+    const finalLimit = limit !== undefined ? Math.min(Math.max(1, limit), LIMIT_MAX_MESSAGE) : LIMIT_DEFAULT_MESSAGE;
+    const fetched = await this.messageRepository.findMessagesByChat(jid, finalLimit + 1);
+    const hasMore = fetched.length > finalLimit;
+    const resultMessages = hasMore ? fetched.slice(0, finalLimit) : fetched;
+    return {
+      messagesToFormat: [...resultMessages].reverse(),
+      hasMore
+    };
   }
 
   private sortMessagesByChat(messages: Message[]): Message[] {

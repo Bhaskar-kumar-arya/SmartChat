@@ -151,7 +151,15 @@ export class WAEventHandler {
     const itemUpdate = updateObj.update as Record<string, unknown> | null | undefined
     const itemKey = updateObj.key as proto.IMessageKey | null | undefined
 
-    // Status change (server ack, delivery, read)
+    await this.tryEmitStatusUpdate(itemKey, itemUpdate)
+    await this.tryEmitDecryptedMessage(itemKey, itemUpdate, sock)
+    await this.tryEmitProtocolMessage(itemKey, itemUpdate, sock)
+  }
+
+  private async tryEmitStatusUpdate(
+    itemKey: proto.IMessageKey | null | undefined,
+    itemUpdate: Record<string, unknown> | null | undefined
+  ): Promise<void> {
     if (itemUpdate?.status !== undefined && itemKey?.id) {
       await this.bus.emit('message:status', {
         key: {
@@ -162,8 +170,13 @@ export class WAEventHandler {
         baileysStatus: itemUpdate.status as number
       })
     }
+  }
 
-    // Check if this is a retried decrypted message update
+  private async tryEmitDecryptedMessage(
+    itemKey: proto.IMessageKey | null | undefined,
+    itemUpdate: Record<string, unknown> | null | undefined,
+    sock: WASocket
+  ): Promise<void> {
     if (itemUpdate?.message && !itemUpdate?.protocolMessage && itemKey?.id) {
       const messageId = itemKey.id
       const chatJid = cleanJid(itemKey.remoteJid)
@@ -190,7 +203,13 @@ export class WAEventHandler {
         })
       }
     }
+  }
 
+  private async tryEmitProtocolMessage(
+    itemKey: proto.IMessageKey | null | undefined,
+    itemUpdate: Record<string, unknown> | null | undefined,
+    sock: WASocket
+  ): Promise<void> {
     const protocol = itemUpdate?.protocolMessage as proto.Message.IProtocolMessage | null | undefined
     if (!protocol) return
     const key = protocol.key

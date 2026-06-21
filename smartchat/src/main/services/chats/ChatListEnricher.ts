@@ -1,6 +1,6 @@
 import { ChatListItem } from '../../ipc/types'
 import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
-import { IChatRepository } from './IChatRepository'
+import { IChatRepository, ChatWithCommunity } from './IChatRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'
 import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
 import { ContactService } from '../contacts/ContactService'
@@ -37,114 +37,121 @@ export class ChatListEnricher {
       chats.push(...missingCommunities)
     }
 
-    // Fallback if chat.name is missing for a DM: resolve it dynamically
     const enriched = await Promise.all(
-      chats.map(async (chat) => {
-        let name = chat.name
-        if (!name) {
-          if (chat.type === 'COMMUNITY' && chat.community?.name) {
-            name = chat.community.name
-          } else if (chat.type === 'DM') {
-            const identId = await this.contactService.getIdentityIdByJid(chat.jid)
-            if (identId) {
-              const ident = await this.contactService.findIdentityById(identId)
-              if (ident) {
-                name = ident.displayName || ident.pushName || ident.verifiedName || ident.phoneNumber?.split('@')[0] || null
-              }
-            }
-          }
-          if (!name) {
-            name = chat.jid.split('@')[0]
-          }
-        }
-
-        // Fetch the most recent message for preview
-        const lastMsg = await this.messageQueryRepository.findLastMessage(chat.jid)
-
-        // Fetch the most recent reaction for the chat
-        const lastReaction = await this.reactionRepository.findLastReaction(chat.jid)
-
-        const reactionTs = lastReaction?.timestamp ?? 0n
-        const msgTs = lastMsg?.timestamp ?? 0n
-        const isReactionNewer = !!(lastReaction && (reactionTs > msgTs || lastMsg?.messageType === 'reactionMessage'))
-
-        const effectiveTimestamp = isReactionNewer ? reactionTs : msgTs
-
-        let lastMessageSender: string | null = null
-        if (isReactionNewer && lastReaction) {
-          if (lastReaction.sender.isMe) {
-            lastMessageSender = 'You'
-          } else {
-            lastMessageSender = ContactService.getDisplayName(
-              lastReaction.sender,
-              lastReaction.sender.phoneNumber?.split('@')[0] || 'Someone'
-            )
-          }
-        } else if (lastMsg) {
-          if (lastMsg.fromMe) {
-            lastMessageSender = 'You'
-          } else {
-            lastMessageSender = ContactService.getDisplayName(
-              lastMsg.sender,
-              lastMsg.participant?.split('@')[0] || 'Someone'
-            )
-          }
-        }
-
-        let lastMessageText = ''
-        if (isReactionNewer && lastReaction) {
-          const targetPreview = this.formatterRegistry.format(
-            null,
-            {
-              textContent: lastReaction.message.textContent,
-              messageType: lastReaction.message.messageType
-            },
-            'chatListReaction'
-          )
-          lastMessageText = `Reacted ${lastReaction.text} to ${targetPreview || 'message'}`
-        } else if (lastMsg) {
-          lastMessageText = this.formatterRegistry.format(
-            null,
-            {
-              textContent: lastMsg.textContent,
-              messageType: lastMsg.messageType
-            },
-            'chatList'
-          )
-        }
-
-        return {
-          jid: chat.jid,
-          name,
-          unreadCount: chat.unreadCount,
-          timestamp: effectiveTimestamp.toString(),
-          lastMessage: lastMessageText,
-          lastMessageType: isReactionNewer ? 'reactionMessage' : (lastMsg?.messageType || null),
-          lastMessageTimestamp: effectiveTimestamp.toString(),
-          pinned: chat.pinned,
-          muteExpiration: chat.muteExpiration.toString(),
-          profilePictureUrl: chat.profilePictureUrl,
-          isCommunity: chat.type === 'COMMUNITY',
-          isAnnounce: chat.type === 'ANNOUNCE',
-          linkedParentJid: (chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') ? (chat.community?.jid ?? null) : null,
-          lastMessageSender,
-          lastMessageStatus: isReactionNewer ? null : (lastMsg?.status || null),
-          lastMessageFromMe: isReactionNewer ? (lastReaction?.sender.isMe ?? false) : (lastMsg?.fromMe || false),
-          lastMessageId: isReactionNewer ? (lastReaction?.message.id ?? null) : (lastMsg?.id || null),
-          lastMessageTargetType: isReactionNewer ? (lastReaction?.message.messageType || null) : null,
-          lastMessageTargetText: isReactionNewer ? (this.formatterRegistry.format(
-            null,
-            {
-              messageType: lastReaction?.message.messageType || 'unknown',
-              textContent: lastReaction?.message.textContent || null
-            },
-            'chatListReaction'
-          ) || 'message') : null,
-          lastMessageReactionText: isReactionNewer ? (lastReaction?.text || null) : null
-        }
-      })
+      chats.map(chat => this.enrichSingleChat(chat))
     )
 
     return enriched
+  }
+
+  private async resolveChatName(chat: ChatWithCommunity): Promise<string> {
+    let name = chat.name
+    if (name) return name
+
+    if (chat.type === 'COMMUNITY' && chat.community?.name) {
+      return chat.community.name
+    }
+
+    if (chat.type === 'DM') {
+      const identId = await this.contactService.getIdentityIdByJid(chat.jid)
+      if (identId) {
+        const ident = await this.contactService.findIdentityById(identId)
+        if (ident) {
+          const resolvedName = ident.displayName || ident.pushName || ident.verifiedName || ident.phoneNumber?.split('@')[0] || null
+          if (resolvedName) return resolvedName
+        }
+      }
+    }
+
+    return chat.jid.split('@')[0]
+  }
+
+  private async enrichSingleChat(chat: ChatWithCommunity): Promise<ChatListItem> {
+    const name = await this.resolveChatName(chat)
+
+    // Fetch the most recent message for preview
+    const lastMsg = await this.messageQueryRepository.findLastMessage(chat.jid)
+
+    // Fetch the most recent reaction for the chat
+    const lastReaction = await this.reactionRepository.findLastReaction(chat.jid)
+
+    const reactionTs = lastReaction?.timestamp ?? 0n
+    const msgTs = lastMsg?.timestamp ?? 0n
+    const isReactionNewer = !!(lastReaction && (reactionTs > msgTs || lastMsg?.messageType === 'reactionMessage'))
+
+    const effectiveTimestamp = isReactionNewer ? reactionTs : msgTs
+
+    let lastMessageSender: string | null = null
+    if (isReactionNewer && lastReaction) {
+      if (lastReaction.sender.isMe) {
+        lastMessageSender = 'You'
+      } else {
+        lastMessageSender = ContactService.getDisplayName(
+          lastReaction.sender,
+          lastReaction.sender.phoneNumber?.split('@')[0] || 'Someone'
+        )
+      }
+    } else if (lastMsg) {
+      if (lastMsg.fromMe) {
+        lastMessageSender = 'You'
+      } else {
+        lastMessageSender = ContactService.getDisplayName(
+          lastMsg.sender,
+          lastMsg.participant?.split('@')[0] || 'Someone'
+        )
+      }
+    }
+
+    let lastMessageText = ''
+    if (isReactionNewer && lastReaction) {
+      const targetPreview = this.formatterRegistry.format(
+        null,
+        {
+          textContent: lastReaction.message.textContent,
+          messageType: lastReaction.message.messageType
+        },
+        'chatListReaction'
+      )
+      lastMessageText = `Reacted ${lastReaction.text} to ${targetPreview || 'message'}`
+    } else if (lastMsg) {
+      lastMessageText = this.formatterRegistry.format(
+        null,
+        {
+          textContent: lastMsg.textContent,
+          messageType: lastMsg.messageType
+        },
+        'chatList'
+      )
+    }
+
+    return {
+      jid: chat.jid,
+      name,
+      unreadCount: chat.unreadCount,
+      timestamp: effectiveTimestamp.toString(),
+      lastMessage: lastMessageText,
+      lastMessageType: isReactionNewer ? 'reactionMessage' : (lastMsg?.messageType || null),
+      lastMessageTimestamp: effectiveTimestamp.toString(),
+      pinned: chat.pinned,
+      muteExpiration: chat.muteExpiration.toString(),
+      profilePictureUrl: chat.profilePictureUrl,
+      isCommunity: chat.type === 'COMMUNITY',
+      isAnnounce: chat.type === 'ANNOUNCE',
+      linkedParentJid: (chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') ? (chat.community?.jid ?? null) : null,
+      lastMessageSender,
+      lastMessageStatus: isReactionNewer ? null : (lastMsg?.status || null),
+      lastMessageFromMe: isReactionNewer ? (lastReaction?.sender.isMe ?? false) : (lastMsg?.fromMe || false),
+      lastMessageId: isReactionNewer ? (lastReaction?.message.id ?? null) : (lastMsg?.id || null),
+      lastMessageTargetType: isReactionNewer ? (lastReaction?.message.messageType || null) : null,
+      lastMessageTargetText: isReactionNewer ? (this.formatterRegistry.format(
+        null,
+        {
+          messageType: lastReaction?.message.messageType || 'unknown',
+          textContent: lastReaction?.message.textContent || null
+        },
+        'chatListReaction'
+      ) || 'message') : null,
+      lastMessageReactionText: isReactionNewer ? (lastReaction?.text || null) : null
+    }
   }
 }

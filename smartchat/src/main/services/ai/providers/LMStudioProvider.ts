@@ -124,22 +124,28 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
          }
       },
       onToolCallRequestEnd: (_callId, info) => {
-          const req = info.toolCallRequest as { name: string; arguments?: string | Record<string, unknown> };
-          let argsObj = req.arguments || {};
-          try {
-              if (typeof argsObj === 'string') {
-                  argsObj = JSON.parse(argsObj);
-              }
-          } catch (e: unknown) {
-              console.warn('[LMStudioProvider] Failed to parse tool arguments in generateResponse:', e);
-          }
-          const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
-          finalResponse += xml;
+          finalResponse += this.formatToolCallXml(info as { toolCallRequest: { name: string; arguments?: string | Record<string, unknown> } }, 'generateResponse');
       },
     } as unknown as Parameters<typeof model.respond>[1]);
 
     await prediction;
     return finalResponse;
+  }
+
+  private formatToolCallXml(
+    info: { toolCallRequest: { name: string; arguments?: string | Record<string, unknown> } },
+    callerName: string
+  ): string {
+    const req = info.toolCallRequest;
+    let argsObj = req.arguments || {};
+    try {
+      if (typeof argsObj === 'string') {
+        argsObj = JSON.parse(argsObj) as Record<string, unknown>;
+      }
+    } catch (e: unknown) {
+      console.warn(`[LMStudioProvider] Failed to parse tool arguments in ${callerName}:`, e);
+    }
+    return `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
   }
 
   async generateResponseStream(
@@ -183,17 +189,7 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
          }
       },
       onToolCallRequestEnd: (_callId, info) => {
-          const req = info.toolCallRequest as { name: string; arguments?: string | Record<string, unknown> };
-          let argsObj = req.arguments || {};
-          try {
-              if (typeof argsObj === 'string') {
-                  argsObj = JSON.parse(argsObj);
-              }
-          } catch (e: unknown) {
-              console.warn('[LMStudioProvider] Failed to parse tool arguments in generateResponseStream:', e);
-          }
-          const xml = `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
-          onChunk(xml);
+          onChunk(this.formatToolCallXml(info as { toolCallRequest: { name: string; arguments?: string | Record<string, unknown> } }, 'generateResponseStream'));
       }
     } as unknown as Parameters<typeof model.respond>[1]);
 

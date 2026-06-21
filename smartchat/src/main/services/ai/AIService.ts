@@ -88,7 +88,12 @@ export class AIService implements IAIService {
     return this.providers['lmstudio'];
   }
 
-  private async getUserDetails(): Promise<any> {
+  private async getUserDetails(): Promise<{
+    phoneNumber: string | null
+    lid: string | null
+    phoneJid: string | null
+    linkedJid: string | null
+  } | undefined> {
     try {
       const meJids = await this.contactService.getMeJids()
       const phoneJid = meJids.find(j => j.endsWith('@s.whatsapp.net')) || null
@@ -107,56 +112,63 @@ export class AIService implements IAIService {
     }
   }
 
-  private buildFullPrompt(prompt: string, contextFiles?: AIChatContext[], mentions?: AIMention[]): string {
-    let fullPrompt = prompt;
-
-    // 1. Handle Mentions (@JID injection)
+  private formatMentions(prompt: string, mentions?: AIMention[]): string {
+    let result = prompt
     if (mentions && mentions.length > 0) {
       for (const m of mentions) {
-        const trimmedName = (m.name || '').trim();
-        const safeName = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const mentionRegex = new RegExp(`@${safeName}`, 'g');
-        fullPrompt = fullPrompt.replace(mentionRegex, m.jid);
+        const trimmedName = (m.name || '').trim()
+        const safeName = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const mentionRegex = new RegExp(`@${safeName}`, 'g')
+        result = result.replace(mentionRegex, m.jid)
       }
     }
+    return result
+  }
 
-    // 2. Handle Contexts (Chat History)
+  private formatChatHistory(chat: AIChatContext): string {
+    let contextSection = `\n<chat_history id="${chat.jid}" name="${chat.name || 'Unknown'}">\n`
+    const participantMap: Record<string, string> = {}
+    chat.messages.forEach((msg) => {
+       const senderId = msg.participant || (msg.fromMe ? 'me' : msg.chatJid)
+       const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0])
+       if (senderId && !msg.fromMe && senderId !== 'me') {
+         participantMap[senderId] = senderName
+       }
+    })
+
+    if (Object.keys(participantMap).length > 0) {
+      contextSection += `<participants>\n${JSON.stringify(participantMap, null, 2)}\n</participants>\n\n`
+    }
+    
+    contextSection += `<messages>\n`
+    chat.messages.forEach((msg) => {
+       const senderId = msg.participant || (msg.fromMe ? 'me' : msg.chatJid)
+       const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0])
+       const content = msg.textContent || '[Non-text message]'
+       contextSection += `[${new Date(Number(msg.timestamp) * 1000).toLocaleString()}] ${senderName} (${senderId}): ${content}\n`
+    })
+    contextSection += `</messages>\n`
+
+    contextSection += `</chat_history>\n`
+    return contextSection
+  }
+
+  private buildFullPrompt(prompt: string, contextFiles?: AIChatContext[], mentions?: AIMention[]): string {
+    let fullPrompt = this.formatMentions(prompt, mentions)
+
     if (contextFiles && contextFiles.length > 0) {
       for (const chat of contextFiles) {
-        let contextSection = `\n<chat_history id="${chat.jid}" name="${chat.name || 'Unknown'}">\n`;
-        const participantMap: Record<string, string> = {};
-        chat.messages.forEach((msg) => {
-           const senderId = msg.participant || (msg.fromMe ? 'me' : msg.chatJid);
-           const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0]);
-           if (senderId && !msg.fromMe && senderId !== 'me') {
-             participantMap[senderId] = senderName;
-           }
-        });
-
-        if (Object.keys(participantMap).length > 0) {
-          contextSection += `<participants>\n${JSON.stringify(participantMap, null, 2)}\n</participants>\n\n`;
-        }
-        
-        contextSection += `<messages>\n`;
-        chat.messages.forEach((msg) => {
-           const senderId = msg.participant || (msg.fromMe ? 'me' : msg.chatJid);
-           const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0]);
-           const content = msg.textContent || '[Non-text message]';
-           contextSection += `[${new Date(Number(msg.timestamp) * 1000).toLocaleString()}] ${senderName} (${senderId}): ${content}\n`;
-        });
-        contextSection += `</messages>\n`;
-
-        contextSection += `</chat_history>\n`;
-        const safeName = chat.name ? chat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : chat.jid;
-        const contextRegex = new RegExp(`/${safeName}`, 'g');
+        const contextSection = this.formatChatHistory(chat)
+        const safeName = chat.name ? chat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : chat.jid
+        const contextRegex = new RegExp(`/${safeName}`, 'g')
         if (contextRegex.test(fullPrompt)) {
-           fullPrompt = fullPrompt.replace(contextRegex, `${chat.jid} \n${contextSection}`);
+           fullPrompt = fullPrompt.replace(contextRegex, `${chat.jid} \n${contextSection}`)
         } else {
-           fullPrompt += `\n\n=== RELEVANT CHAT CONTEXT ===\n${contextSection}`;
+           fullPrompt += `\n\n=== RELEVANT CHAT CONTEXT ===\n${contextSection}`
         }
       }
     }
-    return fullPrompt;
+    return fullPrompt
   }
 
   async getAvailableModels(): Promise<ModelInfo[]> {

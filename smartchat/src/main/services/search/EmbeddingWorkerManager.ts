@@ -1,6 +1,19 @@
 import { Worker } from 'worker_threads'
 import { IEmbeddingConfig, IEmbeddingWorkerManager } from './IEmbeddingWorkerManager'
 
+interface WorkerMessage {
+  type: 'init_done' | 'progress' | 'embed_done' | 'error' | string
+  id: number | null
+  payload: {
+    status?: string
+    file?: string
+    loaded?: number
+    total?: number
+    vector?: number[]
+    error?: string
+  }
+}
+
 export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
   private worker: Worker | null = null
   private workerJobCounter = 0
@@ -31,6 +44,37 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
     }
   }
 
+  private handleWorkerMessage(msg: WorkerMessage, resolve: () => void, reject: (err: Error) => void): void {
+    if (msg.type === 'init_done') {
+      console.log('[EmbeddingWorkerManager] Worker initialized.')
+      resolve()
+    } else if (msg.type === 'progress') {
+      const p = msg.payload
+      if (p.status === 'progress' && p.file && p.loaded !== undefined && p.total !== undefined) {
+        console.log(`[EmbeddingWorkerManager] Worker Download: ${p.file} (${Math.round((p.loaded / p.total) * 100)}%)`)
+      }
+    } else if (msg.type === 'embed_done') {
+      if (msg.id !== null && msg.id !== undefined) {
+        const job = this.pendingJobs.get(msg.id)
+        if (job && msg.payload.vector) {
+          job.resolve(msg.payload.vector)
+          this.pendingJobs.delete(msg.id)
+        }
+      }
+    } else if (msg.type === 'error') {
+      if (msg.id !== null && msg.id !== undefined) {
+        const job = this.pendingJobs.get(msg.id)
+        if (job) {
+          job.reject(new Error(msg.payload.error || 'Unknown worker error'))
+          this.pendingJobs.delete(msg.id)
+        }
+      } else {
+        console.error('[EmbeddingWorkerManager] Worker Global Error:', msg.payload.error)
+        reject(new Error(msg.payload.error || 'Unknown worker error'))
+      }
+    }
+  }
+
   public async ensureWorker(modelName: string): Promise<void> {
     if (this.worker) return
     if (this.initPromise) return this.initPromise
@@ -41,48 +85,8 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
         const currentWorker = new Worker(this.config.workerPath)
         this.worker = currentWorker
 
-        interface WorkerMessage {
-          type: 'init_done' | 'progress' | 'embed_done' | 'error' | string
-          id: number | null
-          payload: {
-            status?: string
-            file?: string
-            loaded?: number
-            total?: number
-            vector?: number[]
-            error?: string
-          }
-        }
-
         currentWorker.on('message', (msg: WorkerMessage) => {
-          if (msg.type === 'init_done') {
-            console.log('[EmbeddingWorkerManager] Worker initialized.')
-            resolve()
-          } else if (msg.type === 'progress') {
-            const p = msg.payload
-            if (p.status === 'progress' && p.file && p.loaded !== undefined && p.total !== undefined) {
-              console.log(`[EmbeddingWorkerManager] Worker Download: ${p.file} (${Math.round((p.loaded / p.total) * 100)}%)`)
-            }
-          } else if (msg.type === 'embed_done') {
-            if (msg.id !== null && msg.id !== undefined) {
-              const job = this.pendingJobs.get(msg.id)
-              if (job && msg.payload.vector) {
-                job.resolve(msg.payload.vector)
-                this.pendingJobs.delete(msg.id)
-              }
-            }
-          } else if (msg.type === 'error') {
-            if (msg.id !== null && msg.id !== undefined) {
-              const job = this.pendingJobs.get(msg.id)
-              if (job) {
-                job.reject(new Error(msg.payload.error || 'Unknown worker error'))
-                this.pendingJobs.delete(msg.id)
-              }
-            } else {
-              console.error('[EmbeddingWorkerManager] Worker Global Error:', msg.payload.error)
-              reject(new Error(msg.payload.error || 'Unknown worker error'))
-            }
-          }
+          this.handleWorkerMessage(msg, resolve, reject)
         })
 
         currentWorker.on('error', (err) => {

@@ -20,33 +20,38 @@ import { existsSync, copyFileSync, mkdirSync } from "fs";
 const dbPath = (() => {
   if (is.dev) {
     return join(__dirname, '../../prisma/dev.db');
-  } else {
-    const userDataDir = app.getPath("userData");
-    if (!existsSync(userDataDir)) {
-      mkdirSync(userDataDir, { recursive: true });
-    }
-    const dbFile = join(userDataDir, "dev.db");
-    if (!existsSync(dbFile)) {
-      const templatePath = join(process.resourcesPath, "resources", "template.db");
-      console.log(`[Database] Production db not found. Copying template from ${templatePath} to ${dbFile}`);
-      try {
-        if (existsSync(templatePath)) {
-          copyFileSync(templatePath, dbFile);
-        } else {
-          // Fallback if template is located under app unpacked resources
-          const fallbackTemplatePath = join(app.getAppPath(), "resources", "template.db");
-          if (existsSync(fallbackTemplatePath)) {
-            copyFileSync(fallbackTemplatePath, dbFile);
-          } else {
-            console.error(`[Database] Template db not found at ${templatePath} or ${fallbackTemplatePath}`);
-          }
-        }
-      } catch (err: unknown) {
-        console.error("[Database] Failed to copy template database:", err);
-      }
-    }
+  }
+
+  const userDataDir = app.getPath("userData");
+  if (!existsSync(userDataDir)) {
+    mkdirSync(userDataDir, { recursive: true });
+  }
+
+  const dbFile = join(userDataDir, "dev.db");
+  if (existsSync(dbFile)) {
     return dbFile;
   }
+
+  const templatePath = join(process.resourcesPath, "resources", "template.db");
+  console.log(`[Database] Production db not found. Copying template from ${templatePath} to ${dbFile}`);
+  try {
+    if (existsSync(templatePath)) {
+      copyFileSync(templatePath, dbFile);
+      return dbFile;
+    }
+
+    // Fallback if template is located under app unpacked resources
+    const fallbackTemplatePath = join(app.getAppPath(), "resources", "template.db");
+    if (existsSync(fallbackTemplatePath)) {
+      copyFileSync(fallbackTemplatePath, dbFile);
+    } else {
+      console.error(`[Database] Template db not found at ${templatePath} or ${fallbackTemplatePath}`);
+    }
+  } catch (err: unknown) {
+    console.error("[Database] Failed to copy template database:", err);
+  }
+
+  return dbFile;
 })();
 
 // In Prisma 7, we pass a config object to the adapter factory.
@@ -198,30 +203,30 @@ export const usePrismaAuthState = async (): Promise<{
       );
       return data as Record<string, any>;
     },
-    set: async (data) => {
+    set: async (data): Promise<void> => {
       // Aggregate ALL key mutations into a single prisma.$transaction() call.
       // This replaces N individual SQLite lock/write/unlock cycles with ONE,
       // which is the primary fix for the slow 1-5 message trickle on reconnect.
       const ops: Prisma.PrismaPromise<unknown>[] = [];
       for (const category in data) {
         const categoryData = data[category];
-        if (categoryData) {
-          for (const id in categoryData) {
-            const value = categoryData[id];
-            const key = `${category}-${id}`;
-            if (value !== null && value !== undefined) {
-              const serialized = JSON.stringify(value, BufferJSON.replacer);
-              ops.push(
-                prisma.authState.upsert({
-                  where: { id: key },
-                  update: { data: serialized },
-                  create: { id: key, data: serialized },
-                })
-              );
-            } else {
-              // deleteMany won't throw if the row doesn't exist
-              ops.push(prisma.authState.deleteMany({ where: { id: key } }));
-            }
+        if (!categoryData) continue;
+
+        for (const id in categoryData) {
+          const value = categoryData[id];
+          const key = `${category}-${id}`;
+          if (value !== null && value !== undefined) {
+            const serialized = JSON.stringify(value, BufferJSON.replacer);
+            ops.push(
+              prisma.authState.upsert({
+                where: { id: key },
+                update: { data: serialized },
+                create: { id: key, data: serialized },
+              })
+            );
+          } else {
+            // deleteMany won't throw if the row doesn't exist
+            ops.push(prisma.authState.deleteMany({ where: { id: key } }));
           }
         }
       }

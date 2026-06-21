@@ -72,13 +72,7 @@ export class SyncChatsHandler {
       const jid = cleanJid(String(c.id))
 
       // Register any accountLid ↔ JID mapping immediately
-      if (c.accountLid && jid && !jid.endsWith('@lid') && jid.includes('@s.whatsapp.net')) {
-        await this.contactService
-          .linkLidAndPn(cleanJid(c.accountLid), jid, 'history.sync.chat.accountLid')
-          .catch((err: unknown) => {
-            console.error('[SyncChatsHandler] linkLidAndPn (chat accountLid) failed:', err)
-          })
-      }
+      await this.linkAccountLid(c, jid)
 
       const hasCommunityData =
         c.isCommunity !== undefined ||
@@ -119,36 +113,8 @@ export class SyncChatsHandler {
         console.log(`[SyncChatsHandler] Chat ${jid} mute: rawMute=${rawMute}, muteSec=${muteSec}`)
       }
 
-      let type = 'DM'
-      let communityId: number | null = null
-
       if (hasCommunityData) {
-        const isCommunity = c.isCommunity === true || c.isParentGroup === true
-        const isAnnounce = c.isCommunityAnnounce === true || c.isDefaultSubgroup === true
-        const linkedParentJid = c.linkedParentJid ?? c.linkedParent ?? c.parentGroupId
-
-        if (jid.endsWith('@g.us')) {
-          if (isCommunity) type = 'COMMUNITY'
-          else if (isAnnounce) type = 'ANNOUNCE'
-          else if (linkedParentJid) type = 'SUBGROUP'
-          else type = 'GROUP'
-        }
-        updateData.type = type
-
-        const rootJid = isCommunity ? jid : linkedParentJid ? cleanJid(String(linkedParentJid)) : null
-        if (rootJid) {
-          const comm = await this.communityRepository.upsertCommunity(rootJid, isCommunity ? (c.name ?? null) : null)
-          communityId = comm.id
-
-          if (isAnnounce) {
-            await this.communityRepository
-              .updateCommunityAnnounceJid(communityId, jid)
-              .catch((err: unknown) => {
-                console.error('[SyncChatsHandler] community announceJid update failed:', err)
-              })
-          }
-        }
-        updateData.communityId = communityId
+        updateData.communityId = await this.handleCommunityClassification(c, jid, updateData)
       }
 
       await this.chatRepository.upsertChat(jid, {
@@ -161,25 +127,74 @@ export class SyncChatsHandler {
       processedChats.add(jid)
 
       // Extract PN ↔ LID mappings from group participants
-      if (c.participant && Array.isArray(c.participant)) {
-        for (const p of c.participant) {
-          const lid = p.userJid ?? p.id ?? p.lid
-          const pn = p.phoneNumberJid ?? p.phoneNumber
-          if (lid && pn) {
-            const cleanLid = cleanJid(String(lid))
-            const cleanPn = cleanJid(String(pn))
-            if (cleanLid.includes('@lid') && cleanPn.includes('@s.whatsapp.net')) {
-              await this.contactService
-                .linkLidAndPn(cleanLid, cleanPn, 'history.sync.participant')
-                .catch((err: unknown) => {
-                  console.error('[SyncChatsHandler] participant linkLidAndPn failed:', err)
-                })
-            }
+      await this.processParticipants(c)
+    }
+
+    return chats.length
+  }
+
+  private async linkAccountLid(c: RawChat, jid: string): Promise<void> {
+    if (c.accountLid && jid && !jid.endsWith('@lid') && jid.includes('@s.whatsapp.net')) {
+      await this.contactService
+        .linkLidAndPn(cleanJid(c.accountLid), jid, 'history.sync.chat.accountLid')
+        .catch((err: unknown) => {
+          console.error('[SyncChatsHandler] linkLidAndPn (chat accountLid) failed:', err)
+        })
+    }
+  }
+
+  private async handleCommunityClassification(
+    c: RawChat,
+    jid: string,
+    updateData: { type?: string }
+  ): Promise<number | null> {
+    const isCommunity = c.isCommunity === true || c.isParentGroup === true
+    const isAnnounce = c.isCommunityAnnounce === true || c.isDefaultSubgroup === true
+    const linkedParentJid = c.linkedParentJid ?? c.linkedParent ?? c.parentGroupId
+
+    let type = 'DM'
+    if (jid.endsWith('@g.us')) {
+      if (isCommunity) type = 'COMMUNITY'
+      else if (isAnnounce) type = 'ANNOUNCE'
+      else if (linkedParentJid) type = 'SUBGROUP'
+      else type = 'GROUP'
+    }
+    updateData.type = type
+
+    let communityId: number | null = null
+    const rootJid = isCommunity ? jid : linkedParentJid ? cleanJid(String(linkedParentJid)) : null
+    if (rootJid) {
+      const comm = await this.communityRepository.upsertCommunity(rootJid, isCommunity ? (c.name ?? null) : null)
+      communityId = comm.id
+
+      if (isAnnounce) {
+        await this.communityRepository
+          .updateCommunityAnnounceJid(communityId, jid)
+          .catch((err: unknown) => {
+            console.error('[SyncChatsHandler] community announceJid update failed:', err)
+          })
+      }
+    }
+    return communityId
+  }
+
+  private async processParticipants(c: RawChat): Promise<void> {
+    if (c.participant && Array.isArray(c.participant)) {
+      for (const p of c.participant) {
+        const lid = p.userJid ?? p.id ?? p.lid
+        const pn = p.phoneNumberJid ?? p.phoneNumber
+        if (lid && pn) {
+          const cleanLid = cleanJid(String(lid))
+          const cleanPn = cleanJid(String(pn))
+          if (cleanLid.includes('@lid') && cleanPn.includes('@s.whatsapp.net')) {
+            await this.contactService
+              .linkLidAndPn(cleanLid, cleanPn, 'history.sync.participant')
+              .catch((err: unknown) => {
+                console.error('[SyncChatsHandler] participant linkLidAndPn failed:', err)
+              })
           }
         }
       }
     }
-
-    return chats.length
   }
 }

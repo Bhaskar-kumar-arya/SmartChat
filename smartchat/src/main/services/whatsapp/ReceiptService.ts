@@ -4,6 +4,7 @@ import { ContactService } from '../contacts/ContactService'
 import { IWAEventBus } from './IWAEventBus'
 import { IReceiptService } from './IReceiptService'
 import { IReceiptRepository } from '../messages/IReceiptRepository'
+import { Message } from '@prisma/client'
 
 export function mapBaileysStatus(status: number | null | undefined): string {
   if (status === undefined || status === null) return 'SENT'
@@ -111,84 +112,103 @@ export class ReceiptService implements IReceiptService {
       const isGroup = remoteJid.endsWith('@g.us')
 
       if (isGroup) {
-        // Fetch total number of members in the group from database
-        const membersCount = await this.receiptRepository.getChatMembersCount(remoteJid)
-
-        // Find how many other members have read the message
-        const readCount = await this.receiptRepository.getMessageReceiptsCount(messageId, 'READ')
-
-        // In groups, the sender is one of the members. The number of other members is membersCount - 1
-        if (membersCount > 1 && readCount >= membersCount - 1) {
-          // If everyone read it
-          const currentStatus = message.status || 'PENDING'
-          if (currentStatus !== 'READ') {
-            await this.receiptRepository.updateMessageStatus(messageId, 'READ')
-
-            await this.getBus()?.emit('message:status-updated', {
-              id: messageId,
-              chatJid: remoteJid,
-              status: 'READ'
-            })
-          }
-        } else {
-          // Check if everyone got it delivered
-          const deliveredCount = await this.receiptRepository.getMessageReceiptsWithStatusesCount(messageId, ['DELIVERED', 'READ'])
-
-          if (membersCount > 1 && deliveredCount >= membersCount - 1) {
-            const currentStatus = message.status || 'PENDING'
-            const currentLevel = this.statusMap[currentStatus] ?? 0
-            const newLevel = this.statusMap['DELIVERED']
-
-            if (newLevel > currentLevel) {
-              await this.receiptRepository.updateMessageStatus(messageId, 'DELIVERED')
-
-              await this.getBus()?.emit('message:status-updated', {
-                id: messageId,
-                chatJid: remoteJid,
-                status: 'DELIVERED'
-              })
-            }
-          } else {
-            // Keep status at SENT if not delivered to all yet
-            const currentStatus = message.status || 'PENDING'
-            if (currentStatus === 'PENDING') {
-              await this.receiptRepository.updateMessageStatus(messageId, 'SENT')
-
-              await this.getBus()?.emit('message:status-updated', {
-                id: messageId,
-                chatJid: remoteJid,
-                status: 'SENT'
-              })
-            }
-          }
-        }
+        await this.processGroupMessageReceipt(messageId, remoteJid, message)
       } else {
-        // DM Chat: simply update to the highest status
-        const currentStatus = message.status || 'PENDING'
-        const currentLevel = this.statusMap[currentStatus] ?? 0
-        const newLevel = this.statusMap[status] ?? 0
-
-        if (newLevel > currentLevel) {
-          await this.receiptRepository.updateMessageStatus(messageId, status)
-
-          await this.getBus()?.emit('message:status-updated', {
-            id: messageId,
-            chatJid: remoteJid,
-            status
-          })
-        }
+        await this.processDirectMessageReceipt(messageId, remoteJid, status, message)
       }
     } catch (err) {
       console.error('[ReceiptService] Error processing message receipt:', err)
     }
   }
 
+  private async processGroupMessageReceipt(
+    messageId: string,
+    remoteJid: string,
+    message: Message
+  ): Promise<void> {
+    // Fetch total number of members in the group from database
+    const membersCount = await this.receiptRepository.getChatMembersCount(remoteJid)
+
+    // Find how many other members have read the message
+    const readCount = await this.receiptRepository.getMessageReceiptsCount(messageId, 'READ')
+
+    // In groups, the sender is one of the members. The number of other members is membersCount - 1
+    if (membersCount > 1 && readCount >= membersCount - 1) {
+      // If everyone read it
+      const currentStatus = message.status || 'PENDING'
+      if (currentStatus !== 'READ') {
+        await this.receiptRepository.updateMessageStatus(messageId, 'READ')
+
+        await this.getBus()?.emit('message:status-updated', {
+          id: messageId,
+          chatJid: remoteJid,
+          status: 'READ'
+        })
+      }
+    } else {
+      // Check if everyone got it delivered
+      const deliveredCount = await this.receiptRepository.getMessageReceiptsWithStatusesCount(messageId, ['DELIVERED', 'READ'])
+
+      if (membersCount > 1 && deliveredCount >= membersCount - 1) {
+        const currentStatus = message.status || 'PENDING'
+        const currentLevel = this.statusMap[currentStatus] ?? 0
+        const newLevel = this.statusMap['DELIVERED']
+
+        if (newLevel > currentLevel) {
+          await this.receiptRepository.updateMessageStatus(messageId, 'DELIVERED')
+
+          await this.getBus()?.emit('message:status-updated', {
+            id: messageId,
+            chatJid: remoteJid,
+            status: 'DELIVERED'
+          })
+        }
+      } else {
+        // Keep status at SENT if not delivered to all yet
+        const currentStatus = message.status || 'PENDING'
+        if (currentStatus === 'PENDING') {
+          await this.receiptRepository.updateMessageStatus(messageId, 'SENT')
+
+          await this.getBus()?.emit('message:status-updated', {
+            id: messageId,
+            chatJid: remoteJid,
+            status: 'SENT'
+          })
+        }
+      }
+    }
+  }
+
+  private async processDirectMessageReceipt(
+    messageId: string,
+    remoteJid: string,
+    status: string,
+    message: Message
+  ): Promise<void> {
+    const currentStatus = message.status || 'PENDING'
+    const currentLevel = this.statusMap[currentStatus] ?? 0
+    const newLevel = this.statusMap[status] ?? 0
+
+    if (newLevel > currentLevel) {
+      await this.receiptRepository.updateMessageStatus(messageId, status)
+
+      await this.getBus()?.emit('message:status-updated', {
+        id: messageId,
+        chatJid: remoteJid,
+        status
+      })
+    }
+  }
+
   /**
    * Retrieves message delivery/read receipts with resolved contact names.
    */
-  public async getMessageReceipts(messageId: string, sock: WASocket | null): Promise<any[]> {
+  public async getMessageReceipts(
+    messageId: string,
+    sock: WASocket | null
+  ): Promise<Array<{ userJid: string; name: string; status: string; timestamp: string }>> {
     const receipts = await this.receiptRepository.getMessageReceipts(messageId)
-    const result: any[] = []
+    const result: Array<{ userJid: string; name: string; status: string; timestamp: string }> = []
     for (const receipt of receipts) {
       const name = await this.contactService.resolveName(receipt.userJid, null, sock)
       result.push({

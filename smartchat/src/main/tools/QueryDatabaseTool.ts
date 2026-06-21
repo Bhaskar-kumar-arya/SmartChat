@@ -229,19 +229,7 @@ export class QueryDatabaseTool implements AITool {
     return `DATABASE SCHEMA (live, auto-introspected from schema.prisma):\n${tableLines.join('\n')}`;
   }
 
-  // ── Execution ─────────────────────────────────────────────────────────────────
-
-  async execute(args: unknown): Promise<unknown> {
-    if (!args || typeof args !== 'object') {
-      throw new Error('Invalid arguments passed to QueryDatabaseTool');
-    }
-    const { sql, explanation, params } = args as Record<string, unknown>;
-
-    if (!sql || typeof sql !== 'string') {
-      throw new Error('Missing required argument: sql');
-    }
-
-    // ── Safety Gate ──────────────────────────────────────────────────────────
+  private validateSqlQuery(sql: string): void {
     const trimmed = sql.trim();
     const normalized = trimmed.toUpperCase().replace(/\s+/g, ' ');
 
@@ -259,8 +247,40 @@ export class QueryDatabaseTool implements AITool {
         );
       }
     }
+  }
+
+  private serializeBigInts(rows: unknown[]): Record<string, unknown>[] {
+    return rows.map(row => {
+      const out: Record<string, unknown> = {};
+      if (row && typeof row === 'object') {
+        for (const [key, val] of Object.entries(row as Record<string, unknown>)) {
+          out[key] = typeof val === 'bigint' ? val.toString() : val;
+        }
+      }
+      return out;
+    });
+  }
+
+  // ── Execution ─────────────────────────────────────────────────────────────────
+
+  async execute(args: unknown): Promise<unknown> {
+    if (!args || typeof args !== 'object') {
+      throw new Error('Invalid arguments passed to QueryDatabaseTool');
+    }
+    const record = args as Record<string, unknown>;
+    const sql = record.sql;
+    const explanation = record.explanation;
+    const params = record.params;
+
+    if (!sql || typeof sql !== 'string') {
+      throw new Error('Missing required argument: sql');
+    }
+
+    // ── Safety Gate ──────────────────────────────────────────────────────────
+    this.validateSqlQuery(sql);
 
     // ── Enforce row cap ───────────────────────────────────────────────────────
+    const trimmed = sql.trim();
     const hasLimit = /\bLIMIT\b/i.test(trimmed);
     let finalSql = trimmed.replace(/;?\s*$/, '');
 
@@ -279,19 +299,11 @@ export class QueryDatabaseTool implements AITool {
       throw new Error(`SQL execution failed: ${errMsg}`);
     }
 
-    // Serialize BigInt timestamps to strings for safe JSON transport
-    const serialized = rows.map(row => {
-      const out: Record<string, unknown> = {};
-      if (row && typeof row === 'object') {
-        for (const [key, val] of Object.entries(row as Record<string, unknown>)) {
-          out[key] = typeof val === 'bigint' ? val.toString() : val;
-        }
-      }
-      return out;
-    });
+    const serialized = this.serializeBigInts(rows);
+    const explanationStr = typeof explanation === 'string' ? explanation : 'No explanation provided.';
 
     return {
-      explanation: explanation || 'No explanation provided.',
+      explanation: explanationStr,
       rowCount: serialized.length,
       cappedAt: MAX_ROWS,
       rows: serialized

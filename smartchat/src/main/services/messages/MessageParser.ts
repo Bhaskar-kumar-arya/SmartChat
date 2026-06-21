@@ -137,6 +137,31 @@ export class MessageParser {
    * Safely serialize a `proto.IMessage` to a plain JSON object.
    * Handles circular references and protobuf-specific toJSON methods.
    */
+  private safeStringifyReplacer(_key: string, value: unknown): unknown {
+    if (
+      value &&
+      typeof value === 'object' &&
+      typeof (value as { toJSON?: unknown }).toJSON === 'function'
+    ) {
+      try {
+        return (value as { toJSON: () => unknown }).toJSON()
+      } catch {
+        const copy: Record<string, unknown> = {}
+        for (const k in value as object) {
+          if (typeof (value as Record<string, unknown>)[k] !== 'function') {
+            copy[k] = (value as Record<string, unknown>)[k]
+          }
+        }
+        return copy
+      }
+    }
+    return value
+  }
+
+  /**
+   * Safely serialize a `proto.IMessage` to a plain JSON object.
+   * Handles circular references and protobuf-specific toJSON methods.
+   */
   private _safeSerialize(
     message: BaileysMessage['message']
   ): Record<string, unknown> | null {
@@ -145,29 +170,9 @@ export class MessageParser {
       return JSON.parse(JSON.stringify(message)) as Record<string, unknown>
     } catch {
       // Fallback for proto objects with circular refs or toJSON methods
-      const safeStringify = (obj: unknown): string =>
-        JSON.stringify(obj, (_key, value: unknown) => {
-          if (
-            value &&
-            typeof value === 'object' &&
-            typeof (value as { toJSON?: unknown }).toJSON === 'function'
-          ) {
-            try {
-              return (value as { toJSON: () => unknown }).toJSON()
-            } catch {
-              const copy: Record<string, unknown> = {}
-              for (const k in value as object) {
-                if (typeof (value as Record<string, unknown>)[k] !== 'function') {
-                  copy[k] = (value as Record<string, unknown>)[k]
-                }
-              }
-              return copy
-            }
-          }
-          return value
-        })
       try {
-        return JSON.parse(safeStringify(message)) as Record<string, unknown>
+        const safeString = JSON.stringify(message, (k, v) => this.safeStringifyReplacer(k, v))
+        return JSON.parse(safeString) as Record<string, unknown>
       } catch {
         return null
       }
@@ -177,7 +182,19 @@ export class MessageParser {
   /**
    * Maps a ParsedMessage and resolved senderId to the database-row structure.
    */
-  toDbRow(p: ParsedMessage, senderId: number | null) {
+  toDbRow(p: ParsedMessage, senderId: number | null): {
+    id: string
+    chatJid: string
+    fromMe: boolean
+    senderId: number | null
+    participant: string | null
+    timestamp: bigint
+    messageType: string
+    content: string
+    textContent: string | null
+    status: string
+    isDeleted: boolean
+  } {
     return {
       id: p.id,
       chatJid: p.chatJid,
