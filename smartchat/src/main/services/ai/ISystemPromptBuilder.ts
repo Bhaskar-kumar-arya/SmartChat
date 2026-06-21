@@ -8,7 +8,7 @@ export interface UserDetails {
 export interface ISystemPromptBuilder {
   build(
     tools: any[],
-    useThinkMode: boolean,
+    protocolMode: 'react' | 'standard',
     userDetails?: UserDetails
   ): string
 }

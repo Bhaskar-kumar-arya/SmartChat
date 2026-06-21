@@ -29,7 +29,8 @@ export class ToolRegistry implements IToolRegistry {
   getSystemInstructions(useThinkMode: boolean = true, userDetails?: UserDetails): string {
     const tools = this.getToolDefinitions();
     if (tools.length === 0) return '';
-    return this.promptBuilder.build(tools, useThinkMode, userDetails);
+    const protocolMode = useThinkMode ? 'react' : 'standard';
+    return this.promptBuilder.build(tools, protocolMode, userDetails);
   }
 }
 

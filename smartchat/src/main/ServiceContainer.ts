@@ -115,6 +115,8 @@ import { ReceiptRepository } from './services/messages/ReceiptRepository'
 import { IToolRegistry } from './services/ai/IToolRegistry'
 import { ToolRegistry } from './services/ai/AIToolService'
 import { SystemPromptBuilder } from './services/ai/SystemPromptBuilder'
+import { ReactProtocolStrategy } from './services/ai/prompts/ReactProtocolStrategy'
+import { StandardProtocolStrategy } from './services/ai/prompts/StandardProtocolStrategy'
 
 export function createServices(
   prisma: PrismaClient,
@@ -239,7 +241,10 @@ export function createServices(
   const profileSyncService = new ProfileSyncService(prisma, contactService)
 
   // 3. AI services
-  const toolRegistry: IToolRegistry = new ToolRegistry(new SystemPromptBuilder())
+  const reactStrategy = new ReactProtocolStrategy()
+  const standardStrategy = new StandardProtocolStrategy()
+  const promptBuilder = new SystemPromptBuilder(reactStrategy, standardStrategy)
+  const toolRegistry: IToolRegistry = new ToolRegistry(promptBuilder)
   const aiService = new AIService(aiKeyService, contactService, toolRegistry)
   const aiChatSessionService = new AIChatSessionService(prisma)
   const aiChatExportService = new AIChatExportService()
