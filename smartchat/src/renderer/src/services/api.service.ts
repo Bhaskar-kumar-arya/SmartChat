@@ -13,6 +13,9 @@ export const api: IAPIService = {
   getChats: (page: number, limit: number): Promise<ChatItem[]> =>
     window.api.getChats(page, limit),
 
+  getChat: (jid: string): Promise<ChatItem | null> =>
+    window.api.getChat(jid),
+
   getMessages: (jid: string, page: number, limit: number): Promise<MessageItem[]> =>
     window.api.getMessages(jid, page, limit),
 

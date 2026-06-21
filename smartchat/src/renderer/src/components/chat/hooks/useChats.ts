@@ -82,54 +82,131 @@ export const useChats = (activeJid: string | null) => {
   useEffect(() => {
     loadChats(1, false)
 
-    const unSubNewMsg = api.onNewMessage((msg: MessageItem) => {
+    const unSubNewMsg = api.onNewMessage(async (msg: MessageItem) => {
+      let reactionText = ''
+      try {
+        if (msg.messageType === 'reactionMessage' && msg.content) {
+          const parsed = JSON.parse(msg.content)
+          reactionText = parsed.reactionMessage?.text || ''
+        }
+      } catch (err) {
+        console.warn('[useChats] Failed to parse reaction message:', err)
+      }
+
+      let targetMsgPreview = 'message'
+      if (msg.targetMessageType) {
+        const targetMockItem: MessageItem = {
+          id: '',
+          chatJid: msg.chatJid,
+          fromMe: false,
+          participant: null,
+          timestamp: msg.timestamp,
+          messageType: msg.targetMessageType,
+          textContent: msg.targetTextContent || null
+        }
+        targetMsgPreview = formatMessagePreview(targetMockItem) || 'message'
+      }
+
+      const lastMessageText = msg.messageType === 'reactionMessage'
+        ? `Reacted ${reactionText} to ${targetMsgPreview}`
+        : formatMessagePreview(msg)
+
+      const senderName = formatSenderName(msg.fromMe, msg.participantName, msg.participant)
+
+      let hasChat = false
+      setChats((prev) => {
+        hasChat = prev.some((c) => c.jid === msg.chatJid)
+        return prev
+      })
+
+      if (!hasChat) {
+        try {
+          const chatData = await api.getChat(msg.chatJid)
+          if (chatData) {
+            setChats((prev) => {
+              const exists = prev.some((c) => c.jid === msg.chatJid)
+              if (exists) {
+                return prev.map((c) => {
+                  if (c.jid !== msg.chatJid) return c
+                  return {
+                    ...c,
+                    unreadCount: msg.messageType === 'reactionMessage' ? c.unreadCount : (activeJidRef.current === msg.chatJid ? 0 : c.unreadCount + (msg.fromMe ? 0 : 1)),
+                    timestamp: msg.timestamp,
+                    lastMessage: lastMessageText,
+                    lastMessageType: msg.messageType,
+                    lastMessageTimestamp: msg.timestamp,
+                    lastMessageSender: senderName,
+                    lastMessageStatus: msg.messageType === 'reactionMessage' ? null : (msg.status || null),
+                    lastMessageFromMe: msg.fromMe,
+                    lastMessageId: msg.id,
+                    lastMessageTargetType: msg.messageType === 'reactionMessage' ? (msg.targetMessageType || null) : null,
+                    lastMessageTargetText: msg.messageType === 'reactionMessage' ? targetMsgPreview : null,
+                    lastMessageReactionText: msg.messageType === 'reactionMessage' ? reactionText : null
+                  }
+                })
+              }
+              
+              const newChat: ChatItem = {
+                ...chatData,
+                unreadCount: activeJidRef.current === msg.chatJid ? 0 : (msg.messageType === 'reactionMessage' ? (chatData.unreadCount || 0) : (chatData.unreadCount || 1)),
+                timestamp: msg.timestamp,
+                lastMessage: lastMessageText,
+                lastMessageType: msg.messageType,
+                lastMessageTimestamp: msg.timestamp,
+                lastMessageSender: senderName,
+                lastMessageStatus: msg.messageType === 'reactionMessage' ? null : (msg.status || null),
+                lastMessageFromMe: msg.fromMe,
+                lastMessageId: msg.id,
+                lastMessageTargetType: msg.messageType === 'reactionMessage' ? (msg.targetMessageType || null) : null,
+                lastMessageTargetText: msg.messageType === 'reactionMessage' ? targetMsgPreview : null,
+                lastMessageReactionText: msg.messageType === 'reactionMessage' ? reactionText : null
+              }
+
+              return sortChats([newChat, ...prev])
+            })
+            return
+          }
+        } catch (err) {
+          console.error('[useChats] Failed to fetch chat on new message:', err)
+        }
+      }
+
       setChats((prev) => {
         const idx = prev.findIndex((c) => c.jid === msg.chatJid)
-        const existing = idx >= 0 ? prev[idx] : null
-        
-        // Use ref value to avoid stale closures
-        const isCurrentChat = activeJidRef.current === msg.chatJid
-        
-        let reactionText = ''
-        try {
-          if (msg.messageType === 'reactionMessage' && msg.content) {
-            const parsed = JSON.parse(msg.content)
-            reactionText = parsed.reactionMessage?.text || ''
-          }
-        } catch {}
-
-        let targetMsgPreview = 'message'
-        if (msg.targetMessageType) {
-          const targetMockItem: MessageItem = {
-            id: '',
-            chatJid: msg.chatJid,
-            fromMe: false,
-            participant: null,
+        if (idx === -1 && !hasChat) {
+          const isCurrentChat = activeJidRef.current === msg.chatJid
+          const fallbackChat: ChatItem = {
+            jid: msg.chatJid,
+            name: msg.chatJid.replace(/@.*$/, ''),
+            unreadCount: isCurrentChat ? 0 : 1,
             timestamp: msg.timestamp,
-            messageType: msg.targetMessageType,
-            textContent: msg.targetTextContent || null
+            lastMessage: lastMessageText,
+            lastMessageType: msg.messageType,
+            lastMessageTimestamp: msg.timestamp,
+            lastMessageSender: senderName,
+            lastMessageStatus: msg.messageType === 'reactionMessage' ? null : (msg.status || null),
+            lastMessageFromMe: msg.fromMe,
+            lastMessageId: msg.id,
+            lastMessageTargetType: msg.messageType === 'reactionMessage' ? (msg.targetMessageType || null) : null,
+            lastMessageTargetText: msg.messageType === 'reactionMessage' ? targetMsgPreview : null,
+            lastMessageReactionText: msg.messageType === 'reactionMessage' ? reactionText : null
           }
-          targetMsgPreview = formatMessagePreview(targetMockItem) || 'message'
+          return sortChats([fallbackChat, ...prev])
         }
 
-        const lastMessageText = msg.messageType === 'reactionMessage'
-          ? `Reacted ${reactionText} to ${targetMsgPreview}`
-          : formatMessagePreview(msg)
+        if (idx === -1) return prev
+
+        const existing = prev[idx]
+        const isCurrentChat = activeJidRef.current === msg.chatJid
 
         const updatedChat: ChatItem = {
-          ...(existing || {}),
-          jid: msg.chatJid,
-          name: existing ? existing.name : msg.chatJid.replace(/@.*$/, ''),
-          unreadCount: existing 
-            ? (msg.messageType === 'reactionMessage' ? existing.unreadCount : (isCurrentChat ? 0 : existing.unreadCount + (msg.fromMe ? 0 : 1)))
-            : (isCurrentChat ? 0 : 1),
+          ...existing,
+          unreadCount: msg.messageType === 'reactionMessage' ? existing.unreadCount : (isCurrentChat ? 0 : existing.unreadCount + (msg.fromMe ? 0 : 1)),
           timestamp: msg.timestamp,
           lastMessage: lastMessageText,
           lastMessageType: msg.messageType,
           lastMessageTimestamp: msg.timestamp,
-          pinned: existing?.pinned,
-          muteExpiration: existing?.muteExpiration,
-          lastMessageSender: formatSenderName(msg.fromMe, msg.participantName, msg.participant),
+          lastMessageSender: senderName,
           lastMessageStatus: msg.messageType === 'reactionMessage' ? null : (msg.status || null),
           lastMessageFromMe: msg.fromMe,
           lastMessageId: msg.id,
@@ -138,21 +215,44 @@ export const useChats = (activeJid: string | null) => {
           lastMessageReactionText: msg.messageType === 'reactionMessage' ? reactionText : null
         }
         const filtered = prev.filter((c) => c.jid !== msg.chatJid)
-        const sorted = sortChats([updatedChat, ...filtered])
-        return sorted
+        return sortChats([updatedChat, ...filtered])
       })
     })
 
-    const unSubChatUpd = api.onChatUpdated((update) => {
+    const unSubChatUpd = api.onChatUpdated(async (update) => {
+      let hasChat = false
+      setChats((prev) => {
+        hasChat = prev.some((c) => c.jid === update.jid)
+        return prev
+      })
+
+      if (!hasChat) {
+        try {
+          const chatData = await api.getChat(update.jid)
+          if (chatData) {
+            setChats((prev) => {
+              const exists = prev.some((c) => c.jid === update.jid)
+              if (exists) {
+                return prev.map(c => c.jid === update.jid ? { ...c, ...update } as ChatItem : c)
+              }
+              const newChat = { ...chatData, ...update } as ChatItem
+              if (newChat.jid === activeJidRef.current) {
+                newChat.unreadCount = 0
+              }
+              return sortChats([newChat, ...prev])
+            })
+            return
+          }
+        } catch (err) {
+          console.error('[useChats] Failed to fetch chat on update:', err)
+        }
+      }
+
       setChats((prev) => {
         const idx = prev.findIndex((c) => c.jid === update.jid)
-        if (idx === -1) {
-          loadChats()
-          return prev
-        }
+        if (idx === -1) return prev
         
         const updatedChat = { ...prev[idx], ...update } as ChatItem
-        // Keep unread 0 if it's the active chat
         if (updatedChat.jid === activeJidRef.current) {
           updatedChat.unreadCount = 0
         }

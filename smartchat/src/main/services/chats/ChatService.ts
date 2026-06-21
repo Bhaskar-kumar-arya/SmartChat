@@ -148,7 +148,14 @@ export class ChatService implements IChatService {
    * Retrieves the chat list (paginated).
    */
   async getChatList(page: number = 1, pageSize: number = 50): Promise<ChatListEntry[]> {
-    return this.chatListEnricher.getChatList(page, pageSize) as unknown as Promise<ChatListEntry[]>
+    return this.chatListEnricher.getChatList(page, pageSize)
+  }
+
+  /**
+   * Retrieves a single chat (enriched).
+   */
+  async getChatByJid(jid: string): Promise<ChatListEntry | null> {
+    return this.chatListEnricher.getChatByJid(jid)
   }
 
   /**

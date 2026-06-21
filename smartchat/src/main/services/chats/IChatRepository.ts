@@ -24,6 +24,7 @@ export interface IChatReadRepository {
   findChatsByJids(jids: string[]): Promise<Chat[]>
   findChatsPaginated(skip: number, take: number): Promise<ChatWithCommunity[]>
   findChatsByJidsWithCommunity(jids: string[]): Promise<ChatWithCommunity[]>
+  findChatsByCommunityJids(communityJids: string[]): Promise<ChatWithCommunity[]>
   findChatMuteExpiration(jid: string): Promise<{ muteExpiration: bigint } | null>
   findChats(jids?: string[]): Promise<Chat[]>
   searchChats(query: string, take?: number): Promise<Array<{ jid: string; name: string | null; type: string; profilePictureUrl: string | null }>>

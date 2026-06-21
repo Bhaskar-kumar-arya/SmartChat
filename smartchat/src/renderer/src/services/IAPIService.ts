@@ -19,6 +19,7 @@ import {
 
 export interface IAPIService {
   getChats(page: number, limit: number): Promise<ChatItem[]>
+  getChat(jid: string): Promise<ChatItem | null>
   getMessages(jid: string, page: number, limit: number): Promise<MessageItem[]>
   sendMessage(jid: string, text: string, quotedId?: string, mentions?: string[]): Promise<MessageItem>
   editMessage(jid: string, messageId: string, newText: string): Promise<MessageItem>

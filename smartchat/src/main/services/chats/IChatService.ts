@@ -3,6 +3,7 @@ import { ChatListEntry } from '../../domain/chatList.types'
 
 export interface IChatQueryService {
   getChatList(page?: number, pageSize?: number): Promise<ChatListEntry[]>
+  getChatByJid(jid: string): Promise<ChatListEntry | null>
   isChatMuted(jid: string): Promise<boolean>
 }
 

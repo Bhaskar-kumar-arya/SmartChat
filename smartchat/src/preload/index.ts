@@ -55,6 +55,9 @@ const api = {
   getChats: (page: number = 1, pageSize: number = 50) => {
     return ipcRenderer.invoke('get-chats', page, pageSize)
   },
+  getChat: (jid: string) => {
+    return ipcRenderer.invoke('get-chat', jid)
+  },
   getMessages: (jid: string, page: number = 1, pageSize: number = 50) => {
     return ipcRenderer.invoke('get-messages', jid, page, pageSize)
   },

@@ -89,6 +89,40 @@ export class ChatRepository implements IChatRepository {
   }
 
   /**
+   * Fetch all chats belonging to specified communities, or are community roots themselves.
+   */
+  async findChatsByCommunityJids(communityJids: string[]): Promise<ChatWithCommunity[]> {
+    if (communityJids.length === 0) return []
+    const chats = await this.prisma.chat.findMany({
+      where: {
+        OR: [
+          { community: { jid: { in: communityJids } } },
+          { jid: { in: communityJids } }
+        ]
+      },
+      select: {
+        jid: true,
+        name: true,
+        unreadCount: true,
+        timestamp: true,
+        pinned: true,
+        muteExpiration: true,
+        type: true,
+        communityId: true,
+        community: {
+          select: {
+            jid: true,
+            name: true
+          }
+        },
+        profilePictureUrl: true,
+        isArchived: true
+      }
+    })
+    return chats as ChatWithCommunity[]
+  }
+
+  /**
    * Upsert a chat record.
    */
   async upsertChat(jid: string, data: ChatUpsertData): Promise<Chat> {

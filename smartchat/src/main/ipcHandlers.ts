@@ -39,28 +39,13 @@ function registerChatAndMessageHandlers(
 ): void {
   ipcMain.handle('get-chats', async (_event, page: number = 1, pageSize: number = 50): Promise<ChatListItem[]> => {
     const list = await services.chatService.getChatList(page, pageSize)
-    return list.map(item => ({
-      jid: item.jid,
-      name: item.name,
-      unreadCount: item.unreadCount,
-      timestamp: item.timestamp,
-      lastMessage: item.lastMessage,
-      lastMessageType: item.lastMessageType,
-      lastMessageTimestamp: item.lastMessageTimestamp,
-      pinned: item.pinned,
-      muteExpiration: item.muteExpiration,
-      profilePictureUrl: item.profilePictureUrl,
-      isCommunity: item.isCommunity,
-      isAnnounce: item.isAnnounce,
-      linkedParentJid: item.linkedParentJid,
-      lastMessageSender: item.lastMessageSender,
-      lastMessageStatus: item.lastMessageStatus,
-      lastMessageFromMe: item.lastMessageFromMe,
-      lastMessageId: item.lastMessageId,
-      lastMessageTargetType: item.lastMessageTargetType,
-      lastMessageTargetText: item.lastMessageTargetText,
-      lastMessageReactionText: item.lastMessageReactionText
-    }))
+    return list.map(item => mapChatToListItem(item))
+  })
+
+  ipcMain.handle('get-chat', async (_event, jid: string): Promise<ChatListItem | null> => {
+    const item = await services.chatService.getChatByJid(jid)
+    if (!item) return null
+    return mapChatToListItem(item)
   })
 
   ipcMain.handle('get-messages', async (_event, jid: string, page: number = 1, pageSize: number = 50) => {
@@ -129,6 +114,31 @@ function registerChatAndMessageHandlers(
     await sock.chatModify({ pin: false }, jid)
     return true
   })
+}
+
+function mapChatToListItem(item: ChatListItem): ChatListItem {
+  return {
+    jid: item.jid,
+    name: item.name,
+    unreadCount: item.unreadCount,
+    timestamp: item.timestamp,
+    lastMessage: item.lastMessage,
+    lastMessageType: item.lastMessageType,
+    lastMessageTimestamp: item.lastMessageTimestamp,
+    pinned: item.pinned,
+    muteExpiration: item.muteExpiration,
+    profilePictureUrl: item.profilePictureUrl,
+    isCommunity: item.isCommunity,
+    isAnnounce: item.isAnnounce,
+    linkedParentJid: item.linkedParentJid,
+    lastMessageSender: item.lastMessageSender,
+    lastMessageStatus: item.lastMessageStatus,
+    lastMessageFromMe: item.lastMessageFromMe,
+    lastMessageId: item.lastMessageId,
+    lastMessageTargetType: item.lastMessageTargetType,
+    lastMessageTargetText: item.lastMessageTargetText,
+    lastMessageReactionText: item.lastMessageReactionText
+  }
 }
 
 function registerMediaAndFileHandlers(

@@ -1,4 +1,4 @@
-import { ChatListItem } from '../../ipc/chat.types'
+import { ChatListEntry } from '../../domain/chatList.types'
 import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
 import { IChatRepository, ChatWithCommunity } from './IChatRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'
@@ -18,31 +18,45 @@ export class ChatListEnricher {
   /**
    * Retrieves the chat list (paginated) and enriches it with the latest message/reaction.
    */
-  async getChatList(page: number = 1, pageSize: number = 50): Promise<ChatListItem[]> {
+  async getChatList(page: number = 1, pageSize: number = 50): Promise<ChatListEntry[]> {
     const skip = (page - 1) * pageSize
     const chats = await this.chatRepository.findChatsPaginated(skip, pageSize)
     
-    // Auto-inject missing root communities so the frontend can properly nest subgroups
     const fetchedJids = new Set(chats.map(c => c.jid))
-    const missingCommunityJids = new Set<string>()
+    const communityJids = new Set<string>()
+
     for (const chat of chats) {
-      if ((chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') && chat.community?.jid) {
-        if (!fetchedJids.has(chat.community.jid)) {
-          missingCommunityJids.add(chat.community.jid)
-        }
+      if (chat.type === 'COMMUNITY') {
+        communityJids.add(chat.jid)
+      } else if ((chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') && chat.community?.jid) {
+        communityJids.add(chat.community.jid)
       }
     }
 
-    if (missingCommunityJids.size > 0) {
-      const missingCommunities = await this.chatRepository.findChatsByJidsWithCommunity(Array.from(missingCommunityJids))
-      chats.push(...missingCommunities)
+    if (communityJids.size > 0) {
+      const communityChats = await this.chatRepository.findChatsByCommunityJids(Array.from(communityJids))
+      for (const cc of communityChats) {
+        if (!fetchedJids.has(cc.jid)) {
+          chats.push(cc)
+          fetchedJids.add(cc.jid)
+        }
+      }
     }
 
     const enriched = await Promise.all(
       chats.map(chat => this.enrichSingleChat(chat))
     )
 
-    return enriched
+    return enriched as ChatListEntry[]
+  }
+
+  /**
+   * Retrieves a single enriched chat by its JID.
+   */
+  async getChatByJid(jid: string): Promise<ChatListEntry | null> {
+    const chats = await this.chatRepository.findChatsByJidsWithCommunity([jid])
+    if (chats.length === 0) return null
+    return this.enrichSingleChat(chats[0])
   }
 
   private async resolveChatName(chat: ChatWithCommunity): Promise<string> {
@@ -67,7 +81,7 @@ export class ChatListEnricher {
     return chat.jid.split('@')[0]
   }
 
-  private async enrichSingleChat(chat: ChatWithCommunity): Promise<ChatListItem> {
+  private async enrichSingleChat(chat: ChatWithCommunity): Promise<ChatListEntry> {
     const name = await this.resolveChatName(chat)
 
     // Fetch the most recent message for preview
