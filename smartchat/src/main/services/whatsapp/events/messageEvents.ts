@@ -1,6 +1,7 @@
 import { proto } from '@whiskeysockets/baileys'
 import { ProcessedMessage } from '../../../domain/db.types'
-import { WASocket, BaileysMessage } from '../types'
+import { ISocketUserContext } from '../../contacts/IContactService'
+import { BaileysMessage } from '../types'
 
 /**
  * Fired for each real-time incoming message (Baileys type='notify').
@@ -15,7 +16,7 @@ export interface IncomingMessageEvent {
   fromMe: boolean
   timestamp: bigint
   processed: ProcessedMessage  // full processed row for subscribers that need detail
-  sock: WASocket
+  sock: ISocketUserContext
 }
 
 /**
@@ -24,7 +25,7 @@ export interface IncomingMessageEvent {
  */
 export interface AppendMessagesEvent {
   messages: BaileysMessage[]
-  sock: WASocket
+  sock: ISocketUserContext
 }
 
 /**
@@ -45,7 +46,7 @@ export interface MessageEditedEvent {
   chatJid: string
   editedTextContent: string | null
   editedContent: proto.IMessage | null  // null = already persisted by strategy, skip DB write
-  sock: WASocket
+  sock: ISocketUserContext
 }
 
 /**
@@ -87,5 +88,5 @@ export interface MessageDecryptedEvent {
   messageType: string
   textContent: string | null
   content: Record<string, unknown>
-  sock: WASocket
+  sock: ISocketUserContext
 }

@@ -1,4 +1,4 @@
-import { WASocket } from '../whatsapp/types'
+import { ISocketUserContext } from '../contacts/IContactService'
 
 export interface SearchResultItem {
   type: 'chat' | 'message'
@@ -37,7 +37,7 @@ export interface ISearchService {
   searchAll(
     query: string,
     mode: SearchMode,
-    sock: WASocket | null,
+    sock: ISocketUserContext | null,
     filters?: SearchFilters
   ): Promise<SearchResults>
   

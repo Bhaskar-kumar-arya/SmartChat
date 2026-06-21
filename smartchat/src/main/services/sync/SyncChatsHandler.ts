@@ -1,4 +1,4 @@
-import { IContactService } from '../contacts/IContactService'
+import { IContactMutationService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { ICommunityRepository } from '../chats/ICommunityRepository'
 import { cleanJid } from '../../utils/jidUtils'
@@ -49,7 +49,7 @@ export class SyncChatsHandler {
   constructor(
     private readonly chatRepository: IChatRepository,
     private readonly communityRepository: ICommunityRepository,
-    private readonly contactService: IContactService
+    private readonly contactService: IContactMutationService
   ) {}
 
   /**

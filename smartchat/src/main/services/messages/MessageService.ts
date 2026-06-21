@@ -1,12 +1,11 @@
 import { WAMessageStubType } from '@whiskeysockets/baileys'
-import { IContactService } from '../contacts/IContactService'
+import { IContactNameResolver, IContactQueryService, ISocketUserContext } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageIndexer } from '../search/IEmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { cleanJid } from '../../utils/jidUtils'
 import { parseBaileysTimestamp, unwrapMessage } from '../../utils/messageUtils'
 import {
-  WASocket,
   BaileysMessage,
   ProtocolResult,
   BaileysReactionUpdate,
@@ -52,7 +51,7 @@ export type { ParsedMessage }
  */
 export class MessageService implements IMessageWriterService, IMessageQueryService, IMessageParserService, IMessageProcessingService {
   constructor(
-    private readonly contactService: IContactService,
+    private readonly contactService: IContactNameResolver & IContactQueryService,
     private readonly chatRepository: IChatRepository,
     private readonly embeddingService: IMessageIndexer,
     private readonly secretMessageService: SecretMessageService,
@@ -77,7 +76,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     _sock: unknown | null
   ): Promise<ProcessedMessage | ProtocolResult | null> {
     const baileysMsg = msg as BaileysMessage
-    const sock = _sock as WASocket | null
+    const sock = _sock as ISocketUserContext | null
     const key = baileysMsg.key
     if (!key?.id) return null
 
@@ -318,7 +317,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
 
     const nameMap = await this.contactService.batchResolveNames(
       Array.from(additionalJids),
-      sock as WASocket | null
+      sock as ISocketUserContext | null
     )
 
     let allReactions: Array<{
@@ -335,7 +334,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
 
     const enriched = await Promise.all(
       messages.map(async m => {
-        const enrichedMsg = await this.enricher.enrichMessage(m, sock as WASocket | null, nameMap)
+        const enrichedMsg = await this.enricher.enrichMessage(m, sock as ISocketUserContext | null, nameMap)
         if (!includeReactions) return enrichedMsg
         const msgReactions = allReactions.filter(r => r.messageId === m.id)
         return {
@@ -356,7 +355,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     sock: unknown | null,
     nameMap: Map<string, string>
   ): Promise<EnrichedMessage> {
-    return this.enricher.enrichMessage(msg, sock as WASocket | null, nameMap)
+    return this.enricher.enrichMessage(msg, sock as ISocketUserContext | null, nameMap)
   }
 
   /**
@@ -405,12 +404,12 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     }
 
     // Resolve reactor JID
-    const reactorJid = await this.identityResolver.resolveReactorJid(reactionKey, sock as WASocket | null)
+    const reactorJid = await this.identityResolver.resolveReactorJid(reactionKey, sock as ISocketUserContext | null)
 
     // Resolve reactor identity ID
     let reactorId: number | null = null
     if (reactionKey.fromMe) {
-      reactorId = await this.identityResolver.resolveMeSenderId(sock as WASocket | null)
+      reactorId = await this.identityResolver.resolveMeSenderId(sock as ISocketUserContext | null)
     } else if (reactorJid) {
       reactorId = await this.identityResolver.resolveSenderId(reactorJid)
     }
@@ -425,7 +424,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
 
     // Notify frontend via event bus
     const reactorJidString = reactorJid ?? reactionKey.remoteJid ?? ''
-    const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock as WASocket | null)
+    const nameMap = await this.contactService.batchResolveNames([reactorJidString], sock as ISocketUserContext | null)
     const reactorName = nameMap.get(reactorJidString) ?? reactorJidString.replace(/@.*$/, '')
 
     await this.getBus()?.emit('reaction:processed', {

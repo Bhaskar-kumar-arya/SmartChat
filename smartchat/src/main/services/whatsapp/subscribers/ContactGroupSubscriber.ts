@@ -17,7 +17,7 @@ import type {
   GroupUpdatedEvent,
   GroupParticipantsEvent,
 } from '../WAEventTypes'
-import type { IContactService } from '../../contacts/IContactService'
+import type { IContactMutationService, IContactQueryService } from '../../contacts/IContactService'
 import type { IChatService } from '../../chats/IChatService'
 import type { IGroupMembershipService } from '../../chats/IGroupMembershipService'
 import type { IChatMemberRepository } from '../../chats/IChatMemberRepository'
@@ -25,7 +25,7 @@ import { cleanJid } from '../../../utils/jidUtils'
 
 export class ContactGroupSubscriber implements IWAEventSubscriber {
   constructor(
-    private contactService: IContactService,
+    private contactService: IContactMutationService & IContactQueryService,
     private chatService: IChatService,
     private groupMembershipService: IGroupMembershipService,
     private chatMemberRepository: IChatMemberRepository

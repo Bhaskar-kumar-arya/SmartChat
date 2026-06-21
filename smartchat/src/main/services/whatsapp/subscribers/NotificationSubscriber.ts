@@ -11,7 +11,7 @@ import type { IWAEventBus } from '../IWAEventBus'
 import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type { IncomingMessageEvent } from '../WAEventTypes'
 import type { IChatService } from '../../chats/IChatService'
-import type { IContactService } from '../../contacts/IContactService'
+import type { IContactNameResolver } from '../../contacts/IContactService'
 import type { IProfileSyncService } from '../../contacts/IProfileSyncService'
 import type { INotificationService } from '../../notification/INotificationService'
 
@@ -20,7 +20,7 @@ export class NotificationSubscriber implements IWAEventSubscriber {
 
   constructor(
     private chatService: IChatService,
-    private contactService: IContactService,
+    private contactService: IContactNameResolver,
     private profileSyncService: IProfileSyncService,
     private notificationService: INotificationService
   ) {

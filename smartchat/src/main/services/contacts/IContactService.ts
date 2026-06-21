@@ -1,13 +1,26 @@
 import { Identity } from '../../domain/entities'
-import { WASocket } from '../whatsapp/types'
+
+export interface ISocketUserContext {
+  user?: {
+    id: string
+    name?: string | null
+    lid?: string | null
+  } | null
+  signalRepository?: {
+    lidMapping?: {
+      getPNForLID?: (lid: string) => Promise<string | null | undefined>
+    }
+  }
+  profilePictureUrl?: (jid: string, type: 'preview' | 'image') => Promise<string | undefined>
+}
 
 export interface IContactQueryService {
-  getMeJids(sock?: WASocket | null): Promise<string[]>
+  getMeJids(sock?: ISocketUserContext | null): Promise<string[]>
   batchGetIdentityIds(jids: string[]): Promise<Map<string, number>>
   getIdentityIdByJid(jid: string | { id: string } | null | undefined): Promise<number | null>
   resolveLidFromJid(jid: string): Promise<string>
   findIdentityById(id: number): Promise<Identity | null>
-  getMePhoneNumberJid(sock?: WASocket | null): Promise<string | null>
+  getMePhoneNumberJid(sock?: ISocketUserContext | null): Promise<string | null>
 }
 
 export interface IContactMutationService {
@@ -28,8 +41,8 @@ export interface IContactMutationService {
 }
 
 export interface IContactNameResolver {
-  batchResolveNames(jids: string[], sock?: WASocket | null): Promise<Map<string, string>>
-  resolveName(jid: string, chatName: string | null, sock?: WASocket | null): Promise<string>
+  batchResolveNames(jids: string[], sock?: ISocketUserContext | null): Promise<Map<string, string>>
+  resolveName(jid: string, chatName: string | null, sock?: ISocketUserContext | null): Promise<string>
 }
 
 export interface IContactCacheManager {
@@ -43,3 +56,4 @@ export interface IContactService
     IContactMutationService,
     IContactNameResolver,
     IContactCacheManager {}
+

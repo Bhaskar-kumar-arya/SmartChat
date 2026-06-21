@@ -10,7 +10,7 @@ import {
   HISTORY_SYNC_TIMEOUT_MS
 } from '../../constants'
 import type { IAuthSettingsService } from '../auth/IAuthSettingsService'
-import type { IContactService } from '../contacts/IContactService'
+import type { IContactQueryService, IContactMutationService, IContactCacheManager } from '../contacts/IContactService'
 import type { IAliasRepository } from '../contacts/IAliasRepository'
 import type { IChatRepository } from '../chats/IChatRepository'
 import type { ICommunityRepository } from '../chats/ICommunityRepository'
@@ -25,7 +25,7 @@ import { IHistorySyncManager } from './IHistorySyncManager'
 export interface HistorySyncDependencies {
   mediaService: IMediaService
   embeddingService: IEmbeddingOperationalControl
-  contactService: IContactService
+  contactService: IContactQueryService & IContactMutationService & IContactCacheManager
   aliasRepository: IAliasRepository
   chatRepository: IChatRepository
   communityRepository: ICommunityRepository

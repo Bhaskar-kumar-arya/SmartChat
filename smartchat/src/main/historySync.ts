@@ -1,5 +1,5 @@
 import { Message } from '@prisma/client'
-import { IContactService } from './services/contacts/IContactService'
+import { IContactQueryService, IContactMutationService, IContactCacheManager } from './services/contacts/IContactService'
 import { SyncContactsHandler } from './services/sync/SyncContactsHandler'
 import { SyncChatsHandler } from './services/sync/SyncChatsHandler'
 import { SyncMessagesHandler } from './services/sync/SyncMessagesHandler'
@@ -39,7 +39,7 @@ export interface HistorySyncResult {
  */
 export async function handleHistorySync(
   data: HistorySyncData,
-  contactService: IContactService,
+  contactService: IContactQueryService & IContactMutationService & IContactCacheManager,
   aliasRepository: IAliasRepository,
   chatRepository: IChatRepository,
   communityRepository: ICommunityRepository,

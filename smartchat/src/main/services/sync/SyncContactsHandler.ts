@@ -1,6 +1,5 @@
-import { IContactService } from '../contacts/IContactService'
+import { IContactMutationService } from '../contacts/IContactService'
 import { cleanJid } from '../../utils/jidUtils'
-
 export interface LidPnMapping {
   lid: string
   pn: string
@@ -31,7 +30,7 @@ export interface RawContact {
  *  2. Upsert contacts into the database.
  */
 export class SyncContactsHandler {
-  constructor(private readonly contactService: IContactService) {}
+  constructor(private readonly contactService: IContactMutationService) {}
 
   /**
    * Process LID ↔ PN link mappings coming in from the sync payload.

@@ -1,6 +1,6 @@
 import { cleanJid } from '../../utils/jidUtils'
 import { parseCommunityMetadata } from '../../utils/communityUtils'
-import { IContactService } from '../contacts/IContactService'
+import { IContactNameResolver } from '../contacts/IContactService'
 import { ChatUpdatePayload, SocketAccessor } from '../whatsapp/types'
 import { ChatListEntry } from '../../domain/chatList.types'
 import { IChatRepository } from './IChatRepository'
@@ -13,7 +13,7 @@ export class ChatService implements IChatService {
   constructor(
     private readonly chatRepository: IChatRepository,
     private readonly communityRepository: ICommunityRepository,
-    private readonly contactService: IContactService,
+    private readonly contactService: IContactNameResolver,
     private readonly groupMembershipService: IGroupMembershipService,
     private readonly chatListEnricher: ChatListEnricher
   ) {}

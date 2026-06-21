@@ -1,5 +1,5 @@
 import { ISyncRepository, SyncChatMemberUpsert } from '../../sync/ISyncRepository'
-import { IContactService } from '../../contacts/IContactService'
+import { IContactCacheManager } from '../../contacts/IContactService'
 import { BaileysGroupMetadata } from '../../whatsapp/types/group.types'
 import { cleanJid } from '../../../utils/jidUtils'
 import { IMembershipSyncHandler } from './IMembershipSyncHandler'
@@ -7,7 +7,7 @@ import { IMembershipSyncHandler } from './IMembershipSyncHandler'
 export class MembershipSyncHandler implements IMembershipSyncHandler {
   constructor(
     private readonly syncRepository: ISyncRepository,
-    private readonly contactService: IContactService
+    private readonly contactService: IContactCacheManager
   ) {}
 
   /**

@@ -1,5 +1,5 @@
 import { IGroupMembershipService } from './IGroupMembershipService'
-import { IContactService } from '../contacts/IContactService'
+import { IContactMutationService, IContactQueryService } from '../contacts/IContactService'
 import { IChatMemberRepository } from './IChatMemberRepository'
 import { cleanJid } from '../../utils/jidUtils'
 import { ChatUpdatePayload } from '../whatsapp/types'
@@ -7,7 +7,7 @@ import { ChatUpdatePayload } from '../whatsapp/types'
 export class GroupMembershipService implements IGroupMembershipService {
   constructor(
     private readonly chatMemberRepository: IChatMemberRepository,
-    private readonly contactService: IContactService
+    private readonly contactService: IContactMutationService & IContactQueryService
   ) {}
 
   /**

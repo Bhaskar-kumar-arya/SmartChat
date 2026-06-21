@@ -1,14 +1,15 @@
-import { BaileysMessage, ProtocolResult, WASocket, WAMessageContent } from '../../whatsapp/types'
+import { BaileysMessage, ProtocolResult, WAMessageContent } from '../../whatsapp/types'
 import { ProcessedMessage } from '../../../domain/db.types'
 import { IIdentityRepository } from '../../contacts/IIdentityRepository'
 import { IMessageRepository } from '../IMessageRepository'
 import { IReactionRepository } from '../IReactionRepository'
 import { IMessageIndexer } from '../../search/IEmbeddingService'
 import { SecretMessageService } from '../../whatsapp/secret/SecretMessageService'
+import { ISocketUserContext } from '../../contacts/IContactService'
 
 export interface IMessageProcessingContext {
   msg: BaileysMessage
-  sock: WASocket | null
+  sock: ISocketUserContext | null
   rawMessage: WAMessageContent | null | undefined
   unwrapped: WAMessageContent | null | undefined
   remoteJid: string

@@ -8,7 +8,7 @@ import { IApiKeyAwareProvider } from './providers/IApiKeyAwareProvider'
 import { IStreamingProvider } from './providers/IStreamingProvider'
 import { IFullResponseProvider } from './providers/IFullResponseProvider'
 import { IAIKeyService } from './IAIKeyService'
-import { IContactService } from '../contacts/IContactService'
+import { IContactQueryService } from '../contacts/IContactService'
 import { IAIService, AIMention, AIChatContext, AIHistoryMessage } from './IAIService'
 import { IToolRegistry } from './IToolRegistry'
 import { ISystemInstructionBuilder } from './ISystemInstructionBuilder'
@@ -22,7 +22,7 @@ export class AIService implements IAIService {
 
   constructor(
     private readonly aiKeyService: IAIKeyService,
-    private readonly contactService: IContactService,
+    private readonly contactService: IContactQueryService,
     private readonly toolRegistry: IToolRegistry & ISystemInstructionBuilder
   ) {
     this.registerProvider('gemini', new GeminiProvider(this.aiKeyService, this.toolRegistry));

@@ -1,11 +1,11 @@
 import { PrismaClient } from '@prisma/client'
-import { IContactService } from './IContactService'
+import { IContactMutationService } from './IContactService'
 import { IIdentityReconciliationService } from './IIdentityReconciliationService'
 
 export class IdentityReconciliationService implements IIdentityReconciliationService {
   constructor(
     private prisma: PrismaClient,
-    private contactService: IContactService
+    private contactService: IContactMutationService
   ) {}
 
   /**

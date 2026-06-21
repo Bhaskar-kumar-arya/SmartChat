@@ -1,4 +1,4 @@
-import { IContactService } from '../contacts/IContactService'
+import { IContactNameResolver, IContactQueryService } from '../contacts/IContactService'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { join } from 'path'
 import { IMessageProcessingService } from './IMessageProcessingService'
@@ -10,7 +10,7 @@ import { IReactionRepository } from './IReactionRepository'
 import { IMessageReadRepository } from './IMessageQueryRepository'
 import { IChatService } from '../chats/IChatService'
 import { AnyMessageContent } from '@whiskeysockets/baileys'
-import { WASocket, MediaMessageWithLocalUri, WAMessageContent, WAContextInfo, parseProtoMessage } from '../whatsapp/types'
+import { MediaMessageWithLocalUri, WAMessageContent, WAContextInfo, parseProtoMessage } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { cleanJid } from '../../utils/jidUtils'
 import { unwrapMessage } from '../../utils/messageUtils'
@@ -18,7 +18,7 @@ import type { IWAEventBus } from '../whatsapp/IWAEventBus'
 import { stickerMetadataService } from './StickerMetadataService'
 import { getMediaSendOptions } from './MediaHelper'
 import { LocalFileStorage } from '../storage/LocalFileStorage'
-import { IMessageActionService } from './IMessageActionService'
+import { IMessageActionService, IMessageActionSocket } from './IMessageActionService'
 
 
 export class MessageActionService implements IMessageActionService {
@@ -29,7 +29,7 @@ export class MessageActionService implements IMessageActionService {
     private readonly reactionRepository: IReactionRepository,
     private readonly messageQueryRepository: IMessageReadRepository,
     private readonly identityRepository: IIdentityRepository,
-    private readonly contactService: IContactService,
+    private readonly contactService: IContactNameResolver & IContactQueryService,
     private readonly messageProcessingService: IMessageProcessingService,
     private readonly messageParserService: IMessageParserService,
     private readonly messageQueryService: IMessageQueryService,
@@ -44,7 +44,7 @@ export class MessageActionService implements IMessageActionService {
   /**
    * Deletes (revokes) a message.
    */
-  async deleteMessage(sock: WASocket, messageId: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string }> {
+  async deleteMessage(sock: IMessageActionSocket, messageId: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string }> {
     let targetJid = jid;
     const dbMsg = await this.messageQueryRepository.findMessageById(messageId);
     if (!dbMsg) {
@@ -85,7 +85,7 @@ export class MessageActionService implements IMessageActionService {
   /**
    * Edits the text content of a message.
    */
-  async editMessage(sock: WASocket, messageId: string, newText: string, jid?: string): Promise<EnrichedMessage> {
+  async editMessage(sock: IMessageActionSocket, messageId: string, newText: string, jid?: string): Promise<EnrichedMessage> {
     let targetJid = jid;
     const dbMsg = await this.messageQueryRepository.findMessageWithSender(messageId);
     if (!dbMsg) {
@@ -150,7 +150,7 @@ export class MessageActionService implements IMessageActionService {
   /**
    * Forwards a message to one or more destination JIDs/LIDs.
    */
-  async forwardMessage(sock: WASocket, messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }> {
+  async forwardMessage(sock: IMessageActionSocket, messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }> {
     const dbMsg = await this.messageQueryRepository.findMessageById(messageId);
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
@@ -227,7 +227,7 @@ export class MessageActionService implements IMessageActionService {
   /**
    * Reacts to a message with an emoji, or removes the reaction.
    */
-  async reactToMessage(sock: WASocket, messageId: string, reaction: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string; reaction: string }> {
+  async reactToMessage(sock: IMessageActionSocket, messageId: string, reaction: string, jid?: string): Promise<{ success: boolean; detail: string; messageId: string; reaction: string }> {
     let targetJid = jid;
     const dbMsg = await this.messageQueryRepository.findMessageById(messageId);
     if (!dbMsg) {
@@ -305,7 +305,7 @@ export class MessageActionService implements IMessageActionService {
    * Orchestrates the complete text message sending workflow, including quoted keys, database logs, and UI notifications.
    */
   async sendMessageWorkflow(
-    sock: WASocket,
+    sock: IMessageActionSocket,
     jid: string,
     text: string,
     quotedMsgId?: string,
@@ -381,7 +381,7 @@ export class MessageActionService implements IMessageActionService {
    * Orchestrates the complete media message sending workflow, including loading files, options extraction, sending, database logs, and UI updates.
    */
   async sendMediaMessageWorkflow(
-    sock: WASocket,
+    sock: IMessageActionSocket,
     jid: string,
     filePath: string,
     caption?: string,

@@ -1,6 +1,6 @@
 import { Message } from '@prisma/client'
 import { WAMessageStubType } from '@whiskeysockets/baileys'
-import { IContactService } from '../contacts/IContactService'
+import { IContactMutationService, IContactQueryService } from '../contacts/IContactService'
 import { IMessageRepository, MessageUpsertData } from '../messages/IMessageRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'
 import { IAliasRepository } from '../contacts/IAliasRepository'
@@ -40,7 +40,7 @@ export class SyncMessagesHandler {
     private readonly reactionRepository: IReactionRepository,
     private readonly aliasRepository: IAliasRepository,
     private readonly chatRepository: IChatRepository,
-    private readonly contactService: IContactService
+    private readonly contactService: IContactMutationService & IContactQueryService
   ) {}
 
   /**

@@ -1,10 +1,9 @@
 import { cleanJid } from '../../utils/jidUtils'
-import { WASocket } from '../whatsapp/types'
 import { IIdentityRepository } from './IIdentityRepository'
 import { IAliasRepository } from './IAliasRepository'
 import { ILidMapRepository } from './ILidMapRepository'
 import { ILidPnLinker } from './ILidPnLinker'
-import { IContactNameResolver, IContactService } from './IContactService'
+import { IContactNameResolver, IContactService, ISocketUserContext } from './IContactService'
 import { getDisplayName } from '../../utils/contactUtils'
 import { Identity } from '@prisma/client'
 import { IContactCache } from './IContactCache'
@@ -41,11 +40,11 @@ export class ContactService implements IContactService {
     console.log('[ContactService] Caches cleared')
   }
 
-  public async getMeJids(sock?: WASocket | null): Promise<string[]> {
+  public async getMeJids(sock?: ISocketUserContext | null): Promise<string[]> {
     const jids: string[] = []
     if (sock?.user) {
       const myJid = cleanJid(sock.user.id)
-      const myLid = (sock.user as { lid?: string }).lid ? cleanJid((sock.user as { lid?: string }).lid) : null
+      const myLid = sock.user.lid ? cleanJid(sock.user.lid) : null
       if (myJid) jids.push(myJid)
       if (myLid) jids.push(myLid)
     }
@@ -83,7 +82,7 @@ export class ContactService implements IContactService {
    */
   async batchResolveNames(
     jids: string[],
-    sock?: WASocket | null
+    sock?: ISocketUserContext | null
   ): Promise<Map<string, string>> {
     return this.nameResolver.batchResolveNames(jids, sock)
   }
@@ -91,7 +90,7 @@ export class ContactService implements IContactService {
   /**
    * Resolves a single JID into a display name.
    */
-  async resolveName(jid: string, chatName: string | null, sock?: WASocket | null): Promise<string> {
+  async resolveName(jid: string, chatName: string | null, sock?: ISocketUserContext | null): Promise<string> {
     return this.nameResolver.resolveName(jid, chatName, sock)
   }
 
@@ -399,10 +398,7 @@ export class ContactService implements IContactService {
     return this.identityRepository.findIdentityById(id)
   }
 
-  /**
-   * Resolves the logged-in user's phone number JID.
-   */
-  public async getMePhoneNumberJid(sock?: WASocket | null): Promise<string | null> {
+  public async getMePhoneNumberJid(sock?: ISocketUserContext | null): Promise<string | null> {
     const meJids = await this.getMeJids(sock)
     const pnJid = meJids.find(jid => jid.endsWith('@s.whatsapp.net'))
     if (pnJid) return pnJid

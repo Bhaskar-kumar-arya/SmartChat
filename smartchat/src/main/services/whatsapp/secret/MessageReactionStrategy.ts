@@ -1,8 +1,9 @@
-import { proto, WASocket } from '@whiskeysockets/baileys'
+import { proto } from '@whiskeysockets/baileys'
 import { ISecretMessageStrategy, SecretMessageContext } from './ISecretMessageStrategy'
 import { ProcessedMessage } from '../../../domain/db.types'
 import { ProtocolResult } from '../types'
 import type { IWAEventBus } from '../IWAEventBus'
+import { ISocketUserContext } from '../../contacts/IContactService'
 
 export class MessageReactionStrategy implements ISecretMessageStrategy {
   constructor(private getBus: () => IWAEventBus | null) {}
@@ -18,7 +19,7 @@ export class MessageReactionStrategy implements ISecretMessageStrategy {
   async handle(
     decryptedBytes: Uint8Array,
     context: SecretMessageContext,
-    sock: WASocket | null
+    sock: ISocketUserContext | null
   ): Promise<ProcessedMessage | ProtocolResult | null> {
     const { targetId, remoteJid, fromMe, senderJid, timestamp } = context
 

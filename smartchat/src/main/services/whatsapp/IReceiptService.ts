@@ -1,4 +1,5 @@
-import { WASocket, MessageReceiptUpdate, BaileysMessage } from './types'
+import { ISocketUserContext } from '../contacts/IContactService'
+import { MessageReceiptUpdate, BaileysMessage } from './types'
 
 export interface IReceiptService {
   processMessageStatusUpdate(
@@ -8,8 +9,8 @@ export interface IReceiptService {
 
   processMessageReceipt(
     update: MessageReceiptUpdate,
-    sock: WASocket | null
+    sock: ISocketUserContext | null
   ): Promise<void>;
 
-  getMessageReceipts(messageId: string, sock: WASocket | null): Promise<any[]>;
+  getMessageReceipts(messageId: string, sock: ISocketUserContext | null): Promise<any[]>;
 }

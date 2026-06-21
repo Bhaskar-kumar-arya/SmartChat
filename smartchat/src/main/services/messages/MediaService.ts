@@ -7,12 +7,12 @@ import { IMessageParserService } from './IMessageParserService'
 import { IMessageCompoundRepository } from './IMessageCompoundRepository'
 import { IMessageReadRepository } from './IMessageQueryRepository'
 import { IFavoriteStickerService } from './IFavoriteStickerService'
-import { IContactService } from '../contacts/IContactService'
-import { WASocket, WAMessageContent, BaileysWebMessageInfo } from '../whatsapp/types'
+import { IContactNameResolver } from '../contacts/IContactService'
+import { WAMessageContent, BaileysWebMessageInfo } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { unwrapMessage } from '../../utils/messageUtils'
 import { Message } from '@prisma/client'
-import { IMediaService } from './IMediaService'
+import { IMediaService, IMediaSocket } from './IMediaService'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -127,7 +127,7 @@ const GROUP_JID_SUFFIX = '@g.us'
  * - Silent failures or boolean return values are used only in non-critical paths like openFile.
  */
 export class MediaService implements IMediaService {
-  private favoriteStickerQueue: Array<{ msgId: string; sock: WASocket }> = []
+  private favoriteStickerQueue: Array<{ msgId: string; sock: IMediaSocket }> = []
   private activeDownloadsCount = 0
   private concurrencyLimit = 2
   private isProcessingQueue = false
@@ -138,7 +138,7 @@ export class MediaService implements IMediaService {
     private readonly messageQueryRepository: IMessageReadRepository,
     private readonly messageService: IMessageQueryService,
     private readonly messageParserService: IMessageParserService,
-    private readonly contactService: IContactService,
+    private readonly contactService: IContactNameResolver,
     private readonly favoriteStickerService: IFavoriteStickerService
   ) { }
 
@@ -157,7 +157,7 @@ export class MediaService implements IMediaService {
     this.isProcessingQueue = false
   }
 
-  private queueFavoriteStickerDownload(msgId: string, sock: WASocket): void {
+  private queueFavoriteStickerDownload(msgId: string, sock: IMediaSocket): void {
     if (!this.favoriteStickerQueue.some(item => item.msgId === msgId)) {
       this.favoriteStickerQueue.push({ msgId, sock })
     }
@@ -223,7 +223,7 @@ export class MediaService implements IMediaService {
     return null
   }
 
-  async downloadFavoriteStickersFromSync(messages: Message[], sock: WASocket | null): Promise<void> {
+  async downloadFavoriteStickersFromSync(messages: Message[], sock: IMediaSocket | null): Promise<void> {
     if (!sock) return
 
     // 1. Gather all unique sticker SHA hashes and map them to their corresponding messages
@@ -280,7 +280,7 @@ export class MediaService implements IMediaService {
     }
   }
 
-  async downloadAndCacheMedia(msgId: string, sock: WASocket | null): Promise<EnrichedMessage> {
+  async downloadAndCacheMedia(msgId: string, sock: IMediaSocket | null): Promise<EnrichedMessage> {
     if (!sock) throw new Error('[MediaService] WhatsApp socket is not connected')
 
     const dbMsg = await this.messageQueryRepository.findMessageById(msgId)
@@ -330,7 +330,7 @@ export class MediaService implements IMediaService {
 
   private async _downloadToFile(
     msgId: string,
-    sock: WASocket,
+    sock: IMediaSocket,
     dbMsg: { id: string; chatJid: string; fromMe: boolean; participant: string | null },
     rawMessage: unknown,
     mediaMsg: Record<string, unknown>,
@@ -379,7 +379,7 @@ export class MediaService implements IMediaService {
 
   private async downloadRetryUpdate(
     msgId: string,
-    sock: WASocket,
+    sock: IMediaSocket,
     dbMsg: { id: string; chatJid: string; fromMe: boolean; participant: string | null },
     rawMessage: unknown,
     mediaMsg: Record<string, unknown>,
@@ -402,6 +402,10 @@ export class MediaService implements IMediaService {
         ? { [`${mediaType}Message`]: mediaMsg }
         : rawMessageObj
 
+      if (!sock.updateMediaMessage) {
+        throw new Error('[MediaService] updateMediaMessage is not supported by the current socket context')
+      }
+
       const updatedMsg = (await sock.updateMediaMessage({
         key: {
           id: dbMsg.id,
@@ -412,7 +416,7 @@ export class MediaService implements IMediaService {
             : undefined
         },
         message: updatePayload
-      } as unknown as Parameters<typeof sock.updateMediaMessage>[0])) as BaileysWebMessageInfo
+      } as any)) as BaileysWebMessageInfo
 
       // Extract the updated media metadata back
       let updatedMediaMsg: Record<string, unknown> | null = null

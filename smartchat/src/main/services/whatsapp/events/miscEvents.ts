@@ -1,21 +1,23 @@
-import { WASocket, BaileysReactionUpdate, MessageReceiptUpdate, BaileysCall } from '../types'
+import { ISocketUserContext } from '../../contacts/IContactService'
+import { BaileysReactionUpdate, MessageReceiptUpdate, BaileysCall } from '../types'
 
 export interface ReactionEvent {
   reactions: BaileysReactionUpdate[]
-  sock: WASocket | null
+  sock: ISocketUserContext | null
 }
 
 export interface PresenceEvent {
   id: string
   presences: Record<string, unknown>
-  sock: WASocket
+  sock: ISocketUserContext
 }
 
 export interface ReceiptEvent {
   updates: MessageReceiptUpdate[]
-  sock: WASocket
+  sock: ISocketUserContext
 }
 
 export interface CallEvent {
   calls: BaileysCall[]
 }
+

@@ -22,14 +22,14 @@ import type {
   ReactionProcessedEvent,
   MessageDecryptedEvent
 } from '../WAEventTypes'
-import type { IContactService } from '../../contacts/IContactService'
+import type { IContactNameResolver } from '../../contacts/IContactService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
 import type { IMessageReadRepository } from '../../messages/IMessageQueryRepository'
 import { cleanJid } from '../../../utils/jidUtils'
 
 export class UIBroadcastSubscriber implements IWAEventSubscriber {
   constructor(
-    private contactService: IContactService,
+    private contactService: IContactNameResolver,
     private messageQueryService: IMessageQueryService,
     private messageQueryRepository: IMessageReadRepository,
     private getMainWindow: () => BrowserWindow | null

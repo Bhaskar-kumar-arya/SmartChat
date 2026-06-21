@@ -1,7 +1,7 @@
 import { cleanJid } from '../../utils/jidUtils'
 import { parseBaileysTimestamp } from '../../utils/messageUtils'
-import { WASocket, MessageReceiptUpdate, BaileysMessage } from './types'
-import { ContactService } from '../contacts/ContactService'
+import { MessageReceiptUpdate, BaileysMessage } from './types'
+import { IContactNameResolver, ISocketUserContext } from '../contacts/IContactService'
 import { IWAEventBus } from './IWAEventBus'
 import { IReceiptService } from './IReceiptService'
 import { IReceiptRepository } from '../messages/IReceiptRepository'
@@ -35,7 +35,7 @@ export class ReceiptService implements IReceiptService {
 
   constructor(
     private receiptRepository: IReceiptRepository,
-    private contactService: ContactService,
+    private contactService: IContactNameResolver,
     private getBus: () => IWAEventBus | null
   ) {}
 
@@ -79,7 +79,7 @@ export class ReceiptService implements IReceiptService {
    */
   public async processMessageReceipt(
     update: MessageReceiptUpdate,
-    _sock: WASocket | null
+    _sock: ISocketUserContext | null
   ): Promise<void> {
     const { key, receipt } = update
     const messageId = key?.id
@@ -206,7 +206,7 @@ export class ReceiptService implements IReceiptService {
    */
   public async getMessageReceipts(
     messageId: string,
-    sock: WASocket | null
+    sock: ISocketUserContext | null
   ): Promise<Array<{ userJid: string; name: string; status: string; timestamp: string }>> {
     const receipts = await this.receiptRepository.getMessageReceipts(messageId)
     const result: Array<{ userJid: string; name: string; status: string; timestamp: string }> = []

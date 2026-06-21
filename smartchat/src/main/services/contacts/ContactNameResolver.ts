@@ -1,16 +1,17 @@
 import { cleanJid } from '../../utils/jidUtils'
-import { WASocket, WASocketWithSignalRepository } from '../whatsapp/types'
 import { IAliasRepository } from './IAliasRepository'
-import { IContactNameResolver } from './IContactService'
+import { IContactNameResolver, ISocketUserContext } from './IContactService'
 
-function hasSignalRepository(sock: WASocket | null | undefined): sock is WASocket & WASocketWithSignalRepository {
+function hasSignalRepository(
+  sock: ISocketUserContext | null | undefined
+): sock is ISocketUserContext & Required<Pick<ISocketUserContext, 'signalRepository'>> {
   return !!sock && typeof sock === 'object' && 'signalRepository' in sock
 }
 
 export class ContactNameResolver implements IContactNameResolver {
   constructor(
     private readonly repository: IAliasRepository,
-    private readonly getMeJids: (sock?: WASocket | null) => Promise<string[]>,
+    private readonly getMeJids: (sock?: ISocketUserContext | null) => Promise<string[]>,
     private readonly linkLidAndPn: (lid: string, pn: string, source: string) => Promise<void>
   ) {}
 
@@ -44,7 +45,7 @@ export class ContactNameResolver implements IContactNameResolver {
    */
   async batchResolveNames(
     jids: string[],
-    sock?: WASocket | null
+    sock?: ISocketUserContext | null
   ): Promise<Map<string, string>> {
     const meJids = await this.getMeJids(sock)
     const uniqueJids = Array.from(new Set(jids.filter(Boolean).map(cleanJid)))
@@ -126,7 +127,7 @@ export class ContactNameResolver implements IContactNameResolver {
   async resolveName(
     jid: string,
     chatName: string | null,
-    sock?: WASocket | null
+    sock?: ISocketUserContext | null
   ): Promise<string> {
     const cleaned = cleanJid(jid)
     const map = await this.batchResolveNames([cleaned], sock)
@@ -138,3 +139,4 @@ export class ContactNameResolver implements IContactNameResolver {
     return resolved || chatName || cleaned.split('@')[0]
   }
 }
+

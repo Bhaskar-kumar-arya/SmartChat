@@ -1,14 +1,13 @@
 import { PrismaClient } from '@prisma/client'
-import { IContactService } from './IContactService'
-import { WASocket } from '../whatsapp/types'
-import { IProfileSyncService } from './IProfileSyncService'
+import { IContactQueryService } from './IContactService'
+import { IProfileSyncService, IProfileSyncSocket } from './IProfileSyncService'
 
 export class ProfileSyncService implements IProfileSyncService {
   private imageCache = new Map<string, string>()
 
   constructor(
     private prisma: PrismaClient,
-    private contactService: IContactService
+    private contactService: IContactQueryService
   ) {}
 
   /**
@@ -17,7 +16,7 @@ export class ProfileSyncService implements IProfileSyncService {
   async getProfilePicture(
     jid: string,
     type: 'preview' | 'image' = 'preview',
-    sock?: WASocket | null,
+    sock?: IProfileSyncSocket | null,
     forceRefresh: boolean = false
   ): Promise<string | null> {
     if (type === 'image') {
@@ -25,6 +24,7 @@ export class ProfileSyncService implements IProfileSyncService {
       if (!sock) return null
 
       try {
+        if (!sock.profilePictureUrl) return null
         const url = await sock.profilePictureUrl(jid, 'image')
         if (url) this.imageCache.set(jid, url)
         return url || null
@@ -52,6 +52,7 @@ export class ProfileSyncService implements IProfileSyncService {
     if (!sock) return null
 
     try {
+      if (!sock.profilePictureUrl) return null
       const url = await sock.profilePictureUrl(jid, 'preview')
       if (url) {
         if (jid.endsWith('@g.us')) {

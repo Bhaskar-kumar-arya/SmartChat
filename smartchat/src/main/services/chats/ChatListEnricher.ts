@@ -3,14 +3,15 @@ import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatte
 import { IChatRepository, ChatWithCommunity } from './IChatRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'
 import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
-import { ContactService } from '../contacts/ContactService'
+import { IContactQueryService } from '../contacts/IContactService'
+import { ContactNameResolver } from '../contacts/ContactNameResolver'
 
 export class ChatListEnricher {
   constructor(
     private readonly chatRepository: IChatRepository,
     private readonly messageQueryRepository: IMessageSearchRepository,
     private readonly reactionRepository: IReactionRepository,
-    private readonly contactService: ContactService,
+    private readonly contactService: IContactQueryService,
     private readonly formatterRegistry: MessageFormatterRegistry
   ) {}
 
@@ -86,7 +87,7 @@ export class ChatListEnricher {
       if (lastReaction.sender.isMe) {
         lastMessageSender = 'You'
       } else {
-        lastMessageSender = ContactService.getDisplayName(
+        lastMessageSender = ContactNameResolver.getDisplayName(
           lastReaction.sender,
           lastReaction.sender.phoneNumber?.split('@')[0] || 'Someone'
         )
@@ -95,7 +96,7 @@ export class ChatListEnricher {
       if (lastMsg.fromMe) {
         lastMessageSender = 'You'
       } else {
-        lastMessageSender = ContactService.getDisplayName(
+        lastMessageSender = ContactNameResolver.getDisplayName(
           lastMsg.sender,
           lastMsg.participant?.split('@')[0] || 'Someone'
         )

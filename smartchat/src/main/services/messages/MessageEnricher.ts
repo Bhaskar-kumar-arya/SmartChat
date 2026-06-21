@@ -1,7 +1,8 @@
-import { ContactService } from '../contacts/ContactService'
+import { ContactNameResolver } from '../contacts/ContactNameResolver'
+import { IContactQueryService, ISocketUserContext } from '../contacts/IContactService'
 import { cleanJid } from '../../utils/jidUtils'
 import { unwrapMessage } from '../../utils/messageUtils'
-import { WASocket, WAMessageContent } from '../whatsapp/types'
+import { WAMessageContent } from '../whatsapp/types'
 import { DBMessageWithSender } from '../../domain/db.types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { EnrichedReaction } from '../../ipc/reaction.types'
@@ -15,7 +16,7 @@ import { EnrichedReaction } from '../../ipc/reaction.types'
  * It is a pure read + transform layer for the presentation/IPC boundary.
  */
 export class MessageEnricher {
-  constructor(private readonly contactService: ContactService) {}
+  constructor(private readonly contactService: IContactQueryService) {}
 
   /**
    * Enrich a single database message with contact display names and
@@ -27,7 +28,7 @@ export class MessageEnricher {
    */
   async enrichMessage(
     msg: DBMessageWithSender,
-    sock: WASocket | null,
+    sock: ISocketUserContext | null,
     nameMap: Map<string, string>
   ): Promise<EnrichedMessage> {
     const participantName = this._resolveParticipantName(msg, nameMap)
@@ -89,7 +90,7 @@ export class MessageEnricher {
     nameMap: Map<string, string>
   ): string {
     if (msg.fromMe) return 'Me'
-    if (msg.sender) return ContactService.getDisplayName(msg.sender, 'Unknown')
+    if (msg.sender) return ContactNameResolver.getDisplayName(msg.sender, 'Unknown')
     if (msg.participant) {
       return nameMap.get(msg.participant) ?? msg.participant.replace(/@.*$/, '')
     }
@@ -123,7 +124,7 @@ export class MessageEnricher {
    */
   private async _enrichContextInfo(
     ctx: Record<string, unknown>,
-    sock: WASocket | null,
+    sock: ISocketUserContext | null,
     nameMap: Map<string, string>
   ): Promise<void> {
     if (ctx.participant && typeof ctx.participant === 'string') {

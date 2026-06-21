@@ -1,7 +1,6 @@
-import { IContactService } from '../contacts/IContactService'
+import { IContactNameResolver, IContactQueryService, ISocketUserContext } from '../contacts/IContactService'
 import { getDisplayName } from '../../utils/contactUtils'
 import { IEmbeddingComputer } from './IEmbeddingService'
-import { WASocket } from '../whatsapp/types'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
@@ -34,7 +33,7 @@ export class SearchService implements ISearchService {
     private readonly messageRepository: IMessageSearchRepository,
     private readonly messageVectorRepository: IMessageVectorRepository,
     private readonly identityRepository: IIdentityRepository,
-    private readonly contactService: IContactService,
+    private readonly contactService: IContactNameResolver & IContactQueryService,
     private readonly embeddingService: IEmbeddingComputer
   ) {}
 
@@ -50,7 +49,7 @@ export class SearchService implements ISearchService {
   async searchAll(
     query: string,
     mode: SearchMode,
-    sock: WASocket | null,
+    sock: ISocketUserContext | null,
     filters?: SearchFilters
   ): Promise<SearchResults> {
     const q = query.trim()
@@ -103,7 +102,7 @@ export class SearchService implements ISearchService {
 
   private async normalSearch(
     q: string,
-    _sock: WASocket | null,
+    _sock: ISocketUserContext | null,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
     const filter = this.buildMessageFilter(filters, q)
@@ -130,7 +129,7 @@ export class SearchService implements ISearchService {
 
   private async deepSearch(
     q: string,
-    _sock: WASocket | null,
+    _sock: ISocketUserContext | null,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
     const queryVector = await this.embeddingService.embed(q)

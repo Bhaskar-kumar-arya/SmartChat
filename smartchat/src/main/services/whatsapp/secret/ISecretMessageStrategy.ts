@@ -1,6 +1,6 @@
-import { WASocket } from '@whiskeysockets/baileys'
 import { ProcessedMessage } from '../../../domain/db.types'
 import { ProtocolResult } from '../types'
+import { ISocketUserContext } from '../../contacts/IContactService'
 
 export interface SecretMessageContext {
   targetId: string
@@ -16,6 +16,7 @@ export interface ISecretMessageStrategy {
   handle(
     decryptedBytes: Uint8Array,
     context: SecretMessageContext,
-    sock: WASocket | null
+    sock: ISocketUserContext | null
   ): Promise<ProcessedMessage | ProtocolResult | null>
 }
+

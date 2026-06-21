@@ -1,10 +1,12 @@
-import { WASocket } from '../whatsapp/types'
+export interface IProfileSyncSocket {
+  profilePictureUrl?: (jid: string, type: 'preview' | 'image') => Promise<string | undefined>
+}
 
 export interface IProfileSyncService {
   getProfilePicture(
     jid: string,
     type?: 'preview' | 'image',
-    sock?: WASocket | null,
+    sock?: IProfileSyncSocket | null,
     forceRefresh?: boolean
   ): Promise<string | null>
 }

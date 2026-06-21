@@ -1,4 +1,4 @@
-import { proto, WASocket, hmacSign, aesDecryptGCM } from '@whiskeysockets/baileys'
+import { proto, hmacSign, aesDecryptGCM } from '@whiskeysockets/baileys'
 import { PrismaClient } from '@prisma/client'
 import { ISecretMessageStrategy, SecretMessageContext } from './ISecretMessageStrategy'
 import { MessageEditStrategy } from './MessageEditStrategy'
@@ -6,6 +6,7 @@ import { ProcessedMessage } from '../../../domain/db.types'
 import { ProtocolResult } from '../types'
 import { cleanJid } from '../../../utils/jidUtils'
 import { ISecretMessageService } from './ISecretMessageService'
+import { ISocketUserContext } from '../../contacts/IContactService'
 
 export class SecretMessageService implements ISecretMessageService {
   private strategies = new Map<number | string, ISecretMessageStrategy>()
@@ -26,7 +27,7 @@ export class SecretMessageService implements ISecretMessageService {
    */
   async handleSecretMessage(
     msg: proto.IWebMessageInfo,
-    sock: WASocket | null
+    sock: ISocketUserContext | null
   ): Promise<ProcessedMessage | ProtocolResult | null> {
     const { envelope, strategyKey } = this.extractEnvelopeAndKey(msg)
     if (!envelope || strategyKey === null) return null
