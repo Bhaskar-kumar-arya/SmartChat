@@ -1,6 +1,7 @@
 import { ISystemPromptBuilder, UserDetails } from './ISystemPromptBuilder'
 import { IProtocolStrategy } from './prompts/IProtocolStrategy'
 import { formatTools } from './prompts/ToolDefinitionFormatter'
+import { AITool } from './IToolRegistry'
 import {
   ROLE_SECTION,
   WHATSAPP_CONTEXT_SECTION,
@@ -17,7 +18,7 @@ export class SystemPromptBuilder implements ISystemPromptBuilder {
   ) {}
 
   build(
-    tools: any[],
+    tools: AITool[],
     protocolMode: 'react' | 'standard',
     userDetails?: UserDetails
   ): string {

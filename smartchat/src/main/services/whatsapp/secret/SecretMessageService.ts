@@ -25,21 +25,11 @@ export class SecretMessageService implements ISecretMessageService {
    * Decrypts and handles a SecretEncryptedMessage or EncReactionMessage using registered strategies.
    */
   async handleSecretMessage(
-    msg: proto.IWebMessageInfo, // BaileysMessage
+    msg: proto.IWebMessageInfo,
     sock: WASocket | null
   ): Promise<ProcessedMessage | ProtocolResult | null> {
-    let envelope: proto.Message.ISecretEncryptedMessage | proto.Message.IEncReactionMessage | null | undefined = null
-    let strategyKey: number | string | null = null
-
-    if (msg.message?.secretEncryptedMessage) {
-      envelope = msg.message.secretEncryptedMessage
-      strategyKey = this.resolveTypeKey(msg.message.secretEncryptedMessage.secretEncType)
-    } else if (msg.message?.encReactionMessage) {
-      envelope = msg.message.encReactionMessage
-      strategyKey = 'encReactionMessage'
-    }
-
-    if (!envelope) return null
+    const { envelope, strategyKey } = this.extractEnvelopeAndKey(msg)
+    if (!envelope || strategyKey === null) return null
 
     const targetKey = envelope.targetMessageKey
     if (!targetKey || !targetKey.id) {
@@ -47,44 +37,15 @@ export class SecretMessageService implements ISecretMessageService {
       return null
     }
 
-    const targetId = targetKey.id
-    const remoteJid = cleanJid(targetKey.remoteJid || msg.key?.remoteJid || '')
-    const fromMe = targetKey.fromMe ?? false
-    const sender = msg.key?.participant || msg.key?.remoteJid || ''
-
-    if (strategyKey === null) {
-      console.warn('[SecretMessageService] Strategy key is null.')
-      return null
-    }
-
-    // Resolve strategy
     const strategy = this.strategies.get(strategyKey)
     if (!strategy) {
       console.warn(`[SecretMessageService] No strategy registered for key: ${strategyKey}`)
       return null
     }
 
-    // 1. Fetch original message to get the message secret
-    let messageSecret: Buffer | null = null
-    try {
-      const originalMsg = await this.prisma.message.findUnique({
-        where: { id: targetId }
-      })
-
-      if (originalMsg && originalMsg.content) {
-        const parsed = JSON.parse(originalMsg.content) as Record<string, unknown>
-        const rawSecret =
-          (parsed.messageContextInfo as Record<string, unknown> | undefined)?.messageSecret ||
-          (parsed.message as Record<string, unknown> | undefined)?.messageContextInfo ? ((parsed.message as Record<string, unknown>).messageContextInfo as Record<string, unknown>).messageSecret : undefined
-
-        messageSecret = this.getBufferFromSecret(rawSecret)
-      }
-    } catch (err: unknown) {
-      console.error(`[SecretMessageService] Error loading original message ${targetId}:`, err)
-    }
-
+    const messageSecret = await this.loadMessageSecret(targetKey.id)
     if (!messageSecret) {
-      console.warn(`[SecretMessageService] Original message secret not found for target ${targetId}. Cannot decrypt.`)
+      console.warn(`[SecretMessageService] Original message secret not found for target ${targetKey.id}. Cannot decrypt.`)
       return null
     }
 
@@ -93,41 +54,89 @@ export class SecretMessageService implements ISecretMessageService {
       return null
     }
 
-    // 2. Decrypt the payload
-    let decryptedBytes: Uint8Array | null = null
+    const sender = msg.key?.participant || msg.key?.remoteJid || ''
+    const decryptedBytes = this.tryDecrypt(envelope, messageSecret, targetKey.id, sender, strategy.getSigningLabel())
+    if (!decryptedBytes) return null
+
+    const context: SecretMessageContext = {
+      targetId: targetKey.id,
+      remoteJid: cleanJid(targetKey.remoteJid || msg.key?.remoteJid || ''),
+      fromMe: targetKey.fromMe ?? false,
+      senderJid: cleanJid(sender),
+      timestamp: BigInt(this.getTimestampSeconds(msg.messageTimestamp))
+    }
+
+    return strategy.handle(decryptedBytes, context, sock)
+  }
+
+  private extractEnvelopeAndKey(msg: proto.IWebMessageInfo): {
+    envelope: proto.Message.ISecretEncryptedMessage | proto.Message.IEncReactionMessage | null
+    strategyKey: number | string | null
+  } {
+    if (msg.message?.secretEncryptedMessage) {
+      return {
+        envelope: msg.message.secretEncryptedMessage,
+        strategyKey: this.resolveTypeKey(msg.message.secretEncryptedMessage.secretEncType)
+      }
+    }
+    if (msg.message?.encReactionMessage) {
+      return {
+        envelope: msg.message.encReactionMessage,
+        strategyKey: 'encReactionMessage'
+      }
+    }
+    return { envelope: null, strategyKey: null }
+  }
+
+  private async loadMessageSecret(targetId: string): Promise<Buffer | null> {
     try {
-      decryptedBytes = this.decryptPayload(
-        envelope.encPayload,
-        envelope.encIv,
+      const originalMsg = await this.prisma.message.findUnique({
+        where: { id: targetId }
+      })
+      if (!originalMsg || !originalMsg.content) return null
+
+      const parsed = JSON.parse(originalMsg.content) as Record<string, unknown>
+      const rawSecret =
+        (parsed.messageContextInfo as Record<string, unknown> | undefined)?.messageSecret ??
+        ((parsed.message as Record<string, unknown> | undefined)?.messageContextInfo as Record<string, unknown> | undefined)?.messageSecret
+
+      return this.getBufferFromSecret(rawSecret)
+    } catch (err: unknown) {
+      console.error(`[SecretMessageService] Error loading original message ${targetId}:`, err)
+      return null
+    }
+  }
+
+  private tryDecrypt(
+    envelope: proto.Message.ISecretEncryptedMessage | proto.Message.IEncReactionMessage,
+    messageSecret: Buffer,
+    targetId: string,
+    sender: string,
+    label: string
+  ): Uint8Array | null {
+    try {
+      return this.decryptPayload(
+        envelope.encPayload!,
+        envelope.encIv!,
         messageSecret,
         targetId,
         sender,
-        strategy.getSigningLabel()
+        label
       )
     } catch (err: unknown) {
       console.error(`[SecretMessageService] Decryption failed for target ${targetId}:`, err)
       return null
     }
+  }
 
-    const ts = msg.messageTimestamp
-    let tsNum: number
+  private getTimestampSeconds(ts: unknown): number {
     if (ts && typeof ts === 'object' && 'low' in ts) {
-      tsNum = (ts as { low: number }).low
-    } else if (typeof ts === 'number') {
-      tsNum = ts
-    } else {
-      tsNum = Math.floor(Date.now() / 1000)
+      return (ts as { low: number }).low
     }
-
-    const context: SecretMessageContext = {
-      targetId,
-      remoteJid,
-      fromMe,
-      senderJid: cleanJid(sender),
-      timestamp: BigInt(tsNum)
+    if (typeof ts === 'number') {
+      return ts
     }
-
-    return strategy.handle(decryptedBytes, context, sock)
+    return Math.floor(Date.now() / 1000)
   }
 
   private decryptPayload(

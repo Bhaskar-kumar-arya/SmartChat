@@ -92,7 +92,7 @@ export interface IAPIService {
     options: AIChatOptions & { isSystem?: boolean },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
-    onError: (err: any) => void
+    onError: (err: Error) => void
   ): string
   abortAiChat(channelId: string): Promise<boolean>
   executeTool(toolName: string, args: Record<string, any>): Promise<any>

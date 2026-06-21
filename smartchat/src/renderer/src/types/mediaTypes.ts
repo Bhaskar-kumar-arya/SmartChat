@@ -126,11 +126,16 @@ export interface RawMessageContent {
   documentMessage?: DocumentMessageContent
   audioMessage?: AudioMessageContent
   stickerMessage?: StickerMessageContent
-  lottieStickerMessage?: any
+  lottieStickerMessage?: unknown
   templateMessage?: TemplateMessageContent
   contextInfo?: ContextInfo
 }
 
-export function isJPEGThumbnailBuffer(thumb: any): thumb is JPEGThumbnailBuffer {
-  return thumb && typeof thumb === 'object' && thumb.type === 'Buffer' && Array.isArray(thumb.data)
+export function isJPEGThumbnailBuffer(thumb: unknown): thumb is JPEGThumbnailBuffer {
+  return (
+    typeof thumb === 'object' &&
+    thumb !== null &&
+    (thumb as Record<string, unknown>).type === 'Buffer' &&
+    Array.isArray((thumb as Record<string, unknown>).data)
+  )
 }

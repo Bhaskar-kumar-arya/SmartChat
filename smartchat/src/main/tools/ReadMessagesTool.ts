@@ -7,6 +7,7 @@ import { IChatRepository } from '../services/chats/IChatRepository';
 import { WASocket } from '../services/whatsapp/types';
 import { unwrapMessage, getMessageType } from '../utils';
 import { MessageFormatterRegistry } from '../services/messages/formatters/MessageFormatterRegistry';
+import { IFormattedMessageContent } from '../services/messages/formatters/MessageFormatter';
 import { Message } from '@prisma/client';
 import { proto } from '@whiskeysockets/baileys';
 
@@ -521,7 +522,7 @@ FORMATTING BEHAVIOR:
       const qUnwrapped = unwrapMessage(quotedMessage);
       const qType = getMessageType(qUnwrapped);
       quotedText = this.formatterRegistry.format(
-        qUnwrapped as any,
+        qUnwrapped as IFormattedMessageContent,
         {
           messageType: qType,
           textContent: qUnwrapped?.conversation || qUnwrapped?.extendedTextMessage?.text || null
@@ -561,7 +562,7 @@ FORMATTING BEHAVIOR:
 
   private formatMessageContent(m: Message, unwrapped: proto.IMessage | null | undefined): string {
     return this.formatterRegistry.format(
-      (unwrapped || null) as any,
+      (unwrapped || null) as IFormattedMessageContent,
       {
         textContent: m.textContent,
         messageType: m.messageType,

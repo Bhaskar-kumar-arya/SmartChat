@@ -16,7 +16,7 @@ export function useAudioRecorder() {
   const [isPlayingPreview, setIsPlayingPreview] = useState(false)
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const timerRef = useRef<any>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const animationFrameRef = useRef<number | null>(null)
@@ -64,7 +64,11 @@ export function useAudioRecorder() {
       }
 
       // Audio analysis for visualizer
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!AudioContextClass) {
+        throw new Error('[useAudioRecorder] AudioContext is not supported')
+      }
+      const audioContext = new AudioContextClass()
       const source = audioContext.createMediaStreamSource(stream)
       const analyser = audioContext.createAnalyser()
       analyser.fftSize = 64

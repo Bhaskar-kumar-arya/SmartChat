@@ -40,8 +40,8 @@ export interface BaileysContact {
 export interface BaileysGroupUpdate {
   id?: string
   subject?: string
-  participants?: Array<{ id?: string; userJid?: string; [key: string]: any }>
-  [key: string]: any
+  participants?: Array<{ id?: string; userJid?: string; admin?: 'admin' | 'superadmin' | null }>
+  [key: string]: unknown
 }
 
 export interface MediaMessageWithLocalUri {

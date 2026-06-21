@@ -1,3 +1,5 @@
+import { AITool } from './IToolRegistry'
+
 export interface UserDetails {
   phoneNumber: string
   lid: string
@@ -7,7 +9,7 @@ export interface UserDetails {
 
 export interface ISystemPromptBuilder {
   build(
-    tools: any[],
+    tools: AITool[],
     protocolMode: 'react' | 'standard',
     userDetails?: UserDetails
   ): string

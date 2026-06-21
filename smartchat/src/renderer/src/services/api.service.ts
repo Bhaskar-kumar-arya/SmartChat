@@ -146,7 +146,7 @@ export const api: IAPIService = {
     options: AIChatOptions & { isSystem?: boolean },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
-    onError: (err: any) => void
+    onError: (err: Error) => void
   ): string => window.api.aiChatStream(prompt, contexts, history, mentions, options, onChunk, onComplete, onError),
 
   abortAiChat: (channelId: string): Promise<boolean> =>

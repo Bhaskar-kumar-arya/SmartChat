@@ -6,7 +6,7 @@ import { IMessageReadRepository } from '../messages/IMessageQueryRepository'
 
 const makeWASocket = (typeof makeWASocketImport === 'function'
   ? makeWASocketImport
-  : (makeWASocketImport as any).default) as typeof makeWASocketImport
+  : (makeWASocketImport as unknown as { default: typeof makeWASocketImport }).default) as typeof makeWASocketImport
 
 export class WASocketFactory implements IWASocketFactory {
   constructor(

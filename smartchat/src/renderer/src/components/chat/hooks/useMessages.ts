@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAPI } from '../../../context/APIContext'
-import { MessageItem } from '../../../types/chatTypes'
+import { MessageItem, ReactionItem } from '../../../types/chatTypes'
 
 /**
  * Hook to manage messages for a specific chat.
@@ -139,10 +139,9 @@ export const useMessages = (activeJid: string | null) => {
               // Existing reactions from DB load may have numeric senderId; IPC ones use JID strings.
               // We match on participant (JID) — which is always present on incoming reaction msgs.
               const filtered = reactions.filter((r) => {
-                // If the stored reaction also has a participant field, compare that
-                if ((r as any).participant) return (r as any).participant !== participantKey
-                // Otherwise fall back to senderId comparison (both string and number)
-                return String(r.senderId) !== String(participantKey)
+                const rx = r as ReactionItem & { participant?: string }
+                if (rx.participant) return rx.participant !== participantKey
+                return String(rx.senderId) !== String(participantKey)
               })
               if (emoji) {
                 return {

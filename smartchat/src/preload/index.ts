@@ -1,11 +1,11 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
   // ── Phase 1 & 2: Auth & Sync ──────────────────────────────────────
   onWaQr: (callback: (qr: string) => void) => {
-    const listener = (_event: any, qr: string) => callback(qr)
+    const listener = (_event: IpcRendererEvent, qr: string) => callback(qr)
     ipcRenderer.on('wa-qr', listener)
     return () => { ipcRenderer.removeListener('wa-qr', listener) }
   },
@@ -20,19 +20,19 @@ const api = {
     return () => { ipcRenderer.removeListener('wa-logged-out', listener) }
   },
   onWaSyncProgress: (callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void) => {
-    const listener = (_event: any, data: any) => {
+    const listener = (_event: IpcRendererEvent, data: unknown) => {
       // Handle backward compatibility if it's sent as a plain number
       if (typeof data === 'number') {
         callback({ progress: data, syncType: 3, syncFullHistory: false })
       } else {
-        callback(data)
+        callback(data as { progress: number; syncType: number; syncFullHistory: boolean })
       }
     }
     ipcRenderer.on('wa-sync-progress', listener)
     return () => { ipcRenderer.removeListener('wa-sync-progress', listener) }
   },
   onWaSyncStatus: (callback: (status: string) => void) => {
-    const listener = (_event: any, status: string) => callback(status)
+    const listener = (_event: IpcRendererEvent, status: string) => callback(status)
     ipcRenderer.on('wa-sync-status', listener)
     return () => { ipcRenderer.removeListener('wa-sync-status', listener) }
   },
@@ -104,17 +104,17 @@ const api = {
     return ipcRenderer.invoke('download-url-to-temp', url, fileName)
   },
   onNewMessage: (callback: (msg: Record<string, unknown>) => void) => {
-    const listener = (_event: any, msg: any) => callback(msg)
+    const listener = (_event: IpcRendererEvent, msg: unknown) => callback(msg as Record<string, unknown>)
     ipcRenderer.on('new-message', listener)
     return () => { ipcRenderer.removeListener('new-message', listener) }
   },
   onMessageEdited: (callback: (msg: Record<string, unknown>) => void) => {
-    const listener = (_event: any, msg: any) => callback(msg)
+    const listener = (_event: IpcRendererEvent, msg: unknown) => callback(msg as Record<string, unknown>)
     ipcRenderer.on('message-edited', listener)
     return () => { ipcRenderer.removeListener('message-edited', listener) }
   },
   onMessageDeleted: (callback: (update: { id: string, chatJid: string, fromMe: boolean }) => void) => {
-    const listener = (_event: any, update: any) => callback(update)
+    const listener = (_event: IpcRendererEvent, update: unknown) => callback(update as { id: string, chatJid: string, fromMe: boolean })
     ipcRenderer.on('message-deleted', listener)
     return () => { ipcRenderer.removeListener('message-deleted', listener) }
   },
@@ -137,7 +137,7 @@ const api = {
     return ipcRenderer.invoke('get-my-jid')
   },
   onMessageStatusUpdated: (callback: (update: { id: string, chatJid: string, status: string }) => void) => {
-    const listener = (_event: any, update: any) => callback(update)
+    const listener = (_event: IpcRendererEvent, update: unknown) => callback(update as { id: string, chatJid: string, status: string })
     ipcRenderer.on('message-status-updated', listener)
     return () => { ipcRenderer.removeListener('message-status-updated', listener) }
   },
@@ -145,15 +145,15 @@ const api = {
     return ipcRenderer.invoke('get-message-receipts', messageId)
   },
   onChatUpdated: (callback: (chat: Record<string, unknown>) => void) => {
-    const listener = (_event: any, chat: any) => callback(chat)
+    const listener = (_event: IpcRendererEvent, chat: unknown) => callback(chat as Record<string, unknown>)
     ipcRenderer.on('chat-updated', listener)
     return () => { ipcRenderer.removeListener('chat-updated', listener) }
   },
   logout: () => {
     return ipcRenderer.invoke('logout')
   },
-  onPresenceUpdate: (callback: (update: Record<string, any>) => void) => {
-    const listener = (_event: any, update: any) => callback(update)
+  onPresenceUpdate: (callback: (update: Record<string, unknown>) => void) => {
+    const listener = (_event: IpcRendererEvent, update: Record<string, unknown>) => callback(update)
     ipcRenderer.on('presence-update', listener)
     return () => { ipcRenderer.removeListener('presence-update', listener) }
   },
@@ -163,7 +163,7 @@ const api = {
   getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean) => {
     return ipcRenderer.invoke('get-profile-picture', jid, type, forceRefresh)
   },
-  searchAll: (query: string, mode: 'normal' | 'deep' = 'normal', filters?: any) => {
+  searchAll: (query: string, mode: 'normal' | 'deep' = 'normal', filters?: unknown) => {
     return ipcRenderer.invoke('search-all', query, mode, filters)
   },
   searchMentionContacts: (query: string) => {
@@ -176,12 +176,12 @@ const api = {
     return ipcRenderer.invoke('index-embeddings')
   },
   onEmbeddingProgress: (callback: (pct: number) => void) => {
-    const listener = (_event: any, pct: number) => callback(pct)
+    const listener = (_event: IpcRendererEvent, pct: number) => callback(pct)
     ipcRenderer.on('embedding-progress', listener)
     return () => { ipcRenderer.removeListener('embedding-progress', listener) }
   },
   onEmbeddingState: (callback: (isActive: boolean) => void) => {
-    const listener = (_event: any, isActive: boolean) => callback(isActive)
+    const listener = (_event: IpcRendererEvent, isActive: boolean) => callback(isActive)
     ipcRenderer.on('embedding-state', listener)
     return () => { ipcRenderer.removeListener('embedding-state', listener) }
   },
@@ -190,23 +190,23 @@ const api = {
   },
 
   // ── AI Methods ──────────────────────────────────────────────────────
-  aiChat: (prompt: string, contextChats?: any[], history?: any[], mentions?: any[], options?: any) => {
+  aiChat: (prompt: string, contextChats?: unknown[], history?: unknown[], mentions?: unknown[], options?: unknown) => {
     return ipcRenderer.invoke('ai-chat', prompt, contextChats, history, mentions, options)
   },
-  aiChatStream: (prompt: string, contextChats: any[] | undefined, history: any[] | undefined, mentions: any[] | undefined, options: any | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: any) => void) => {
+  aiChatStream: (prompt: string, contextChats: unknown[] | undefined, history: unknown[] | undefined, mentions: unknown[] | undefined, options: unknown | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: Error) => void) => {
     const channelId = `ai-chat-${Date.now()}`;
-    const chunkListener = (_event: any, chunk: string) => onChunk(chunk);
+    const chunkListener = (_event: IpcRendererEvent, chunk: string) => onChunk(chunk);
     const endListener = () => {
       ipcRenderer.removeAllListeners(`${channelId}-chunk`);
       ipcRenderer.removeAllListeners(`${channelId}-end`);
       ipcRenderer.removeAllListeners(`${channelId}-error`);
       onEnd();
     };
-    const errorListener = (_event: any, err: any) => {
+    const errorListener = (_event: IpcRendererEvent, err: unknown) => {
       ipcRenderer.removeAllListeners(`${channelId}-chunk`);
       ipcRenderer.removeAllListeners(`${channelId}-end`);
       ipcRenderer.removeAllListeners(`${channelId}-error`);
-      onError(err);
+      onError(err as Error);
     };
 
     ipcRenderer.on(`${channelId}-chunk`, chunkListener);
@@ -224,7 +224,7 @@ const api = {
   getChatContext: (jid: string) => {
     return ipcRenderer.invoke('get-chat-context', jid)
   },
-  executeTool: (toolName: string, args: any) => {
+  executeTool: (toolName: string, args: Record<string, unknown>) => {
     return ipcRenderer.invoke('execute-tool', toolName, args)
   },
   getAiTools: () => {
@@ -259,7 +259,7 @@ const api = {
   cloneAiSession: (id: string) => {
     return ipcRenderer.invoke('ai-session-clone', id)
   },
-  saveAiSessionMessages: (sessionId: string, messages: any[]) => {
+  saveAiSessionMessages: (sessionId: string, messages: unknown[]) => {
     return ipcRenderer.invoke('ai-session-save-messages', sessionId, messages)
   },
   getAiAutoSave: () => {
@@ -271,10 +271,10 @@ const api = {
   getAiOptions: () => {
     return ipcRenderer.invoke('get-ai-options')
   },
-  setAiOptions: (options: any) => {
+  setAiOptions: (options: unknown) => {
     return ipcRenderer.invoke('set-ai-options', options)
   },
-  exportAiChat: (session: any, messages: any[]) => {
+  exportAiChat: (session: unknown, messages: unknown[]) => {
     return ipcRenderer.invoke('export-ai-chat', session, messages)
   },
   deleteExportedAiChat: (sessionId: string) => {
@@ -286,14 +286,14 @@ const api = {
   getNotificationPreferences: () => {
     return ipcRenderer.invoke('get-notification-preferences')
   },
-  setNotificationPreferences: (prefs: any) => {
+  setNotificationPreferences: (prefs: unknown) => {
     return ipcRenderer.invoke('set-notification-preferences', prefs)
   },
   setActiveChat: (jid: string | null) => {
     return ipcRenderer.invoke('set-active-chat', jid)
   },
   onOpenChat: (callback: (chat: { jid: string; name: string }) => void) => {
-    const listener = (_event: any, chat: { jid: string; name: string }) => callback(chat)
+    const listener = (_event: IpcRendererEvent, chat: { jid: string; name: string }) => callback(chat)
     ipcRenderer.on('open-chat', listener)
     return () => { ipcRenderer.removeListener('open-chat', listener) }
   },

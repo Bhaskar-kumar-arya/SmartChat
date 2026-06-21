@@ -1,4 +1,4 @@
-import { PrismaClient, Message } from '@prisma/client'
+import { PrismaClient, Message, Prisma } from '@prisma/client'
 import { IMessageQueryRepository } from './IMessageQueryRepository'
 import { IRawSqlExecutor } from './IRawSqlExecutor'
 import { MessageQueryFilter, MessageWithChatAndSender, LastMessageWithSender } from '../../domain/types'
@@ -6,8 +6,8 @@ import { MessageQueryFilter, MessageWithChatAndSender, LastMessageWithSender } f
 export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlExecutor {
   constructor(private readonly prisma: PrismaClient) {}
 
-  private buildPrismaWhere(filter: MessageQueryFilter) {
-    const where: any = {}
+  private buildPrismaWhere(filter: MessageQueryFilter): Prisma.MessageWhereInput {
+    const where: Prisma.MessageWhereInput = {}
 
     // Enforce textContent not being null as default for normal/vector searches
     if (filter.textContentContains !== undefined || filter.fromDate !== undefined || filter.toDate !== undefined) {
@@ -24,13 +24,14 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
       where.fromMe = filter.fromMe
     }
     if (filter.fromDate !== undefined || filter.toDate !== undefined) {
-      where.timestamp = {}
+      const timestampFilter: Prisma.BigIntFilter = {}
       if (filter.fromDate !== undefined) {
-        where.timestamp.gte = filter.fromDate
+        timestampFilter.gte = filter.fromDate
       }
       if (filter.toDate !== undefined) {
-        where.timestamp.lte = filter.toDate
+        timestampFilter.lte = filter.toDate
       }
+      where.timestamp = timestampFilter
     }
     if (filter.textContentContains) {
       where.textContent = { contains: filter.textContentContains }
