@@ -21,9 +21,12 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - `IdentityReconciliationService.ts` — identity lifecycle coordinator.
 - `ProfileSyncService.ts` — profile updater.
 - `JidStrategies.ts` — parsing strategies for JID structures.
+- `IContactService.ts` — core service interfaces (split into read/write/resolve/cache).
+- `IIdentityRepository.ts`, `IAliasRepository.ts`, `ILidMapRepository.ts` — repository interfaces.
+- `IdentityRepository.ts`, `AliasRepository.ts`, `LidMapRepository.ts` — concrete repository implementations.
 
 **Consumes from other modules:**
-- None (independent domain).
+- `main/utils/` — consumes `contactUtils.ts` (display name resolutions).
 
 **Consumed by:**
 - `services/chats/` — uses `IContactService`
@@ -46,7 +49,10 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - `GroupMembershipService.ts` — manages group actions.
 - `ChatListEnricher.ts` — appends previews and unread counts for chat list views.
 - `GroupHydrationService.ts` — syncs group states.
-- `CommunitySyncHandler.ts`, `ChatSyncHandler.ts`, `MembershipSyncHandler.ts` (in `sync/` subfolder) — sync helpers.
+- `sync/` (subfolder) — `CommunitySyncHandler.ts`, `ChatSyncHandler.ts`, `MembershipSyncHandler.ts` sync helpers.
+- `IChatService.ts` — decoupled service interface (uses `ChatListEntry` domain type).
+- `IChatRepository.ts`, `ICommunityRepository.ts`, `IChatMemberRepository.ts` — repository interfaces.
+- `ChatRepository.ts`, `CommunityRepository.ts`, `ChatMemberRepository.ts` — concrete repository implementations.
 
 **Consumes from other modules:**
 - `services/contacts/` — consumes `IContactService`.
@@ -74,6 +80,11 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - `processors/` (subfolder with its own barrel `index.ts`) — message processors (Standard, Secret, Protocol, Reaction).
 - `formatters/` (subfolder with its own barrel `index.ts`) — strategy registry for formatting specific message types.
 - `MediaService.ts` — handles media attachment downloads.
+- `MessageActionService.ts` — manages message deletion, edits, and reaction logic.
+- `FavoriteStickerService.ts` — handles favorite stickers.
+- `IMessageRepository.ts`, `IMessageQueryRepository.ts`, `IMessageSearchRepository.ts`, `IMessageExistenceRepository.ts`, `IMessageIndexRepository.ts`, `IMessageCompoundRepository.ts` — segregated message repository interfaces.
+- `MessageRepository.ts`, `MessageQueryRepository.ts` — concrete repository implementations.
+- `IMessageWriterService.ts`, `IMessageQueryService.ts`, `IMessageParserService.ts`, `IMessageProcessingService.ts` — split service interfaces.
 
 **Consumes from other modules:**
 - `services/contacts/` — consumes `IContactService`, `IIdentityRepository`, `IIdentityReconciliationService`.
@@ -97,7 +108,9 @@ This document maps the architectural boundaries, public interfaces, internal mod
 **Internal only:**
 - `SearchService.ts` — coordinates keyword and similarity searches.
 - `EmbeddingService.ts` — queues messages for vector calculation.
+- `VectorSyncService.ts` — handles SQLite virtual vector table synchronization.
 - `EmbeddingWorkerManager.ts` — spawns and controls Node `worker_threads` instances.
+- `ISearchService.ts`, `IEmbeddingService.ts`, `IVectorSyncService.ts`, `IEmbeddingWorkerManager.ts` — service interfaces.
 
 **Consumes from other modules:**
 - `services/contacts/` — consumes `IContactService`, `IIdentityRepository`.
@@ -121,7 +134,10 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - `AIChatExportService.ts` — compiles text summaries of chats.
 - `AIKeyService.ts` — manages encrypted key storage.
 - `FSKeyStorage.ts` — reads local key credentials.
-- `providers/` (subfolder) — AI API clients (Gemini, LM Studio, Groq, Mistral, OpenAI).
+- `AIToolService.ts` — defines `ToolRegistry` (registers tools, manages capabilities).
+- `SystemPromptBuilder.ts` — orchestrates prompts by assembling strategies.
+- `prompts/` (subfolder) — contains static prompt definitions (`SystemPromptContent.ts`), tool formatter (`ToolDefinitionFormatter.ts`), strategy contracts (`IProtocolStrategy.ts`), and concrete strategies (`ReactProtocolStrategy.ts`, `StandardProtocolStrategy.ts`).
+- `providers/` (subfolder) — contains adapter interfaces (`IStreamingProvider.ts`, `IFullResponseProvider.ts`, `Provider.ts`) and AI client adapters (Gemini, LM Studio, Groq, Mistral, OpenAI).
 
 **Consumes from other modules:**
 - `services/contacts/` — consumes `IContactService`.
@@ -273,7 +289,7 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - *None* (The barrel file `index.ts` is missing, exports are not yet formalized. Sibling modules import files directly).
 
 **Internal only:**
-- `types.ts` — domain core types.
+- `types.ts` — domain core types (includes clean structures like `ChatListEntry` and `MessageQueryFilter`).
 - `whatsapp.types.ts` — WhatsApp infra types.
 
 **Consumes from other modules:**
@@ -331,6 +347,7 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - `jidUtils.ts` — JID normalizers.
 - `messageUtils.ts` — Baileys message extractors.
 - `communityUtils.ts` — Community metadata parser.
+- `contactUtils.ts` — Resolves display names for identities.
 
 **Consumes from other modules:**
 - None.
@@ -406,6 +423,27 @@ This document maps the architectural boundaries, public interfaces, internal mod
 
 ---
 
+## `renderer/src/types/`
+
+**Purpose:** Layer-segregated UI, AI, media protocol, and React prop type definitions.
+
+**Public exports (`index.ts` is missing/unused):**
+- `chatTypes.ts` — holds type definitions for ChatItems, Messages, and UI states.
+- `aiTypes.ts` — holds model declarations and message arrays for chatbot threads.
+- `mediaTypes.ts` — holds raw protocol attachments and buffer validation checks.
+- `componentProps.ts` — maps React props for the chat bubble renderers.
+
+**Internal only:**
+- None.
+
+**Consumes from other modules:**
+- None.
+
+**Consumed by:**
+- `renderer/src/components/`, `renderer/src/hooks/`, `renderer/src/services/`, `renderer/src/context/`.
+
+---
+
 ## `renderer/src/context/`
 
 **Purpose:** React Context providers for global states.
@@ -414,10 +452,10 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - *None* (The barrel file `index.ts` is missing, exports are not yet formalized).
 
 **Internal only:**
-- `APIContext.tsx`
+- `APIContext.tsx` — provides the IPC service via the `IAPIService` contract.
 
 **Consumes from other modules:**
-- None.
+- `renderer/src/services/` — consumes `IAPIService` interface.
 
 **Consumed by:**
 - UI components.
@@ -450,13 +488,14 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - *None* (The barrel file `index.ts` is missing, exports are not yet formalized).
 
 **Internal only:**
-- `api.service.ts`
+- `api.service.ts` — concrete implementation of `IAPIService` bridging to preload/IPC channel calls.
+- `IAPIService.ts` — formal API contract segregating UI components from IPC mechanics.
 
 **Consumes from other modules:**
 - None.
 
 **Consumed by:**
-- UI hooks and components.
+- UI hooks, components, and `APIContext`.
 
 ---
 
@@ -468,7 +507,7 @@ This document maps the architectural boundaries, public interfaces, internal mod
 - *None* (The barrel file `index.ts` is missing, exports are not yet formalized).
 
 **Internal only:**
-- various utility files (e.g., `emojiUtils.ts`, `editorUtils.ts`).
+- various utility files (e.g., `emojiUtils.ts`, `editorUtils.ts`, `formatters.ts`).
 
 **Consumes from other modules:**
 - None.

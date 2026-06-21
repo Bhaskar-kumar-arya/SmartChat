@@ -1,58 +1,57 @@
 # Architecture Decision Records (ADR) — SmartChat
 
-This document records the major architectural decisions made during the SmartChat codebase refactoring pipeline, including context, decisions, and consequences.
+This document records the major architectural decisions made during the SmartChat codebase refactoring pipeline, capturing the context, decisions, and consequences.
 
 ---
 
-## ADR-1: Shared Types & Utilities Segregation
+## ADR-1: Types & Utilities Segregation (Main & Renderer)
 
 **Date:** 2026-06-20
 **Status:** Accepted
 
 ### Context
-A monolithic `types.ts` file was imported by all layers, coupling utility logic, domain definitions, and third-party Baileys WhatsApp client library types (`WASocket`, `proto`, etc.) together. Importers of general utility helpers (like `cleanJid`) were transitively coupled to heavy socket libraries, making testing difficult and leaking implementation details.
+Monolithic type files (like `types.ts` in main and renderer) coupled UI components, domain definitions, and third-party libraries (e.g., Baileys). Importers of simple utility helpers (like `cleanJid`) were transitively coupled to heavy dependencies, complicating compilation and testing.
 
 ### Decision
-Split `types.ts` into layer-specific files: separate internal Baileys types (`whatsapp.types.ts`) from clean domain definitions (`types.ts`). Deconstruct `utils.ts` into cohesive utility modules: `jidUtils.ts` (formatting/identifiers), `messageUtils.ts` (message structures), and `communityUtils.ts` (community-specific logic).
+Segregate monolithic types and utilities into layer-focused modules. Split main process types into Baileys-specific (`whatsapp.types.ts`) and clean domain types (`types.ts`). Split renderer types into granular modules (`chatTypes.ts`, `aiTypes.ts`, `mediaTypes.ts`, `componentProps.ts`), and extract formatting helpers into standalone utilities (like `contactUtils.ts`).
 
 ### Consequences
 **Enables:**
-- Layer isolation between third-party socket protocols and internal utilities.
-- Easier unit testing of utility helpers without loading Baileys models.
-- Independent utility changes without recompiling or affecting the socket manager.
+- Layer isolation between raw network protocols, internal utilities, and UI layout code.
+- Granular compile scopes and easier unit testing of utilities without loading socket libraries.
 
 **Constrains:**
-- Domain layer code must only import from clean domain type files.
-- Utilities must not import `@whiskeysockets/baileys` directly.
+- Core services and UI components must never import library-specific or presentation-only types.
+- Main-process utilities must not import `@whiskeysockets/baileys` directly.
 
 **Watch for:**
-- Static dependency leaks when writing helpers that extract raw nested packet payload fields.
+- Static type leaks when creating new utility helpers or component props.
 
 ---
 
 ## ADR-2: Repository Interface Segregation & ORM Isolation
 
-**Date:** 2026-06-20
+**Date:** 2026-06-20 (Updated 2026-06-21)
 **Status:** Accepted
 
 ### Context
-Repository interfaces (such as `IChatRepository`, `IMessageRepository`, and `IReactionRepository`) mixed read query operations with write command mutations. In addition, these interfaces directly referenced and returned Prisma ORM models (e.g. `Chat`, `Message`), leaking the database schema into the domain and service layers.
+Database repository interfaces (e.g., `IChatRepository`, `IMessageRepository`) mixed read operations with mutating write operations and directly leaked Prisma models to services. Furthermore, query methods used raw `any` parameters for Prisma query filters, compromising type safety.
 
 ### Decision
-Split repository interfaces into read and write interfaces (e.g., `IChatReadRepository` and `IChatWriteRepository`). Map ORM model entities to clean domain DTOs/interfaces inside the concrete repository implementations before returning them to services.
+Apply the Interface Segregation Principle (ISP) to split repository interfaces into narrow, read-only and write-only contracts (e.g., `IMessageExistenceRepository`, `IMessageReadRepository`, `IMessageSearchRepository`, `IMessageIndexRepository`, and `IMessageCompoundRepository`). Map ORM model entities to clean domain DTOs inside repositories, and replace open `where: any` parameters with explicit typed filters (`MessageQueryFilter`).
 
 ### Consequences
 **Enables:**
-- Compliance with the Interface Segregation Principle (ISP) — read-only services do not depend on write methods.
-- Complete decoupling of services from database schema modifications.
-- Simple mock class creation for unit testing service layers.
+- Compliance with ISP — services only declare dependencies on the query types they actually invoke.
+- Complete isolation of the service layer from database schema changes.
+- Direct mockability for unit testing service orchestrations without database setups.
 
 **Constrains:**
-- Services must NEVER import Prisma models directly.
-- Concrete repository classes must map all ORM structures to domain types before exporting.
+- Services must never import Prisma models or Client objects directly.
+- Complex relationship lookups must be mapped to explicit domain DTO types.
 
 **Watch for:**
-- Monolithic database queries that fetch complex relationships; they should be broken down or mapped through query services.
+- "Quick query" bypasses in service files or methods returning untyped `any`.
 
 ---
 
@@ -62,10 +61,10 @@ Split repository interfaces into read and write interfaces (e.g., `IChatReadRepo
 **Status:** Accepted
 
 ### Context
-Event-driven services directly imported and depended on the concrete `WAEventBus` implementation. This tightly bound connection handlers, history sync, and chat services to one event implementation, preventing modular testing.
+Event-driven services directly imported and depended on the concrete `WAEventBus` class. This tightly bound connection handlers, history sync, and chat services to one event implementation, preventing modular testing.
 
 ### Decision
-Extract the `IWAEventBus` interface representing the pub/sub event handler contract, and instantiate the event bus using `WAEventBusFactory`. Update all subscribers to depend strictly on the interface.
+Introduce the `IWAEventBus` interface representing the pub/sub event handler contract, and instantiate the event bus using `WAEventBusFactory`. All subscribers and publishers depend strictly on this abstraction.
 
 ### Consequences
 **Enables:**
@@ -81,93 +80,66 @@ Extract the `IWAEventBus` interface representing the pub/sub event handler contr
 
 ---
 
-## ADR-4: Leaf Services Isolation & Generalization
+## ADR-4: Service Layer Decoupling & Transport Isolation
 
-**Date:** 2026-06-20
+**Date:** 2026-06-20 (Updated 2026-06-21)
 **Status:** Accepted
 
 ### Context
-Leaf-level services (services with zero service-level dependencies) like `EmbeddingService` handled raw thread management, configuration, and filesystem paths in addition to business logic. Similarly, `IAIKeyService` used a hardcoded union list of supported model providers.
+Core services (e.g., `ChatService`, `MessageService`) directly referenced third-party Baileys socket classes (`WASocket`, `BaileysMessage`) and IPC wire-format types (`ChatListItem`). This coupled core business logic to the transport library and frontend boundaries.
 
 ### Decision
-Extract `EmbeddingWorkerManager` to handle background thread operations and configuration. Generalize the provider key storage contract to use open-ended indexing (`Record<string, string>`) instead of a fixed union.
+Replace presentation wire formats and transport types in service contracts with domain-level DTOs (e.g., `ChatListEntry` instead of `ChatListItem`) and generic abstractions (e.g., `SocketAccessor` instead of `WASocket`). Map incoming socket payloads at the boundaries (e.g., in event subscribers) and presentation structures in the IPC handlers.
 
 ### Consequences
 **Enables:**
-- Supporting new AI model providers without changing interface definitions.
-- Running embedding vector operations safely in background worker threads without bloat in the main service logic.
+- Testing core workflows without running or mocking a live socket connection.
+- Changing or upgrading the underlying transport SDK without altering business services.
 
 **Constrains:**
-- Thread lifecycles must live inside the worker manager, never in the embedding orchestrator.
-- Configuration and userData paths must be injected rather than hardcoded.
+- Services must not import `@whiskeysockets/baileys` or IPC handler types.
+- Map transport data to domain models before passing it to services.
 
 **Watch for:**
-- Spawning worker threads directly inside business services bypassing `EmbeddingWorkerManager`.
-- Hardcoding specific client provider config maps inside `IAIKeyService`.
+- Interface method changes leaking transport-level parameters.
 
 ---
 
-## ADR-5: Mid-Level Service Strategy Injection & Decoupling
+## ADR-5: CPU Work & DB Maintenance Isolation
 
-**Date:** 2026-06-20
+**Date:** 2026-06-21
 **Status:** Accepted
 
 ### Context
-`ContactService` hardcoded JID strategy instantiations (`PnJidStrategy`, `LidJidStrategy`, etc.) directly in its initialization code, violating OCP. It also combined name resolution, synchronization workflows, and cache management.
+Leaf services like `EmbeddingService` mixed core embedding generation with heavy CPU thread orchestration (spawning workers) and low-level database maintenance/synchronization (`syncVectors`). This violated the Single Responsibility Principle (SRP) by combining business rules with thread lifecycles and vector table updates.
 
 ### Decision
-Inject JID strategies as an array of `IJidStrategy` interfaces via constructor injection. Extract cache management to a separate `ContactCache` class. Segregate `IChatService` into query, mutation, and participant resolution interfaces.
+Extract background thread operations to a dedicated `EmbeddingWorkerManager` and database vector table maintenance to `VectorSyncService` (implementing `IVectorSyncService`). Cleanly segregate `IEmbeddingService` into its own interface file.
 
 ### Consequences
 **Enables:**
-- Extending the system with new JID strategy types without modifying existing service code.
-- Decoupled caching, easing data-wipe and lifecycle operations.
+- Scaling, testing, and modifying database vector synchronization independently from the embedding generator.
+- Safer background execution in worker threads without bloat in the main service logic.
 
 **Constrains:**
-- All JID strategies must implement the common `IJidStrategy` contract.
-- Caching logic must reside in `ContactCache`, not the service orchestrator.
+- `EmbeddingService` must not reference SQLite vector synchronization tables directly.
+- Worker thread spawning must reside solely in `EmbeddingWorkerManager`.
 
 **Watch for:**
-- Re-introducing new JID parsing checks inline rather than adding a strategy.
-- Adding database sync operations inside caching helper classes.
+- Spawning worker threads directly inside business services bypassing the manager.
 
 ---
 
-## ADR-6: Transport Decoupling in Message Pipeline
+## ADR-6: Interface-Driven Dependency Injection (DI)
 
-**Date:** 2026-06-20
+**Date:** 2026-06-20 (Updated 2026-06-21)
 **Status:** Accepted
 
 ### Context
-The message query and writer services directly referenced Baileys WhatsApp client socket types (`WASocket`, `BaileysMessage`) in their method signatures. This coupled core message logic directly to the transport/socket library, violating DIP.
+`ServiceContainer` was wired with concrete classes, and global singletons (like `toolRegistry` in `AIToolService`) were exported at the file level. This bypassed the DI container, using the `new` operator directly, which prevented modular testing and led to hard-wired dependencies.
 
 ### Decision
-Extract clean domain models for message synchronization and parsing. Segregate `IMessageQueryService` and `IMessageWriterService` into Parser, Processing, Query, and Writer interfaces that accept library-agnostic domain data shapes.
-
-### Consequences
-**Enables:**
-- Testing the core message ingestion flow without running or mocking a live socket connection.
-- The ability to switch or upgrade the underlying WhatsApp connection library (e.g. swap Baileys for whatsmeow or an API gateway) with zero edits to the message service.
-
-**Constrains:**
-- Socket events must be mapped to domain interfaces at the boundary (e.g., in event subscribers/wiring), before calling the message service.
-
-**Watch for:**
-- Method parameter changes in core message services that leak Baileys socket structures.
-- Direct imports of `@whiskeysockets/baileys` inside domain message files.
-
----
-
-## ADR-7: Interface-Driven Dependency Injection (DI)
-
-**Date:** 2026-06-20
-**Status:** Accepted
-
-### Context
-`ServiceContainer` was wired with concrete classes, and its type definition registry mapped keys directly to these implementations. Changing a service required modifying the container type, and cross-service dependencies were hard-wired.
-
-### Decision
-Extract interfaces for all service and repository classes. Define the `ServiceContainer` type registry to map keys strictly to interface abstractions. Inject dependencies through constructors.
+Extract interfaces for all service and repository classes. Define the `ServiceContainer` type registry to map keys strictly to interface abstractions. Inject dependencies through constructors and register all shared services (including `IToolRegistry`) inside the container.
 
 ### Consequences
 **Enables:**
@@ -176,8 +148,33 @@ Extract interfaces for all service and repository classes. Define the `ServiceCo
 
 **Constrains:**
 - Classes must never call `new ConcreteClass()` in their bodies; they must receive interfaces via constructors.
-- The container must bootstrapper map keys to abstractions, not details.
+- The container must bootstrapped map keys to abstractions, not details.
+- Avoid file-level singleton instantiation.
 
 **Watch for:**
-- New services or repositories added to the container typing concrete classes instead of abstractions.
-- Hardcoded instantiations of dependencies in constructors, bypassing constructor injection.
+- New services bypassing constructor injection.
+
+---
+
+## ADR-7: AI Provider Capabilities & Prompt Strategy Segregation
+
+**Date:** 2026-06-21
+**Status:** Accepted
+
+### Context
+The `AIProvider` interface was a monolith requiring both streaming and full-response generation, forcing single-mode providers (like streaming-only local LLMs) to write stub methods. In addition, prompt generation logic in `SystemPromptBuilder` was coupled to specific models and used closed ternary switches.
+
+### Decision
+Segregate the provider contract into `IStreamingProvider` and `IFullResponseProvider` interfaces. Decompose `SystemPromptBuilder` to call static content (`SystemPromptContent`), formatting helpers (`ToolDefinitionFormatter`), and strategy-based protocol implementations (`IProtocolStrategy` for Standard/React).
+
+### Consequences
+**Enables:**
+- Supporting single-mode AI providers without stubs and adding new prompt strategies (e.g., JSON mode) without editing the builder class.
+- Dynamic capability checking in the AI coordinator layer.
+
+**Constrains:**
+- Prompt strategies must implement `IProtocolStrategy` and be resolved through the DI container.
+
+**Watch for:**
+- Providers stubbing non-supported methods instead of declaring support for a single interface.
+- Inline prompt text overrides in `SystemPromptBuilder`.
