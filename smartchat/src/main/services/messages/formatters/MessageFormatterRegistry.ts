@@ -1,4 +1,4 @@
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
 
 export class MessageFormatterRegistry {
   private readonly formatters: MessageFormatter[] = [];
@@ -14,7 +14,7 @@ export class MessageFormatterRegistry {
    * Formats message content using the first supporting strategy or fallbacks.
    */
   format(
-    unwrappedContent: IFormattedMessageContent | null | undefined,
+    unwrappedContent: Record<string, any> | null | undefined,
     message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {

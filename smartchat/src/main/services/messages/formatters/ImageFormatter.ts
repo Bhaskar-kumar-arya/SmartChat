@@ -1,4 +1,11 @@
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
+
+interface ImageContent {
+  imageMessage?: {
+    caption?: string | null;
+    [key: string]: unknown;
+  } | null;
+}
 
 export class ImageFormatter implements MessageFormatter {
   supports(messageType: string): boolean {
@@ -6,11 +13,11 @@ export class ImageFormatter implements MessageFormatter {
   }
 
   format(
-    unwrappedContent: IFormattedMessageContent | null | undefined,
+    unwrappedContent: Record<string, any> | null | undefined,
     message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {
-    const caption = unwrappedContent?.imageMessage?.caption || message.textContent || '';
+    const caption = (unwrappedContent as ImageContent | null | undefined)?.imageMessage?.caption || message.textContent || '';
     
     switch (context) {
       case 'transcript':

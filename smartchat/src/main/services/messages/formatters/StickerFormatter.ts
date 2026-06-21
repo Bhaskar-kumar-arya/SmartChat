@@ -1,4 +1,4 @@
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
 
 export class StickerFormatter implements MessageFormatter {
   supports(messageType: string): boolean {
@@ -6,7 +6,7 @@ export class StickerFormatter implements MessageFormatter {
   }
 
   format(
-    _unwrappedContent: IFormattedMessageContent | null | undefined,
+    _unwrappedContent: Record<string, any> | null | undefined,
     _message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {

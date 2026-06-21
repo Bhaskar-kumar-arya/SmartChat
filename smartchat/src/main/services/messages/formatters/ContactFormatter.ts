@@ -1,4 +1,11 @@
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
+
+interface ContactContent {
+  contactMessage?: {
+    displayName?: string | null;
+    [key: string]: unknown;
+  } | null;
+}
 
 export class ContactFormatter implements MessageFormatter {
   supports(messageType: string): boolean {
@@ -6,7 +13,7 @@ export class ContactFormatter implements MessageFormatter {
   }
 
   format(
-    unwrappedContent: IFormattedMessageContent | null | undefined,
+    unwrappedContent: Record<string, any> | null | undefined,
     message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {
@@ -23,7 +30,7 @@ export class ContactFormatter implements MessageFormatter {
       }
     }
 
-    const card = unwrappedContent?.contactMessage;
+    const card = (unwrappedContent as ContactContent | null | undefined)?.contactMessage;
     const displayName = card?.displayName;
 
     switch (context) {

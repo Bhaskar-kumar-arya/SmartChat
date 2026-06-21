@@ -1,4 +1,15 @@
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
+
+interface VideoContent {
+  videoMessage?: {
+    caption?: string | null;
+    [key: string]: unknown;
+  } | null;
+  ptvMessage?: {
+    caption?: string | null;
+    [key: string]: unknown;
+  } | null;
+}
 
 export class VideoFormatter implements MessageFormatter {
   supports(messageType: string): boolean {
@@ -6,11 +17,12 @@ export class VideoFormatter implements MessageFormatter {
   }
 
   format(
-    unwrappedContent: IFormattedMessageContent | null | undefined,
+    unwrappedContent: Record<string, any> | null | undefined,
     message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {
-    const vid = unwrappedContent?.videoMessage || unwrappedContent?.ptvMessage;
+    const vidContent = unwrappedContent as VideoContent | null | undefined;
+    const vid = vidContent?.videoMessage || vidContent?.ptvMessage;
     const caption = vid?.caption || message.textContent || '';
 
     switch (context) {

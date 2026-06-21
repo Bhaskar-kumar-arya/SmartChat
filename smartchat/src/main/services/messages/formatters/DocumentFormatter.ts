@@ -1,4 +1,23 @@
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
+
+interface DocumentContent {
+  documentMessage?: {
+    fileName?: string | null;
+    caption?: string | null;
+    [key: string]: unknown;
+  } | null;
+  documentWithCaptionMessage?: {
+    message?: {
+      documentMessage?: {
+        fileName?: string | null;
+        caption?: string | null;
+        [key: string]: unknown;
+      } | null;
+      [key: string]: unknown;
+    } | null;
+    [key: string]: unknown;
+  } | null;
+}
 
 export class DocumentFormatter implements MessageFormatter {
   supports(messageType: string): boolean {
@@ -6,17 +25,18 @@ export class DocumentFormatter implements MessageFormatter {
   }
 
   format(
-    unwrappedContent: IFormattedMessageContent | null | undefined,
+    unwrappedContent: Record<string, any> | null | undefined,
     message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {
-    const doc = unwrappedContent?.documentMessage || unwrappedContent?.documentWithCaptionMessage?.message?.documentMessage;
+    const docContent = unwrappedContent as DocumentContent | null | undefined;
+    const doc = docContent?.documentMessage || docContent?.documentWithCaptionMessage?.message?.documentMessage;
     const fileName = doc?.fileName || 'unnamed';
     const caption = doc?.caption || message.textContent || '';
 
     switch (context) {
       case 'transcript':
-        if (doc || unwrappedContent?.documentMessage !== undefined) {
+        if (doc || docContent?.documentMessage !== undefined) {
           return caption ? `[File: ${fileName}] "${caption}"` : `[File: ${fileName}]`;
         }
         return '[File]';

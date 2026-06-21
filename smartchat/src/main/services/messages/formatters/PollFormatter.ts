@@ -1,4 +1,12 @@
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
+
+interface PollContent {
+  pollCreationMessage?: {
+    name?: string | null;
+    options?: Array<{ optionName?: string | null; [key: string]: unknown }> | null;
+    [key: string]: unknown;
+  } | null;
+}
 
 export class PollFormatter implements MessageFormatter {
   supports(messageType: string): boolean {
@@ -6,7 +14,7 @@ export class PollFormatter implements MessageFormatter {
   }
 
   format(
-    unwrappedContent: IFormattedMessageContent | null | undefined,
+    unwrappedContent: Record<string, any> | null | undefined,
     message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {
@@ -23,13 +31,14 @@ export class PollFormatter implements MessageFormatter {
       }
     }
 
-    const poll = unwrappedContent?.pollCreationMessage;
+    const pollContent = unwrappedContent as PollContent | null | undefined;
+    const poll = pollContent?.pollCreationMessage;
     const pollName = poll?.name || message.textContent || '';
     const options = poll?.options ? poll.options.map(o => o.optionName || '').join(', ') : '';
 
     switch (context) {
       case 'transcript':
-        if (poll || unwrappedContent?.pollCreationMessage !== undefined) {
+        if (poll || pollContent?.pollCreationMessage !== undefined) {
           return `[Poll: ${pollName}] Options: (${options})`;
         }
         return '[Poll]';

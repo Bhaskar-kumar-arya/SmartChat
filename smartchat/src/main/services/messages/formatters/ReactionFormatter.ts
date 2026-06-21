@@ -1,4 +1,11 @@
-import { MessageFormatter, MessageFormattingContext, FormatterMessageInput, IFormattedMessageContent } from './MessageFormatter';
+import { MessageFormatter, MessageFormattingContext, FormatterMessageInput } from './MessageFormatter';
+
+interface ReactionContent {
+  reactionMessage?: {
+    text?: string | null;
+    [key: string]: unknown;
+  } | null;
+}
 
 export class ReactionFormatter implements MessageFormatter {
   supports(messageType: string): boolean {
@@ -6,11 +13,11 @@ export class ReactionFormatter implements MessageFormatter {
   }
 
   format(
-    unwrappedContent: IFormattedMessageContent | null | undefined,
+    unwrappedContent: Record<string, any> | null | undefined,
     message: FormatterMessageInput,
     context: MessageFormattingContext
   ): string {
-    const text = unwrappedContent?.reactionMessage?.text || message.textContent || '';
+    const text = (unwrappedContent as ReactionContent | null | undefined)?.reactionMessage?.text || message.textContent || '';
     
     switch (context) {
       case 'transcript':

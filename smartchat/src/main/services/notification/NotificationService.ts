@@ -6,7 +6,6 @@ import { INotificationProvider } from './INotificationProvider'
 import { ElectronNotificationProvider } from './ElectronNotificationProvider'
 import { unwrapMessage } from '../../utils/messageUtils'
 import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
-import { IFormattedMessageContent } from '../messages/formatters/MessageFormatter'
 import { WAMessageContent } from '../whatsapp/types'
 
 const preferencesPath = join(app.getPath('userData'), 'notification_preferences.json')
@@ -114,7 +113,7 @@ export class NotificationService implements INotificationService {
     }
 
     const contentPreview = this.formatterRegistry.format(
-      unwrapped as unknown as IFormattedMessageContent,
+      unwrapped as Record<string, any> | null | undefined,
       {
         textContent: options.textContent,
         messageType: options.messageType || 'unknown',
