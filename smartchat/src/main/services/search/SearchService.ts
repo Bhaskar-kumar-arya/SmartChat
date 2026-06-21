@@ -1,4 +1,5 @@
-import { IContactService, getDisplayName } from '../contacts/IContactService'
+import { IContactService } from '../contacts/IContactService'
+import { getDisplayName } from '../../utils/contactUtils'
 import { IEmbeddingService } from './EmbeddingService'
 import { WASocket } from '../whatsapp/types'
 import { IChatRepository } from '../chats/IChatRepository'
