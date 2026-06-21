@@ -1,4 +1,4 @@
-import { downloadContentFromMessage, proto } from '@whiskeysockets/baileys'
+import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 import { app, shell } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
@@ -8,7 +8,7 @@ import { IMessageCompoundRepository } from './IMessageCompoundRepository'
 import { IMessageReadRepository } from './IMessageQueryRepository'
 import { IFavoriteStickerService } from './IFavoriteStickerService'
 import { IContactService } from '../contacts/IContactService'
-import { WASocket } from '../whatsapp/types'
+import { WASocket, WAMessageContent, BaileysWebMessageInfo } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { unwrapMessage } from '../../utils'
 import { Message } from '@prisma/client'
@@ -37,7 +37,7 @@ interface InteractiveTemplate {
 /** Resolve the correct Baileys media type string, with HKDF override for
  *  audio files that arrived inside a documentMessage wrapper. */
 function resolveMediaType(
-  unwrapped: proto.IMessage | Record<string, unknown>
+  unwrapped: WAMessageContent | Record<string, unknown>
 ): { mediaType: MediaType; mediaMsg: Record<string, unknown> } | null {
   let target = unwrapped as Record<string, unknown>
 
@@ -412,7 +412,7 @@ export class MediaService implements IMediaService {
             : undefined
         },
         message: updatePayload
-      } as unknown as Parameters<typeof sock.updateMediaMessage>[0])) as proto.IWebMessageInfo
+      } as unknown as Parameters<typeof sock.updateMediaMessage>[0])) as BaileysWebMessageInfo
 
       // Extract the updated media metadata back
       let updatedMediaMsg: Record<string, unknown> | null = null

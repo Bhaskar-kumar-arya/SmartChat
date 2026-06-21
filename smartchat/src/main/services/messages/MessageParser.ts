@@ -1,7 +1,7 @@
-import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
+import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils'
-import { BaileysMessage } from '../whatsapp/types'
+import { BaileysMessage, WAMessageContent } from '../whatsapp/types'
 
 /** Plain data object produced by parseMessageSync(). */
 export interface ParsedMessage {
@@ -106,7 +106,7 @@ export class MessageParser {
    *
    * Returns `null` when no text is present (e.g. sticker, audio-only messages).
    */
-  extractTextContent(unwrapped: proto.IMessage | Record<string, unknown> | null | undefined): string | null {
+  extractTextContent(unwrapped: WAMessageContent | Record<string, unknown> | null | undefined): string | null {
     if (!unwrapped) return null
 
     const rawMsg = unwrapped as Record<string, unknown>

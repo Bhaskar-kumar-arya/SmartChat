@@ -1,3 +1,5 @@
+import { proto } from '@whiskeysockets/baileys'
+
 /** Payload shape for chat update events. */
 export interface ChatUpdatePayload {
   id?: string | null; name?: string | null; subject?: string | null
@@ -47,3 +49,8 @@ export interface BaileysGroupUpdate {
 export interface MediaMessageWithLocalUri {
   localURI?: string | null
 }
+
+/** Domain wrapper types for Baileys types to prevent leakages */
+export type WAMessageKey = proto.IMessageKey
+export type WAMessageContent = proto.IMessage
+

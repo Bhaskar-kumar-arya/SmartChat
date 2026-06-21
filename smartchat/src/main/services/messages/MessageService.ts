@@ -1,4 +1,4 @@
-import { proto, WAMessageStubType } from '@whiskeysockets/baileys'
+import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { IContactService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { IEmbeddingService } from '../search/IEmbeddingService'
@@ -8,7 +8,9 @@ import {
   WASocket,
   BaileysMessage,
   ProtocolResult,
-  BaileysReactionUpdate
+  BaileysReactionUpdate,
+  WAMessageContent,
+  WAMessageKey
 } from '../whatsapp/types'
 import { ProcessedMessage, DBMessageWithSender } from '../../domain/db.types'
 import { EnrichedMessage } from '../../ipc/message.types'
@@ -298,7 +300,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
           if (ctx.mentionedJid)
             (ctx.mentionedJid as string[]).forEach(j => additionalJids.add(j))
           if (ctx.quotedMessage) {
-            const q = unwrapMessage(ctx.quotedMessage as proto.IMessage)
+            const q = unwrapMessage(ctx.quotedMessage as WAMessageContent)
             const qRaw = q as Record<string, unknown>
             const qCtx = (
               (qRaw?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo ??
@@ -372,7 +374,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     if (!targetId || !reactionKey) return
 
     // LID ↔ PN reconciliation
-    const refinedKey = reactionKey as import('@whiskeysockets/baileys').proto.IMessageKey & { participantAlt?: string }
+    const refinedKey = reactionKey as WAMessageKey & { participantAlt?: string }
     const lid = refinedKey.participant ?? refinedKey.participantAlt
     const pn = refinedKey.participantAlt ?? refinedKey.participant
 

@@ -1,6 +1,5 @@
-import { proto } from '@whiskeysockets/baileys'
 import { ProcessedMessage } from '../../../domain/db.types'
-import { ProtocolResult } from '../../whatsapp/types'
+import { ProtocolResult, WAMessageKey } from '../../whatsapp/types'
 import { IMessageProcessingContext, IMessageProcessorStrategy, IMessageServiceDependencyAccessor } from './IMessageProcessorStrategy'
 
 export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
@@ -25,7 +24,7 @@ export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
             subType: 'revoke',
             targetId,
             chatJid: context.remoteJid,
-            key: protocol.key as proto.IMessageKey
+            key: protocol.key as WAMessageKey
           }
         } else if (type === 14 || type === 'MESSAGE_EDIT') {
           const editedMsg = protocol.editedMessage
@@ -40,7 +39,7 @@ export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
             subType: 'edit',
             targetId,
             chatJid: context.remoteJid,
-            key: protocol.key as proto.IMessageKey,
+            key: protocol.key as WAMessageKey,
             editedTextContent: editContent,
             editedContent: editedMsg ?? null
           }

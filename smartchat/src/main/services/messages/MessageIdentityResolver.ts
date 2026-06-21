@@ -1,9 +1,8 @@
-import { proto } from '@whiskeysockets/baileys'
 import { IContactService } from '../contacts/IContactService'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { IIdentityReconciliationService } from '../contacts/IIdentityReconciliationService'
 import { cleanJid } from '../../utils'
-import { WASocket } from '../whatsapp/types'
+import { WASocket, WAMessageKey } from '../whatsapp/types'
 import { IMessageIdentityResolver } from './IMessageIdentityResolver'
 
 export class MessageIdentityResolver implements IMessageIdentityResolver {
@@ -16,7 +15,7 @@ export class MessageIdentityResolver implements IMessageIdentityResolver {
   /**
    * Resolves the JID of the sender of a message.
    */
-  async resolveSenderJid(key: proto.IMessageKey, sock: WASocket | null): Promise<string | null> {
+  async resolveSenderJid(key: WAMessageKey, sock: WASocket | null): Promise<string | null> {
     const remoteJid = cleanJid(key.remoteJid ?? '')
     let participantString = key.participant
       ? cleanJid(key.participant)
@@ -46,7 +45,7 @@ export class MessageIdentityResolver implements IMessageIdentityResolver {
   /**
    * Resolves the JID of the author of a reaction.
    */
-  async resolveReactorJid(reactionKey: proto.IMessageKey, sock: WASocket | null): Promise<string | null> {
+  async resolveReactorJid(reactionKey: WAMessageKey, sock: WASocket | null): Promise<string | null> {
     let reactorJid: string | null =
       (reactionKey.participant ??
       (reactionKey.remoteJid?.endsWith('@g.us') ? null : reactionKey.remoteJid)) ?? null

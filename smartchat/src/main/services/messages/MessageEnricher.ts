@@ -1,7 +1,6 @@
-import { proto } from '@whiskeysockets/baileys'
 import { ContactService } from '../contacts/ContactService'
 import { cleanJid, unwrapMessage } from '../../utils'
-import { WASocket } from '../whatsapp/types'
+import { WASocket, WAMessageContent } from '../whatsapp/types'
 import { DBMessageWithSender } from '../../domain/db.types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { EnrichedReaction } from '../../ipc/reaction.types'
@@ -97,7 +96,7 @@ export class MessageEnricher {
   }
 
   private _extractContextInfo(
-    unwrapped: proto.IMessage | Record<string, unknown> | null | undefined
+    unwrapped: WAMessageContent | Record<string, unknown> | null | undefined
   ): Record<string, unknown> | null {
     if (!unwrapped) return null
     const rawMsg = unwrapped as Record<string, unknown>
@@ -144,7 +143,7 @@ export class MessageEnricher {
     }
 
     if (ctx.quotedMessage && typeof ctx.quotedMessage === 'object') {
-      const q = unwrapMessage(ctx.quotedMessage as proto.IMessage)
+      const q = unwrapMessage(ctx.quotedMessage as WAMessageContent)
       const qRaw = q as Record<string, unknown>
       const qCtx =
         (qRaw?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo as

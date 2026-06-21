@@ -1,5 +1,4 @@
 import { app, BrowserWindow, nativeImage } from 'electron'
-import { proto } from '@whiskeysockets/baileys'
 import { join } from 'path'
 import fs from 'fs'
 import { INotificationService, NotificationOptions, NotificationPreferences } from './INotificationService'
@@ -8,6 +7,7 @@ import { ElectronNotificationProvider } from './ElectronNotificationProvider'
 import { unwrapMessage } from '../../utils'
 import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatterRegistry'
 import { IFormattedMessageContent } from '../messages/formatters/MessageFormatter'
+import { WAMessageContent } from '../whatsapp/types'
 
 const preferencesPath = join(app.getPath('userData'), 'notification_preferences.json')
 
@@ -104,7 +104,7 @@ export class NotificationService implements INotificationService {
     let title = ''
     let body = ''
 
-    let unwrapped: proto.IMessage | null = null
+    let unwrapped: WAMessageContent | null = null
     if (options.content) {
       try {
         unwrapped = unwrapMessage(JSON.parse(options.content))

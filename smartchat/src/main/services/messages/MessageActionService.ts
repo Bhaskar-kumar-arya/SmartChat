@@ -9,8 +9,8 @@ import { IMessageCompoundRepository } from './IMessageCompoundRepository'
 import { IReactionRepository } from './IReactionRepository'
 import { IMessageReadRepository } from './IMessageQueryRepository'
 import { IChatService } from '../chats/IChatService'
-import { proto, AnyMessageContent } from '@whiskeysockets/baileys'
-import { WASocket, MediaMessageWithLocalUri } from '../whatsapp/types'
+import { AnyMessageContent } from '@whiskeysockets/baileys'
+import { WASocket, MediaMessageWithLocalUri, WAMessageContent, WAContextInfo, parseProtoMessage } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { unwrapMessage, cleanJid } from '../../utils'
 import type { IWAEventBus } from '../whatsapp/IWAEventBus'
@@ -137,7 +137,7 @@ export class MessageActionService implements IMessageActionService {
       messageId,
       chatJid: enriched.chatJid,
       editedTextContent: newText,
-      editedContent: updatedContent as proto.IMessage,
+      editedContent: updatedContent as WAMessageContent,
       sock
     }).catch((err) => {
       console.error('[MessageActionService] Failed to emit message:edited event:', err)
@@ -164,7 +164,7 @@ export class MessageActionService implements IMessageActionService {
         id: dbMsg.id,
         participant: dbMsg.participant || undefined
       },
-      message: proto.Message.fromObject(rawMessage),
+      message: parseProtoMessage(rawMessage),
       messageTimestamp: Number(dbMsg.timestamp)
     };
 
@@ -312,7 +312,7 @@ export class MessageActionService implements IMessageActionService {
   ): Promise<EnrichedMessage> {
     const targetJid = await this.contactService.resolveLidFromJid(jid)
 
-    let contextInfo: proto.IContextInfo | undefined = undefined
+    let contextInfo: WAContextInfo | undefined = undefined
     if (quotedMsgId) {
       const qm = await this.messageQueryRepository.findMessageById(quotedMsgId)
       if (qm && qm.content) {
@@ -322,7 +322,7 @@ export class MessageActionService implements IMessageActionService {
           if (msgType && rawQuoted[msgType] && typeof rawQuoted[msgType] === 'object') {
             delete rawQuoted[msgType].contextInfo
           }
-          const quotedMessage = proto.Message.fromObject(rawQuoted)
+          const quotedMessage = parseProtoMessage(rawQuoted)
 
           let participant = qm.participant ? cleanJid(qm.participant) : undefined
           if (qm.fromMe) {
@@ -389,7 +389,7 @@ export class MessageActionService implements IMessageActionService {
   ): Promise<EnrichedMessage> {
     const targetJid = await this.contactService.resolveLidFromJid(jid)
 
-    let contextInfo: proto.IContextInfo | undefined = undefined
+    let contextInfo: WAContextInfo | undefined = undefined
     if (quotedMsgId) {
         const qm = await this.messageQueryRepository.findMessageById(quotedMsgId)
         if (qm && qm.content) {
@@ -399,7 +399,7 @@ export class MessageActionService implements IMessageActionService {
             if (msgType && rawQuoted[msgType] && typeof rawQuoted[msgType] === 'object') {
               delete rawQuoted[msgType].contextInfo
             }
-            const quotedMessage = proto.Message.fromObject(rawQuoted)
+            const quotedMessage = parseProtoMessage(rawQuoted)
 
             let participant = qm.participant ? cleanJid(qm.participant) : undefined
             if (qm.fromMe) {

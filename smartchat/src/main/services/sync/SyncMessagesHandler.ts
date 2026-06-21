@@ -1,5 +1,5 @@
 import { Message } from '@prisma/client'
-import { WAMessageStubType, proto } from '@whiskeysockets/baileys'
+import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { IContactService } from '../contacts/IContactService'
 import { IMessageRepository, MessageUpsertData } from '../messages/IMessageRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'
@@ -7,6 +7,7 @@ import { IAliasRepository } from '../contacts/IAliasRepository'
 import { IChatRepository } from '../chats/IChatRepository'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid, parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from '../../utils'
+import { BaileysWebMessageInfo, BaileysReaction } from '../whatsapp/types'
 
 export interface PendingReaction {
   targetId: string
@@ -122,7 +123,7 @@ export class SyncMessagesHandler {
     const pendingReactions: PendingReaction[] = []
 
     for (const m of batch) {
-      const mTyped = m as unknown as proto.IWebMessageInfo
+      const mTyped = m as unknown as BaileysWebMessageInfo
       const key = mTyped.key
       if (!key?.id) continue
 
@@ -291,7 +292,7 @@ export class SyncMessagesHandler {
    * Collect reactions that are nested on a message in the history payload.
    */
   private async _collectNestedReactions(
-    reactions: proto.IReaction[],
+    reactions: BaileysReaction[],
     targetId: string,
     meJid: string | null,
     identityCache: Map<string, number>,
