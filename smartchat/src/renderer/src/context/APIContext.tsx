@@ -1,7 +1,8 @@
 import React, { createContext, useContext } from 'react'
 import { api } from '../services/api.service'
+import { IAPIService } from '../services/IAPIService'
 
-type APIServiceType = typeof api
+type APIServiceType = IAPIService
 
 const APIContext = createContext<APIServiceType | undefined>(undefined)
 

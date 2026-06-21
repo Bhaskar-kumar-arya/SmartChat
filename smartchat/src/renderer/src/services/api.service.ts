@@ -1,5 +1,6 @@
 import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo, PresenceUpdate, SelectedContext, NotificationPreferences } from '../types/chatTypes'
 import { AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionItem, AIContextItem } from '../types/aiTypes'
+import { IAPIService } from './IAPIService'
 
 // This service wraps the window.api (Electron bridge) to provide a clean abstraction.
 // It allows us to mock the API in tests and decouple from the global window object.
@@ -8,7 +9,7 @@ import { AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionI
  * Service for interacting with the main process API via IPC.
  * This satisfies the Dependency Inversion Principle.
  */
-export const api = {
+export const api: IAPIService = {
   getChats: (page: number, limit: number): Promise<ChatItem[]> =>
     window.api.getChats(page, limit),
 
