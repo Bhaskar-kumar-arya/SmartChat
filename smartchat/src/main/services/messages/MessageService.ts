@@ -10,8 +10,8 @@ import {
   ProtocolResult,
   BaileysReactionUpdate
 } from '../whatsapp/types'
-import { ProcessedMessage, DBMessageWithSender } from '../../domain/types'
-import { EnrichedMessage } from '../../ipc/types'
+import { ProcessedMessage, DBMessageWithSender } from '../../domain/db.types'
+import { EnrichedMessage } from '../../ipc/message.types'
 import { IWAEventBus } from '../whatsapp/IWAEventBus'
 import { getSafeMediaFileName as getSafeMediaFileNameHelper } from './MediaHelper'
 import { MessageParser, ParsedMessage } from './MessageParser'

@@ -1,4 +1,4 @@
-import { Message, Identity } from '../../domain/types'
+import { Message, Identity } from '../../domain/entities'
 import { IMessageExistenceRepository } from './IMessageExistenceRepository'
 import { IMessageSearchRepository } from './IMessageSearchRepository'
 import { IMessageIndexRepository } from './IMessageIndexRepository'

@@ -1,4 +1,5 @@
-import { MessageQueryFilter, MessageWithChatAndSender, LastMessageWithSender } from '../../domain/types'
+import { MessageQueryFilter } from '../../domain/filters'
+import { MessageWithChatAndSender, LastMessageWithSender } from '../../domain/projections'
 
 export interface IMessageSearchRepository {
   findLastMessage(chatJid: string): Promise<LastMessageWithSender | null>

@@ -1,7 +1,7 @@
 import { ICommunitySyncHandler } from './sync/ICommunitySyncHandler'
 import { IChatSyncHandler } from './sync/IChatSyncHandler'
 import { IMembershipSyncHandler } from './sync/IMembershipSyncHandler'
-import { BaileysGroupMetadata } from './types'
+import { BaileysGroupMetadata } from '../whatsapp/types/group.types'
 import { IGroupHydrationService } from './IGroupHydrationService'
 
 export class GroupHydrationService implements IGroupHydrationService {

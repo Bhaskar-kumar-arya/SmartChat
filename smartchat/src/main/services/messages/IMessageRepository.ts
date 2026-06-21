@@ -1,4 +1,4 @@
-import { MessageUpsertData } from '../../domain/types'
+import { MessageUpsertData } from '../../domain/db.types'
 import { IMessageCompoundRepository } from './IMessageCompoundRepository'
 export type { MessageUpsertData }
 

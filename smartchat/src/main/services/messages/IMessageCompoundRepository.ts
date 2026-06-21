@@ -1,4 +1,4 @@
-import { DBMessageWithSender } from '../../domain/types'
+import { DBMessageWithSender } from '../../domain/db.types'
 
 export interface IMessageCompoundRepository {
   updateAndFetchMessageWithSender(

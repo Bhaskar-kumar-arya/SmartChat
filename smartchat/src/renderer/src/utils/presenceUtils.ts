@@ -1,4 +1,5 @@
-import { ChatItem, PresenceMap } from '../types/chatTypes'
+import { ChatItem } from '../types/chat.types'
+import { PresenceMap } from '../types/presence.types'
 
 /**
  * Formats the active presence status (composing/recording) for a given chat.

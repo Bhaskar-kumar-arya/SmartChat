@@ -29,7 +29,7 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
   useEffect(() => {
     const model = availableModels.find(m => m.id === options.model);
     if (model) {
-      setSelectedProvider(model.provider);
+      setSelectedProvider(model.provider as 'gemini' | 'lmstudio' | 'groq' | 'mistral' | 'deepseek');
     } else if (options.model.startsWith('groq:')) {
       setSelectedProvider('groq');
     } else if (options.model.startsWith('mistral:')) {

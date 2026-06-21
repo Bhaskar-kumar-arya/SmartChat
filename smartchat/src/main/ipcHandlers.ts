@@ -10,7 +10,7 @@ import { AIChatContext, AIHistoryMessage, AIMention } from './services/ai/IAISer
 import { AIChatMessageInput } from './services/ai/IAIChatSessionService'
 import { ExportSession, ExportMessage } from './services/ai/IAIChatExportService'
 import { NotificationPreferences } from './services/notification/INotificationService'
-import { ChatListItem } from './ipc/types'
+import { ChatListItem } from './ipc/chat.types'
 
 const DIR_NAME_TEMP = 'temp'
 const PREFIX_VOICE = 'voice_'

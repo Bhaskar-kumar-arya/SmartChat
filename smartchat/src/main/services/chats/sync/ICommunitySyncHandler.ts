@@ -1,4 +1,4 @@
-import { BaileysGroupMetadata } from '../types'
+import { BaileysGroupMetadata } from '../../whatsapp/types/group.types'
 
 export interface ICommunitySyncHandler {
   syncCommunities(

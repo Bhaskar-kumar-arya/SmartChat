@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { unwrapMessage } from '../../utils'
 import { MediaMessageWithLocalUri } from '../whatsapp/types'
 import { IMessageRepository, MessageUpsertData } from './IMessageRepository'
-import { DBMessageWithSender } from '../../domain/types'
+import { DBMessageWithSender } from '../../domain/db.types'
 
 /**
  * MessageRepository — Single Responsibility: all Prisma/database write/mutation

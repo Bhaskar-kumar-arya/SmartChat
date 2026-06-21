@@ -1,5 +1,5 @@
-import { DBMessageWithSender } from '../../domain/types'
-import { EnrichedMessage } from '../../ipc/types'
+import { DBMessageWithSender } from '../../domain/db.types'
+import { EnrichedMessage } from '../../ipc/message.types'
 
 export interface IMessageQueryService {
   getChatMessages(

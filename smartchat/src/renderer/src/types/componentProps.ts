@@ -1,4 +1,4 @@
-import { MessageItem } from './chatTypes'
+import { MessageItem } from './message.types'
 import { RawMessageContent } from './mediaTypes'
 
 export interface BaseMediaMessageProps {

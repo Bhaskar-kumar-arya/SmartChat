@@ -6,7 +6,7 @@ import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
 import { IMessageVectorRepository } from '../messages/IMessageVectorRepository'
-import { MessageQueryFilter } from '../../domain/types'
+import { MessageQueryFilter } from '../../domain/filters'
 import {
   ISearchService,
   SearchResultItem,

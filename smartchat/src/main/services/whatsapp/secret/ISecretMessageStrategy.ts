@@ -1,5 +1,5 @@
 import { WASocket } from '@whiskeysockets/baileys'
-import { ProcessedMessage } from '../../../domain/types'
+import { ProcessedMessage } from '../../../domain/db.types'
 import { ProtocolResult } from '../types'
 
 export interface SecretMessageContext {

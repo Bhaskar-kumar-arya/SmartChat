@@ -1,5 +1,5 @@
 import { WASocket } from '../whatsapp/types'
-import { EnrichedMessage } from '../../ipc/types'
+import { EnrichedMessage } from '../../ipc/message.types'
 
 export interface IMessageActionService {
   deleteMessage(

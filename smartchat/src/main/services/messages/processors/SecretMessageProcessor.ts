@@ -1,4 +1,4 @@
-import { ProcessedMessage } from '../../../domain/types'
+import { ProcessedMessage } from '../../../domain/db.types'
 import { ProtocolResult } from '../../whatsapp/types'
 import { IMessageProcessingContext, IMessageProcessorStrategy, IMessageServiceDependencyAccessor } from './IMessageProcessorStrategy'
 

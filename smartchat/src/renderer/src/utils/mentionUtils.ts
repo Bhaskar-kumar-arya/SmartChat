@@ -1,4 +1,4 @@
-import { ChatItem } from '../types/chatTypes'
+import { ChatItem } from '../types/chat.types'
 
 /**
  * Computes a fuzzy match score for a query against a target string.

@@ -1,5 +1,5 @@
 import { ChatUpdatePayload, SocketAccessor } from '../whatsapp/types'
-import { ChatListEntry } from '../../domain/types'
+import { ChatListEntry } from '../../domain/chatList.types'
 
 export interface IChatQueryService {
   getChatList(page?: number, pageSize?: number): Promise<ChatListEntry[]>

@@ -1,4 +1,4 @@
-import { Community } from '../../domain/types'
+import { Community } from '../../domain/entities'
 
 export interface ICommunityWriteRepository {
   upsertCommunity(jid: string, name: string | null): Promise<Community>

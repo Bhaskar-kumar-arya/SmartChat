@@ -1,6 +1,6 @@
 import { proto } from '@whiskeysockets/baileys'
 import { BaileysMessage, ProtocolResult, WASocket } from '../../whatsapp/types'
-import { ProcessedMessage } from '../../../domain/types'
+import { ProcessedMessage } from '../../../domain/db.types'
 import { IIdentityRepository } from '../../contacts/IIdentityRepository'
 import { IMessageRepository } from '../IMessageRepository'
 import { IReactionRepository } from '../IReactionRepository'

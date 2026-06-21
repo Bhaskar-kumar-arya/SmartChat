@@ -1,4 +1,4 @@
-import { Chat } from '../../domain/types'
+import { Chat } from '../../domain/entities'
 
 export interface ChatUpsertData {
   unreadCount?: number

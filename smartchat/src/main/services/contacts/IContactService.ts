@@ -1,4 +1,4 @@
-import { Identity } from '../../domain/types'
+import { Identity } from '../../domain/entities'
 import { WASocket } from '../whatsapp/types'
 
 export interface IContactQueryService {

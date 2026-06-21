@@ -1,7 +1,7 @@
 import { cleanJid, parseCommunityMetadata } from '../../utils'
 import { IContactService } from '../contacts/IContactService'
 import { ChatUpdatePayload, SocketAccessor } from '../whatsapp/types'
-import { ChatListEntry } from '../../domain/types'
+import { ChatListEntry } from '../../domain/chatList.types'
 import { IChatRepository } from './IChatRepository'
 import { ICommunityRepository } from './ICommunityRepository'
 import { ChatListEnricher } from './ChatListEnricher'

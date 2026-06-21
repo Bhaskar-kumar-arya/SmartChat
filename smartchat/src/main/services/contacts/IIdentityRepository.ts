@@ -1,4 +1,4 @@
-import { Identity, IdentityAlias } from '../../domain/types'
+import { Identity, IdentityAlias } from '../../domain/entities'
 
 export interface IdentityCreateInput {
   phoneNumber?: string | null

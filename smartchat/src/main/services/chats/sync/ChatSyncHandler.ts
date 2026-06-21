@@ -1,5 +1,5 @@
 import { ISyncRepository, SyncChatCreateInput, SyncChatUpdateInput } from '../../sync/ISyncRepository'
-import { BaileysGroupMetadata } from '../types'
+import { BaileysGroupMetadata } from '../../whatsapp/types/group.types'
 import { cleanJid, parseBaileysTimestamp, parseCommunityMetadata } from '../../../utils'
 import { IChatSyncHandler } from './IChatSyncHandler'
 
