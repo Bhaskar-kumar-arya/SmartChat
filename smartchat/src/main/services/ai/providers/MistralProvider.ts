@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { ModelInfo } from './Provider';
+import { ModelInfo } from './IBaseAIProvider';
 import { IStreamingProvider } from './IStreamingProvider';
 import { IFullResponseProvider } from './IFullResponseProvider';
 import { IToolRegistry } from '../IToolRegistry';

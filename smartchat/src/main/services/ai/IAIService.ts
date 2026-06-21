@@ -1,4 +1,4 @@
-import { IBaseAIProvider, ModelInfo } from './providers/Provider'
+import { IBaseAIProvider, ModelInfo } from './providers/IBaseAIProvider'
 
 export interface AIMention {
   jid: string

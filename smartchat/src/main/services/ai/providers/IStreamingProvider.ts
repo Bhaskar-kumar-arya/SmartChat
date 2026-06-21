@@ -1,4 +1,4 @@
-import { IBaseAIProvider } from './Provider';
+import { IBaseAIProvider } from './IBaseAIProvider';
 
 export interface IStreamingProvider extends IBaseAIProvider {
   /**
