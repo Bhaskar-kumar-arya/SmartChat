@@ -15,9 +15,9 @@ export interface SyncChatCreateInput {
 
 export interface SyncChatUpdateInput {
   jid: string
-  type: string
-  isArchived: boolean
-  communityId: number | null
+  type?: string
+  isArchived?: boolean
+  communityId?: number | null
   name?: string | null
   timestamp?: bigint
   unreadCount?: number

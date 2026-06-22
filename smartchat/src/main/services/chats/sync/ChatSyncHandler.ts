@@ -33,10 +33,9 @@ export class ChatSyncHandler implements IChatSyncHandler {
       const ts = raw.conversationTimestamp ?? raw.timestamp
       const hasTimestamp = ts !== undefined && ts !== null
       const timestamp = hasTimestamp ? parseBaileysTimestamp(ts) : null
-      const isArchived = ('archived' in raw || 'isArchived' in raw) ? (raw.archived === true || raw.isArchived === true) : false
 
-      let type = 'GROUP'
-      let communityId: number | null = null
+      let type: string | undefined = undefined
+      let communityId: number | null | undefined = undefined
 
       const commInfo = parseCommunityMetadata(jid, raw)
       if (commInfo.hasCommunityData) {
@@ -50,19 +49,13 @@ export class ChatSyncHandler implements IChatSyncHandler {
       const existing = existingChatsMap.get(cleanedJid)
 
       if (existing) {
-        // Only overwrite fields that the payload actually provides
-        const updateObj: {
-          type: string
-          isArchived: boolean
-          communityId: number | null
-          name?: string | null
-          timestamp?: bigint
-          unreadCount?: number
-          pinned?: number
-          muteExpiration?: bigint
-          profilePictureUrl?: string | null
-        } = { type, isArchived, communityId }
+        const updateObj: SyncChatUpdateInput = { jid: cleanedJid }
         
+        if (type !== undefined) updateObj.type = type
+        if (communityId !== undefined) updateObj.communityId = communityId
+        if ('archived' in raw || 'isArchived' in raw) {
+          updateObj.isArchived = raw.archived === true || raw.isArchived === true
+        }
         if (chatName) updateObj.name = chatName
         if (timestamp !== null) updateObj.timestamp = timestamp
         if (typeof raw.unreadCount === 'number') updateObj.unreadCount = raw.unreadCount
@@ -75,11 +68,12 @@ export class ChatSyncHandler implements IChatSyncHandler {
           updateObj.profilePictureUrl = raw.profilePictureUrl || null
         }
         
-        chatsToUpdate.push({ jid: cleanedJid, ...updateObj })
+        chatsToUpdate.push(updateObj)
       } else {
+        const isArchived = ('archived' in raw || 'isArchived' in raw) ? (raw.archived === true || raw.isArchived === true) : false
         chatsToInsert.push({
           jid: cleanedJid,
-          type,
+          type: type ?? 'GROUP',
           unreadCount: typeof raw.unreadCount === 'number' ? raw.unreadCount : 0,
           timestamp: timestamp ?? BigInt(0),
           pinned: typeof raw.pinned === 'number' ? raw.pinned : 0,
@@ -88,7 +82,7 @@ export class ChatSyncHandler implements IChatSyncHandler {
             : BigInt(typeof raw.muteExpiration === 'number' ? raw.muteExpiration : 0),
           isArchived,
           name: chatName,
-          communityId,
+          communityId: communityId ?? null,
           profilePictureUrl: raw.profilePictureUrl || null
         })
       }

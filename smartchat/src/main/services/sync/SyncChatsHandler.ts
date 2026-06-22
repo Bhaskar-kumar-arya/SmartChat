@@ -89,11 +89,6 @@ export class SyncChatsHandler {
       const timestamp =
         tsRaw !== undefined && tsRaw !== null ? parseBaileysTimestamp(tsRaw) : BigInt(0)
 
-      const isArchived =
-        'archived' in c || 'isArchived' in c
-          ? c.archived === true || c.isArchived === true
-          : false
-
       const updateData: {
         timestamp?: bigint
         isArchived?: boolean
@@ -101,9 +96,12 @@ export class SyncChatsHandler {
         muteExpiration?: bigint
         type?: string
         communityId?: number | null
+        unreadCount?: number
       } = {}
       if (timestamp !== BigInt(0)) updateData.timestamp = timestamp
-      updateData.isArchived = isArchived
+      if ('archived' in c || 'isArchived' in c) {
+        updateData.isArchived = c.archived === true || c.isArchived === true
+      }
       if (c.name !== undefined) updateData.name = c.name
 
       const rawMute = c.muteExpiration !== undefined ? c.muteExpiration : c.muteEndTime
@@ -118,12 +116,11 @@ export class SyncChatsHandler {
         updateData.communityId = await this.handleCommunityClassification(c, jid, updateData)
       }
 
-      await this.chatRepository.upsertChat(jid, {
-        ...updateData,
-        unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
-        isArchived,
-        name: c.name ?? updateData.name ?? null
-      })
+      if (typeof c.unreadCount === 'number') {
+        updateData.unreadCount = c.unreadCount
+      }
+
+      await this.chatRepository.upsertChat(jid, updateData)
 
       processedChats.add(jid)
 
