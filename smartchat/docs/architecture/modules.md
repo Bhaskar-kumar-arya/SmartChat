@@ -107,6 +107,16 @@ This document maps the architectural boundaries, public interfaces, internal mod
 
 ---
 
+## `services/apiServer/`
+- **Purpose:** Exposes SmartChat's core features (WhatsApp messaging, chat lists, direct tool execution) to external local applications via a secure HTTP REST API.
+- **Public exports (`index.ts`):** None.
+- **Internal only:** `APIServer.ts`, `IAPIServer.ts`, `Router.ts`, `APIConfigProvider.ts`, `IAPIConfigProvider.ts`, `controllers/` (Status, Tools, Chats Controllers and helpers).
+- **Consumes:** `services/chats/`, `services/messages/`
+- **Consumed by:** `main/index.ts`
+
+---
+
+
 # Section 3: Supporting Main Process Modules (`src/main/`)
 
 ## `main/domain/`

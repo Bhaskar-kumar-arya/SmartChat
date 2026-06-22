@@ -119,6 +119,12 @@ import { ISystemInstructionBuilder } from './services/ai/ISystemInstructionBuild
 import { SystemPromptBuilder } from './services/ai/SystemPromptBuilder'
 import { ReactProtocolStrategy } from './services/ai/prompts/ReactProtocolStrategy'
 import { StandardProtocolStrategy } from './services/ai/prompts/StandardProtocolStrategy'
+import { APIServer } from './services/apiServer/APIServer'
+import { IAPIServer } from './services/apiServer/IAPIServer'
+import { APIConfigProvider } from './services/apiServer/APIConfigProvider'
+import { IAPIConfigProvider } from './services/apiServer/IAPIConfigProvider'
+
+
 
 export function createServices(
   prisma: PrismaClient,
@@ -251,6 +257,16 @@ export function createServices(
   const aiService = new AIService(aiKeyService, contactService, toolRegistry)
   const aiChatSessionService = new AIChatSessionService(prisma)
   const aiChatExportService = new AIChatExportService()
+  const apiConfigProvider: IAPIConfigProvider = new APIConfigProvider(app.getPath('userData'))
+  const apiServer = new APIServer(
+    apiConfigProvider,
+    toolRegistry,
+    chatService,
+    messageActionService,
+    getSock
+  )
+
+
 
   // 4. WhatsApp Event Lifecycle & Sync Services
   const socketFactory: IWASocketFactory = new WASocketFactory(messageQueryRepository)
@@ -301,8 +317,10 @@ export function createServices(
     waEventWiringService,
     aiKeyService,
     socketFactory,
-    catchUpManager
+    catchUpManager,
+    apiServer
   })
+
 
   return services
 }
@@ -351,4 +369,6 @@ export type ServiceContainer = {
   aiKeyService: IAIKeyService
   socketFactory: IWASocketFactory
   catchUpManager: IWACatchUpManager
+  apiServer: IAPIServer
 }
+

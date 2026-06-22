@@ -194,7 +194,14 @@ app.whenReady().then(() => {
   registerIpcHandlers(services, getSock, waConnectionManager)
   initVectorDb(services.vectorSyncService)
 
+  try {
+    services.apiServer.start()
+  } catch (err) {
+    console.error('[Main] Failed to start APIServer:', err)
+  }
+
   ipcMain.on('wa-skip-sync', () => {
+
     waConnectionManager.skipSync()
   })
 
@@ -215,6 +222,9 @@ app.on('will-quit', async (e) => {
   // Prevent immediate quit to allow cleanup
   e.preventDefault();
   try {
+    if (services?.apiServer) {
+      await services.apiServer.stop().catch(err => console.error('[App] APIServer stop failed:', err));
+    }
     if (services?.aiService) {
       await services.aiService.cleanup();
     }
@@ -225,5 +235,6 @@ app.on('will-quit', async (e) => {
     app.exit(0);
   }
 })
+
 
 }

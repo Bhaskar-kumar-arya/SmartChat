@@ -217,3 +217,23 @@ Decouple `APIContext.tsx` from concrete service instances. Let `APIProvider` acc
 **Enables:** Swapping the API client layer for mock structures during UI testing.
 **Constrains:** React components must never import from the concrete `api.service` directly.
 **Watch for:** Bypassing context hook to import concrete services.
+
+---
+
+## ADR-13: Local HTTP API Server Integration
+
+**Date:** 2026-06-23
+**Status:** Accepted
+
+### Context
+External local applications/scripts had no way to consume SmartChat's features (such as sending/reading messages and database querying via registered tools).
+
+### Decision
+Introduce a lightweight local HTTP API server (`APIServer`) running in the main process. Use Node's built-in `http` module to minimize external dependencies. Secure requests with a dynamically generated Bearer Token authorization schema, and restrict listening to `127.0.0.1` (localhost). Expose endpoints for direct tool execution, sending messages, and querying connection status/chats.
+
+### Consequences
+**Enables:** Secure, low-overhead integration for external programs to interact with SmartChat's database and WhatsApp client.
+**Constrains:** All external calls must provide the `Authorization: Bearer <token>` header. Tools executed via the API bypass manual UI approvals because the caller is pre-authenticated.
+**Watch for:** Resource exhaustion if an external client spawns excessive parallel requests.
+
+

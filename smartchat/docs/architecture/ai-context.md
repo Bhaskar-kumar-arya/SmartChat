@@ -28,6 +28,8 @@ Electron + React + TS | Decoupled, Layered SOLID | SQLite (Prisma ORM), better-s
 | `search` | `ISearchService`, `IEmbeddingComputer`, `IMessageIndexer`, `IEmbeddingModelConfig`, `IEmbeddingOperationalControl` | `SearchService`, `EmbeddingService`, `VectorSyncService`, `EmbeddingWorkerManager` |
 | `ai` | `IAIService`, `IAIChatSessionService`, `IAIKeyService`, `IToolRegistry`, `ISystemInstructionBuilder` | `AIService`, `AIChatSessionService`, `AIKeyService`, `ToolRegistry`, `SystemPromptBuilder` |
 | `whatsapp` | `IHistorySyncManager`, `IWAEventWiringService`, `ISecretMessageService`, `IWAEventBus` | `HistorySyncManager`, `WAEventWiringService`, `SecretMessageService`, `WACatchUpManager`, `WAEventBus` |
+| `apiServer` | `IAPIServer` | `APIServer`, `Router`, `APIConfigProvider`, `StatusController`, `ToolsController`, `ChatsController` |
+
 
 ## Extension Points
 | To add... | Do this |
