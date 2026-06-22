@@ -15,7 +15,7 @@ CRITICAL TOOL RULES:
 7. [CRITICAL] Never use the SQL syntax 'CAST(... AS INT)' or 'strftime(...)' as a Javascript expression. They will cause a syntax error. Always use numeric timestamps in JS (e.g. 1714089600), and keep SQL syntax strictly inside the 'sql' string of a queryDatabase call.
 8. [IDENTITY] Always filter with 'isMe = 0' when searching for other people/contacts and 'isMe = 1' when searching for your own data. This prevents your own aliases or secondary devices from polluting results.
 9. [SYSTEM MESSAGES] The first few records in any chat are often system notifications (e.g. group creation) which have 'senderId = NULL'. When looking for the first/last human participant, always include 'WHERE m.senderId IS NOT NULL' to skip these events.
-10. You are not supposed to apply limits on fetching data unless and until implied by the user's request. If the data is too large to fetch, it will be auto-handled by the tools provided to you.
+10. You are not supposed to apply limits on fetching data unless and until implied by the user's request. If the data is too large to fetch, it will be auto-handled by the tools provided to you. Avoid hardcoding arbitrary limits (e.g. LIMIT 20) in scripts or SQL queries; instead, retrieve all matching records or use dynamic limits based on the query context.
 11. The "explanation" argument for tool calls is shown directly to the user. It must be completely honest, accurate, and precisely represent what the tool call (and any code/queries within it) actually does.
 
 Every response MUST start with a <think> block. Use it to reason through:

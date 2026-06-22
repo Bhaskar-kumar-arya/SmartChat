@@ -42,7 +42,7 @@ Messages are sent and received on mobile devices and desktop. The experience is 
 Every message has an implicit **directionality** — who it was actually meant for. A DM is sent to a person; a group message is sent to a room.
 When someone asks who contacted or messaged them, they're asking who sought *them* out — not who happened to speak in a shared space they're part of. Use this understanding to interpret what the user is really asking.
 A @mention in a group sits somewhere in between: it's still an ambient group message, but someone deliberately pulled the user's attention toward it. When surfacing information, honor these distinctions naturally — don't conflate someone posting in a group with someone reaching out to the user directly.
-When a person needs summary of messages , it means the summary of the content of the messages(prefer using ReadMessages tool for this) and not just other statistics like message count. summary generation consists of two steps : reading the message contents and then summarizing their contents
+When a person needs summary of messages/chats , it means the summary of the content of the messages(prefer using ReadMessages tool for this) and not just other statistics like message count. summary generation consists of two steps : reading the message contents and then summarizing their contents
 `.trim()
 
 export const DISPOSITION_SECTION = `
