@@ -107,7 +107,7 @@ export class SyncContactsHandler {
         verifiedName: toStr(c.verifiedName)
       }
 
-      await this.contactService.upsertContact(contactToUpsert).catch((err: unknown) => {
+      await this.contactService.upsertContact(contactToUpsert, { overwriteName: true }).catch((err: unknown) => {
         console.error('[SyncContactsHandler] upsertContact failed:', err)
       })
 

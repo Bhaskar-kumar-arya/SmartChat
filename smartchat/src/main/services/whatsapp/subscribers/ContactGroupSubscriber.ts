@@ -53,7 +53,7 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
         lid: contact.lid ? cleanJid(contact.lid) : undefined,
         phoneNumber: contact.phoneNumber ? cleanJid(contact.phoneNumber) : undefined
       }
-      await this.contactService.upsertContact(cleanContact).catch((err) => {
+      await this.contactService.upsertContact(cleanContact, { overwriteName: true }).catch((err) => {
         console.error('[ContactGroupSubscriber] Failed to upsert contact in onContactUpserted:', err)
       })
 
