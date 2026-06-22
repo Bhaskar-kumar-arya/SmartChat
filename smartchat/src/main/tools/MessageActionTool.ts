@@ -15,10 +15,13 @@ CAN BE USED FOR:
 HOW TO USE:
 - For 'delete' and 'edit', the message must be one of your sent messages.
 - 'messageId' is the unique ID of the message you want to act upon.
-- 'jid' represents the chat where the message resides (for 'delete'/'edit'/'react') or the single destination chat (for 'forward'). If not specified for 'delete', 'edit', or 'react', it will be resolved from the database.
 - For 'edit', provide the new text in 'newText'.
-- For 'forward', specify 'targetJids' (an array of destination JIDs/LIDs) or 'jid' (as a single destination JID/LID).
-- For 'react', specify the emoji to react with in 'reaction' (e.g. "👍", "❤️", "😂"), or an empty string "" to remove the reaction.`;
+- For 'forward', specify 'targetJids' (an array of destination JIDs/LIDs).
+- For 'react', specify the emoji to react with in 'reaction' (e.g. "👍", "❤️", "😂"), or an empty string "" to remove the reaction.
+
+WHAT YOU RECEIVE BACK:
+- For 'delete', 'edit', 'react': { "messageId": "<messageId>" }
+- For 'forward': { "results": [{ "jid": "<jid>", "messageId": "<newForwardedMessageId>" }] }`;
 
   requiresPermission = true;
 
@@ -34,10 +37,6 @@ HOW TO USE:
         type: 'string',
         description: 'The unique message ID to perform the action on.'
       },
-      jid: {
-        type: 'string',
-        description: 'The WhatsApp JID/LID of the chat containing the message (delete/edit/react) or destination chat JID/LID (forward).'
-      },
       newText: {
         type: 'string',
         description: 'Required only for edit. The new text content of the message.'
@@ -45,7 +44,7 @@ HOW TO USE:
       targetJids: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Required only for forward if jid is not specified. An array of destination JIDs or LIDs to forward the message to.'
+        description: 'Required only for forward. An array of destination JIDs or LIDs to forward the message to.'
       },
       reaction: {
         type: 'string',
@@ -63,7 +62,6 @@ HOW TO USE:
   async execute(args: Record<string, unknown>): Promise<unknown> {
     const action = args.action as string | undefined;
     const messageId = args.messageId as string | undefined;
-    const jid = args.jid as string | undefined;
     const newText = args.newText as string | undefined;
     const targetJids = args.targetJids as string[] | undefined;
     const reaction = args.reaction as string | undefined;
@@ -75,19 +73,26 @@ HOW TO USE:
     if (!sock) throw new Error('WhatsApp socket is not connected');
 
     if (action === 'delete') {
-      return await this.messageActionService.deleteMessage(sock, messageId, jid);
+      await this.messageActionService.deleteMessage(sock, messageId);
+      return { messageId };
     } else if (action === 'edit') {
       if (!newText) {
         throw new Error('Missing required argument: newText is required for editing a message');
       }
-      return await this.messageActionService.editMessage(sock, messageId, newText, jid);
+      await this.messageActionService.editMessage(sock, messageId, newText);
+      return { messageId };
     } else if (action === 'forward') {
-      return await this.messageActionService.forwardMessage(sock, messageId, targetJids || [], jid);
+      if (!targetJids || targetJids.length === 0) {
+        throw new Error('Missing required argument: targetJids is required for forwarding a message');
+      }
+      const res = await this.messageActionService.forwardMessage(sock, messageId, targetJids);
+      return { results: res.results };
     } else if (action === 'react') {
       if (reaction === undefined) {
         throw new Error('Missing required argument: reaction is required for reacting to a message');
       }
-      return await this.messageActionService.reactToMessage(sock, messageId, reaction, jid);
+      await this.messageActionService.reactToMessage(sock, messageId, reaction);
+      return { messageId };
     } else {
       throw new Error(`Unknown action: ${action}`);
     }
