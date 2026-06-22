@@ -1,5 +1,9 @@
 import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 
 // ── Mention highlighter for rendered bubbles ──────────────────────────────────
 function escapeRe(s: string) {
@@ -8,14 +12,14 @@ function escapeRe(s: string) {
 
 function renderWithMentions(content: string, mentions: SelectedContext[]): React.ReactNode {
   if (!mentions || mentions.length === 0) {
-    return <ReactMarkdown>{content}</ReactMarkdown>
+    return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{content}</ReactMarkdown>
   }
   const sorted = [...mentions].sort((a, b) => (b.name?.length ?? 0) - (a.name?.length ?? 0))
   const pattern = sorted.map((m) => escapeRe(`@${m.name}`)).join('|')
   const regex = new RegExp(`(${pattern})`, 'g')
   const parts = content.split(regex)
   // If no splits happened, just use markdown
-  if (parts.length === 1) return <ReactMarkdown>{content}</ReactMarkdown>
+  if (parts.length === 1) return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{content}</ReactMarkdown>
 
   return (
     <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
@@ -28,7 +32,6 @@ function renderWithMentions(content: string, mentions: SelectedContext[]): React
     </span>
   )
 }
-import remarkGfm from 'remark-gfm'
 import AIToolCard from './AIToolCard'
 import AISmartInput from './AISmartInput'
 import { AIChatMessage, ToolDefinition } from '../../types/aiTypes'
@@ -116,7 +119,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
             </button>
             {thoughtExpanded && (
               <div className="ai-thought-content">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{thoughtContent}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{thoughtContent}</ReactMarkdown>
               </div>
             )}
           </div>
@@ -178,7 +181,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
             {displayContent && (
               message.role === 'user' && message.mentions && message.mentions.length > 0
                 ? renderWithMentions(displayContent, message.mentions)
-                : <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
+                : <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{displayContent}</ReactMarkdown>
             )}
 
             {message.role === 'user' && (

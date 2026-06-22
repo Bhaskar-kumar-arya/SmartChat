@@ -1,5 +1,8 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { Emoji, EmojiStyle } from 'emoji-picker-react'
 import emojiRegex from 'emoji-regex'
 import { TextMessageProps } from '../../../types/componentProps'
@@ -100,7 +103,8 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
   return (
     <div className="markdown-body">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
         components={{
           a: ({ href, children }: any) => {
             if (href && href.startsWith('mention:')) {
