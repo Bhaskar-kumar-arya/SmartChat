@@ -222,14 +222,18 @@ export class MessageSenderService implements IMessageSenderService {
         if (!processed || 'type' in processed) {
           throw new Error('Failed to process sent message')
         }
+        const meJids = await this.contactService.getMeJids(sock)
+        const isSelfChat = meJids.includes(targetJid)
+        const status = isSelfChat ? 'READ' : 'SENT'
+
         await this.messageRepository.upsertMessage({
           ...processed,
-          status: 'SENT'
+          status
         })
         this.getBus()?.emit('message:status-updated', {
           id: msgId,
           chatJid: targetJid,
-          status: 'SENT'
+          status
         }).catch((err) => {
           console.error('[MessageSenderService] Failed to emit message:status-updated:', err)
         })
@@ -338,15 +342,19 @@ export class MessageSenderService implements IMessageSenderService {
 
         await this.cacheSentMediaFile(processed, finalPathToSend)
 
+        const meJids = await this.contactService.getMeJids(sock)
+        const isSelfChat = meJids.includes(targetJid)
+        const status = isSelfChat ? 'READ' : 'SENT'
+
         await this.messageRepository.upsertMessage({
           ...processed,
-          status: 'SENT'
+          status
         })
 
         this.getBus()?.emit('message:status-updated', {
           id: msgId,
           chatJid: targetJid,
-          status: 'SENT'
+          status
         }).catch((err) => {
           console.error('[MessageSenderService] Failed to emit status update event:', err)
         })

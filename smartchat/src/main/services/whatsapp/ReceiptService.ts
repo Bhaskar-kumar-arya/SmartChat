@@ -87,8 +87,10 @@ export class ReceiptService implements IReceiptService {
 
     const remoteJid = cleanJid(key.remoteJid || '')
     const userJid = cleanJid(receipt?.userJid || remoteJid) // Default to remoteJid for DMs
+    const isUserSelf: boolean = await this.isSelfReceipt(userJid, sock)
+    const isRemoteSelf: boolean = await this.isSelfReceipt(remoteJid, sock)
 
-    if (await this.isSelfReceipt(userJid, sock)) {
+    if (isUserSelf && !isRemoteSelf) {
       return
     }
 

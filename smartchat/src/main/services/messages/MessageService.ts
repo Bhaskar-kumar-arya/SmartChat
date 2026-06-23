@@ -265,9 +265,14 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     )
     const identityMap = await this.contactService.batchGetIdentityIds(participantJids)
 
+    const meJids = await this.contactService.getMeJids()
     const allRows = parsed.map(p => {
       const senderId = p.fromMe ? null : (identityMap.get(p.participantString!) ?? null)
-      return this.parser.toDbRow(p, senderId)
+      const row = this.parser.toDbRow(p, senderId)
+      if (meJids.includes(p.chatJid)) {
+        row.status = 'READ'
+      }
+      return row
     })
 
     const existingIds = await this.queryRepository.findExistingIds(allRows.map(r => r.id))

@@ -3,6 +3,7 @@ import { ProcessedMessage } from '../../../domain/db.types'
 import { ProtocolResult } from '../../whatsapp/types'
 import { mapBaileysStatus } from '../../whatsapp/ReceiptService'
 import { IMessageProcessingContext, IMessageProcessorStrategy, IMessageServiceDependencyAccessor } from './IMessageProcessorStrategy'
+import { cleanJid } from '../../../utils/jidUtils'
 
 export class StandardMessageProcessor implements IMessageProcessorStrategy {
   readonly requiresChat = true
@@ -16,7 +17,12 @@ export class StandardMessageProcessor implements IMessageProcessorStrategy {
     dependencies: IMessageServiceDependencyAccessor
   ): Promise<ProcessedMessage | ProtocolResult | null> {
     const isDeleted = context.msg.messageStubType === WAMessageStubType.REVOKE
-    const status = mapBaileysStatus(context.msg.status)
+    
+    const myId = context.sock?.user?.id ? cleanJid(context.sock.user.id) : null
+    const myLid = context.sock?.user?.lid ? cleanJid(context.sock.user.lid) : null
+    const cleanedRemote = cleanJid(context.remoteJid)
+    const isSelfChat = (myId && cleanedRemote === myId) || (myLid && cleanedRemote === myLid)
+    const status = isSelfChat ? 'READ' : mapBaileysStatus(context.msg.status)
 
     await dependencies.repository.upsertMessage({
       id: context.msg.key.id!,
@@ -53,7 +59,7 @@ export class StandardMessageProcessor implements IMessageProcessorStrategy {
       content: JSON.stringify(context.rawMessage ?? {}),
       isDeleted: isDeletedResult,
       isEdited: false,
-      status: mapBaileysStatus(context.msg.status)
+      status
     }
   }
 }
