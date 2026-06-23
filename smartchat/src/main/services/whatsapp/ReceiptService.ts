@@ -1,7 +1,7 @@
 import { cleanJid } from '../../utils/jidUtils'
 import { parseBaileysTimestamp } from '../../utils/messageUtils'
 import { MessageReceiptUpdate, BaileysMessage } from './types'
-import { IContactNameResolver, ISocketUserContext } from '../contacts/IContactService'
+import { IContactNameResolver, ISocketUserContext, IContactQueryService } from '../contacts/IContactService'
 import { IWAEventBus } from './IWAEventBus'
 import { IReceiptService } from './IReceiptService'
 import { IReceiptRepository } from '../messages/IReceiptRepository'
@@ -35,7 +35,7 @@ export class ReceiptService implements IReceiptService {
 
   constructor(
     private receiptRepository: IReceiptRepository,
-    private contactService: IContactNameResolver,
+    private contactService: IContactNameResolver & IContactQueryService,
     private getBus: () => IWAEventBus | null
   ) {}
 
@@ -79,7 +79,7 @@ export class ReceiptService implements IReceiptService {
    */
   public async processMessageReceipt(
     update: MessageReceiptUpdate,
-    _sock: ISocketUserContext | null
+    sock: ISocketUserContext | null
   ): Promise<void> {
     const { key, receipt } = update
     const messageId = key?.id
@@ -87,6 +87,10 @@ export class ReceiptService implements IReceiptService {
 
     const remoteJid = cleanJid(key.remoteJid || '')
     const userJid = cleanJid(receipt?.userJid || remoteJid) // Default to remoteJid for DMs
+
+    if (await this.isSelfReceipt(userJid, sock)) {
+      return
+    }
 
     const isRead = !!receipt?.readTimestamp
     const isDelivered = !!receipt?.receiptTimestamp && !isRead
@@ -220,5 +224,18 @@ export class ReceiptService implements IReceiptService {
       })
     }
     return result
+  }
+
+  private async isSelfReceipt(
+    userJid: string,
+    sock: ISocketUserContext | null
+  ): Promise<boolean> {
+    try {
+      const meJids = await this.contactService.getMeJids(sock)
+      return meJids.includes(userJid)
+    } catch (err) {
+      console.error('[ReceiptService] Failed to check if self receipt:', err)
+      return false
+    }
   }
 }
