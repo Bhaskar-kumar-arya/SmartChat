@@ -26,8 +26,8 @@ This document maps the architectural boundaries, public interfaces, internal mod
 
 ## `services/messages/`
 - **Purpose:** Controls message persistence, query parsing, enrichment, reaction tracking, receipt processing, sticker management, and formatters.
-- **Public exports (`index.ts`):** None (unformalized empty barrel).
-- **Internal only:** `MessageService.ts`, `MessageParser.ts`, `MessageEnricher.ts`, `MessageIdentityResolver.ts`, `processors/` (`IMessageProcessorStrategy` and concrete processors), `formatters/` (`MessageFormatter`, `MessageFormatterRegistry` and concrete formatters), `MediaService.ts`, `MessageActionService.ts`, `FavoriteStickerService.ts`, repository implementations/interfaces (`Message`, `MessageQuery`, `MessageVector`, `Receipt`, `Reaction`), and service interfaces (`IMessage*Service`).
+- **Public exports (`index.ts`):** `IMessageSenderService` — contract for optimistic message sending.
+- **Internal only:** `MessageService.ts`, `MessageParser.ts`, `MessageEnricher.ts`, `MessageIdentityResolver.ts`, `processors/` (`IMessageProcessorStrategy` and concrete processors), `formatters/` (`MessageFormatter`, `MessageFormatterRegistry` and concrete formatters), `MediaService.ts`, `MessageActionService.ts`, `MessageSenderService.ts`, `FavoriteStickerService.ts`, repository implementations/interfaces (`Message`, `MessageQuery`, `MessageVector`, `Receipt`, `Reaction`), and service interfaces (`IMessage*Service`).
 - **Consumes:** `services/contacts/`, `services/search/`, `services/whatsapp/`
 - **Consumed by:** `services/search/`, `services/whatsapp/`, `services/notification/`
 
