@@ -59,8 +59,49 @@ export class BaileysPatcher {
       } else {
         console.log('[BaileysPatcher] chat-utils.js is already fully patched.');
       }
+
+      // 3. Patch decode-wa-message.js to preserve messageContextInfo for deviceSentMessage
+      const possibleDecodeMessagePaths = [
+        path.join(process.cwd(), 'node_modules', '@whiskeysockets', 'baileys', 'lib', 'Utils', 'decode-wa-message.js'),
+        path.join(__dirname, '..', '..', '..', 'node_modules', '@whiskeysockets', 'baileys', 'lib', 'Utils', 'decode-wa-message.js')
+      ];
+
+      let targetDecodePath: string | null = null;
+      for (const p of possibleDecodeMessagePaths) {
+        if (fs.existsSync(p)) {
+          targetDecodePath = p;
+          break;
+        }
+      }
+
+      if (targetDecodePath) {
+        let decodeContent = fs.readFileSync(targetDecodePath, 'utf8');
+        let decodeModified = false;
+
+        const regex = /(\s*)let msg = proto\.Message\.decode\(e2eType !== 'plaintext' \? unpadRandomMax16\(msgBuffer\) : msgBuffer\);\r?\n\s*msg = msg\.deviceSentMessage\?\.message \|\| msg;/;
+        if (regex.test(decodeContent) && !decodeContent.includes('const messageContextInfo = msg.messageContextInfo;')) {
+          const replacement = `$1let msg = proto.Message.decode(e2eType !== 'plaintext' ? unpadRandomMax16(msgBuffer) : msgBuffer);
+$1const messageContextInfo = msg.messageContextInfo;
+$1msg = msg.deviceSentMessage?.message || msg;
+$1if (messageContextInfo) {
+$1    msg.messageContextInfo = messageContextInfo;
+$1}`;
+          decodeContent = decodeContent.replace(regex, replacement);
+          console.log('[BaileysPatcher] Successfully patched decode-wa-message.js to preserve messageContextInfo.');
+          decodeModified = true;
+        }
+
+        if (decodeModified) {
+          fs.writeFileSync(targetDecodePath, decodeContent, 'utf8');
+        } else {
+          console.log('[BaileysPatcher] decode-wa-message.js is already fully patched.');
+        }
+      } else {
+        console.warn('[BaileysPatcher] Could not locate decode-wa-message.js to apply patches.');
+      }
+
     } catch (error) {
-      console.error('[BaileysPatcher] Error applying patches to chat-utils.js:', error);
+      console.error('[BaileysPatcher] Error applying patches:', error);
     }
   }
 }

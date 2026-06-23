@@ -56,7 +56,7 @@ export class SecretMessageService implements ISecretMessageService {
     }
 
     const sender = msg.key?.participant || msg.key?.remoteJid || ''
-    const decryptedBytes = this.tryDecrypt(envelope, messageSecret, targetKey.id, sender, strategy.getSigningLabel())
+    const decryptedBytes = this.tryDecrypt(envelope, messageSecret, targetKey.id, sender, strategy.getSigningLabel(), msg.key, sock)
     if (!decryptedBytes) return null
 
     const context: SecretMessageContext = {
@@ -113,7 +113,9 @@ export class SecretMessageService implements ISecretMessageService {
     messageSecret: Buffer,
     targetId: string,
     sender: string,
-    label: string
+    label: string,
+    msgKey: proto.IMessageKey | null | undefined,
+    sock: ISocketUserContext | null
   ): Uint8Array | null {
     try {
       return this.decryptPayload(
@@ -122,7 +124,9 @@ export class SecretMessageService implements ISecretMessageService {
         messageSecret,
         targetId,
         sender,
-        label
+        label,
+        msgKey,
+        sock
       )
     } catch (err: unknown) {
       console.error(`[SecretMessageService] Decryption failed for target ${targetId}:`, err)
@@ -146,17 +150,20 @@ export class SecretMessageService implements ISecretMessageService {
     secret: Uint8Array,
     targetId: string,
     rawSender: string,
-    label: string
+    label: string,
+    msgKey: proto.IMessageKey | null | undefined,
+    sock: ISocketUserContext | null
   ): Uint8Array {
-    const attemptDecryption = (sender: string) => {
+    const attemptDecryption = (jidSender: string, jidRecipient: string): Uint8Array => {
       const toBinary = (txt: string) => Buffer.from(txt)
-      const senderBuf = toBinary(sender)
+      const senderBuf = toBinary(jidSender)
+      const recipientBuf = toBinary(jidRecipient)
 
-      // Construct signing input using dynamic strategy label
+      // Construct signing input using dynamic strategy label and distinct sender/recipient JIDs
       const sign = Buffer.concat([
         toBinary(targetId),
         senderBuf,
-        senderBuf,
+        recipientBuf,
         toBinary(label),
         new Uint8Array([1])
       ])
@@ -167,20 +174,69 @@ export class SecretMessageService implements ISecretMessageService {
       return aesDecryptGCM(encPayload, decKey, encIv, new Uint8Array(0))
     }
 
-    try {
-      return attemptDecryption(rawSender)
-    } catch (err: unknown) {
-      const cleaned = cleanJid(rawSender)
-      if (cleaned !== rawSender) {
-        try {
-          return attemptDecryption(cleaned)
-        } catch (retryErr: unknown) {
-          const retryErrMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
-          throw new Error(`Failed to decrypt secret message with both raw and cleaned sender JIDs: ${retryErrMsg}`)
-        }
-      }
-      throw err
+    // Collect all candidate JIDs
+    const candidates = new Set<string>()
+    if (rawSender) {
+      candidates.add(rawSender)
+      candidates.add(cleanJid(rawSender))
     }
+    if (msgKey) {
+      if (msgKey.remoteJid) {
+        candidates.add(msgKey.remoteJid)
+        candidates.add(cleanJid(msgKey.remoteJid))
+      }
+      if (msgKey.participant) {
+        candidates.add(msgKey.participant)
+        candidates.add(cleanJid(msgKey.participant))
+      }
+    }
+    if (sock?.user) {
+      if (sock.user.id) {
+        candidates.add(sock.user.id)
+        candidates.add(cleanJid(sock.user.id))
+      }
+      const myLid = (sock.user as { lid?: string })?.lid
+      if (myLid) {
+        candidates.add(myLid)
+        candidates.add(cleanJid(myLid))
+      }
+    }
+
+    const jidList = Array.from(candidates)
+    const pairs: [string, string][] = []
+
+    // 1. Try original pattern: sender = rawSender, recipient = rawSender
+    pairs.push([rawSender, rawSender])
+
+    // 2. Try cleaned original pattern: sender = clean(rawSender), recipient = clean(rawSender)
+    const cleanedRawSender = cleanJid(rawSender)
+    if (cleanedRawSender !== rawSender) {
+      pairs.push([cleanedRawSender, cleanedRawSender])
+    }
+
+    // 3. Try all combination pairs
+    for (const j1 of jidList) {
+      for (const j2 of jidList) {
+        if (pairs.some(([s, r]) => s === j1 && r === j2)) {
+          continue
+        }
+        pairs.push([j1, j2])
+      }
+    }
+
+    let lastError: unknown = null
+    for (const [js, jr] of pairs) {
+      try {
+        const decrypted = attemptDecryption(js, jr)
+        console.log(`[SecretMessageService] Successfully decrypted using pair: sender=${js}, recipient=${jr}`)
+        return decrypted
+      } catch (err: unknown) {
+        lastError = err
+      }
+    }
+
+    const errorInstance = lastError instanceof Error ? lastError : new Error(String(lastError))
+    throw errorInstance
   }
 
   private getBufferFromSecret(rawSecret: unknown): Buffer | null {
