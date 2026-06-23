@@ -1,31 +1,21 @@
 import { IContactNameResolver, IContactQueryService } from '../contacts/IContactService'
 import { IIdentityRepository } from '../contacts/IIdentityRepository'
-import { join } from 'path'
 import { IMessageProcessingService } from './IMessageProcessingService'
-import { IMessageParserService } from './IMessageParserService'
 import { IMessageQueryService } from './IMessageQueryService'
 import { IMessageWriteRepository } from './IMessageRepository'
 import { IMessageCompoundRepository } from './IMessageCompoundRepository'
 import { IReactionRepository } from './IReactionRepository'
 import { IMessageReadRepository } from './IMessageQueryRepository'
 import { IChatService } from '../chats/IChatService'
-import { AnyMessageContent } from '@whiskeysockets/baileys'
-import { MediaMessageWithLocalUri, WAMessageContent, WAContextInfo, parseProtoMessage } from '../whatsapp/types'
+import { WAMessageContent, parseProtoMessage } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { cleanJid } from '../../utils/jidUtils'
-import { unwrapMessage } from '../../utils/messageUtils'
 import type { IWAEventBus } from '../whatsapp/IWAEventBus'
-import { stickerMetadataService } from './StickerMetadataService'
-import { getMediaSendOptions } from './MediaHelper'
-import { LocalFileStorage } from '../storage/LocalFileStorage'
 import { IMessageActionService, IMessageActionSocket } from './IMessageActionService'
-import { ProcessedMessage } from '../../domain/db.types'
+import { IMessageSenderService } from './IMessageSenderService'
 
 
 const JID_SUFFIX_GROUP = '@g.us'
-const JID_SUFFIX_LID = '@lid'
-const APP_FAVOURITES_PREFIX = 'app://favourites/'
-const APP_MEDIA_PREFIX = 'app://media/'
 
 /**
  * Service for orchestrating message action workflows (delete, edit, forward, react, send).
@@ -34,7 +24,6 @@ const APP_MEDIA_PREFIX = 'app://media/'
  * - Methods throw Error on any logical, network, or validation failures.
  */
 export class MessageActionService implements IMessageActionService {
-  private readonly fileStorage: LocalFileStorage
 
   constructor(
     private readonly messageRepository: IMessageWriteRepository & IMessageCompoundRepository,
@@ -43,15 +32,11 @@ export class MessageActionService implements IMessageActionService {
     private readonly identityRepository: IIdentityRepository,
     private readonly contactService: IContactNameResolver & IContactQueryService,
     private readonly messageProcessingService: IMessageProcessingService,
-    private readonly messageParserService: IMessageParserService,
     private readonly messageQueryService: IMessageQueryService,
     private readonly chatService: IChatService,
     private readonly getBus: () => IWAEventBus | null,
-    fileStorage?: LocalFileStorage
-  ) {
-    // Allow injection for testing; default to concrete adapter for production
-    this.fileStorage = fileStorage ?? new LocalFileStorage()
-  }
+    private readonly messageSenderService: IMessageSenderService
+  ) {}
 
   /**
    * Deletes (revokes) a message.
@@ -325,44 +310,6 @@ export class MessageActionService implements IMessageActionService {
     };
   }
 
-  private async buildQuotedContextInfo(
-    quotedMsgId: string,
-    targetJid: string,
-    sock: IMessageActionSocket
-  ): Promise<WAContextInfo | undefined> {
-    const qm = await this.messageQueryRepository.findMessageById(quotedMsgId)
-    if (!qm || !qm.content) return undefined
-
-    try { 
-      const rawQuoted = JSON.parse(qm.content)
-      const msgType = Object.keys(rawQuoted)[0]
-      if (msgType && rawQuoted[msgType] && typeof rawQuoted[msgType] === 'object') {
-        delete rawQuoted[msgType].contextInfo
-      }
-      const quotedMessage = parseProtoMessage(rawQuoted)
-
-      let participant = qm.participant ? cleanJid(qm.participant) : undefined
-      if (qm.fromMe) {
-        participant = targetJid.endsWith(JID_SUFFIX_LID) && sock.user?.lid 
-          ? cleanJid(sock.user.lid) 
-          : (sock.user?.id ? cleanJid(sock.user.id) : undefined)
-      } else if (!targetJid.endsWith(JID_SUFFIX_GROUP)) {
-        participant = targetJid
-      }
-
-      if (participant) {
-        return {
-          stanzaId: quotedMsgId,
-          participant: cleanJid(participant),
-          quotedMessage
-        }
-      }
-    } catch (e) {
-      console.error('[buildQuotedContextInfo] Failed to construct contextInfo:', e)
-    }
-    return undefined
-  }
-
   /**
    * Orchestrates the complete text message sending workflow, including quoted keys, database logs, and UI notifications.
    */
@@ -373,71 +320,7 @@ export class MessageActionService implements IMessageActionService {
     quotedMsgId?: string,
     mentions?: string[]
   ): Promise<EnrichedMessage> {
-    const targetJid = await this.contactService.resolveLidFromJid(jid)
-    const contextInfo = quotedMsgId ? await this.buildQuotedContextInfo(quotedMsgId, targetJid, sock) : undefined
-
-    const messageContent: Extract<AnyMessageContent, { text: string }> = { text }
-    if (mentions && mentions.length > 0) messageContent.mentions = mentions
-    if (contextInfo) messageContent.contextInfo = contextInfo
-
-    const sentMsg = await sock.sendMessage(targetJid, messageContent)
-    if (!sentMsg) throw new Error('Failed to send message')
-
-    const processed = await this.messageProcessingService.processMessage(sentMsg, sock)
-    if (!processed || 'type' in processed) {
-      throw new Error('Failed to process sent message')
-    }
-    await this.chatService.updateTimestamp(targetJid, processed.timestamp)
-
-    const nameMap = await this.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
-    const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap)
-    this.getBus()?.emit('message:incoming', {
-      chatJid: enriched.chatJid,
-      senderJid: cleanJid(enriched.participant || enriched.chatJid),
-      messageType: enriched.messageType,
-      textContent: processed.textContent,
-      fromMe: enriched.fromMe,
-      timestamp: BigInt(enriched.timestamp),
-      processed: processed,
-      sock
-    }).catch((err) => {
-      console.error('[MessageActionService] Failed to emit message:incoming event:', err)
-    })
-    return enriched
-  }
-
-  private async cacheSentMediaFile(processed: ProcessedMessage, finalPathToSend: string): Promise<void> {
-    const parsedContent = JSON.parse(processed.content)
-    const unwrapped = unwrapMessage(parsedContent)
-    const mediaType = 
-      unwrapped.imageMessage ? 'image' :
-      unwrapped.stickerMessage ? 'sticker' :
-      unwrapped.videoMessage ? 'video' :
-      unwrapped.documentMessage ? 'document' :
-      unwrapped.audioMessage ? 'audio' : null
-
-    const mediaMsg = unwrapped.imageMessage || unwrapped.stickerMessage || unwrapped.videoMessage || unwrapped.documentMessage || unwrapped.audioMessage
-
-    if (mediaType && mediaMsg) {
-      try {
-        const mediaDir = this.fileStorage.getMediaDir()
-        this.fileStorage.ensureDir(mediaDir)
-
-        const fileName = this.messageParserService.getSafeMediaFileName(processed.id, mediaType, mediaMsg)
-        const cachedFilePath = join(mediaDir, fileName)
-
-        this.fileStorage.copyFile(finalPathToSend, cachedFilePath)
-
-        ;(mediaMsg as MediaMessageWithLocalUri).localURI = `${APP_MEDIA_PREFIX}${fileName}`
-
-        const updatedContent = JSON.stringify(parsedContent)
-        await this.messageRepository.updateMessageContent(processed.id, updatedContent)
-
-        processed.content = updatedContent
-      } catch (err: unknown) {
-        console.error('[MessageActionService] Failed to cache sent media file:', err)
-      }
-    }
+    return this.messageSenderService.sendMessageWorkflow(sock, jid, text, quotedMsgId, mentions)
   }
 
   /**
@@ -451,62 +334,7 @@ export class MessageActionService implements IMessageActionService {
     quotedMsgId?: string,
     mentions?: string[]
   ): Promise<EnrichedMessage> {
-    const targetJid = await this.contactService.resolveLidFromJid(jid)
-    const contextInfo = quotedMsgId ? await this.buildQuotedContextInfo(quotedMsgId, targetJid, sock) : undefined
-
-    const isAppUri = filePath.startsWith(APP_FAVOURITES_PREFIX) || filePath.startsWith(APP_MEDIA_PREFIX)
-    let finalPathToSend = isAppUri ? this.fileStorage.resolveMediaPath(filePath) : filePath
-    const isAlreadyProcessed = isAppUri
-
-    let isTempFile = false
-    const isSticker = finalPathToSend.toLowerCase().endsWith('.webp')
-    if (isSticker && !isAlreadyProcessed) {
-      try {
-        finalPathToSend = await stickerMetadataService.processAndAddMetadata(finalPathToSend)
-        isTempFile = true
-      } catch (err: unknown) {
-        console.error('[MessageActionService] Failed to process sticker metadata:', err)
-      }
-    }
-
-    const buffer = this.fileStorage.readFile(finalPathToSend)
-    const sendOptions = getMediaSendOptions(finalPathToSend, buffer, caption)
-    if (mentions && mentions.length > 0) sendOptions.mentions = mentions
-    if (contextInfo) sendOptions.contextInfo = contextInfo
-
-    const sentMsg = await sock.sendMessage(targetJid, sendOptions as unknown as AnyMessageContent)
-    if (!sentMsg) {
-      if (isTempFile) this.fileStorage.deleteFile(finalPathToSend)
-      throw new Error('Failed to send media message')
-    }
-
-    const processed = await this.messageProcessingService.processMessage(sentMsg, sock)
-    if (!processed || 'type' in processed) {
-      if (isTempFile) this.fileStorage.deleteFile(finalPathToSend)
-      throw new Error('Failed to process sent message')
-    }
-
-    await this.cacheSentMediaFile(processed, finalPathToSend)
-
-    if (isTempFile) this.fileStorage.deleteFile(finalPathToSend)
-
-    await this.chatService.updateTimestamp(targetJid, processed.timestamp)
-    
-    const nameMap = await this.contactService.batchResolveNames([processed.participant || targetJid, ...(mentions || [])], sock)
-    const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap)
-    this.getBus()?.emit('message:incoming', {
-      chatJid: enriched.chatJid,
-      senderJid: cleanJid(enriched.participant || enriched.chatJid),
-      messageType: enriched.messageType,
-      textContent: processed.textContent,
-      fromMe: enriched.fromMe,
-      timestamp: BigInt(enriched.timestamp),
-      processed: processed,
-      sock
-    }).catch((err) => {
-      console.error('[MessageActionService] Failed to emit message:incoming event:', err)
-    })
-    return enriched
+    return this.messageSenderService.sendMediaMessageWorkflow(sock, jid, filePath, caption, quotedMsgId, mentions)
   }
 
 }

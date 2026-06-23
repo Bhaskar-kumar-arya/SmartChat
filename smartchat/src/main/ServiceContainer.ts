@@ -34,6 +34,8 @@ import { MessageParser } from './services/messages/MessageParser'
 import { MessageEnricher } from './services/messages/MessageEnricher'
 import { MessageActionService } from './services/messages/MessageActionService'
 import { IMessageActionService } from './services/messages/IMessageActionService'
+import { MessageSenderService } from './services/messages/MessageSenderService'
+import { IMessageSenderService } from './services/messages/IMessageSenderService'
 import { MediaService } from './services/messages/MediaService'
 import { IMediaService } from './services/messages/IMediaService'
 import { MessageIdentityResolver } from './services/messages/MessageIdentityResolver'
@@ -240,8 +242,18 @@ export function createServices(
     messageIdentityResolver,
     messageProcessors
   )
+  const messageSenderService = new MessageSenderService(
+    messageRepository,
+    messageQueryRepository,
+    contactService,
+    messageService,
+    messageService,
+    messageService,
+    chatService,
+    getBus
+  )
   const messageActionService = new MessageActionService(
-    messageRepository, reactionRepository, messageQueryRepository, identityRepository, contactService, messageService, messageService, messageService, chatService, getBus
+    messageRepository, reactionRepository, messageQueryRepository, identityRepository, contactService, messageService, messageService, chatService, getBus, messageSenderService
   )
   const mediaService = new MediaService(
     messageRepository, messageQueryRepository, messageService, messageService, contactService, favoriteStickerService
@@ -301,6 +313,7 @@ export function createServices(
     messageProcessingService: messageService,
     messageParserService: messageService,
     messageActionService,
+    messageSenderService,
     mediaService,
     searchService,
     toolRegistry,
@@ -352,6 +365,7 @@ export type ServiceContainer = {
   messageProcessingService: IMessageProcessingService
   messageParserService: IMessageParserService
   messageActionService: IMessageActionService
+  messageSenderService: IMessageSenderService
   mediaService: IMediaService
   searchService: ISearchService
   toolRegistry: IToolRegistry
