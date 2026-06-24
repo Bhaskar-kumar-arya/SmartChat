@@ -9,12 +9,14 @@ import { MessageItem } from '../../types/chatTypes'
 import { ProfilePicture } from '../common/ProfilePicture'
 import { ProfilePicOverlay } from '../common/ProfilePicOverlay'
 import { AIChatSidebar } from '../ai'
+import ChatSearchSidebar from './ChatSearchSidebar'
 import '../../styles/sidebar.css'
 import { useDragAndDrop } from '../../hooks/useDragAndDrop'
 import { useMultiFileQueue } from '../../hooks/useMultiFileQueue'
 import DragDropOverlay from './DragDropOverlay'
 import MultiFilePreview from './MultiFilePreview'
 import { EmojiText } from '../common/EmojiText'
+import { useSidebarResize } from './hooks/useSidebarResize'
 
 export default function ChatLayout() {
   const api = useAPI()
@@ -26,32 +28,16 @@ export default function ChatLayout() {
   const [overlayName, setOverlayName] = useState<string>('')
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
   const [isAIOpen, setIsAIOpen] = useState<boolean>(false)
-  const [sidebarWidth, setSidebarWidth] = useState<number>(500)
-
-  const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
-    mouseDownEvent.preventDefault()
-    const startX = mouseDownEvent.clientX
-    const startWidth = sidebarWidth
-
-    const onMouseMove = (mouseMoveEvent: MouseEvent) => {
-      const delta = startX - mouseMoveEvent.clientX
-      const newWidth = Math.min(Math.max(startWidth + delta, 300), 800)
-      setSidebarWidth(newWidth)
-    }
-
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-    }
-
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }, [sidebarWidth])
+  const [isChatSearchOpen, setIsChatSearchOpen] = useState<boolean>(false)
+  const { sidebarWidth, startResizing } = useSidebarResize(500)
 
   const {
     messages,
     loading: loadingMessages,
+    isJumping,
     loadMore,
+    loadInitialMessages,
+    jumpToMessage,
     handleDownloadMedia,
     sendMessage,
     sendMediaMessage,
@@ -145,34 +131,46 @@ export default function ChatLayout() {
     setOverlayName(name)
   }, [])
 
-  const handleReply = useCallback((msg: MessageItem) => {
-    setReplyingTo(msg)
-  }, [])
+  const handleReply = useCallback((msg: MessageItem) => setReplyingTo(msg), [])
+  const handleTargetScrolled = useCallback(() => setTargetMessageId(null), [])
+  const handleCancelReply = useCallback(() => setReplyingTo(null), [])
+  const handleCloseAI = useCallback(() => setIsAIOpen(false), [])
+  const handleCloseSearch = useCallback(() => setIsChatSearchOpen(false), [])
+  const handleCloseOverlay = useCallback(() => setOverlayJid(null), [])
 
-  const handleTargetScrolled = useCallback(() => {
-    setTargetMessageId(null)
-  }, [])
+  // Jump to a specific message efficiently using the backend anchor query.
+  // Sidebar stays open so users can jump between multiple results.
+  const handleSelectSearchMessage = useCallback(async (messageId: string) => {
+    await jumpToMessage(messageId)
+    setTargetMessageId(messageId)
+  }, [jumpToMessage])
 
-  const handleCancelReply = useCallback(() => {
-    setReplyingTo(null)
-  }, [])
-
-  const handleCloseAI = useCallback(() => {
-    setIsAIOpen(false)
-  }, [])
+  // Restore the most-recent messages view after a jump
+  const handleJumpToLatest = useCallback(async () => {
+    if (activeJid) {
+      setTargetMessageId(null)
+      await loadInitialMessages(activeJid)
+    }
+  }, [activeJid, loadInitialMessages])
 
   const handleToggleAI = useCallback(() => {
-    setIsAIOpen((prev) => !prev)
+    setIsAIOpen((prev) => {
+      const next = !prev
+      if (next) setIsChatSearchOpen(false)
+      return next
+    })
   }, [])
 
-  const handleCloseOverlay = useCallback(() => {
-    setOverlayJid(null)
+  const handleToggleSearch = useCallback(() => {
+    setIsChatSearchOpen((prev) => {
+      const next = !prev
+      if (next) setIsAIOpen(false)
+      return next
+    })
   }, [])
 
   const handleHeaderProfileClick = useCallback(() => {
-    if (activeJid) {
-      openOverlay(activeJid, activeName)
-    }
+    if (activeJid) openOverlay(activeJid, activeName)
   }, [activeJid, activeName, openOverlay])
 
   return (
@@ -202,10 +200,23 @@ export default function ChatLayout() {
                 )}
                 {!activePresenceText && <p className="chat-header-jid">{activeJid}</p>}
               </div>
+              <div className="chat-header-actions">
+                <button
+                  className={`search-header-btn ${isChatSearchOpen ? 'active' : ''}`}
+                  onClick={handleToggleSearch}
+                  title="Search messages"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <MessageView
               messages={messages}
               loading={loadingMessages}
+              isJumping={isJumping}
               onLoadMore={loadMore}
               onReply={handleReply}
               onEdit={editMessage}
@@ -213,6 +224,8 @@ export default function ChatLayout() {
               onDownloadMedia={handleDownloadMedia}
               targetMessageId={targetMessageId}
               onTargetScrolled={handleTargetScrolled}
+              onScrollToMessage={handleSelectSearchMessage}
+              onJumpToLatest={handleJumpToLatest}
             />
             <MessageInput
               onSend={handleSendMessage}
@@ -247,7 +260,7 @@ export default function ChatLayout() {
         )}
       </div>
 
-      {isAIOpen && (
+      {(isAIOpen || isChatSearchOpen) && (
         <div
           className="ai-sidebar-resizer"
           onMouseDown={startResizing}
@@ -255,6 +268,16 @@ export default function ChatLayout() {
       )}
 
       <AIChatSidebar isOpen={isAIOpen} onClose={handleCloseAI} />
+
+      {activeJid && (
+        <ChatSearchSidebar
+          activeJid={activeJid}
+          activeName={activeName}
+          isOpen={isChatSearchOpen}
+          onClose={handleCloseSearch}
+          onSelectMessage={handleSelectSearchMessage}
+        />
+      )}
 
       <button
         className={`ai-edge-tab ${isAIOpen ? 'open' : ''}`}

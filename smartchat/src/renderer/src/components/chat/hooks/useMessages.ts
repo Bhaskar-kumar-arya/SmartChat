@@ -12,6 +12,7 @@ export const useMessages = (activeJid: string | null) => {
   const api = useAPI()
   const [messages, setMessages] = useState<MessageItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [isJumping, setIsJumping] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
 
@@ -60,6 +61,27 @@ export const useMessages = (activeJid: string | null) => {
       return 0
     }
   }, [activeJid, currentPage, hasMore, loading])
+
+  /**
+   * Replace the message list with a slice anchored at a specific message.
+   * Uses the efficient backend query instead of paginating page-by-page.
+   * Falls back to loadInitialMessages on error.
+   */
+  const jumpToMessage = useCallback(async (messageId: string) => {
+    if (!activeJid) return
+    setIsJumping(true)
+    try {
+      const msgs = await api.getMessagesAround(activeJid, messageId)
+      setMessages(msgs)
+      setCurrentPage(1)
+      setHasMore(true)
+    } catch (err) {
+      console.error('[useMessages] jumpToMessage failed, falling back:', err)
+      await loadInitialMessages(activeJid)
+    } finally {
+      setIsJumping(false)
+    }
+  }, [activeJid, loadInitialMessages])
 
   const handleDownloadMedia = async (msgId: string) => {
     try {
@@ -218,8 +240,11 @@ export const useMessages = (activeJid: string | null) => {
   return {
     messages,
     loading,
+    isJumping,
     hasMore,
     loadMore,
+    loadInitialMessages,
+    jumpToMessage,
     handleDownloadMedia,
     sendMessage,
     sendMediaMessage,

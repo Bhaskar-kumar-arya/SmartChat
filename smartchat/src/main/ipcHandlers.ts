@@ -52,6 +52,10 @@ function registerChatAndMessageHandlers(
     return services.messageQueryService.getChatMessages(jid, page, pageSize, getSock())
   })
 
+  ipcMain.handle('get-messages-around', async (_event, jid: string, messageId: string, lookBehind: number = 20) => {
+    return services.messageQueryService.getMessagesAroundId(jid, messageId, lookBehind, getSock())
+  })
+
   ipcMain.handle('send-message', async (_event, jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => {
     const sock = getSock()
     if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')

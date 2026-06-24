@@ -21,6 +21,8 @@ interface DBMessageWithChatAndSender {
   textContent?: string | null
   timestamp?: bigint | null
   sender?: unknown
+  fromMe: boolean
+  participant?: string | null
   chat?: {
     name?: string | null
     type?: string | null
@@ -53,43 +55,47 @@ export class SearchService implements ISearchService {
     filters?: SearchFilters
   ): Promise<SearchResults> {
     const q = query.trim()
-    if (!q) return { chats: [], messages: [] }
+    const hasFilters = !!(filters?.jids?.length || filters?.fromDate || filters?.toDate)
+    if (!q && !hasFilters) return { chats: [], messages: [] }
 
     // ── 1. Search chats ────────────────────────────────────────────────────────
-    const allChats = await this.chatRepository.findChats(filters?.jids)
-    
-    // We only need to resolve names for DMs that lack a name
-    const jidsToResolve = allChats.filter(c => !c.name && c.type === 'DM').map(c => c.jid)
-    const nameMap = await this.contactService.batchResolveNames(jidsToResolve, sock)
+    let chatResults: SearchResultItem[] = []
+    if (q) {
+      const allChats = await this.chatRepository.findChats(filters?.jids)
+      
+      // We only need to resolve names for DMs that lack a name
+      const jidsToResolve = allChats.filter(c => !c.name && c.type === 'DM').map(c => c.jid)
+      const nameMap = await this.contactService.batchResolveNames(jidsToResolve, sock)
 
-    const matchingChats = allChats.filter((chat) => {
-      const name = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0]
-      return (
-        name.toLowerCase().includes(q.toLowerCase()) ||
-        chat.jid.toLowerCase().includes(q.toLowerCase())
-      )
-    })
-
-    const chatResults: SearchResultItem[] = await Promise.all(
-      matchingChats.map(async (chat) => {
+      const matchingChats = allChats.filter((chat) => {
         const name = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0]
-        const lastMsg = await this.messageRepository.findLastMessage(chat.jid)
-        return {
-          type: 'chat' as const,
-          jid: chat.jid,
-          name,
-          lastMessage:
-            lastMsg?.messageType === 'stickerMessage' ? 'Sticker' :
-            lastMsg?.messageType === 'lottieStickerMessage' ? 'Sticker' :
-            lastMsg?.messageType === 'imageMessage' ? 'Photo' :
-            lastMsg?.messageType === 'videoMessage' ? 'Video' :
-            lastMsg?.messageType === 'ptvMessage' ? 'Video' :
-            lastMsg?.messageType === 'documentMessage' ? 'Document' :
-            lastMsg?.textContent || '',
-          timestamp: lastMsg?.timestamp?.toString()
-        }
+        return (
+          name.toLowerCase().includes(q.toLowerCase()) ||
+          chat.jid.toLowerCase().includes(q.toLowerCase())
+        )
       })
-    )
+
+      chatResults = await Promise.all(
+        matchingChats.map(async (chat) => {
+          const name = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0]
+          const lastMsg = await this.messageRepository.findLastMessage(chat.jid)
+          return {
+            type: 'chat' as const,
+            jid: chat.jid,
+            name,
+            lastMessage:
+              lastMsg?.messageType === 'stickerMessage' ? 'Sticker' :
+              lastMsg?.messageType === 'lottieStickerMessage' ? 'Sticker' :
+              lastMsg?.messageType === 'imageMessage' ? 'Photo' :
+              lastMsg?.messageType === 'videoMessage' ? 'Video' :
+              lastMsg?.messageType === 'ptvMessage' ? 'Video' :
+              lastMsg?.messageType === 'documentMessage' ? 'Document' :
+              lastMsg?.textContent || '',
+            timestamp: lastMsg?.timestamp?.toString()
+          }
+        })
+      )
+    }
 
     // ── 2. Search messages ─────────────────────────────────────────────────
     const messageResults =
@@ -105,16 +111,25 @@ export class SearchService implements ISearchService {
     _sock: ISocketUserContext | null,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
-    const filter = this.buildMessageFilter(filters, q)
+    const filter = this.buildMessageFilter(filters, q || undefined)
 
     const messages = await this.messageRepository.findMessagesWithChatAndSender(filter, 30)
 
     return (messages as unknown as DBMessageWithChatAndSender[]).map((msg) => {
         let name = msg.chat?.name
         if (!name && msg.chat?.type === 'DM' && msg.sender) {
-            name = getDisplayName(msg.sender, msg.chatJid.split('@')[0])
+            name = getDisplayName(msg.sender as any, msg.chatJid.split('@')[0])
         }
         if (!name) name = msg.chatJid.split('@')[0]
+
+        let senderName: string | undefined
+        if (msg.fromMe) {
+          senderName = 'You'
+        } else if (msg.sender) {
+          senderName = getDisplayName(msg.sender as any, msg.chatJid.split('@')[0])
+        } else if (msg.participant) {
+          senderName = msg.participant.split('@')[0]
+        }
 
         return {
             type: 'message' as const,
@@ -122,7 +137,8 @@ export class SearchService implements ISearchService {
             name,
             messageId: msg.id,
             snippet: msg.textContent || '',
-            timestamp: msg.timestamp?.toString()
+            timestamp: msg.timestamp?.toString(),
+            senderName
         }
     })
   }
@@ -132,6 +148,8 @@ export class SearchService implements ISearchService {
     _sock: ISocketUserContext | null,
     filters?: SearchFilters
   ): Promise<SearchResultItem[]> {
+    if (!q) return []
+
     const queryVector = await this.embeddingService.embed(q)
     const queryVectorJson = JSON.stringify(queryVector)
 
@@ -162,9 +180,18 @@ export class SearchService implements ISearchService {
           
           let name = msg.chat?.name
           if (!name && msg.chat?.type === 'DM' && msg.sender) {
-              name = getDisplayName(msg.sender, msg.chatJid.split('@')[0])
+              name = getDisplayName(msg.sender as any, msg.chatJid.split('@')[0])
           }
           if (!name) name = msg.chatJid.split('@')[0]
+
+          let senderName: string | undefined
+          if (msg.fromMe) {
+            senderName = 'You'
+          } else if (msg.sender) {
+            senderName = getDisplayName(msg.sender as any, msg.chatJid.split('@')[0])
+          } else if (msg.participant) {
+            senderName = msg.participant.split('@')[0]
+          }
 
           return {
             type: 'message' as const,
@@ -173,7 +200,8 @@ export class SearchService implements ISearchService {
             messageId: msg.id,
             snippet: msg.textContent || '',
             timestamp: msg.timestamp?.toString(),
-            score: Math.max(0, Math.round((1 - res.distance) * 100) / 100)
+            score: Math.max(0, Math.round((1 - res.distance) * 100) / 100),
+            senderName
           }
         })
         .filter(Boolean) as SearchResultItem[]

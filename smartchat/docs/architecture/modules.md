@@ -176,7 +176,7 @@ This document maps the architectural boundaries, public interfaces, internal mod
 ## `renderer/src/components/`
 - **Purpose:** UI components built with React (chat layout, messages, inputs, search panels).
 - **Public exports (`index.ts`):** None (empty barrel). Subfolders `chat/index.ts` and `ai/index.ts` formalize components.
-- **Internal only:** UI components (e.g. `WaveformPlayer`, `EmojiStickerGifPicker`).
+- **Internal only:** UI components (e.g. `WaveformPlayer`, `EmojiStickerGifPicker`, `ChatSearchSidebar`).
 - **Consumes:** `renderer/src/context/`, `renderer/src/hooks/`, `renderer/src/services/`, `renderer/src/utils/`
 - **Consumed by:** `App.tsx`
 

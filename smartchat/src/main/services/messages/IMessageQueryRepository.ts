@@ -14,6 +14,15 @@ export interface IMessageReadRepository {
   ): Promise<Array<Message & { sender: Identity | null }>>
   findMessageTypeAndContent(id: string): Promise<{ messageType: string; textContent: string | null } | null>
   findMessagesByChat(chatJid: string, limit: number): Promise<Message[]>
+  /**
+   * Fetches all messages from `fromTimestamp` (inclusive) to newest, plus
+   * `lookBehind` messages before it for context. Returns list in chronological order.
+   */
+  findMessagesFromTimestamp(
+    chatJid: string,
+    fromTimestamp: bigint,
+    lookBehind: number
+  ): Promise<Array<Message & { sender: Identity | null }>>
 }
 
 export interface IMessageQueryRepository

@@ -9,7 +9,9 @@ export interface SearchResultItem {
   snippet?: string
   timestamp?: string
   score?: number
+  senderName?: string
 }
+
 
 export interface SearchResults {
   chats: SearchResultItem[]

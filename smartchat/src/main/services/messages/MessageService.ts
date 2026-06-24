@@ -383,6 +383,55 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     return this.enricher.enrichMessage(msg, sock as ISocketUserContext | null, nameMap)
   }
 
+  /**
+   * Efficiently fetch all messages from `messageId` to the newest, plus
+   * `lookBehind` messages before it for context. Falls back to page-1 on error.
+   */
+  async getMessagesAroundId(
+    jid: string,
+    messageId: string,
+    lookBehind: number = 20,
+    sock: unknown | null = null
+  ): Promise<EnrichedMessage[]> {
+    // Step 1: get the target message's timestamp
+    const target = await this.queryRepository.findMessageById(messageId)
+    if (!target) {
+      console.warn(`[MessageService] getMessagesAroundId: message ${messageId} not found, falling back`)
+      return this.getChatMessages(jid, 1, 50, sock)
+    }
+
+    try {
+      const messages = await this.queryRepository.findMessagesFromTimestamp(
+        jid,
+        target.timestamp,
+        lookBehind
+      )
+
+      const additionalJids = this.collectAdditionalJidsForResolve(messages)
+      const nameMap = await this.contactService.batchResolveNames(
+        Array.from(additionalJids),
+        sock as ISocketUserContext | null
+      )
+
+      const messageIds = messages.map(m => m.id)
+      const allReactions = messageIds.length > 0
+        ? await this.reactionRepository.findReactionsForMessages(messageIds)
+        : []
+
+      const enriched = await Promise.all(
+        messages.map(async m => {
+          const enrichedMsg = await this.enricher.enrichMessage(m, sock as ISocketUserContext | null, nameMap)
+          const msgReactions = allReactions.filter(r => r.messageId === m.id)
+          return { ...enrichedMsg, reactions: this.enricher.enrichReactions(msgReactions) }
+        })
+      )
+      return enriched
+    } catch (err) {
+      console.error('[MessageService] getMessagesAroundId failed, falling back:', err)
+      return this.getChatMessages(jid, 1, 50, sock)
+    }
+  }
+
   private async reconcileLidPnForReaction(reactionKey: WAMessageKey): Promise<void> {
     const refinedKey = reactionKey as WAMessageKey & { participantAlt?: string }
     const lid = refinedKey.participant ?? refinedKey.participantAlt

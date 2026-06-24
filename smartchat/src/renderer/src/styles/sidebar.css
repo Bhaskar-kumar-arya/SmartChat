@@ -1542,3 +1542,329 @@
 .ai-edge-tab.open {
   right: var(--ai-sidebar-width);
 }
+
+/* ─── Chat Search Sidebar ────────────────────────────────────────── */
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.chat-search-sidebar {
+  background-color: var(--wa-sidebar-bg);
+  border-left: 1px solid var(--wa-border);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  animation: slideInRight 0.3s ease;
+  z-index: 10;
+  box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+  width: 400px;
+  position: relative;
+}
+
+.search-sidebar-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  background: var(--wa-header-bg);
+  border-bottom: 1px solid var(--wa-border);
+  flex-shrink: 0;
+}
+
+.search-sidebar-header h3 {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--wa-text-primary);
+  margin: 0;
+}
+
+.search-sidebar-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--wa-icon);
+  padding: 6px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.search-sidebar-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--wa-primary);
+}
+
+.search-sidebar-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.search-sidebar-search-box {
+  padding: 1rem;
+  background: var(--wa-sidebar-bg);
+  border-bottom: 1px solid var(--wa-border);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+
+.search-sidebar-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-sidebar-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--wa-icon);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.search-sidebar-input {
+  width: 100%;
+  background: var(--wa-bg-hover);
+  border: 1px solid var(--wa-border);
+  padding: 8px 36px 8px 36px;
+  border-radius: 8px;
+  color: var(--wa-text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-sidebar-input:focus {
+  border-color: var(--wa-primary);
+}
+
+.search-sidebar-clear-query {
+  position: absolute;
+  right: 12px;
+  background: transparent;
+  border: none;
+  color: var(--wa-icon);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 50%;
+}
+
+.search-sidebar-clear-query:hover {
+  color: var(--wa-text-primary);
+}
+
+.search-result-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.search-result-item {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--wa-border);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.search-result-item:hover {
+  background: var(--wa-bg-hover);
+}
+
+.search-result-sender-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--wa-text-primary);
+}
+
+.search-result-time {
+  font-size: 0.75rem;
+  color: var(--wa-text-tertiary);
+}
+
+.search-result-snippet {
+  font-size: 0.8125rem;
+  color: var(--wa-text-secondary);
+  line-height: 1.4;
+  margin-top: 4px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.search-result-snippet mark {
+  background: rgba(37, 211, 102, 0.25);
+  color: var(--wa-primary);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.search-sidebar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--wa-text-tertiary);
+  gap: 0.5rem;
+}
+
+.search-sidebar-empty h4 {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--wa-text-secondary);
+  margin: 0;
+}
+
+.search-sidebar-empty p {
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+
+/* ─── Chat Search Sidebar ────────────────────────────────────────── */
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.chat-search-sidebar {
+  background-color: var(--wa-sidebar-bg);
+  border-left: 1px solid var(--wa-border);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  animation: slideInRight 0.25s ease-out;
+  z-index: 10;
+  box-shadow: -2px 0 10px rgba(0,0,0,0.15);
+  width: 400px;
+  position: relative;
+}
+
+.search-sidebar-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.25rem;
+  background-color: var(--wa-header-bg);
+  border-bottom: 1px solid var(--wa-border);
+  flex-shrink: 0;
+}
+
+.search-sidebar-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--wa-text-primary);
+  margin: 0;
+}
+
+.search-sidebar-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--wa-icon);
+  padding: 6px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.search-sidebar-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--wa-text-primary);
+}
+
+.search-sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.25rem;
+}
+
+/* Chat Header Action styling */
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.search-header-btn {
+  background: transparent;
+  border: none;
+  color: var(--wa-icon);
+  padding: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.search-header-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--wa-primary);
+}
+
+.search-header-btn.active {
+  background: rgba(37, 211, 102, 0.15);
+  color: var(--wa-primary);
+}
+
+/* Sidebar Custom Results layout */
+.search-sidebar-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.search-sidebar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--wa-text-tertiary);
+  gap: 0.75rem;
+}
+
+.search-sidebar-empty p {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--wa-text-secondary);
+}
+
+.search-sidebar-empty span {
+  font-size: 0.8rem;
+}
+
+.search-result-sender-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--wa-primary);
+}
+
+.search-result-time {
+  font-size: 0.75rem;
+  color: var(--wa-text-tertiary);
+}
+

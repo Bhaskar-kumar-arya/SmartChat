@@ -19,6 +19,9 @@ export const api: IAPIService = {
   getMessages: (jid: string, page: number, limit: number): Promise<MessageItem[]> =>
     window.api.getMessages(jid, page, limit),
 
+  getMessagesAround: (jid: string, messageId: string, lookBehind?: number): Promise<MessageItem[]> =>
+    window.api.getMessagesAround(jid, messageId, lookBehind),
+
   sendMessage: (jid: string, text: string, quotedId?: string, mentions?: string[]): Promise<MessageItem> =>
     window.api.sendMessage(jid, text, quotedId, mentions),
 

@@ -8,6 +8,7 @@ import { emojiToUnified } from '../../utils/emojiUtils'
 interface MessageViewProps {
   messages: IMessageItem[]
   loading: boolean
+  isJumping?: boolean
   onLoadMore: () => Promise<number | undefined>
   onReply: (msg: IMessageItem) => void
   onEdit?: (messageId: string, newText: string) => Promise<any>
@@ -15,15 +16,31 @@ interface MessageViewProps {
   onDownloadMedia?: (msgId: string) => Promise<void>
   targetMessageId?: string | null
   onTargetScrolled?: () => void
+  onScrollToMessage?: (messageId: string) => void
+  onJumpToLatest?: () => void
 }
 
-export default function MessageView({ messages, loading, onLoadMore, onReply, onEdit, onDelete, onDownloadMedia, targetMessageId, onTargetScrolled }: MessageViewProps) {
+export default function MessageView({
+  messages,
+  loading,
+  isJumping = false,
+  onLoadMore,
+  onReply,
+  onEdit,
+  onDelete,
+  onDownloadMedia,
+  targetMessageId,
+  onTargetScrolled,
+  onScrollToMessage,
+  onJumpToLatest
+}: MessageViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [viewingReactions, setViewingReactions] = useState<IMessageItem | null>(null)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const prevScrollHeight = useRef(0)
   const isLoadingRef = useRef(false)
   const prevMessageId = useRef<string | null>(null)
@@ -42,7 +59,6 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
       }
     }
     prevMessageId.current = firstId
-    // If messages length changed or chat changed, we might have new messages
   }, [messages])
 
   // Scroll to bottom on new messages (unless we have a target)
@@ -50,18 +66,15 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
     const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null
     const isNewMessage = messages.length > prevMessagesLength.current && lastMessageId !== prevLastMessageId.current
 
-    // Update refs for subsequent renders
     prevMessagesLength.current = messages.length
     prevLastMessageId.current = lastMessageId
 
-    // If we have an active target message, skip auto-scroll to bottom
     if (targetMessageId) {
       lastTargetId.current = targetMessageId
       isInitialRenderForChat.current = false
       return
     }
 
-    // If we just finished scrolling to a target (targetMessageId was just cleared), skip
     if (lastTargetId.current && !targetMessageId) {
       lastTargetId.current = null
       return
@@ -78,30 +91,26 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
     }
   }, [messages, targetMessageId, loadingMore])
 
-  // Scroll to and highlight target message when it's available
+  // Scroll to and highlight target message when it's in the list
   useEffect(() => {
     if (!targetMessageId || messages.length === 0) return
 
-    // Wait a tick for DOM to settle
     const timer = setTimeout(() => {
       const el = containerRef.current?.querySelector(`[data-msg-id="${targetMessageId}"]`)
       if (el) {
-        // Use auto behavior for first scroll to combat initial scroll interactions
-        el.scrollIntoView({ behavior: 'auto', block: 'center' })
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
         setHighlightedId(targetMessageId)
         onTargetScrolled?.()
-
-        // Remove highlight after animation
         setTimeout(() => setHighlightedId(null), 2500)
       } else {
-        console.warn(`[MessageView] Target message ${targetMessageId} not found in DOM`)
+        console.warn(`[MessageView] Target ${targetMessageId} not in DOM after jump`)
       }
-    }, 100)
+    }, 120)
 
     return () => clearTimeout(timer)
   }, [targetMessageId, messages])
 
-  // Restore scroll after loading older messages
+  // Restore scroll position after paginating older messages upward
   useEffect(() => {
     if (loadingMore && containerRef.current) {
       const newScrollHeight = containerRef.current.scrollHeight
@@ -111,12 +120,20 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
     }
   }, [messages])
 
-  const handleScroll = async () => {
-    if (!containerRef.current || isLoadingRef.current || !hasMore || isInitialRenderForChat.current) return
-    if (containerRef.current.scrollTop < 100) {
+  // Track scroll position to show/hide the "Jump to Latest" button
+  const handleScroll = useCallback(async () => {
+    const el = containerRef.current
+    if (!el) return
+
+    // Show "Jump to Latest" when user is not near the bottom
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    setShowJumpToLatest(distanceFromBottom > 300)
+
+    // Paginate older messages when near the top
+    if (el.scrollTop < 100 && !isLoadingRef.current && hasMore) {
       isLoadingRef.current = true
       setLoadingMore(true)
-      prevScrollHeight.current = containerRef.current.scrollHeight
+      prevScrollHeight.current = el.scrollHeight
       const count = await onLoadMore()
       if (!count || count === 0) {
         setHasMore(false)
@@ -124,28 +141,22 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
         isLoadingRef.current = false
       }
     }
-  }
+  }, [hasMore, onLoadMore])
 
   const handleReply = useCallback((msg: IMessageItem) => {
     onReply(msg)
   }, [onReply])
 
   const handleEdit = useCallback(async (messageId: string, newText: string) => {
-    if (onEdit) {
-      await onEdit(messageId, newText)
-    }
+    if (onEdit) await onEdit(messageId, newText)
   }, [onEdit])
 
   const handleDelete = useCallback(async (messageId: string) => {
-    if (onDelete) {
-      await onDelete(messageId)
-    }
+    if (onDelete) await onDelete(messageId)
   }, [onDelete])
 
   const handleDownloadMedia = useCallback(async (msgId: string) => {
-    if (onDownloadMedia) {
-      await onDownloadMedia(msgId)
-    }
+    if (onDownloadMedia) await onDownloadMedia(msgId)
   }, [onDownloadMedia])
 
   const handleViewReactions = useCallback((m: IMessageItem) => {
@@ -177,7 +188,15 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
   }
 
   return (
-    <div className="message-view" ref={containerRef} onScroll={handleScroll}>
+    <div className="message-view" ref={containerRef} onScroll={handleScroll} style={{ position: 'relative' }}>
+      {/* Inline loading shimmer while jumpToMessage is fetching — no jarring blank screen */}
+      {isJumping && (
+        <div className="message-jump-overlay">
+          <div className="spinner" />
+          <p>Loading message…</p>
+        </div>
+      )}
+
       {loadingMore && (
         <div className="message-loading-more">
           <div className="spinner-small" />
@@ -203,12 +222,24 @@ export default function MessageView({ messages, loading, onLoadMore, onReply, on
               onDelete={handleDelete}
               onDownloadMedia={handleDownloadMedia}
               onViewReactions={handleViewReactions}
+              onScrollToMessage={onScrollToMessage}
             />
           </div>
         ))
       )}
 
       <div ref={bottomRef} />
+
+      {/* "↓ Latest" floating pill — appears when scrolled away from newest messages */}
+      {showJumpToLatest && onJumpToLatest && (
+        <button
+          className="jump-to-latest-btn"
+          onClick={onJumpToLatest}
+          title="Jump to latest messages"
+        >
+          ↓ Latest
+        </button>
+      )}
 
       {viewingReactions && (
         <ReactionDetailsModal message={viewingReactions} onClose={() => setViewingReactions(null)} />

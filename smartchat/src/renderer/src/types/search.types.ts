@@ -7,7 +7,9 @@ export interface SearchResultItem {
   snippet?: string
   timestamp?: string
   score?: number
+  senderName?: string
 }
+
 
 export type SearchMode = 'normal' | 'deep'
 

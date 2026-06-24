@@ -153,9 +153,18 @@ interface MessageItemProps {
   onDelete?: (messageId: string) => Promise<void>
   onDownloadMedia?: (msgId: string) => Promise<void>
   onViewReactions: (msg: IMessageItem) => void
+  onScrollToMessage?: (messageId: string) => void
 }
 
-const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, onDownloadMedia, onViewReactions }: MessageItemProps) {
+const MessageItem = memo(function MessageItem({
+  msg,
+  onReply,
+  onEdit,
+  onDelete,
+  onDownloadMedia,
+  onViewReactions,
+  onScrollToMessage
+}: MessageItemProps) {
   const api = useAPI()
 
   let rawMsg: RawMessageContent = {}
@@ -434,6 +443,8 @@ const MessageItem = memo(function MessageItem({ msg, onReply, onEdit, onDelete, 
                   el.scrollIntoView({ behavior: 'smooth', block: 'center' })
                   el.classList.add('highlight-pulse')
                   setTimeout(() => el.classList.remove('highlight-pulse'), 2000)
+                } else if (onScrollToMessage) {
+                  onScrollToMessage(ctx.stanzaId)
                 }
               }
             }}

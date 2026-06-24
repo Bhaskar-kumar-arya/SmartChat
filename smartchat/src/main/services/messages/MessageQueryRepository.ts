@@ -208,4 +208,36 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
       select: { id: true, textContent: true }
     })
   }
+
+  /**
+   * Fetches messages anchored at `fromTimestamp`:
+   *  - All messages with timestamp >= fromTimestamp (target → newest), ordered asc.
+   *  - Up to `lookBehind` messages with timestamp < fromTimestamp (context before target), ordered desc.
+   * Returns the combined list sorted chronologically (oldest → newest).
+   */
+  async findMessagesFromTimestamp(
+    chatJid: string,
+    fromTimestamp: bigint,
+    lookBehind: number
+  ): Promise<Array<Message & { sender: import('@prisma/client').Identity | null }>> {
+    const [fromTarget, before] = await Promise.all([
+      // target message up to the newest
+      this.prisma.message.findMany({
+        where: { chatJid, timestamp: { gte: fromTimestamp } },
+        orderBy: { timestamp: 'asc' },
+        include: { sender: true }
+      }),
+      // look-behind context before the target
+      this.prisma.message.findMany({
+        where: { chatJid, timestamp: { lt: fromTimestamp } },
+        orderBy: { timestamp: 'desc' },
+        take: lookBehind,
+        include: { sender: true }
+      })
+    ])
+
+    // before is newest-first; reverse it so combined list is chronological
+    const combined = [...before.reverse(), ...fromTarget]
+    return combined as Array<Message & { sender: import('@prisma/client').Identity | null }>
+  }
 }

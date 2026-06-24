@@ -61,6 +61,9 @@ const api = {
   getMessages: (jid: string, page: number = 1, pageSize: number = 50) => {
     return ipcRenderer.invoke('get-messages', jid, page, pageSize)
   },
+  getMessagesAround: (jid: string, messageId: string, lookBehind: number = 20) => {
+    return ipcRenderer.invoke('get-messages-around', jid, messageId, lookBehind)
+  },
   sendMessage: (jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => {
     return ipcRenderer.invoke('send-message', jid, text, quotedMsgId, mentions)
   },
