@@ -24,19 +24,13 @@ const colors = {
 const KEYWORD_ME = 'Me';
 const KEYWORD_THEM = 'Them';
 const KEYWORD_UNKNOWN = 'Unknown';
-const KEY_UNKNOWN_CHAT = 'unknown_chat';
 const GROUP_JID_SUFFIX = '@g.us';
 const CHAT_TYPE_DM = 'DM';
-const CHAT_TYPE_GROUP = 'GROUP';
 const FORMAT_TRANSCRIPT = 'transcript';
-const LOCALE_EN_US = 'en-US';
 const TRUNCATE_LIMIT_REPLY = 35;
 
 // API KEY CONFIGURATION
-// You can replace this placeholder with your actual API key,
-// or set the GEMINI_API_KEY environment variable.
 const GEMINI_API_KEY = "AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0";
-
 const GROUP_NAME_QUERY = '%Bhaskara%';
 
 interface WindowSlice {
@@ -81,7 +75,6 @@ function getSenderLabel(m: any, isDM: boolean, nameMap: Map<string, string>): st
 
 /**
  * Gets the fully-formatted text for a message (handles media, stickers, deleted, etc).
- * Falls back to textContent, then empty string.
  */
 function getFormattedText(m: any, formatterRegistry: any): string {
   let contentObj: Record<string, unknown> | null = null;
@@ -131,11 +124,7 @@ function getQuotedMessageContext(
     );
   }
 
-  return {
-    quotedMsgId,
-    participant,
-    quotedText
-  };
+  return { quotedMsgId, participant, quotedText };
 }
 
 function getReplyContextString(
@@ -207,7 +196,7 @@ function collectUniqueJids(messages: any[], formatterRegistry: any): Set<string>
         if (quoted && quoted.participant) {
           uniqueJids.add(quoted.participant);
         }
-      } catch (e: unknown) {
+      } catch (e) {
         // ignore
       }
     }
@@ -257,7 +246,6 @@ function chunkMessagesIntoWindows(
 
     while (j < messages.length) {
       const msg = messages[j];
-
       let contentObj: Record<string, unknown> | null = null;
       try {
         contentObj = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
@@ -290,14 +278,11 @@ function chunkMessagesIntoWindows(
     });
 
     windowIndex++;
-
     const windowSize = j - i;
     const advance = Math.max(1, windowSize - overlapCount);
     i += advance;
 
-    if (j >= messages.length) {
-      break;
-    }
+    if (j >= messages.length) break;
   }
 
   return slices;
@@ -354,380 +339,10 @@ function validateAnnotation(annotation: any, windowMsgCount: number): string[] {
   return errors;
 }
 
-/**
- * Returns up to `contextSize` messages ending at globalIdx (inclusive),
- * drawn from the GLOBAL message array — not the window-local slice.
- */
-function getContextMessages(
-  allMessages: any[],
-  globalIdx: number,
-  contextSize = 5
-): any[] {
-  const start = Math.max(0, globalIdx - (contextSize - 1));
-  return allMessages.slice(start, globalIdx + 1);
-}
-
-// After all windows are processed, rebuild cross-window pairs properly
-/**
- * Post-processing pass that rebuilds ALL training pairs using global context.
- *
- * Fixes two bugs in the per-window extraction:
- *   1. context_i now always spans the global message array, so context
- *      correctly crosses window boundaries.
- *   2. Hard negatives are sampled from DIFFERENT threads only, preventing
- *      same-thread ancestors (grandparents, great-grandparents) from being
- *      labelled as negatives and producing contradictory training signal.
- *
- * Deduplication: when the same (globalI, globalJ) positive pair appears in
- * two overlapping windows, only the first occurrence is kept (the one where
- * globalI has the longest history behind it).
- *
- * Negative count: capped at 3 per msg_j total (not per positive parent),
- * keeping the per-message ratio stable regardless of how many parents a
- * message has.
- */
-function rebuildTrainingPairsWithGlobalContext(
-  allMessages: any[],
-  annotationsPath: string,
-  nameMap: Map<string, string>,
-  isDM: boolean,
-  formatterRegistry: any,
-  seedThreadMap: Map<number, number>,   // <-- NEW PARAM (pass result of buildSeedThreadsFromQuoteReplies)
-  contextSize = 5,
-  maxNegsPerMessage = 3,
-  candidateWindow = 20
-): any[] {
-  // ── 1. Load all annotations ───────────────────────────────────────────────
-  const annotations: Map<number, any> = new Map();
-  const lines = fs
-    .readFileSync(annotationsPath, "utf8")
-    .split("\n")
-    .filter((l) => l.trim());
-
-  for (const line of lines) {
-    try {
-      const obj = JSON.parse(line);
-      if (typeof obj.windowIndex === "number") {
-        annotations.set(obj.windowIndex, obj);
-      }
-    } catch {
-      // skip malformed lines
-    }
-  }
-
-  // ── 2. Pre-build global index lookup ──────────────────────────────────────
-  const globalIndexMap = new Map<any, number>(
-    allMessages.map((m, i) => [m, i])
-  );
-
-  const toMsgRecord = (msg: any) => ({
-    text: getFormattedText(msg, formatterRegistry),
-    sender: getSenderLabel(msg, isDM, nameMap),
-    timestamp: msg.timestamp,
-    globalIndex: globalIndexMap.get(msg) ?? -1,
-  });
-
-  // ── 3. Dedup sets ─────────────────────────────────────────────────────────
-  const seenPositives = new Set<string>();   // "globalI_globalJ"
-  const seenNegatives = new Set<string>();   // "neg_globalI_globalJ"
-
-  const pairs: any[] = [];
-
-  // ── 4. Helper: emit one positive pair (deduped) ───────────────────────────
-  const emitPositive = (
-    globalI: number,
-    globalJ: number,
-    windowIdx: number,
-    label: number       // 1.0 for direct, 0.7 for multi-hop
-  ) => {
-    const key = `${globalI}_${globalJ}`;
-    if (seenPositives.has(key)) return;
-    seenPositives.add(key);
-    const ctxMsgs = getContextMessages(allMessages, globalI, contextSize);
-    pairs.push({
-      context_i: ctxMsgs.map(toMsgRecord),
-      msg_j: toMsgRecord(allMessages[globalJ]),
-      label,
-      windowIndex: windowIdx,
-      globalI,
-      globalJ,
-    });
-  };
-
-  // ── 5. Helper: emit one hard negative pair (deduped) ─────────────────────
-  const emitNegative = (
-    globalNegI: number,
-    globalJ: number,
-    windowIdx: number
-  ) => {
-    const key = `neg_${globalNegI}_${globalJ}`;
-    if (seenNegatives.has(key)) return;
-    seenNegatives.add(key);
-    const ctxMsgs = getContextMessages(allMessages, globalNegI, contextSize);
-    pairs.push({
-      context_i: ctxMsgs.map(toMsgRecord),
-      msg_j: toMsgRecord(allMessages[globalJ]),
-      label: 0,
-      windowIndex: windowIdx,
-      globalI: globalNegI,
-      globalJ,
-    });
-  };
-
-  // ── 6. TIER 1: seed pairs from native quote-replies ───────────────────────
-  // These are the highest-quality positives — zero annotation cost.
-  // Emit direct link (label=1). Multi-hop within seed threads is handled
-  // in step 7 below alongside LLM-annotated threads.
-  for (const [globalJ, threadRoot] of seedThreadMap) {
-    // find the direct parent via seedEdges is implicit: we only need the
-    // thread membership here. Direct edges were already stored in seedEdges
-    // and are re-emitted in the annotation loop or via step 7. To avoid
-    // duplication we just register them in seenPositives now — actual
-    // pair objects are built in the unified thread pass below.
-    void threadRoot; // suppress unused-var warning; used in step 7
-  }
-
-  // Collect seed direct edges so we can emit them cleanly in the unified pass
-  // We rebuild them from seedThreadMap parent structure via the find function.
-  // Simpler: re-parse quote-reply edges from the messages directly (O(N)).
-  const directSeedEdges = new Map<number, number[]>(); // globalJ → [globalI, ...]
-  for (let j = 0; j < allMessages.length; j++) {
-    const m = allMessages[j];
-    let contentObj: Record<string, unknown> | null = null;
-    try {
-      contentObj =
-        typeof m.content === "string" ? JSON.parse(m.content) : m.content;
-    } catch {
-      // ignore
-    }
-    const unwrapped = unwrapMessage(contentObj);
-    const quoted = getQuotedMessageContext(unwrapped, formatterRegistry);
-    if (!quoted?.quotedMsgId) continue;
-
-    // Find the global index of the quoted message by ID
-    const parentIdx = allMessages.findIndex((msg) => msg.id === quoted.quotedMsgId);
-    if (parentIdx < 0 || parentIdx >= j) continue;
-
-    const existing = directSeedEdges.get(j) ?? [];
-    existing.push(parentIdx);
-    directSeedEdges.set(j, existing);
-  }
-
-  // ── 7. Unified thread pass: LLM annotations + seed threads ───────────────
-  //
-  // For every annotation window we:
-  //   a) build the window-local thread map (same as before)
-  //   b) merge it with seedThreadMap so concurrent-thread detection is global
-  //   c) emit direct-link positives  (label=1.0)
-  //   d) emit multi-hop positives    (label=0.7)  ← NEW
-  //   e) emit concurrent-thread hard negatives    ← UPGRADED
-
-  for (const [windowIdx, ann] of annotations) {
-    const startIndex: number = ann.startIndex;
-    const links: any[] = ann.annotation.links;
-
-    // Build window-local thread membership (Union-Find, global indices)
-    const localThreadMap = buildThreadMap(links, startIndex);
-
-    // Merge with seed thread map: if a node appears in both, union their roots.
-    // We do this by building a combined find function that delegates to both.
-    // Simple approach: clone localThreadMap and overlay seed memberships.
-    const mergedThreadOf = (gi: number): number => {
-      // Prefer local annotation thread ID; fall back to seed thread ID
-      if (localThreadMap.has(gi)) return localThreadMap.get(gi)!;
-      if (seedThreadMap.has(gi)) return seedThreadMap.get(gi)!;
-      return gi; // singleton — its own thread
-    };
-
-    // Collect all global indices active in this window
-    const windowGlobalIndices = links.map((l) => startIndex + l.msg);
-
-    // Group window messages by their merged thread ID
-    const threadToMembers = new Map<number, number[]>();
-    for (const gi of windowGlobalIndices) {
-      const tid = mergedThreadOf(gi);
-      const members = threadToMembers.get(tid) ?? [];
-      members.push(gi);
-      threadToMembers.set(tid, members);
-    }
-
-    // Track neg quota per globalJ across all its parents
-    const negCountPerJ = new Map<number, number>();
-
-    for (const link of links) {
-      const globalJ = startIndex + link.msg;
-      const directParents: number[] = Array.isArray(link.replies_to)
-        ? link.replies_to.map((p: number) => startIndex + p)
-        : [];
-
-      // Also include any seed-level direct parents not in LLM annotation
-      const seedParents = directSeedEdges.get(globalJ) ?? [];
-      const allDirectParents = Array.from(
-        new Set([...directParents, ...seedParents])
-      );
-
-      const threadIdOfJ = mergedThreadOf(globalJ);
-      const sameThreadMembers = (threadToMembers.get(threadIdOfJ) ?? []).filter(
-        (gi) => gi < globalJ  // only predecessors
-      );
-
-      // ── a) Direct positive pairs (label = 1.0) ────────────────────────────
-      for (const globalI of allDirectParents) {
-        emitPositive(globalI, globalJ, windowIdx, 1.0);
-      }
-
-      // ── b) Multi-hop positive pairs (label = 0.7) ─────────────────────────
-      // Same-thread predecessors that are NOT direct parents.
-      // These are ancestors, siblings-of-ancestors, etc.
-      // Label smoothing (0.7) signals: "related, but not the direct reply".
-      const directParentSet = new Set(allDirectParents);
-      for (const globalI of sameThreadMembers) {
-        if (directParentSet.has(globalI)) continue; // already emitted above
-        emitPositive(globalI, globalJ, windowIdx, 0.7);
-      }
-
-      // ── c) Concurrent-thread hard negatives ───────────────────────────────
-      // Candidate pool: last `candidateWindow` messages before j,
-      // excluding:
-      //   • any message in the SAME thread as j (direct parent, ancestor,
-      //     or seed-thread co-member) — these would be contradictory labels
-      //   • j itself
-      //
-      // Sorted newest-first so the hardest negatives (most temporally
-      // proximate, yet from a different thread) are sampled first.
-      const sameThreadSet = new Set<number>(sameThreadMembers);
-      for (const p of allDirectParents) sameThreadSet.add(p);
-
-      const candidateStart = Math.max(0, globalJ - candidateWindow);
-      const negCandidates = Array.from(
-        { length: globalJ - candidateStart },
-        (_, k) => candidateStart + k
-      )
-        .filter((gi) => {
-          if (sameThreadSet.has(gi)) return false;
-          // Also exclude if seed thread says they are co-members
-          if (
-            seedThreadMap.has(gi) &&
-            seedThreadMap.has(globalJ) &&
-            seedThreadMap.get(gi) === seedThreadMap.get(globalJ)
-          )
-            return false;
-          return true;
-        })
-        .sort((a, b) => b - a); // newest-first = hardest
-
-      const alreadyEmitted = negCountPerJ.get(globalJ) ?? 0;
-      const quota = maxNegsPerMessage - alreadyEmitted;
-      if (quota <= 0) continue;
-
-      let emitted = 0;
-      for (const globalNegI of negCandidates) {
-        if (emitted >= quota) break;
-        emitNegative(globalNegI, globalJ, windowIdx);
-        emitted++;
-      }
-      negCountPerJ.set(globalJ, alreadyEmitted + emitted);
-    }
-  }
-
-  // ── 8. Emit any seed direct pairs that fell outside all annotation windows ─
-  // (e.g. quote-replies near the start of the chat before the first window)
-  for (const [globalJ, parents] of directSeedEdges) {
-    for (const globalI of parents) {
-      emitPositive(globalI, globalJ, -1 /* no window */, 1.0);
-    }
-    // Hard negatives for these orphan pairs: sample from candidateWindow
-    // using only seed thread membership for exclusion.
-    const alreadyEmitted = pairs.filter(
-      (p) => p.globalJ === globalJ && p.label === 0
-    ).length;
-    const quota = maxNegsPerMessage - alreadyEmitted;
-    if (quota <= 0) continue;
-
-    const threadIdOfJ = seedThreadMap.get(globalJ) ?? globalJ;
-    const candidateStart = Math.max(0, globalJ - candidateWindow);
-    const negCandidates = Array.from(
-      { length: globalJ - candidateStart },
-      (_, k) => candidateStart + k
-    )
-      .filter((gi) => {
-        const tid = seedThreadMap.get(gi) ?? gi;
-        return tid !== threadIdOfJ;
-      })
-      .sort((a, b) => b - a);
-
-    let emitted = 0;
-    for (const globalNegI of negCandidates) {
-      if (emitted >= quota) break;
-      emitNegative(globalNegI, globalJ, -1);
-      emitted++;
-    }
-  }
-
-  return pairs;
-}
-
-
-/**
- * Builds a thread membership map using Union-Find over global indices.
- * Messages in the same weakly-connected component share a thread root (threadId).
- *
- * @param links      - The annotation links array (window-relative indices)
- * @param startIndex - The global offset of this window (ann.startIndex)
- * @returns Map<globalIndex, threadRootGlobalIndex>
- */
-function buildThreadMap(
-  links: any[],
-  startIndex: number
-): Map<number, number> {
-  const parent = new Map<number, number>();
-
-  const find = (x: number): number => {
-    if (!parent.has(x)) parent.set(x, x);
-    if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!));
-    return parent.get(x)!;
-  };
-
-  const union = (x: number, y: number) => {
-    const px = find(x);
-    const py = find(y);
-    if (px !== py) parent.set(px, py);
-  };
-
-  // Initialize all nodes
-  for (const link of links) {
-    find(startIndex + link.msg);
-  }
-
-  // Union each message with its annotated parents
-  for (const link of links) {
-    const globalJ = startIndex + link.msg;
-    if (Array.isArray(link.replies_to)) {
-      for (const relParent of link.replies_to) {
-        union(startIndex + relParent, globalJ);
-      }
-    }
-  }
-
-  // Resolve final thread IDs (canonical root per component)
-  const threadMap = new Map<number, number>();
-  for (const link of links) {
-    const globalJ = startIndex + link.msg;
-    threadMap.set(globalJ, find(globalJ));
-  }
-  return threadMap;
-}
-
 function buildSeedThreadsFromQuoteReplies(
   allMessages: any[],
-  nameMap: Map<string, string>,
-  isDM: boolean,
   formatterRegistry: any
-): {
-  seedEdges: Array<{ globalI: number; globalJ: number }>;
-  seedThreadMap: Map<number, number>;
-} {
-  // Build a lookup from WhatsApp message ID (string) → global array index
+): { seedEdges: Array<{ globalI: number; globalJ: number }> } {
   const msgIdToIndex = new Map<string, number>();
   for (let i = 0; i < allMessages.length; i++) {
     const m = allMessages[i];
@@ -740,8 +355,7 @@ function buildSeedThreadsFromQuoteReplies(
     const m = allMessages[j];
     let contentObj: Record<string, unknown> | null = null;
     try {
-      contentObj =
-        typeof m.content === "string" ? JSON.parse(m.content) : m.content;
+      contentObj = typeof m.content === "string" ? JSON.parse(m.content) : m.content;
     } catch {
       // ignore
     }
@@ -750,39 +364,150 @@ function buildSeedThreadsFromQuoteReplies(
     if (!quoted || !quoted.quotedMsgId) continue;
 
     const globalI = msgIdToIndex.get(quoted.quotedMsgId);
-    // Only keep forward-pointing edges that exist in the array
     if (globalI === undefined || globalI >= j) continue;
 
     seedEdges.push({ globalI, globalJ: j });
   }
 
-  // Union-Find over global indices to build seed thread components
+  return { seedEdges };
+}
+
+/**
+ * Global disjoint-set processing system that extracts and organizes entire historical message sequences 
+ * grouped into localized chronological thread arrays.
+ * Implements a "First Annotation Wins" guard to protect the graph from leading-edge context truncation.
+ */
+/**
+ * Global disjoint-set processing system that extracts and organizes entire historical message sequences 
+ * grouped into localized chronological thread arrays.
+ * 
+ * FIX 1: "First Annotation Wins" guard — prevents overlap re-annotation from overriding
+ *         richer window-0 context with truncated leading-edge null assignments.
+ * FIX 2: "Edge-Aware Dedup" — allows later windows to ADD new union edges for messages
+ *         that were annotated as null in an earlier window due to limited context,
+ *         while still blocking contradictory re-annotations of already-linked messages.
+ */
+function extractGlobalThreads(
+  allMessages: any[],
+  annotationsPath: string,
+  nameMap: Map<string, string>,
+  isDM: boolean,
+  formatterRegistry: any,
+  seedEdges: Array<{ globalI: number; globalJ: number }>
+): any[] {
   const parent = new Map<number, number>();
+
   const find = (x: number): number => {
     if (!parent.has(x)) parent.set(x, x);
     if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!));
     return parent.get(x)!;
   };
+
   const union = (x: number, y: number) => {
     const px = find(x);
     const py = find(y);
     if (px !== py) parent.set(px, py);
   };
 
+  // 1. Seed the graph with native WhatsApp quote-reply edges (ground truth, always trusted)
   for (const { globalI, globalJ } of seedEdges) {
     union(globalI, globalJ);
   }
 
-  // Resolve canonical root for every node that appeared in at least one edge
-  const seedThreadMap = new Map<number, number>();
-  for (const { globalI, globalJ } of seedEdges) {
-    seedThreadMap.set(globalI, find(globalI));
-    seedThreadMap.set(globalJ, find(globalJ));
+  // Track which global message indices already have at least one outgoing union edge.
+  // A message with an established edge should not have that edge overridden by a later
+  // window's re-annotation (which has less prior context).
+  // A message with NO established edge (was null in an earlier window) CAN receive
+  // a new edge from a later window that has deeper cross-window context.
+  const hasEstablishedEdge = new Set<number>();
+
+  // Seed edges from native quote-replies count as established
+  for (const { globalJ } of seedEdges) {
+    hasEstablishedEdge.add(globalJ);
   }
 
-  return { seedEdges, seedThreadMap };
-}
+  // 2. Integrate LLM annotation edges
+  if (fs.existsSync(annotationsPath)) {
+    const lines = fs.readFileSync(annotationsPath, 'utf8').split('\n').filter(l => l.trim());
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        const startIndex = obj.startIndex;
+        const links = obj.annotation?.links || [];
 
+        for (const link of links) {
+          const globalJ = startIndex + link.msg;
+
+          // Skip out-of-bounds global indices (safety check)
+          if (globalJ < 0 || globalJ >= allMessages.length) continue;
+
+          if (Array.isArray(link.replies_to) && link.replies_to.length > 0) {
+            // This window wants to add edges for globalJ.
+            // BLOCK if globalJ already has edges — a later window with less prior
+            // context must not override an earlier window's established links.
+            if (hasEstablishedEdge.has(globalJ)) continue;
+
+            // ALLOW: globalJ was null in all prior windows, so this later window's
+            // deeper context may have surfaced a real connection.
+            for (const relParent of link.replies_to) {
+              const globalI = startIndex + relParent;
+              if (globalI < 0 || globalI >= allMessages.length) continue;
+              if (globalI >= globalJ) continue; // enforce chronological constraint
+              union(globalI, globalJ);
+            }
+            hasEstablishedEdge.add(globalJ);
+
+          }
+          // replies_to === null: this window says no edge.
+          // Only register as "processed with null" if not already established,
+          // so we don't block a future window from linking it.
+          // We intentionally do NOT add to hasEstablishedEdge here —
+          // a null from an early window should remain overridable.
+        }
+      } catch (e) {
+        // ignore malformed lines
+      }
+    }
+  }
+
+  // 3. Cluster all message indices under their disjoint-set root
+  const threadGroups = new Map<number, number[]>();
+  for (let i = 0; i < allMessages.length; i++) {
+    const root = find(i);
+    const group = threadGroups.get(root) || [];
+    group.push(i);
+    threadGroups.set(root, group);
+  }
+
+  // 4. Construct output thread objects
+  const formattedThreads: any[] = [];
+  for (const [rootId, indices] of threadGroups.entries()) {
+    indices.sort((a, b) => a - b);
+
+    const threadMessages = indices.map(idx => {
+      const msg = allMessages[idx];
+      return {
+        globalIndex: idx,
+        messageId: msg.id,
+        timestamp: msg.timestamp,
+        timeString: new Date(Number(msg.timestamp) * 1000).toLocaleTimeString(),
+        sender: getSenderLabel(msg, isDM, nameMap),
+        text: getFormattedText(msg, formatterRegistry)
+      };
+    });
+
+    formattedThreads.push({
+      threadId: rootId,
+      messageCount: threadMessages.length,
+      startedAt: new Date(Number(threadMessages[0].timestamp) * 1000).toISOString(),
+      messages: threadMessages
+    });
+  }
+
+  // 5. Sort threads chronologically by their first message
+  formattedThreads.sort((a, b) => a.messages[0].timestamp - b.messages[0].timestamp);
+  return formattedThreads;
+}
 
 async function main() {
   const dbPath = path.resolve(process.cwd(), 'prisma/dev.db');
@@ -790,21 +515,18 @@ async function main() {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
   console.log(`\n${colors.border}╔══════════════════════════════════════════════════════════════╗${colors.reset}`);
-  console.log(`  ${colors.cyan}${colors.bright}🤖 SmartChat LLM Training Data Generator${colors.reset}`);
+  console.log(`  ${colors.cyan}${colors.bright}🤖 SmartChat Chat Disentanglement Thread Extractor${colors.reset}`);
   console.log(`${colors.border}╚══════════════════════════════════════════════════════════════╝${colors.reset}\n`);
 
-  // Setup API Client
   const finalApiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
   if (!finalApiKey) {
     console.error(`${colors.red}❌ Error: Gemini API key is missing.${colors.reset}`);
-    console.error(`Please set the ${colors.yellow}GEMINI_API_KEY${colors.reset} environment variable, or hardcode it in:`);
-    console.error(`  ${colors.dim}${fileURLToPath(import.meta.url)}${colors.reset}\n`);
     process.exit(1);
   }
 
   const ai = new GoogleGenAI({ apiKey: finalApiKey });
 
-  console.log(`🔍 Searching for group chat matching: "${colors.yellow}${GROUP_NAME_QUERY}${colors.reset}"`);
+  console.log(`🔍 Searching for target chat configuration matching: "${colors.yellow}${GROUP_NAME_QUERY}${colors.reset}"`);
   const queryResult = runSql(
     dbPath,
     `SELECT jid, name FROM Chat WHERE name LIKE '${GROUP_NAME_QUERY}' 
@@ -822,11 +544,11 @@ async function main() {
   }
 
   const chat = queryResult[0];
-  console.log(`\n${colors.green}✅ Found Target Chat:${colors.reset}`);
+  console.log(`\n${colors.green}✅ Found Target Chat Context:${colors.reset}`);
   console.log(`  - Name: ${colors.bright}${chat.name}${colors.reset}`);
   console.log(`  - JID : ${colors.dim}${chat.jid}${colors.reset}\n`);
 
-  console.log(`📨 Fetching all messages for ${colors.bright}${chat.name}${colors.reset}...`);
+  console.log(`📨 Fetching chronological log streams...`);
   const rawMessages = runSql(
     dbPath,
     `SELECT id, chatJid, senderId, participant, fromMe, timestamp, messageType, content, textContent, isDeleted, isEdited, status 
@@ -840,14 +562,12 @@ async function main() {
     isEdited: m.isEdited === 1,
     timestamp: Number(m.timestamp)
   }));
-  messages = messages.slice(0, 150)
-  console.log(`📊 Total messages: ${colors.yellow}${messages.length}${colors.reset}`);
-  if (messages.length === 0) {
-    console.log(`\n${colors.yellow}⚠️ No messages found in this chat.${colors.reset}\n`);
-    return;
-  }
+  
+  messages = messages.slice(0,4000); // Kept constraint consistent with target snippet limits
+  console.log(`📊 Total working records collected: ${colors.yellow}${messages.length}${colors.reset}`);
+  if (messages.length === 0) return;
 
-  console.log(`👥 Resolving sender names...`);
+  console.log(`👥 Parsing contextual metadata configurations...`);
   const uniqueJids = collectUniqueJids(messages, formatterRegistry);
   const nameMap = new Map<string, string>();
 
@@ -874,18 +594,15 @@ async function main() {
     }
   }
 
-  const chatInfoMap = buildChatInfoMap(uniqueJids, nameMap, dbPath);
-  const isDM = chat.jid.endsWith(GROUP_JID_SUFFIX) ? false : true;
+  const isDM = !chat.jid.endsWith(GROUP_JID_SUFFIX);
 
-  console.log(`📦 Segmenting conversation into ~8k token windows...`);
+  console.log(`📦 Organizing streams into optimization boundary blocks...`);
   const windows = chunkMessagesIntoWindows(messages, nameMap, isDM, formatterRegistry, 2000, 20);
-  console.log(`🧩 Total generated windows: ${colors.yellow}${windows.length}${colors.reset}\n`);
+  console.log(`🧩 Analysis partition slots determined: ${colors.yellow}${windows.length}${colors.reset}\n`);
 
-  // Paths for saving output
   const annotationsPath = path.resolve(__dirname, 'annotations.jsonl');
-  const trainPairsPath = path.resolve(__dirname, 'train_pairs.jsonl');
+  const threadsJsonPath = path.resolve(__dirname, 'threads.json');
 
-  // Resume capability: Load completed windows
   const completedWindows = new Set<number>();
   if (fs.existsSync(annotationsPath)) {
     const lines = fs.readFileSync(annotationsPath, 'utf8').split('\n');
@@ -893,151 +610,601 @@ async function main() {
       if (line.trim()) {
         try {
           const obj = JSON.parse(line);
-          if (typeof obj.windowIndex === 'number') {
-            completedWindows.add(obj.windowIndex);
-          }
-        } catch (e) {
-          // skip
-        }
+          if (typeof obj.windowIndex === 'number') completedWindows.add(obj.windowIndex);
+        } catch (e) {}
       }
     }
   }
 
-  if (completedWindows.size > 0) {
-    console.log(`🔄 Resuming job. Already annotated windows count: ${colors.green}${completedWindows.size}${colors.reset}\n`);
-  }
+  const systemPrompt = `You are an expert dialogue thread analysis model specializing in chat disentanglement for WhatsApp group and DM conversations.
 
-  const systemPrompt = `You are an expert dialogue thread analysis model specializing in chat disentanglement for WhatsApp.
-Your task is to analyze an interleaved, chronological chat window and map out directed reply-to links between messages.
+Your task is to analyze a chronological window of interleaved chat messages and produce a JSON structure that maps each message to the prior message(s) it directly continues — or marks it as starting a brand-new thread.
 
-### Input Format
-You will receive a sequence of messages formatted as:
-[index] [timestamp] SenderName: (Optional Explicit Reply Context) message_content
+═══════════════════════════════════════════════
+SECTION 1 — INPUT FORMAT
+═══════════════════════════════════════════════
 
-### Output Schema Rules
-You must return a valid JSON object matching this exact structure:
+Messages are formatted as:
+  [index] [HH:MM:SS AM/PM] SenderName: (Optional: Reply to SenderX: "quoted snippet...") message_content
+
+Each message has:
+- index        : Integer 0 to N-1 identifying position in the window.
+- timestamp    : Exact local time of the message.
+- SenderName   : Display name of the sender. Senders with identical names are the same person.
+- Reply prefix : Present ONLY when the sender used WhatsApp's native quote-reply feature.
+                 Format: (Reply to SenderX: "first 35 chars of the quoted message...")
+                 This is a HARD EVIDENCE signal — do not ignore it.
+- content      : The body of the message. Special tokens:
+                   [Photo]   — an image was sent
+                   [Video]   — a video was sent
+                   [Sticker] — a sticker reaction was sent
+                   [Audio]   — a voice note was sent
+                   [Document]— a file was sent
+                   [Contact] — a contact card was sent
+                   (Message deleted) — message was retracted
+
+═══════════════════════════════════════════════
+SECTION 2 — OUTPUT SCHEMA
+═══════════════════════════════════════════════
+
+Return a single valid JSON object with this exact shape:
+
 {
   "links": [
     {
-      "msg": 0,
-      "reasoning": "Brief explanation of target or thread context",
-      "replies_to": null
-    }
+      "msg": <integer>,
+      "reasoning": "<brief chain-of-thought before assigning replies_to>",
+      "replies_to": <null | [integer, ...]>
+    },
+    ...
   ]
 }
 
-### Essential Labeling Rules
-1. "msg": Integer index matching the message position exactly (from 0 to N-1).
-2. "reasoning": A brief phrase tracking the target context BEFORE selecting the index. You must explicitly look for matching text if a quote block exists.
-3. "replies_to": An array of integer indices this message directly responds to.
-4. "null" Policy: Set to null if the message initiates a brand-new conversational thread, a completely unrelated topic, or has no valid context parent within the current window view.
-5. Chronological Constraint: Any index in "replies_to" MUST be strictly lower than the current "msg" index. No future links.
-6. Every single message from index 0 to N-1 must have an entry in the "links" array. Do not truncate early or omit any trailing items.
+Rules:
+- "links" must contain exactly one entry per message index (0 to N-1). No omissions, no duplicates.
+- "msg" must equal the message's index in the window.
+- "replies_to" is either null or a non-empty array of prior message indices.
+  - Every element must be an integer strictly less than the current "msg" value.
+  - No self-references (msg X cannot reply to X).
+  - No forward references (msg X cannot reply to msg Y if Y > X).
+- "reasoning" is mandatory. Write it BEFORE you commit to replies_to. It must:
+  a) Name the candidate thread(s) you considered.
+  b) Identify any explicit signals (quote-reply, @mention, keyword match).
+  c) State your final conclusion before the JSON value.
 
----
+RULE — Shared referential object (SRO)
 
-### FEW-SHOT GOLD STANDARD REFERENCE EXAMPLE
+Before assigning replies_to, ask: "What is this message ABOUT?"
+Identify the specific entity, event, or artifact being discussed:
+  - A piece of media (photo, video, sticker)
+  - A person's location or action
+  - A word, phrase, or typo from a prior message
+  - An event (match, trip, deadline)
 
-#### Example Input Chat Window:
-[0] [11:15:00 AM] Rohit: did anyone get the solution for question 3?
-[1] [11:15:30 AM] Sneha: (Reply to Rohit: "did anyone get the solution for q...") i solved it, it uses a modified binary search
-[2] [11:15:45 AM] Akash: [Photo] what do you guys think of this jacket?
-[3] [11:16:02 AM] Sneha: looks clean bro, price?
-[4] [11:16:15 AM] Rohit: (Reply to Sneha: "i solved it, it uses a modified b...") can you share the proof snippet?
-[5] [11:16:30 AM] Akash: (Reply to Sneha: "looks clean bro, price?") 3k on sale off Myntra
-[6] [11:16:45 AM] Kabir: @Akash skip it, looks mid tbh
-[7] [11:17:10 AM] Sneha: @Rohit wait, opening laptop
-[8] [11:17:40 AM] Kabir: (Message deleted)
-[9] [11:18:00 AM] Akash: [Sticker] bad choice anyway
+If two messages share the same SRO, they belong in the same thread
+even across large time gaps and even if no single message directly
+quotes or @mentions the other.
 
-#### Example Expected JSON Output:
+If a message's SRO cannot be identified in the current window at all
+— it introduces a term, topic, or reference with no visible antecedent
+— set replies_to = null.
+
+Time gap between messages sharing an SRO is irrelevant. A question
+about something in a photo sent 90 minutes ago is still about that photo.
+
+═══════════════════════════════════════════════
+SECTION 3 — LINKING DECISION FRAMEWORK
+═══════════════════════════════════════════════
+
+Use the following priority-ordered signals when assigning replies_to.
+
+── LEVEL 1: HARD EVIDENCE (always follow these) ─────────────────
+1. Native quote-reply block
+   If a message starts with (Reply to SenderX: "…"), find the most recent
+   prior message from SenderX whose content matches the quoted snippet.
+   Set replies_to = [that message's index]. Do NOT guess another index.
+  EXCEPTION TO LEVEL 1 — Quote-reply with topic pivot:
+  If a message uses a native quote-reply but its content introduces a 
+  completely unrelated subject (TB-1 applies), set replies_to = null.
+  The quote-reply is acknowledgment of the prior message's existence,
+  not continuation of its thread. The SRO of the new message determines 
+  thread membership, not the mechanical quote target.
+
+  Example: quoting a photo to say "btw did anyone see the match?" 
+  → replies_to: null (new SRO: the match, not the photo)
+
+2. @mention of a specific person
+   If the message opens with "@Name …", set replies_to to the most recent
+   message sent by that person.
+
+── LEVEL 2: SOFT EVIDENCE (contextual inference) ─────────────────
+3. Topical continuation
+   The message directly continues or responds to the SPECIFIC subject, object,
+   or question raised by a nearby prior message — not just the same general domain.
+   "eco lecture at 8" replying to "anyone going tonight?" is continuation.
+   "eco lecture at 8" appearing after a 15-minute sports discussion is NOT continuation of sports.
+
+4. Temporal proximity
+   Messages within ~60 seconds of each other from the SAME sender are likely
+   a single burst and may be linked together if they read as sequential parts.
+   Messages across a gap of 5+ minutes face a higher burden of proof to be linked.
+   Gaps of 15+ minutes are strong candidates for thread breaks.
+
+5. Pronoun / deictic reference
+   Pronouns "it", "this", "that", "them" or deictic phrases "the one you sent",
+   "your idea" carry reference only to a SPECIFIC recent antecedent visible in
+   the window, not to a vague prior conversation.
+
+── LEVEL 3: STRUCTURAL PATTERNS ─────────────────────────────────
+6. Reaction / acknowledgment
+   Short reactions ("lol", "ok", "nice", "😂", stickers) without other content
+   reply to the most recent substantive message from a DIFFERENT sender — they
+   are not independent threads.
+
+7. Follow-up burst (same sender)
+   Multiple messages from the same sender within ~90 seconds are usually a
+   single thought split across sends. Link each subsequent one to the prior one
+   from that sender (forming a chain), provided the topic has not shifted.
+
+═══════════════════════════════════════════════
+SECTION 4 — THREAD-BREAK RULES (when to assign null)
+═══════════════════════════════════════════════
+
+These are equally as important as the linking rules.
+Set replies_to = null when ANY of the following apply:
+
+RULE TB-1 — Topic pivot
+   The message introduces a new subject with no clear semantic bridge to the
+   recent prior messages. Even if it immediately follows an active thread, a
+   completely different subject starts a new thread.
+   Examples: switching from an economics debate to goodnight messages;
+   switching from a meme to asking about event logistics.
+   
+
+RULE TB-2 — Unanchored messages
+
+Set replies_to = null if the message has NO identifiable referent 
+in the current window — no specific question it answers, no specific 
+statement it continues, no person it addresses.
+
+Time gap is a SIGNAL, not a rule:
+- Large gap + no referent = strong null case
+- Large gap + clear referent = still link (explicit wins always,
+  implicit wins if the thread wasn't conclusively closed)
+- Small gap + no referent = still null (topic pivot is TB-1)
+- Small gap + clear referent = link
+
+Never assign null solely because of elapsed time.
+Never link solely because of temporal proximity.
+
+RULE TB-3 — Group-level broadcast
+   Messages like "gn everyone", "gm", "happy birthday", "who's coming to X?"
+   addressed to the whole group, not a specific person or prior message,
+   start a new thread.
+
+RULE TB-4 — Generic reactions with no discernible antecedent
+   A sticker, "[Photo]", or single emoji that arrives after a long silence (5+
+   min) and cannot be traced to a specific prior message starts a new thread.
+
+RULE TB-5 — Logistical / administrative non-sequitur
+   A message about coordination, time, location, or task assignment that does
+   not respond to any visible prior question about those topics is a new thread.
+
+RULE TB-6 — Banter and tangential asides
+   Teasing, wordplay, or off-topic jokes triggered by a SPECIFIC prior message
+   are linked to that message (not null). But if the joke or banter has no
+   traceable trigger in the current window, use null.
+
+IMPORTANT: A message being sent by the same person who sent the previous
+message does NOT automatically make it a continuation. Evaluate content,
+topic, and time independently.
+
+ANTI-PATTERN — "Gradual drift" trap
+The model must NOT merge a slow-moving conversation into one thread
+just because no single step felt like a hard break. If a chain of
+messages crosses 60+ minutes total from first to last, re-check
+every gap inside it. At least one of those gaps will qualify for
+TB-2. Apply it.
+
+ANTI-PATTERN — "Same group" trap  
+All messages in a group chat are from "the same group". This is never
+a reason to link. Link only on message-level signals, not group-level
+social context.
+
+═══════════════════════════════════════════════
+SECTION 5 — MEDIA AND SPECIAL CONTENT RULES
+═══════════════════════════════════════════════
+
+- [Photo] / [Video] / [Document] following a question about something visual
+  or requested: link to the question. Otherwise: start new thread (null).
+- [Sticker] as a direct reaction: link to the most recent message it reacts to.
+- [Sticker] in isolation after a long gap: null.
+- (Message deleted): almost always null — it has no recoverable content.
+  Exception: if it is immediately sandwiched between messages clearly in
+  the same thread and the gap is under 30 seconds, link it to the prior message.
+- [Audio]: treat like a regular text message. Infer thread by sender and timing.
+
+═══════════════════════════════════════════════
+SECTION 6 — LANGUAGE AND ENCODING NOTES
+═══════════════════════════════════════════════
+
+Messages may contain:
+- Hinglish (Hindi written in Latin script), romanised Urdu, Tamil, Bengali, etc.
+- Code-switching mid-message (e.g., "bhai yaar it's not about the cost")
+- Abbreviations, typos, autocorrect errors (e.g., "mia" → "mai" in the next message)
+- Missing punctuation, run-on words
+
+These are not errors — they are natural vernacular. Evaluate semantic continuity
+as you would standard English. A typo-correction message ("mai*") is a follow-up
+burst from the same sender and links to the message it corrects.
+
+═══════════════════════════════════════════════
+SECTION 7 — FEW-SHOT GOLD STANDARD EXAMPLES
+═══════════════════════════════════════════════
+
+EXAMPLE A — Multi-thread group chat with topic pivots, temporal gaps, goodnight burst, and banter
+(This is the primary reference. Study every thread break and every link.)
+
+INPUT:
+[0]  [10:31 PM] Sanchit: aa rahe hai bhai
+[1]  [10:32 PM] Sanchit: dw ek banda joke kar raha tha
+[2]  [11:12 PM] Ayaan: [Sticker]
+[3]  [11:12 PM] ‎: [Sticker]
+[4]  [11:15 PM] Manay: [Photo]
+[5]  [11:15 PM] Manay: [Photo]
+[6]  [11:15 PM] Ayaan: 😂
+[7]  [11:16 PM] ‎: exactly
+[8]  [11:16 PM] Devbrat: its not about the cost, its about how much the consumers are willing to give for it
+[9]  [11:17 PM] ‎: no, its how much the producers are willing to sell it at
+[10] [11:17 PM] ‎: bro consumers are willing to give like 40
+[11] [11:17 PM] Devbrat: how much
+[12] [11:17 PM] Devbrat: they can give 30, 40, 50
+[13] [11:18 PM] Devbrat: whats the limit
+[14] [11:18 PM] ‎: 49.5
+[15] [11:18 PM] Devbrat: fucking hell dont make me do calc and eco at the same time
+[16] [11:18 PM] ‎: hmm
+[17] [11:18 PM] ‎: same shit
+[18] [11:20 PM] ‎: Send on campus
+[19] [11:29 PM] Manay: I am not on campus 😞😭
+[20] [11:30 PM] ‎: sent it , dw
+[21] [11:30 PM] ‎: @Manay pls drop an another banger
+[22] [11:44 PM] arnav: nini time
+[23] [11:45 PM] Deepak: Good night guys
+[24] [11:45 PM] ‎: night
+[25] [11:45 PM] Devbrat: ok
+[26] [11:46 PM] ‎: 14min aya mia
+[27] [11:46 PM] ‎: mai*
+[28] [11:46 PM] Devbrat: mia
+[29] [11:46 PM] Deepak: I'll be waiting
+[30] [11:46 PM] ‎: ok
+[31] [11:46 PM] ‎: yes
+
+EXPECTED OUTPUT:
 {
   "links": [
     {
       "msg": 0,
-      "reasoning": "Starts the data structures assignment thread.",
+      "reasoning": "No prior context. Sanchit's first message opens a new conversational thread.",
       "replies_to": null
     },
     {
       "msg": 1,
-      "reasoning": "Explicit quote-reply directly responding to Rohit's question 3 post at index [0].",
+      "reasoning": "Same sender (Sanchit), ~60 second gap, 'dw' (don't worry) directly qualifies msg 0's arrival update. Follow-up burst.",
       "replies_to": [0]
     },
     {
       "msg": 2,
-      "reasoning": "Breaks context completely to introduce a retail item. New thread.",
+      "reasoning": "40-minute gap (TB-2). No quote-reply, no mention. Sanchit's thread is cold. Sticker arrives cold — new thread.",
       "replies_to": null
     },
     {
       "msg": 3,
-      "reasoning": "Implicit context reply responding to Akash's jacket photo at index [2].",
+      "reasoning": "Same sticker exchange 43 seconds later. Likely a mirrored sticker reaction to msg 2.",
       "replies_to": [2]
     },
     {
       "msg": 4,
-      "reasoning": "Explicit quote-reply tracking directly back to Sneha's assignment statement at index [1].",
-      "replies_to": [1]
+      "reasoning": "3-minute gap, new sender (Manay), completely different content type. TB-1 (topic pivot). New thread.",
+      "replies_to": null
     },
     {
       "msg": 5,
-      "reasoning": "Explicit quote-reply answering Sneha's pricing question at index [3].",
-      "replies_to": [3]
-    },
-    {
-      "msg": 6,
-      "reasoning": "Implicit tag reply criticizing the jacket picture posted by Akash at index [2].",
-      "replies_to": [2]
-    },
-    {
-      "msg": 7,
-      "reasoning": "Implicit sequential reply continuing her task dialogue with Rohit at index [4].",
+      "reasoning": "Same sender (Manay), ~4 seconds after msg 4, second photo in a burst. Follow-up burst — links to msg 4.",
       "replies_to": [4]
     },
     {
+      "msg": 6,
+      "reasoning": "Ayaan reacts with 😂 to Manay's photos (msgs 4–5) within 9 seconds. Reaction to the most recent substantive content.",
+      "replies_to": [5]
+    },
+    {
+      "msg": 7,
+      "reasoning": "'exactly' from unnamed sender — single-word agreement, 23 seconds after Ayaan's laugh. Continues the same photo reaction chain.",
+      "replies_to": [6]
+    },
+    {
       "msg": 8,
-      "reasoning": "Deleted message placeholder with no text value or context connections.",
+      "reasoning": "Devbrat introduces an economics/pricing argument out of nowhere, 36 seconds after msg 7. Topic pivot (TB-1). New thread.",
       "replies_to": null
     },
     {
       "msg": 9,
-      "reasoning": "Implicit reactions sticker wrapping up the jacket commentary chain targeting index [6].",
+      "reasoning": "Directly disputes Devbrat's economic claim ('no, its how much the producers…'). Counters msg 8.",
+      "replies_to": [8]
+    },
+    {
+      "msg": 10,
+      "reasoning": "Same unnamed sender, 27 seconds later, provides data ('consumers are willing to give like 40') supporting their rebuttal. Continues msg 9.",
+      "replies_to": [9]
+    },
+    {
+      "msg": 11,
+      "reasoning": "Devbrat asks 'how much' — a direct interrogative following the '40' figure in msg 10. Links to msg 10.",
+      "replies_to": [10]
+    },
+    {
+      "msg": 12,
+      "reasoning": "Devbrat's follow-up burst answers his own implicit question, elaborating on consumer willingness ranges. Links to msg 11.",
+      "replies_to": [11]
+    },
+    {
+      "msg": 13,
+      "reasoning": "Devbrat continues the same burst asking 'whats the limit' — directly extends msg 12.",
+      "replies_to": [12]
+    },
+    {
+      "msg": 14,
+      "reasoning": "Unnamed sender answers '49.5' — a direct numeric answer to Devbrat's 'whats the limit' at msg 13.",
+      "replies_to": [13]
+    },
+    {
+      "msg": 15,
+      "reasoning": "Devbrat's exasperated reaction to having to do calc and eco simultaneously — triggered by '49.5' at msg 14.",
+      "replies_to": [14]
+    },
+    {
+      "msg": 16,
+      "reasoning": "Unnamed sender's 'hmm' within 8 seconds of msg 15 — acknowledgment of Devbrat's frustration. Links to msg 15.",
+      "replies_to": [15]
+    },
+    {
+      "msg": 17,
+      "reasoning": "'same shit' — the sender commiserates with Devbrat's dual-subject pain. Continues msg 16 (same sender, 2 seconds, topic-same).",
+      "replies_to": [16]
+    },
+    {
+      "msg": 18,
+      "reasoning": "2-minute gap. 'Send on campus' is a logistics request — completely different subject from the eco debate. TB-1 + TB-5. New thread.",
+      "replies_to": null
+    },
+    {
+      "msg": 19,
+      "reasoning": "9-minute gap, but Manay directly responds to the campus request at msg 18 ('I am not on campus'). Explicit topical reply.",
+      "replies_to": [18]
+    },
+    {
+      "msg": 20,
+      "reasoning": "Unnamed sender says 'sent it, dw' — confirming the campus item was sent, resolving msg 18's request.",
+      "replies_to": [18]
+    },
+    {
+      "msg": 21,
+      "reasoning": "Same sender, 2 seconds later. @Manay mention — links to most recent Manay message (msg 19). Burst within campus thread.",
+      "replies_to": [19]
+    },
+    {
+      "msg": 22,
+      "reasoning": "14-minute gap (TB-2). 'nini time' (goodnight) — group broadcast, topic pivot. TB-1 + TB-3. New thread.",
+      "replies_to": null
+    },
+    {
+      "msg": 23,
+      "reasoning": "'Good night guys' — Deepak joins the goodnight broadcast. Links to msg 22 as part of the same farewell thread.",
+      "replies_to": [22]
+    },
+    {
+      "msg": 24,
+      "reasoning": "'night' — another participant echoes the goodnight. Continues the farewell thread from msg 22.",
+      "replies_to": [22]
+    },
+    {
+      "msg": 25,
+      "reasoning": "'ok' from Devbrat, 5 seconds after 'night'. Short acknowledgment of the goodnight chain. Links to msg 22.",
+      "replies_to": [22]
+    },
+    {
+      "msg": 26,
+      "reasoning": "1 minute later. '14min aya mia' — unnamed sender notes arrival. No clear reference to goodnight messages; 'mia' is a typo of 'mai' (corrected in msg 27). This is a new topic (arrival update). TB-1. New thread.",
+      "replies_to": null
+    },
+    {
+      "msg": 27,
+      "reasoning": "Same sender, 2 seconds later. 'mai*' is a typo correction for 'mia' in msg 26. Follow-up burst correction. Links to msg 26.",
+      "replies_to": [26]
+    },
+    {
+      "msg": 28,
+      "reasoning": "Devbrat teases the typo 'mia' — directly references the error at msg 26. Banter triggered by a specific prior message. Links to msg 26.",
+      "replies_to": [26]
+    },
+    {
+      "msg": 29,
+      "reasoning": "Deepak says 'I'll be waiting' — responding to the arrival announcement at msg 26 ('14 min away'). Links to msg 26.",
+      "replies_to": [26]
+    },
+    {
+      "msg": 30,
+      "reasoning": "'ok' — unnamed sender acknowledges. Placed after Deepak's 'I'll be waiting' at msg 29, within the arrival sub-thread.",
+      "replies_to": [29]
+    },
+    {
+      "msg": 31,
+      "reasoning": "'yes' — same sender as msg 30, 2 seconds later. Affirmation, continues msg 30.",
+      "replies_to": [30]
+    }
+  ]
+}
+
+───────────────────────────────────────────────
+EXAMPLE B — Interleaved multi-topic group chat with explicit quote-replies and @mentions
+(Shorter example showing classic cross-talk disentanglement)
+
+INPUT:
+[0]  [11:15 AM] Rohit: did anyone get the solution for question 3?
+[1]  [11:15 AM] Sneha: (Reply to Rohit: "did anyone get the solution for q...") i solved it, modified binary search
+[2]  [11:15 AM] Akash: [Photo]  what do you guys think of this jacket?
+[3]  [11:16 AM] Sneha: looks clean bro, price?
+[4]  [11:16 AM] Rohit: (Reply to Sneha: "i solved it, modified binary sear...") can you share the proof snippet?
+[5]  [11:16 AM] Akash: (Reply to Sneha: "looks clean bro, price?") 3k on sale off Myntra
+[6]  [11:16 AM] Kabir: @Akash skip it, looks mid tbh
+[7]  [11:17 AM] Sneha: @Rohit wait, opening laptop
+[8]  [11:17 AM] Kabir: (Message deleted)
+[9]  [11:18 AM] Akash: [Sticker]
+
+EXPECTED OUTPUT:
+{
+  "links": [
+    {
+      "msg": 0,
+      "reasoning": "First message in window. Assignment thread opener.",
+      "replies_to": null
+    },
+    {
+      "msg": 1,
+      "reasoning": "Native quote-reply prefix citing Rohit's question 3 message (msg 0). Hard evidence — links to msg 0.",
+      "replies_to": [0]
+    },
+    {
+      "msg": 2,
+      "reasoning": "Same timestamp cluster but completely different topic (fashion, not assignments). TB-1. New thread.",
+      "replies_to": null
+    },
+    {
+      "msg": 3,
+      "reasoning": "Sneha asks 'price?' — directly responds to the jacket photo at msg 2. No assignment connection.",
+      "replies_to": [2]
+    },
+    {
+      "msg": 4,
+      "reasoning": "Native quote-reply citing Sneha's binary search answer at msg 1. Hard evidence — assignment thread continues.",
+      "replies_to": [1]
+    },
+    {
+      "msg": 5,
+      "reasoning": "Native quote-reply citing Sneha's 'looks clean bro, price?' at msg 3. Hard evidence — jacket thread continues.",
+      "replies_to": [3]
+    },
+    {
+      "msg": 6,
+      "reasoning": "@Akash mention — links to most recent Akash message (msg 5, or trace back to msg 2 as topic root). Jacket thread.",
+      "replies_to": [2]
+    },
+    {
+      "msg": 7,
+      "reasoning": "@Rohit mention — links to Rohit's most recent message (msg 4, the request for proof). Assignment thread.",
+      "replies_to": [4]
+    },
+    {
+      "msg": 8,
+      "reasoning": "(Message deleted). 30-second gap, sandwiched in the jacket discussion cluster. Links to the most recent jacket message (msg 6).",
+      "replies_to": [6]
+    },
+    {
+      "msg": 9,
+      "reasoning": "Sticker reaction from Akash. Likely reacts to Kabir's 'mid' comment at msg 6 (jacket banter). Links to msg 6.",
       "replies_to": [6]
     }
   ]
 }
----
 
-Analyze the following chat window data and generate the output cleanly following the rules above. Only return raw JSON content without generic introductory text or markdown formatting wrap outside the application/json framework requirements.`;
+═══════════════════════════════════════════════
+SECTION 8 — QUALITY CHECKLIST (run before finalizing output)
+═══════════════════════════════════════════════
 
-  // ── ANNOTATION LOOP ───────────────────────────────────────────────────────
-  for (let idx = 0; idx < windows.length; idx++) {
-    const w = windows[idx];
-    if (completedWindows.has(w.windowIndex)) {
-      continue;
-    }
+Before writing the final JSON, verify:
 
-    console.log(`[Window ${w.windowIndex + 1}/${windows.length}] Processing window index ${w.windowIndex}`);
-    console.log(`  - Messages: ${w.messages.length} (${w.startIndex} to ${w.endIndex})`);
-    console.log(`  - Estimated tokens: ${w.estimatedTokens}`);
+[ ] Every index 0 to N-1 has exactly one entry in "links".
+[ ] No replies_to value is >= the current msg index.
+[ ] Every native quote-reply has been mapped to the correct antecedent.
+[ ] Temporal gaps of 15+ min without continuation signal got null.
+[ ] Topic pivots (new subject, no bridge) got null — even between close messages.
+[ ] Same-sender rapid bursts are chained (each links to prior from same sender).
+[ ] Short reactions (emoji, ok, lol, sticker) link to most recent substantive message.
+[ ] Group broadcasts (gm, gn, birthday) got null.
+[ ] Typo corrections link to the message being corrected.
+[ ] Multi-topic interleaving is correctly separated (assignment ≠ jacket ≠ logistics).
 
-    const userPrompt = `Analyze the following chat window and output the JSON links structure:
+Output only the raw JSON object. Do not include markdown fences, explanatory prose, or any text outside the JSON structure.`;
 
-  ${w.formattedText}
+// ── ANNOTATION LOOP (RATE-LIMITED & PARALLEL) ─────────────────────────────
+  
+  // Rate limiting configurations
+  const RPM_LIMIT = 15;        // N requests per minute limit
+  const MAX_CONCURRENCY = 15;   // Maximum simultaneous active requests
+  const LAUNCH_INTERVAL = (60 * 1000) / RPM_LIMIT; // Minimum ms gap between request initiations
 
-  JSON Output:`;
+  const tasks = windows.filter(w => !completedWindows.has(w.windowIndex));
+  
+  if (tasks.length > 0) {
+    console.log(`⚡ Processing ${colors.yellow}${tasks.length}${colors.reset} remaining windows concurrently...`);
+    console.log(`📊 Rate Constraints: Max ${colors.cyan}${RPM_LIMIT} RPM${colors.reset} | Max ${colors.cyan}${MAX_CONCURRENCY} Concurrent Slots${colors.reset}\n`);
+    
+    let taskIndex = 0;
+    let activeRequests = 0;
+    let lastLaunchTime = 0;
+
+    // Use a Promise to block main execution until all parallel tasks finish
+    await new Promise<void>((resolve) => {
+      function processQueue() {
+        // Base case: All tasks have been dispatched and all active requests are finished
+        if (taskIndex >= tasks.length && activeRequests === 0) {
+          resolve();
+          return;
+        }
+
+        const now = Date.now();
+        const timeSinceLastLaunch = now - lastLaunchTime;
+
+        // Fire next task if we have tasks remaining, open concurrency slots, and have respected the RPM spacing
+        if (taskIndex < tasks.length && activeRequests < MAX_CONCURRENCY && timeSinceLastLaunch >= LAUNCH_INTERVAL) {
+          const w = tasks[taskIndex++];
+          activeRequests++;
+          lastLaunchTime = now;
+
+          // Dispatch asynchronous execution worker
+          executeWindowTask(w).finally(() => {
+            activeRequests--;
+            // Immediately trigger a queue check when a slot opens up
+            processQueue();
+          });
+        }
+
+        if (taskIndex < tasks.length || activeRequests > 0) {
+            const nextDelay = activeRequests >= MAX_CONCURRENCY ? 50 : Math.max(0, LAUNCH_INTERVAL - (Date.now() - lastLaunchTime));
+            setTimeout(processQueue, nextDelay);
+          }
+        }
+
+      // Initialize the queue worker execution loop
+      processQueue();
+    });
+  } else {
+    console.log(`✅ All windows already processed and cached in annotations file.`);
+  }
+
+  // Self-contained asynchronous worker execution loop preserving your original error checking & retry rules
+  async function executeWindowTask(w: WindowSlice) {
+    console.log(`[Window ${w.windowIndex + 1}/${windows.length}] Evaluating context indices ${w.startIndex} to ${w.endIndex}`);
+
+    const userPrompt = `Analyze the following chat window and output the JSON links structure:\n\n${w.formattedText}\n\nJSON Output:`;
 
     let success = false;
     let retries = 3;
     let rawResponse = "";
     let parsedAnnotation: any = null;
 
-    fs.writeFile(path.resolve(__dirname, 'prompt.txt'), userPrompt, (err) => {
-      if (err) console.log(err);
-    });
-
     while (!success && retries > 0) {
       try {
-        console.log(`  - Calling Gemma 4 31B...`);
         const response = await ai.models.generateContent({
           model: 'gemma-4-31b-it',
           contents: userPrompt,
@@ -1048,87 +1215,61 @@ Analyze the following chat window data and generate the output cleanly following
         });
 
         rawResponse = response.text || '';
-        fs.writeFile(path.resolve(__dirname, 'rawOutput.txt'), rawResponse, (err) => {
-          if (err) console.log(err);
-        });
-
         parsedAnnotation = JSON.parse(rawResponse.trim());
 
         const errors = validateAnnotation(parsedAnnotation, w.messages.length);
         if (errors.length > 0) {
-          console.warn(`  - ${colors.yellow}Warning: Structural validation failed: ${errors.join(', ')}${colors.reset}`);
           retries--;
           continue;
         }
-
         success = true;
-      } catch (err: any) {
-        console.error(`  - ${colors.red}Error calling LLM/parsing JSON: ${err.message || err}${colors.reset}`);
+      } catch (err) {
         retries--;
-        if (retries > 0) {
-          console.log(`  - Retrying in 2 seconds...`);
-          await new Promise(res => setTimeout(res, 2000));
-        }
+        if (retries > 0) await new Promise(res => setTimeout(res, 2000));
       }
     }
 
     if (!success) {
-      console.error(`\n${colors.red}❌ Failed to process window index ${w.windowIndex} after multiple attempts. Skipping.${colors.reset}\n`);
-      continue;
+      console.error(`${colors.red}❌ Window ${w.windowIndex + 1} failed definitively after multiple retries.${colors.reset}`);
+      return;
     }
 
-    console.log(`  - ${colors.green}Success! Saving annotation...${colors.reset}`);
-
-    // Save raw annotation only — pair extraction happens in the post-processing pass
     const annotationLog = {
       windowIndex: w.windowIndex,
       startIndex: w.startIndex,
       endIndex: w.endIndex,
-      estimatedTokens: w.estimatedTokens,
       annotation: parsedAnnotation
     };
+    
+    // Node's synchronous fs.appendFileSync handles file descriptor locking on the main thread execution line, 
+    // making it completely thread-safe to handle incoming lines out of order without log interleaving.
     fs.appendFileSync(annotationsPath, JSON.stringify(annotationLog) + '\n', 'utf8');
+    console.log(`${colors.green}✅ Window ${w.windowIndex + 1}/${windows.length} completed and flushed to disk.${colors.reset}`);
   }
 
-  // ── POST-PROCESSING: global pair extraction ───────────────────────────────
-  console.log(`\n🔍 Mining native quote-reply pairs to build seed threads...`);
-  const { seedEdges, seedThreadMap } = buildSeedThreadsFromQuoteReplies(
-    messages,
-    nameMap,
-    isDM,
-    formatterRegistry
-  );
-  console.log(`  - Seed edges found: ${colors.yellow}${seedEdges.length}${colors.reset}`);
-  console.log(`  - Unique seed thread members: ${colors.yellow}${seedThreadMap.size}${colors.reset}\n`);
+  // ── THREAD EXTRACTION & STORAGE PASS ─────────────────────────────────────
+  console.log(`\n🔍 Parsing contextual reference points from native reply targets...`);
+  const { seedEdges } = buildSeedThreadsFromQuoteReplies(messages, formatterRegistry);
 
-  console.log(`🔗 Rebuilding training pairs with global context, multi-hop positives & concurrent-thread negatives...`);
-  const globalPairs = rebuildTrainingPairsWithGlobalContext(
+  console.log(`🔗 Executing unified graph union passes across tracking components...`);
+  const globalThreads = extractGlobalThreads(
     messages,
     annotationsPath,
     nameMap,
     isDM,
     formatterRegistry,
-    seedThreadMap,   // <-- NEW: pass seed threads in
-    5,               // contextSize
-    3,               // maxNegsPerMessage
-    20               // candidateWindow
+    seedEdges
   );
-  // Overwrite train_pairs.jsonl with the clean global version
-  fs.writeFileSync(trainPairsPath, '', 'utf8');
-  for (const pair of globalPairs) {
-    fs.appendFileSync(trainPairsPath, JSON.stringify(pair) + '\n', 'utf8');
-  }
 
-  const positiveCount = globalPairs.filter(p => p.label === 1).length;
-  const negativeCount = globalPairs.filter(p => p.label === 0).length;
+  // Write isolated full conversation branches out cleanly into structured JSON target
+  fs.writeFileSync(threadsJsonPath, JSON.stringify(globalThreads, null, 2), 'utf8');
 
-  console.log(`\n${colors.green}🚀 Data annotation and training pair extraction complete!${colors.reset}\n`);
-  console.log(`📊 Pairs written: ${colors.yellow}${globalPairs.length}${colors.reset}  (${colors.green}${positiveCount} positives${colors.reset} / ${colors.red}${negativeCount} negatives${colors.reset})`);
-  console.log(`📁 Raw Annotations : ${colors.cyan}${annotationsPath}${colors.reset}`);
-  console.log(`📁 Training Pairs  : ${colors.cyan}${trainPairsPath}${colors.reset}\n`);
+  console.log(`\n${colors.green}🚀 Thread extraction complete!${colors.reset}\n`);
+  console.log(`📊 Total Continuous Threads Formed : ${colors.yellow}${globalThreads.length}${colors.reset}`);
+  console.log(`📁 Target Output Workspace Storage: ${colors.cyan}${threadsJsonPath}${colors.reset}\n`);
 }
 
 main().catch((err) => {
-  console.error(`\n${colors.red}💥 Fatal error running the annotation pipeline:${colors.reset}`, err);
+  console.error(`\n${colors.red}💥 Fatal execution error detected:${colors.reset}`, err);
   process.exit(1);
 });
