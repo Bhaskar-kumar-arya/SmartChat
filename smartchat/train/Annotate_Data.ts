@@ -1179,6 +1179,7 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
           success = true;
         } catch (err) {
           retries--;
+          console.error(`${colors.red} Window ${w.windowIndex + 1} failed, Retrying. Error : ${err}${colors.reset}`);
           if (retries > 0) {
             await new Promise(res => setTimeout(res, 2000));
           }

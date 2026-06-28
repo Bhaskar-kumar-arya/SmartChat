@@ -52,8 +52,8 @@ from tqdm import tqdm
 @dataclass
 class Config:
     # Paths
-    threads_path: str      = "threads.json"
-    annotations_path: str  = "annotations.jsonl"
+    threads_path: str      = "train/threads"
+    annotations_path: str  = "train/annotations.jsonl"
     output_dir: str        = "reply_scorer_output"
 
     # Model
@@ -131,31 +131,7 @@ def get_quote_replies_map(db_path="prisma/dev.db"):
 
 def load_threads(threads_path: str, db_path: str = "prisma/dev.db") -> tuple:
     """
-    Parse threads.json produced by extractGlobalThreads.
-
-    Each thread object:
-    {
-        "threadId": <int>,
-        "messageCount": <int>,
-        "startedAt": "<ISO string>",
-        "messages": [
-            {
-                "globalIndex": <int>,
-                "messageId":   "<str>",
-                "timestamp":   <int>,
-                "timeString":  "<str>",
-                "sender":      "<str>",
-                "text":        "<str>"
-            },
-            ...
-        ]
-    }
-
-    Returns:
-        thread_clusters   : thread_id -> messages sorted by globalIndex
-        msg_texts         : globalIndex -> "[timeString] sender: text"
-        msg_to_thread     : globalIndex -> thread_id
-        quote_reply_gidxs : set of globalIndex representing messages that are native quote replies
+    Parse threads from a file or a directory of chat threads JSON files.
     """
     if not os.path.exists(db_path):
         db_path = "../prisma/dev.db"
@@ -167,75 +143,119 @@ def load_threads(threads_path: str, db_path: str = "prisma/dev.db") -> tuple:
     quote_map = get_quote_replies_map(db_path)
     quote_reply_gidxs = set()
 
-    with open(threads_path, "r", encoding="utf-8") as f:
-        raw_threads = json.load(f)
+    # Fallback pathing resolution
+    if not os.path.exists(threads_path):
+        if threads_path == "train/threads" and os.path.isdir("threads"):
+            threads_path = "threads"
+        elif threads_path == "threads" and os.path.isdir("train/threads"):
+            threads_path = "train/threads"
+
+    files_to_load = []
+    if os.path.isdir(threads_path):
+        for filename in sorted(os.listdir(threads_path)):
+            if filename.endswith(".json"):
+                files_to_load.append(os.path.join(threads_path, filename))
+    else:
+        files_to_load.append(threads_path)
 
     thread_clusters = {}
     msg_texts       = {}
     msg_to_thread   = {}
+    chat_offsets    = {}
+    msg_to_chat     = {}
+    thread_to_chat  = {}
 
-    for thread in raw_threads:
-        tid      = thread["threadId"]
-        messages = sorted(thread["messages"], key=lambda m: m["globalIndex"])
+    for idx, filepath in enumerate(files_to_load):
+        if os.path.isdir(threads_path):
+            chat_jid = os.path.basename(filepath)[:-5]
+        else:
+            chat_jid = "120363420635575284@g.us"
 
-        thread_clusters[tid] = messages
+        offset = idx * 1000000
+        chat_offsets[chat_jid] = offset
 
-        for msg in messages:
-            gidx = msg["globalIndex"]
-            msg_id = msg.get("messageId")
-            if msg_id and msg_id in quote_map:
-                quote_reply_gidxs.add(gidx)
+        with open(filepath, "r", encoding="utf-8") as f:
+            raw_threads = json.load(f)
 
-            # Format: "[10:31 PM] Sanchit: aa rahe hai bhai"
-            msg_texts[gidx]     = f"[{msg['timeString']}] {msg['sender']}: {msg['text']}"
-            msg_to_thread[gidx] = tid
+        for thread in raw_threads:
+            tid = thread["threadId"]
+            unique_tid = f"{chat_jid}_{tid}"
+            thread_to_chat[unique_tid] = chat_jid
 
-    return thread_clusters, msg_texts, msg_to_thread, quote_reply_gidxs
+            messages = sorted(thread["messages"], key=lambda m: m["globalIndex"])
+            
+            offset_messages = []
+            for msg in messages:
+                new_msg = dict(msg)
+                new_msg["globalIndex"] = msg["globalIndex"] + offset
+                offset_messages.append(new_msg)
+
+            thread_clusters[unique_tid] = offset_messages
+
+            for msg in offset_messages:
+                gidx = msg["globalIndex"]
+                msg_id = msg.get("messageId")
+                if msg_id and msg_id in quote_map:
+                    quote_reply_gidxs.add(gidx)
+
+                msg_texts[gidx] = f"[{msg['timeString']}] {msg['sender']}: {msg['text']}"
+                msg_to_thread[gidx] = unique_tid
+                msg_to_chat[gidx] = chat_jid
+
+    return thread_clusters, msg_texts, msg_to_thread, quote_reply_gidxs, chat_offsets, msg_to_chat, thread_to_chat
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 2: LOAD annotations.jsonl → global link map
 # ─────────────────────────────────────────────────────────────────────────────
 
-def load_link_map(annotations_path: str) -> dict:
+def load_link_map(annotations_path: str, chat_offsets: dict) -> dict:
     """
     Reconstruct globalIndex -> [parent_globalIndex, ...] | None
-    from annotations.jsonl using "First Annotation Wins" logic —
-    consistent with extractGlobalThreads in the disentanglement script.
-
-    - A message with an established (non-null) link from an earlier window
-      cannot be re-linked by a later window with less prior context.
-    - A null from an earlier window IS overridable by a later window
-      that has deeper cross-window context.
+    from annotations.jsonl using "First Annotation Wins" logic,
+    adjusted with chat offsets.
     """
+    if not os.path.exists(annotations_path):
+        # fallback pathing
+        if annotations_path == "annotations.jsonl" and os.path.exists("train/annotations.jsonl"):
+            annotations_path = "train/annotations.jsonl"
+        elif annotations_path == "train/annotations.jsonl" and os.path.exists("annotations.jsonl"):
+            annotations_path = "annotations.jsonl"
+
     records = []
-    with open(annotations_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    records.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+    if os.path.exists(annotations_path):
+        with open(annotations_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
     records.sort(key=lambda r: r["windowIndex"])
 
     link_map              = {}
     has_established_edge  = set()
 
     for record in records:
+        chat_jid = record.get("chatJid", "120363420635575284@g.us")
+        offset = chat_offsets.get(chat_jid)
+        if offset is None:
+            # Skip if we didn't load this chat's threads
+            continue
+
         start = record["startIndex"]
         links = record.get("annotation", {}).get("links", [])
 
         for link in links:
-            global_j   = start + link["msg"]
+            global_j   = offset + start + link["msg"]
             replies_to = link.get("replies_to")
 
             if isinstance(replies_to, list) and len(replies_to) > 0:
                 if global_j not in has_established_edge:
-                    link_map[global_j] = [start + p for p in replies_to]
+                    link_map[global_j] = [offset + start + p for p in replies_to]
                     has_established_edge.add(global_j)
             else:
-                # null — only record if not yet established; keep it overridable
                 if global_j not in has_established_edge:
                     link_map[global_j] = None
 
@@ -254,17 +274,15 @@ def format_thread_context(thread_msgs, before_global_idx, max_msgs, msg_texts):
     """
     eligible = [m for m in thread_msgs if m["globalIndex"] < before_global_idx]
     recent   = eligible[-max_msgs:]
-    parts    = [msg_texts[m["globalIndex"]] for m in recent if m["globalIndex"] in msg_texts]
+    parts = [msg_texts[m["globalIndex"]] for m in recent if m["globalIndex"] in msg_texts]
     return " | ".join(parts)
 
 
-def build_training_pairs(link_map, thread_clusters, msg_texts, msg_to_thread, quote_reply_gidxs, cfg, rng):
+def build_training_pairs(link_map, thread_clusters, msg_texts, msg_to_thread, quote_reply_gidxs, msg_to_chat, thread_to_chat, cfg, rng):
     """
     For each annotated message mj:
       Positive  (label=1): thread(s) it actually replies to
-      Negatives (label=0): randomly sampled threads it does NOT belong to
-
-    Each pair: { "thread_text": str, "message_text": str, "label": float }
+      Negatives (label=0): randomly sampled threads it does NOT belong to (restricted to same chat)
     """
     all_thread_ids = [
         tid for tid, msgs in thread_clusters.items()
@@ -293,7 +311,7 @@ def build_training_pairs(link_map, thread_clusters, msg_texts, msg_to_thread, qu
                 thread_clusters[pos_tid], global_j, cfg.thread_max_msgs, msg_texts
             )
             if not thread_text:
-                continue   # no prior messages in thread yet — skip
+                continue
             pairs.append({
                 "thread_text":  thread_text,
                 "message_text": candidate_text,
@@ -302,10 +320,13 @@ def build_training_pairs(link_map, thread_clusters, msg_texts, msg_to_thread, qu
 
         # ── NEGATIVES ─────────────────────────────────────────────────────────
         own_tid = msg_to_thread.get(global_j)
+        chat_jid = msg_to_chat.get(global_j)
+        
         eligible_neg_tids = [
             tid for tid in all_thread_ids
             if tid not in positive_tids
             and tid != own_tid
+            and thread_to_chat.get(tid) == chat_jid
             and any(m["globalIndex"] < global_j for m in thread_clusters[tid])
         ]
 
@@ -461,7 +482,15 @@ def train(cfg):
 
     # ── Load data ─────────────────────────────────────────────────────────────
     print(f"Loading threads from: {cfg.threads_path}")
-    thread_clusters, msg_texts, msg_to_thread, quote_reply_gidxs = load_threads(cfg.threads_path)
+    (
+        thread_clusters,
+        msg_texts,
+        msg_to_thread,
+        quote_reply_gidxs,
+        chat_offsets,
+        msg_to_chat,
+        thread_to_chat,
+    ) = load_threads(cfg.threads_path)
     print(f"  {len(thread_clusters)} threads  |  {len(msg_texts)} messages  |  {len(quote_reply_gidxs)} quote replies")
 
     if cfg.limit_threads:
@@ -473,13 +502,23 @@ def train(cfg):
         print(f"  [Limited] {len(thread_clusters)} threads  |  {len(msg_texts)} messages  |  {len(quote_reply_gidxs)} quote replies")
 
     print(f"Loading link map from: {cfg.annotations_path}")
-    link_map  = load_link_map(cfg.annotations_path)
+    link_map  = load_link_map(cfg.annotations_path, chat_offsets)
     n_linked  = sum(1 for v in link_map.values() if v is not None)
     print(f"  {len(link_map)} annotated messages  |  {n_linked} with a reply link")
 
     # ── Build pairs ───────────────────────────────────────────────────────────
     print("\nBuilding training pairs...")
-    pairs     = build_training_pairs(link_map, thread_clusters, msg_texts, msg_to_thread, quote_reply_gidxs, cfg, rng)
+    pairs     = build_training_pairs(
+        link_map,
+        thread_clusters,
+        msg_texts,
+        msg_to_thread,
+        quote_reply_gidxs,
+        msg_to_chat,
+        thread_to_chat,
+        cfg,
+        rng
+    )
     pos_count = sum(1 for p in pairs if p["label"] == 1.0)
     neg_count = len(pairs) - pos_count
     print(f"  {len(pairs)} pairs total  |  {pos_count} positive  |  {neg_count} negative")
@@ -487,7 +526,7 @@ def train(cfg):
     if not pairs:
         raise ValueError(
             "No training pairs generated.\n"
-            "Check that threads.json and annotations.jsonl are from the same run "
+            "Check that threads.json/threads directory and annotations.jsonl are from the same run "
             "and that annotations contain at least some replies_to links."
         )
 
@@ -711,8 +750,8 @@ class ReplyScorerInference:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a chat thread reply scorer")
-    parser.add_argument("--threads",         type=str,   default="threads.json")
-    parser.add_argument("--annotations",     type=str,   default="annotations.jsonl")
+    parser.add_argument("--threads",         type=str,   default="train/threads")
+    parser.add_argument("--annotations",     type=str,   default="train/annotations.jsonl")
     parser.add_argument("--output_dir",      type=str,   default="reply_scorer_output")
     parser.add_argument("--model_name",      type=str,   default="bert-base-multilingual-cased")
     parser.add_argument("--epochs",          type=int,   default=5)
