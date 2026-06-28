@@ -1,4 +1,4 @@
-import { WASocket } from './types'
+import { BaileysSocket } from './types'
 import { WAEventHandler } from './WAEventHandler'
 import { IHistorySyncManager } from './IHistorySyncManager'
 import { IWAEventWiringService, ConnectionCallbacks } from './IWAEventWiringService'
@@ -12,7 +12,7 @@ export class WAEventWiringService implements IWAEventWiringService {
    * Wires WhatsApp socket events to the respective handlers and event bus.
    */
   public wire(
-    sock: WASocket,
+    sock: BaileysSocket,
     eventHandler: WAEventHandler,
     connectionCallbacks: ConnectionCallbacks,
     saveCreds: () => Promise<void>,

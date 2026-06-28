@@ -236,4 +236,22 @@ Introduce a lightweight local HTTP API server (`APIServer`) running in the main 
 **Constrains:** All external calls must provide the `Authorization: Bearer <token>` header. Tools executed via the API bypass manual UI approvals because the caller is pre-authenticated.
 **Watch for:** Resource exhaustion if an external client spawns excessive parallel requests.
 
+---
+
+## ADR-14: WhatsApp Engine Background Worker Offloading
+
+**Date:** 2026-06-28
+**Status:** Accepted
+
+### Context
+Running the WhatsApp socket connection (via Baileys) and writing/syncing historical database entries directly on the Electron Main process caused noticeable CPU spikes and event loop delays. This led to temporary UI lags/freezes during high-throughput sync phases due to resource contention.
+
+### Decision
+Offload the Baileys network/decryption logic, message parsing, and database write transactions to a dedicated background Node.js worker thread (`whatsapp.worker.ts`). Communication between the Main process and the worker thread is handled via `parentPort` messages managed by a bridge class (`WAWorkerBridge.ts`). To prevent `DataCloneError` crashes over worker boundaries, strip non-serializable objects (like the raw socket instance closures) from event payloads and sanitize boom errors before transmission, re-injecting the bridge proxy as the socket context on the Main process side.
+
+### Consequences
+**Enables:** Smooth, lag-free UI rendering during initial syncs and heavy incoming message traffic by keeping the main thread's event loop clear.
+**Constrains:** All interaction with the WhatsApp client from the Main process must go through the command-sending API of `WAWorkerBridge`. Payloads sent over the worker boundary must be clean, serializable, and free of closures or complex classes.
+**Watch for:** Sync latency or serialization bottlenecks on massive object structures.
+
 

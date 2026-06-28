@@ -9,7 +9,8 @@ export default defineConfig({
         external: ['@prisma/client', '@whiskeysockets/baileys'],
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          'embedding.worker': resolve(__dirname, 'src/main/workers/embedding.worker.ts')
+          'embedding.worker': resolve(__dirname, 'src/main/workers/embedding.worker.ts'),
+          'whatsapp.worker': resolve(__dirname, 'src/main/workers/whatsapp.worker.ts')
         }
       }
     }

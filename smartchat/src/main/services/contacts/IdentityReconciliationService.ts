@@ -28,23 +28,62 @@ export class IdentityReconciliationService implements IIdentityReconciliationSer
       include: { aliases: true }
     })
 
+    if (stubs.length === 0) {
+      return { merged, skipped }
+    }
+
+    // Extract all unique non-trivial pushNames to query candidates in bulk
+    const pushNames = Array.from(
+      new Set(
+        stubs
+          .map((s) => s.pushName?.trim())
+          .filter((name): name is string => typeof name === 'string' && name.length >= 2)
+      )
+    )
+
+    if (pushNames.length === 0) {
+      skipped += stubs.length
+      return { merged, skipped }
+    }
+
+    // Find all candidate PN identities with matching pushNames in bulk
+    const allCandidates = await this.prisma.identity.findMany({
+      where: {
+        phoneNumber: { not: null },
+        pushName: { in: pushNames }
+      }
+    })
+
+    // Group candidates by pushName (trimmed matches)
+    const candidatesMap = new Map<string, typeof allCandidates>()
+    for (const candidate of allCandidates) {
+      if (candidate.pushName) {
+        const key = candidate.pushName.trim()
+        let group = candidatesMap.get(key)
+        if (!group) {
+          group = []
+          candidatesMap.set(key, group)
+        }
+        group.push(candidate)
+      }
+    }
+
     for (const stub of stubs) {
       const pushName = stub.pushName?.trim()
-      if (!pushName || pushName.length < 2) { skipped++; continue }
+      if (!pushName || pushName.length < 2) {
+        skipped++
+        continue
+      }
 
-      // Find PN identities with the same pushName
-      const candidates = await this.prisma.identity.findMany({
-        where: {
-          phoneNumber: { not: null },
-          pushName: pushName,
-          id: { not: stub.id }
-        }
-      })
+      const matchCandidates = candidatesMap.get(pushName) ?? []
 
       // Only merge on unambiguous 1:1 match — if 2+ candidates, we can't be sure which is right
-      if (candidates.length !== 1) { skipped++; continue }
+      if (matchCandidates.length !== 1) {
+        skipped++
+        continue
+      }
 
-      const keep = candidates[0]
+      const keep = matchCandidates[0]
       const keepId = keep.id
       const stubId = stub.id
 

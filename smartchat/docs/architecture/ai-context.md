@@ -18,6 +18,7 @@ Electron + React + TS | Decoupled, Layered SOLID | SQLite (Prisma ORM), better-s
 - **No Direct Socket Access:** Services must never import or reference `WASocket` or Baileys event structures. Use `SocketAccessor`.
 - **No Global Singletons Bypassing DI:** All services (including `IToolRegistry`) must be wired inside `ServiceContainer.ts`.
 - **Clean Process Separation:** Renderer and main process communicate strictly via `IAPIService` contract in Preload.
+- **Clean Worker Boundaries:** Never pass non-serializable objects (such as class instances, functions, sockets, or raw Error/Boom objects) over worker thread boundaries; sanitize payloads before posting.
 
 ## Module Map
 | Module | Public Interface | Owned Concrete Classes |

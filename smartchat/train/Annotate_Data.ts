@@ -25,13 +25,13 @@ const KEYWORD_ME = 'Me';
 const KEYWORD_THEM = 'Them';
 const KEYWORD_UNKNOWN = 'Unknown';
 const GROUP_JID_SUFFIX = '@g.us';
-const CHAT_TYPE_DM = 'DM';
 const FORMAT_TRANSCRIPT = 'transcript';
 const TRUNCATE_LIMIT_REPLY = 35;
+const MIN_MESSAGES_PER_CHAT = 50;
+const MAX_MESSAGES_PER_CHAT = 200;
 
 // API KEY CONFIGURATION
 const GEMINI_API_KEY = "AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0";
-const GROUP_NAME_QUERY = '%Bhaskara%';
 
 interface WindowSlice {
   windowIndex: number;
@@ -166,7 +166,7 @@ function formatMessageContent(m: any, unwrapped: proto.IMessage | null | undefin
   );
 }
 
-function formatMessageForPrompt(
+export function formatMessageForPrompt(
   index: number,
   m: any,
   unwrapped: proto.IMessage | null | undefined,
@@ -182,51 +182,9 @@ function formatMessageForPrompt(
   return `[${index}] [${timeStr}] ${senderLabel}: ${replyContext}${formattedContent}`;
 }
 
-function collectUniqueJids(messages: any[], formatterRegistry: any): Set<string> {
-  const uniqueJids = new Set<string>();
-  for (const m of messages) {
-    if (m.chatJid) uniqueJids.add(m.chatJid);
-    if (m.participant) uniqueJids.add(m.participant);
 
-    if (m.content) {
-      try {
-        const contentObj = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
-        const unwrapped = unwrapMessage(contentObj);
-        const quoted = getQuotedMessageContext(unwrapped, formatterRegistry);
-        if (quoted && quoted.participant) {
-          uniqueJids.add(quoted.participant);
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
-  }
-  return uniqueJids;
-}
 
-function buildChatInfoMap(
-  uniqueJids: Set<string>,
-  nameMap: Map<string, string>,
-  dbPath: string
-): Map<string, { name: string; type: string }> {
-  const chatInfoMap = new Map<string, { name: string; type: string }>();
-  if (uniqueJids.size > 0) {
-    const jidsArray = Array.from(uniqueJids).map(j => `'${j.replace(/'/g, "''")}'`).join(',');
-    const chatsRows = runSql(dbPath, `SELECT jid, name, type FROM Chat WHERE jid IN (${jidsArray});`);
-    for (const row of chatsRows) {
-      let name = row.name || '';
-      if (row.type === CHAT_TYPE_DM) {
-        name = nameMap.get(row.jid) || row.jid.split('@')[0];
-      } else {
-        name = row.name || row.jid.split('@')[0];
-      }
-      chatInfoMap.set(row.jid, { name, type: row.type });
-    }
-  }
-  return chatInfoMap;
-}
-
-function chunkMessagesIntoWindows(
+export function chunkMessagesIntoWindows(
   messages: any[],
   nameMap: Map<string, string>,
   isDM: boolean,
@@ -393,7 +351,8 @@ function extractGlobalThreads(
   nameMap: Map<string, string>,
   isDM: boolean,
   formatterRegistry: any,
-  seedEdges: Array<{ globalI: number; globalJ: number }>
+  seedEdges: Array<{ globalI: number; globalJ: number }>,
+  chatJid: string
 ): any[] {
   const parent = new Map<number, number>();
 
@@ -415,10 +374,6 @@ function extractGlobalThreads(
   }
 
   // Track which global message indices already have at least one outgoing union edge.
-  // A message with an established edge should not have that edge overridden by a later
-  // window's re-annotation (which has less prior context).
-  // A message with NO established edge (was null in an earlier window) CAN receive
-  // a new edge from a later window that has deeper cross-window context.
   const hasEstablishedEdge = new Set<number>();
 
   // Seed edges from native quote-replies count as established
@@ -432,6 +387,7 @@ function extractGlobalThreads(
     for (const line of lines) {
       try {
         const obj = JSON.parse(line);
+        if (obj.chatJid !== chatJid) continue;
         const startIndex = obj.startIndex;
         const links = obj.annotation?.links || [];
 
@@ -456,13 +412,7 @@ function extractGlobalThreads(
               union(globalI, globalJ);
             }
             hasEstablishedEdge.add(globalJ);
-
           }
-          // replies_to === null: this window says no edge.
-          // Only register as "processed with null" if not already established,
-          // so we don't block a future window from linking it.
-          // We intentionally do NOT add to hasEstablishedEdge here —
-          // a null from an early window should remain overridable.
         }
       } catch (e) {
         // ignore malformed lines
@@ -510,9 +460,15 @@ function extractGlobalThreads(
 }
 
 async function main() {
-  const dbPath = path.resolve(process.cwd(), 'prisma/dev.db');
-  const formatterRegistry = createMessageFormatterRegistry();
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  let dbPath = path.resolve(process.cwd(), 'prisma/dev.db');
+  if (!fs.existsSync(dbPath)) {
+    dbPath = path.resolve(__dirname, '../prisma/dev.db');
+  }
+  if (!fs.existsSync(dbPath)) {
+    dbPath = path.resolve(__dirname, '../../prisma/dev.db');
+  }
+  const formatterRegistry = createMessageFormatterRegistry();
 
   console.log(`\n${colors.border}╔══════════════════════════════════════════════════════════════╗${colors.reset}`);
   console.log(`  ${colors.cyan}${colors.bright}🤖 SmartChat Chat Disentanglement Thread Extractor${colors.reset}`);
@@ -526,95 +482,65 @@ async function main() {
 
   const ai = new GoogleGenAI({ apiKey: finalApiKey });
 
-  console.log(`🔍 Searching for target chat configuration matching: "${colors.yellow}${GROUP_NAME_QUERY}${colors.reset}"`);
-  const queryResult = runSql(
-    dbPath,
-    `SELECT jid, name FROM Chat WHERE name LIKE '${GROUP_NAME_QUERY}' 
-     UNION 
-     SELECT ia.jid, COALESCE(i.displayName, i.pushName, i.verifiedName) as name 
-     FROM IdentityAlias ia 
-     JOIN Identity i ON ia.identityId = i.id 
-     WHERE i.displayName LIKE '${GROUP_NAME_QUERY}' OR i.pushName LIKE '${GROUP_NAME_QUERY}' OR i.verifiedName LIKE '${GROUP_NAME_QUERY}'
-     LIMIT 1;`
-  );
-
-  if (queryResult.length === 0) {
-    console.error(`\n${colors.red}❌ No chat matching "${GROUP_NAME_QUERY}" found in database.${colors.reset}\n`);
-    return;
+  const threadsDir = path.resolve(__dirname, 'threads');
+  if (!fs.existsSync(threadsDir)) {
+    fs.mkdirSync(threadsDir, { recursive: true });
   }
-
-  const chat = queryResult[0];
-  console.log(`\n${colors.green}✅ Found Target Chat Context:${colors.reset}`);
-  console.log(`  - Name: ${colors.bright}${chat.name}${colors.reset}`);
-  console.log(`  - JID : ${colors.dim}${chat.jid}${colors.reset}\n`);
-
-  console.log(`📨 Fetching chronological log streams...`);
-  const rawMessages = runSql(
-    dbPath,
-    `SELECT id, chatJid, senderId, participant, fromMe, timestamp, messageType, content, textContent, isDeleted, isEdited, status 
-     FROM Message WHERE chatJid = '${chat.jid}' ORDER BY timestamp ASC;`
-  );
-
-  let messages = rawMessages.map((m: any) => ({
-    ...m,
-    fromMe: m.fromMe === 1,
-    isDeleted: m.isDeleted === 1,
-    isEdited: m.isEdited === 1,
-    timestamp: Number(m.timestamp)
-  }));
-  
-  messages = messages.slice(0,4000); // Kept constraint consistent with target snippet limits
-  console.log(`📊 Total working records collected: ${colors.yellow}${messages.length}${colors.reset}`);
-  if (messages.length === 0) return;
-
-  console.log(`👥 Parsing contextual metadata configurations...`);
-  const uniqueJids = collectUniqueJids(messages, formatterRegistry);
-  const nameMap = new Map<string, string>();
-
-  const meAliases = runSql(dbPath, `SELECT jid FROM IdentityAlias WHERE identityId IN (SELECT id FROM Identity WHERE isMe = 1);`);
-  for (const row of meAliases) {
-    nameMap.set(row.jid, KEYWORD_ME);
-  }
-
-  if (uniqueJids.size > 0) {
-    const jidsArray = Array.from(uniqueJids).map(j => `'${j.replace(/'/g, "''")}'`).join(',');
-    const aliasesRows = runSql(dbPath, `
-      SELECT ia.jid, i.isMe, i.displayName, i.pushName, i.verifiedName 
-      FROM IdentityAlias ia 
-      LEFT JOIN Identity i ON ia.identityId = i.id 
-      WHERE ia.jid IN (${jidsArray});
-    `);
-    for (const row of aliasesRows) {
-      if (row.isMe === 1) {
-        nameMap.set(row.jid, KEYWORD_ME);
-      } else if (!nameMap.has(row.jid)) {
-        const name = row.displayName || row.pushName || row.verifiedName || row.jid.split('@')[0];
-        nameMap.set(row.jid, name);
-      }
-    }
-  }
-
-  const isDM = !chat.jid.endsWith(GROUP_JID_SUFFIX);
-
-  console.log(`📦 Organizing streams into optimization boundary blocks...`);
-  const windows = chunkMessagesIntoWindows(messages, nameMap, isDM, formatterRegistry, 2000, 20);
-  console.log(`🧩 Analysis partition slots determined: ${colors.yellow}${windows.length}${colors.reset}\n`);
 
   const annotationsPath = path.resolve(__dirname, 'annotations.jsonl');
-  const threadsJsonPath = path.resolve(__dirname, 'threads.json');
 
-  const completedWindows = new Set<number>();
+  // Load completed windows from annotations.jsonl to support automatic continue
+  const completedWindows = new Set<string>();
   if (fs.existsSync(annotationsPath)) {
     const lines = fs.readFileSync(annotationsPath, 'utf8').split('\n');
     for (const line of lines) {
       if (line.trim()) {
         try {
           const obj = JSON.parse(line);
-          if (typeof obj.windowIndex === 'number') completedWindows.add(obj.windowIndex);
+          if (obj.chatJid && typeof obj.windowIndex === 'number') {
+            completedWindows.add(`${obj.chatJid}:${obj.windowIndex}`);
+          }
         } catch (e) {}
       }
     }
   }
+
+  console.log(`👥 Parsing contextual metadata configurations...`);
+  const nameMap = new Map<string, string>();
+
+  // 1. Map "me" aliases
+  const meAliases = runSql(dbPath, `SELECT jid FROM IdentityAlias WHERE identityId IN (SELECT id FROM Identity WHERE isMe = 1);`);
+  for (const row of meAliases) {
+    nameMap.set(row.jid, KEYWORD_ME);
+  }
+
+  // 2. Map all other identities
+  const allAliases = runSql(dbPath, `
+    SELECT ia.jid, i.isMe, i.displayName, i.pushName, i.verifiedName 
+    FROM IdentityAlias ia 
+    LEFT JOIN Identity i ON ia.identityId = i.id;
+  `);
+  for (const row of allAliases) {
+    if (row.isMe === 1) {
+      nameMap.set(row.jid, KEYWORD_ME);
+    } else if (!nameMap.has(row.jid)) {
+      const name = row.displayName || row.pushName || row.verifiedName || row.jid.split('@')[0];
+      nameMap.set(row.jid, name);
+    }
+  }
+
+  console.log(`🔍 Querying active chats with >= ${MIN_MESSAGES_PER_CHAT} messages...`);
+  const chatsResult = runSql(
+    dbPath,
+    `SELECT c.jid, c.name, c.type, COUNT(m.id) as messageCount
+     FROM Chat c
+     JOIN Message m ON c.jid = m.chatJid
+     GROUP BY c.jid
+     HAVING messageCount >= ${MIN_MESSAGES_PER_CHAT}
+     ORDER BY messageCount DESC;`
+  );
+
+  console.log(`📊 Found ${colors.yellow}${chatsResult.length}${colors.reset} chats to process.\n`);
 
   const systemPrompt = `You are an expert dialogue thread analysis model specializing in chat disentanglement for WhatsApp group and DM conversations.
 
@@ -1039,7 +965,7 @@ EXPECTED OUTPUT:
     },
     {
       "msg": 31,
-      "reasoning": "'yes' — same sender as msg 30, 2 seconds later. Affirmation, continues msg 30.",
+      "reasoning": "'yes' — unnamed sender confirms. Links to msg 30.",
       "replies_to": [30]
     }
   ]
@@ -1136,140 +1062,176 @@ Before writing the final JSON, verify:
 
 Output only the raw JSON object. Do not include markdown fences, explanatory prose, or any text outside the JSON structure.`;
 
-// ── ANNOTATION LOOP (RATE-LIMITED & PARALLEL) ─────────────────────────────
-  
-  // Rate limiting configurations
-  const RPM_LIMIT = 15;        // N requests per minute limit
-  const MAX_CONCURRENCY = 15;   // Maximum simultaneous active requests
-  const LAUNCH_INTERVAL = (60 * 1000) / RPM_LIMIT; // Minimum ms gap between request initiations
+  for (let chatIdx = 0; chatIdx < chatsResult.length; chatIdx++) {
+    const chat = chatsResult[chatIdx];
+    const safeChatName = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0];
+    const threadsJsonPath = path.resolve(threadsDir, `${chat.jid}.json`);
 
-  const tasks = windows.filter(w => !completedWindows.has(w.windowIndex));
-  
-  if (tasks.length > 0) {
-    console.log(`⚡ Processing ${colors.yellow}${tasks.length}${colors.reset} remaining windows concurrently...`);
-    console.log(`📊 Rate Constraints: Max ${colors.cyan}${RPM_LIMIT} RPM${colors.reset} | Max ${colors.cyan}${MAX_CONCURRENCY} Concurrent Slots${colors.reset}\n`);
+    console.log(`--- [Chat ${chatIdx + 1}/${chatsResult.length}] Processing ${colors.yellow}${safeChatName}${colors.reset} (${chat.jid}) ---`);
+
+    if (fs.existsSync(threadsJsonPath)) {
+      console.log(`⏭️ Threads file already exists for this chat. Skipping.\n`);
+      continue;
+    }
+
+    console.log(`📨 Fetching chronological log streams...`);
+    const rawMessages = runSql(
+      dbPath,
+      `SELECT id, chatJid, senderId, participant, fromMe, timestamp, messageType, content, textContent, isDeleted, isEdited, status 
+       FROM Message WHERE chatJid = '${chat.jid}' ORDER BY timestamp ASC LIMIT ${MAX_MESSAGES_PER_CHAT};`
+    );
     
-    let taskIndex = 0;
-    let activeRequests = 0;
-    let lastLaunchTime = 0;
+    const messages = rawMessages.map((m: any) => ({
+      ...m,
+      fromMe: m.fromMe === 1,
+      isDeleted: m.isDeleted === 1,
+      isEdited: m.isEdited === 1,
+      timestamp: Number(m.timestamp)
+    }));
 
-    // Use a Promise to block main execution until all parallel tasks finish
-    await new Promise<void>((resolve) => {
-      function processQueue() {
-        // Base case: All tasks have been dispatched and all active requests are finished
-        if (taskIndex >= tasks.length && activeRequests === 0) {
-          resolve();
-          return;
-        }
+    if (messages.length < MIN_MESSAGES_PER_CHAT) {
+      console.log(`⏭️ Chat has less than ${MIN_MESSAGES_PER_CHAT} messages. Skipping.\n`);
+      continue;
+    }
 
-        const now = Date.now();
-        const timeSinceLastLaunch = now - lastLaunchTime;
+    const isDM = !chat.jid.endsWith(GROUP_JID_SUFFIX);
 
-        // Fire next task if we have tasks remaining, open concurrency slots, and have respected the RPM spacing
-        if (taskIndex < tasks.length && activeRequests < MAX_CONCURRENCY && timeSinceLastLaunch >= LAUNCH_INTERVAL) {
-          const w = tasks[taskIndex++];
-          activeRequests++;
-          lastLaunchTime = now;
+    console.log(`📦 Organizing streams into optimization boundary blocks...`);
+    const windows = chunkMessagesIntoWindows(messages, nameMap, isDM, formatterRegistry, 2000, 20);
+    console.log(`🧩 Analysis partition slots determined: ${colors.yellow}${windows.length}${colors.reset}\n`);
 
-          // Dispatch asynchronous execution worker
-          executeWindowTask(w).finally(() => {
-            activeRequests--;
-            // Immediately trigger a queue check when a slot opens up
-            processQueue();
-          });
-        }
+    const tasks = windows.filter(w => !completedWindows.has(`${chat.jid}:${w.windowIndex}`));
 
-        if (taskIndex < tasks.length || activeRequests > 0) {
+    if (tasks.length > 0) {
+      console.log(`⚡ Processing ${colors.yellow}${tasks.length}${colors.reset} remaining windows concurrently...`);
+      
+      const RPM_LIMIT = 15;        // N requests per minute limit
+      const MAX_CONCURRENCY = 15;   // Maximum simultaneous active requests
+      const LAUNCH_INTERVAL = (60 * 1000) / RPM_LIMIT; // Minimum ms gap between request initiations
+      
+      let taskIndex = 0;
+      let activeRequests = 0;
+      let lastLaunchTime = 0;
+
+      // Use a Promise to block main execution until all parallel tasks finish
+      await new Promise<void>((resolve) => {
+        function processQueue() {
+          if (taskIndex >= tasks.length && activeRequests === 0) {
+            resolve();
+            return;
+          }
+
+          const now = Date.now();
+          const timeSinceLastLaunch = now - lastLaunchTime;
+
+          if (taskIndex < tasks.length && activeRequests < MAX_CONCURRENCY && timeSinceLastLaunch >= LAUNCH_INTERVAL) {
+            const w = tasks[taskIndex++];
+            activeRequests++;
+            lastLaunchTime = now;
+
+            executeWindowTask(w, chat.jid).finally(() => {
+              activeRequests--;
+              processQueue();
+            });
+          }
+
+          if (taskIndex < tasks.length || activeRequests > 0) {
             const nextDelay = activeRequests >= MAX_CONCURRENCY ? 50 : Math.max(0, LAUNCH_INTERVAL - (Date.now() - lastLaunchTime));
             setTimeout(processQueue, nextDelay);
           }
         }
 
-      // Initialize the queue worker execution loop
-      processQueue();
-    });
-  } else {
-    console.log(`✅ All windows already processed and cached in annotations file.`);
-  }
+        processQueue();
+      });
+    } else {
+      console.log(`✅ All windows already processed and cached in annotations file.`);
+    }
 
-  // Self-contained asynchronous worker execution loop preserving your original error checking & retry rules
-  async function executeWindowTask(w: WindowSlice) {
-    console.log(`[Window ${w.windowIndex + 1}/${windows.length}] Evaluating context indices ${w.startIndex} to ${w.endIndex}`);
+    async function executeWindowTask(w: WindowSlice, chatJid: string) {
+      console.log(`[Window ${w.windowIndex + 1}/${windows.length}] Evaluating context indices ${w.startIndex} to ${w.endIndex}`);
 
-    const userPrompt = `Analyze the following chat window and output the JSON links structure:\n\n${w.formattedText}\n\nJSON Output:`;
+      const userPrompt = `Analyze the following chat window and output the JSON links structure:\n\n${w.formattedText}\n\nJSON Output:`;
 
-    let success = false;
-    let retries = 3;
-    let rawResponse = "";
-    let parsedAnnotation: any = null;
+      let success = false;
+      let retries = 3;
+      let rawResponse = "";
+      let parsedAnnotation: any = null;
 
-    while (!success && retries > 0) {
-      try {
-        const response = await ai.models.generateContent({
-          model: 'gemma-4-31b-it',
-          contents: userPrompt,
-          config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: 'application/json'
+      while (!success && retries > 0) {
+        try {
+          const response = await ai.models.generateContent({
+            model: 'gemma-4-31b-it',
+            contents: userPrompt,
+            config: {
+              systemInstruction: systemPrompt,
+              responseMimeType: 'application/json'
+            }
+          });
+
+          rawResponse = response.text || '';
+          parsedAnnotation = JSON.parse(rawResponse.trim());
+
+          const errors = validateAnnotation(parsedAnnotation, w.messages.length);
+          if (errors.length > 0) {
+            retries--;
+            continue;
           }
-        });
-
-        rawResponse = response.text || '';
-        parsedAnnotation = JSON.parse(rawResponse.trim());
-
-        const errors = validateAnnotation(parsedAnnotation, w.messages.length);
-        if (errors.length > 0) {
+          success = true;
+        } catch (err) {
           retries--;
-          continue;
+          if (retries > 0) {
+            await new Promise(res => setTimeout(res, 2000));
+          }
         }
-        success = true;
-      } catch (err) {
-        retries--;
-        if (retries > 0) await new Promise(res => setTimeout(res, 2000));
       }
+
+      if (!success) {
+        console.error(`${colors.red}❌ Window ${w.windowIndex + 1} failed definitively after multiple retries.${colors.reset}`);
+        return;
+      }
+
+      const annotationLog = {
+        chatJid: chatJid,
+        windowIndex: w.windowIndex,
+        startIndex: w.startIndex,
+        endIndex: w.endIndex,
+        annotation: parsedAnnotation
+      };
+      
+      fs.appendFileSync(annotationsPath, JSON.stringify(annotationLog) + '\n', 'utf8');
+      console.log(`${colors.green}✅ Window ${w.windowIndex + 1}/${windows.length} completed and flushed to disk.${colors.reset}`);
     }
 
-    if (!success) {
-      console.error(`${colors.red}❌ Window ${w.windowIndex + 1} failed definitively after multiple retries.${colors.reset}`);
-      return;
-    }
+    console.log(`\n🔍 Parsing contextual reference points from native reply targets...`);
+    const { seedEdges } = buildSeedThreadsFromQuoteReplies(messages, formatterRegistry);
 
-    const annotationLog = {
-      windowIndex: w.windowIndex,
-      startIndex: w.startIndex,
-      endIndex: w.endIndex,
-      annotation: parsedAnnotation
-    };
-    
-    // Node's synchronous fs.appendFileSync handles file descriptor locking on the main thread execution line, 
-    // making it completely thread-safe to handle incoming lines out of order without log interleaving.
-    fs.appendFileSync(annotationsPath, JSON.stringify(annotationLog) + '\n', 'utf8');
-    console.log(`${colors.green}✅ Window ${w.windowIndex + 1}/${windows.length} completed and flushed to disk.${colors.reset}`);
+    console.log(`🔗 Executing unified graph union passes across tracking components...`);
+    const globalThreads = extractGlobalThreads(
+      messages,
+      annotationsPath,
+      nameMap,
+      isDM,
+      formatterRegistry,
+      seedEdges,
+      chat.jid
+    );
+
+    fs.writeFileSync(threadsJsonPath, JSON.stringify(globalThreads, null, 2), 'utf8');
+
+    console.log(`\n${colors.green}🚀 Thread extraction complete for chat!${colors.reset}`);
+    console.log(`📊 Total Continuous Threads Formed : ${colors.yellow}${globalThreads.length}${colors.reset}`);
+    console.log(`📁 Target Output Workspace Storage: ${colors.cyan}${threadsJsonPath}${colors.reset}\n`);
   }
-
-  // ── THREAD EXTRACTION & STORAGE PASS ─────────────────────────────────────
-  console.log(`\n🔍 Parsing contextual reference points from native reply targets...`);
-  const { seedEdges } = buildSeedThreadsFromQuoteReplies(messages, formatterRegistry);
-
-  console.log(`🔗 Executing unified graph union passes across tracking components...`);
-  const globalThreads = extractGlobalThreads(
-    messages,
-    annotationsPath,
-    nameMap,
-    isDM,
-    formatterRegistry,
-    seedEdges
-  );
-
-  // Write isolated full conversation branches out cleanly into structured JSON target
-  fs.writeFileSync(threadsJsonPath, JSON.stringify(globalThreads, null, 2), 'utf8');
-
-  console.log(`\n${colors.green}🚀 Thread extraction complete!${colors.reset}\n`);
-  console.log(`📊 Total Continuous Threads Formed : ${colors.yellow}${globalThreads.length}${colors.reset}`);
-  console.log(`📁 Target Output Workspace Storage: ${colors.cyan}${threadsJsonPath}${colors.reset}\n`);
 }
 
-main().catch((err) => {
-  console.error(`\n${colors.red}💥 Fatal execution error detected:${colors.reset}`, err);
-  process.exit(1);
-});
+const isEntry = process.argv[1] && (
+  process.argv[1] === fileURLToPath(import.meta.url) || 
+  process.argv[1].endsWith('Annotate_Data.ts')
+);
+
+if (isEntry) {
+  main().catch((err) => {
+    console.error(`\n${colors.red}💥 Fatal execution error detected:${colors.reset}`, err);
+    process.exit(1);
+  });
+}

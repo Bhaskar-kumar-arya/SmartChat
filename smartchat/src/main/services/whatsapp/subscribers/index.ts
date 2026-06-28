@@ -15,10 +15,7 @@ import type { IWAEventSubscriber } from './IWAEventSubscriber'
 
 import { NotificationSubscriber }  from './NotificationSubscriber'
 import { UIBroadcastSubscriber }   from './UIBroadcastSubscriber'
-import { PersistenceSubscriber }   from './PersistenceSubscriber'
-import { ContactGroupSubscriber }  from './ContactGroupSubscriber'
-import { ReceiptSubscriber }       from './ReceiptSubscriber'
-import { FavoriteStickerSubscriber } from './FavoriteStickerSubscriber'
+
 
 import type { IMessageWriterService } from '../../messages/IMessageWriterService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
@@ -63,17 +60,11 @@ export function createSubscribers(
   getMainWindow: () => BrowserWindow | null
 ): IWAEventSubscriber[] {
   const subscribers: IWAEventSubscriber[] = [
-    new PersistenceSubscriber(services.messageWriterService, services.chatService),
-    new ContactGroupSubscriber(services.contactService, services.chatService, services.groupMembershipService, services.chatMemberRepository),
     new NotificationSubscriber(services.chatService, services.contactService, services.profileSyncService, services.notificationService),
     new UIBroadcastSubscriber(services.contactService, services.messageQueryService, services.messageQueryRepository, getMainWindow),
-    new ReceiptSubscriber(services.receiptService, services.messageProcessingService, services.contactService),
-    new FavoriteStickerSubscriber(services.favoriteStickerService),
   ]
 
   // Register each subscriber on the bus — order matters for same-event handlers
-  // (PersistenceSubscriber registers before UIBroadcastSubscriber so DB writes
-  //  land before IPC sends, matching the old behaviour)
   subscribers.forEach(s => s.register(bus))
 
   return subscribers

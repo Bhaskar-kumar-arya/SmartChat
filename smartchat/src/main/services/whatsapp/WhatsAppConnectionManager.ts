@@ -1,54 +1,36 @@
 import { BrowserWindow } from 'electron'
-import { DisconnectReason, ConnectionState } from '@whiskeysockets/baileys'
-import { Boom } from '@hapi/boom'
-import { usePrismaAuthState } from '../../auth'
-import { WASocket } from './types'
-import {
-  RECONNECT_DELAY_RESTART_MS,
-  RECONNECT_DELAY_DEFAULT_MS
-} from '../../constants'
 import { IDataWipeService } from '../IDataWipeService'
-import { WAEventHandler } from './WAEventHandler'
 import type { IWAEventBus, WAEventBusFactory } from './IWAEventBus'
 import { createSubscribers, SubscriberServices } from './subscribers'
-import { IHistorySyncManager } from './IHistorySyncManager'
-import { BaileysPatcher } from './BaileysPatcher'
-import { IWAEventWiringService, ConnectionCallbacks } from './IWAEventWiringService'
 import { IAuthSettingsService } from '../auth/IAuthSettingsService'
 import { IChatRepository } from '../chats/IChatRepository'
 import type { IEmbeddingOperationalControl } from '../search/IEmbeddingService'
-import { IWASocketFactory } from './IWASocketFactory'
-import { IWACatchUpManager } from './IWACatchUpManager'
+import { WAWorkerBridge } from '../../workers/WAWorkerBridge'
 
 export interface WhatsAppConnectionDependencies extends SubscriberServices {
   embeddingService: IEmbeddingOperationalControl
 }
 
-export class WhatsAppConnectionManager implements ConnectionCallbacks {
-  private currentSock: WASocket | null = null
-  private reconnectTimeout: NodeJS.Timeout | null = null
-  private isFreshLogin = false
+export class WhatsAppConnectionManager {
+  private currentSock: WAWorkerBridge | null = null
   private mainWindow: BrowserWindow | null = null
   private currentBus: IWAEventBus | null = null
+  private isFreshLogin = false
 
   constructor(
     private deps: WhatsAppConnectionDependencies,
     private readonly authSettingsService: IAuthSettingsService,
     private readonly chatRepository: IChatRepository,
     private readonly dataWipeService: IDataWipeService,
-    private historySyncManager: IHistorySyncManager,
-    private wiringService: IWAEventWiringService,
     private readonly eventBusFactory: WAEventBusFactory,
-    private readonly socketFactory: IWASocketFactory,
-    private readonly catchUpManager: IWACatchUpManager
+    private readonly waWorkerBridge: WAWorkerBridge
   ) { }
 
   public setWindow(window: BrowserWindow): void {
     this.mainWindow = window
-    this.catchUpManager.setWindow(window)
   }
 
-  public getSocket(): WASocket | null {
+  public getSocket(): WAWorkerBridge | null {
     return this.currentSock
   }
 
@@ -57,29 +39,18 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
   }
 
   public async connect(): Promise<void> {
-    BaileysPatcher.patch()
     this.deps.embeddingService.setPaused(false) // Clean start
     if (!this.mainWindow) {
       console.warn('[WhatsAppConnectionManager] No window set, cannot connect.')
       return
     }
 
-    // Clear any existing reconnect timeout
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout)
-      this.reconnectTimeout = null
-    }
-
-    // Gracefully shut down existing socket
+    // Gracefully shut down existing bridge connection
     if (this.currentSock) {
-      console.log('[Connection] Cleaning up previous socket instance before reconnecting...')
-      try {
-        const ev = this.currentSock.ev as unknown as { removeAllListeners?: () => void }
-        ev.removeAllListeners?.()
-        this.currentSock.end(new Error('Replaced by new socket instance'))
-      } catch (err) {
-        console.warn('[Connection] Error cleaning up old socket:', err)
-      }
+      console.log('[Connection] Stopping previous worker bridge instance before reconnecting...')
+      await this.currentSock.stop().catch((err) => {
+        console.warn('[Connection] Error stopping old bridge:', err)
+      })
       this.currentSock = null
     }
 
@@ -104,15 +75,6 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
       }
     }
 
-    const { state, saveCreds } = await usePrismaAuthState()
-    let version: [number, number, number] = [2, 3000, 1035194821]
-    try {
-      version = await this.socketFactory.fetchVersion()
-      console.log(`[Connection] Successfully fetched WA v${version.join('.')}`)
-    } catch (err) {
-      console.warn('[Connection] Failed to fetch latest WhatsApp version (possibly offline). Using fallback version.', err)
-    }
-
     if (this.isFreshLogin) {
       await this.authSettingsService.clearHistorySyncCompleted().catch((err) => {
         console.error('[WhatsAppConnectionManager] fresh login authState deletion failed:', err)
@@ -120,128 +82,25 @@ export class WhatsAppConnectionManager implements ConnectionCallbacks {
     }
 
     const isHistorySyncCompleted = await this.authSettingsService.getHistorySyncCompleted()
-
-    // Clear HistorySyncManager for this connection
-    this.historySyncManager.clear()
-
-    const isInitialSyncInProgress = this.historySyncManager.isInProgress
-    const shouldSyncHistory = this.isFreshLogin || isInitialSyncInProgress || !isHistorySyncCompleted
-
+    const shouldSyncHistory = this.isFreshLogin || !isHistorySyncCompleted
     const syncFullHistory = await this.authSettingsService.getSyncFullHistory()
-
-    const sock = this.socketFactory.createSocket(
-      version,
-      state,
-      syncFullHistory,
-      shouldSyncHistory
-    )
-
-    this.currentSock = sock
 
     // Create the event bus and wire up all subscribers for this connection
     const bus = this.eventBusFactory()
     this.currentBus = bus
     createSubscribers(bus, this.deps, () => this.mainWindow)
 
-    const eventHandler = new WAEventHandler(this.deps.messageProcessingService, this.deps.messageParserService, bus)
+    this.currentSock = this.waWorkerBridge
 
-    // Delegate all event wiring to WAEventWiringService
-    this.wiringService.wire(
-      sock,
-      eventHandler,
-      this,
-      saveCreds,
-      syncFullHistory
-    )
-  }
-
-  public handleQr(qr: string): void {
-    console.log('Got QR string:', qr)
-    this.isFreshLogin = true
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('wa-qr', qr)
-    }
-  }
-
-  public async handleConnectionClose(lastDisconnect: unknown): Promise<void> {
-    this.catchUpManager.reset()
-
-    const lastDisconnectObj = lastDisconnect as Record<string, unknown> | null | undefined
-    const statusCode = (lastDisconnectObj?.error as Boom | undefined)?.output?.statusCode
-    const errorData = (lastDisconnectObj?.error as Record<string, unknown> | undefined)?.data as Record<string, unknown> | undefined
-    const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
-    const isRestartRequired = statusCode === DisconnectReason.restartRequired
-    const shouldReconnect = (statusCode !== DisconnectReason.loggedOut && !isConflict) || isRestartRequired
-
-    console.log(`[Connection] Closed | statusCode=${statusCode} | isRestart=${isRestartRequired} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect} | error=`, lastDisconnectObj?.error)
-
-    if (shouldReconnect) {
-      const delay = isRestartRequired ? RECONNECT_DELAY_RESTART_MS : RECONNECT_DELAY_DEFAULT_MS
-      console.log(`[Connection] Scheduling reconnect in ${delay}ms...`)
-      this.reconnectTimeout = setTimeout(() => this.connect(), delay)
-    } else if (isConflict) {
-      console.warn('[Connection] Replaced by another session (440 conflict). Standing down.')
-    } else {
-      console.log('Logged out — wiping all data for fresh QR...')
-      try {
-        await this.dataWipeService.wipeAllData()
-      } catch (err) {
-        console.error('Error wiping data:', err)
-      }
-      this.isFreshLogin = true
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('wa-logged-out')
-      }
-      this.connect()
-    }
-  }
-
-  public async handleConnectionOpen(sock: WASocket, syncFullHistory: boolean): Promise<void> {
-    console.log('Connected to WhatsApp!')
-    if (sock.user) {
-      await this.deps.contactService.registerMe(sock.user).catch((err) => {
-        console.error('[Connection] Failed to register logged-in user identity:', err)
-      })
-    }
-
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      const isInitialSyncInProgress = this.historySyncManager.isInProgress
-      if (!this.isFreshLogin && !isInitialSyncInProgress) {
-        const isHistorySyncCompleted = await this.authSettingsService.getHistorySyncCompleted()
-
-        if (isHistorySyncCompleted) {
-          if (this.catchUpManager.hasReceivedPending()) {
-            console.log('[Connection] Already received pending notifications. Skipping catchup.')
-            this.deps.embeddingService.setPaused(false)
-            this.mainWindow.webContents.send('wa-sync-progress', {
-              progress: 100,
-              syncType: 6, // SYNC_TYPE_GROUP_HYDRATION
-              syncFullHistory
-            })
-            this.mainWindow.webContents.send('wa-sync-complete')
-          } else {
-            this.catchUpManager.start(syncFullHistory)
-          }
-        } else {
-          console.log(`[Connection] Reconnect: history sync NOT completed, continuing sync`)
-          this.mainWindow.webContents.send('wa-connected')
-        }
-      } else {
-        console.log('[Connection] Fresh login or active sync reconnect detected, showing/continuing sync screen')
-        this.historySyncManager.setInProgress(true)
-        this.isFreshLogin = false
-        this.mainWindow.webContents.send('wa-connected')
-      }
-    }
-  }
-
-  public async handleConnectionUpdate(update: Partial<ConnectionState>): Promise<void> {
-    await this.catchUpManager.handleUpdate(update)
+    // Start the worker bridge!
+    this.waWorkerBridge.start(syncFullHistory, shouldSyncHistory)
   }
 
   public skipSync(): void {
     if (this.currentSock) {
-      this.historySyncManager.skipSync(this.currentSock)
+      this.currentSock.skipSync().catch((err) => {
+        console.error('[WhatsAppConnectionManager] Failed to send skipSync command:', err)
+      })
     }
   }
 }

@@ -17,7 +17,7 @@ import type { IVectorSyncService } from "./services/search/IVectorSyncService";
 import { existsSync, copyFileSync, mkdirSync } from "fs";
 
 // In dev, use the local db. In prod, use the userData dir
-const dbPath = (() => {
+export const dbPath = (() => {
   if (is.dev) {
     return join(__dirname, '../../prisma/dev.db');
   }
@@ -69,6 +69,7 @@ const baseAdapter = new PrismaBetterSqlite3({
 interface ConnectionWithClient {
   client?: {
     loadExtension: (path: string) => void;
+    pragma: (statement: string) => unknown;
   };
 }
 
@@ -80,6 +81,15 @@ const adapter = new Proxy(baseAdapter, {
         const valueFn = value as (...args: unknown[]) => unknown;
         const conn = await valueFn.apply(target, args) as ConnectionWithClient | null | undefined;
         if (conn && conn.client) {
+          try {
+            conn.client.pragma("busy_timeout = 5000");
+            conn.client.pragma("journal_mode = WAL");
+            conn.client.pragma("synchronous = NORMAL");
+            console.log("[AdapterPatch] SQLite pragmas successfully applied (busy_timeout = 5000, journal_mode = WAL, synchronous = NORMAL)");
+          } catch (e: unknown) {
+            console.error("[AdapterPatch] Failed to apply SQLite pragmas:", e);
+          }
+
           try {
             let loadablePath = sqliteVec.getLoadablePath();
             if (loadablePath.includes('app.asar') && !loadablePath.includes('app.asar.unpacked')) {

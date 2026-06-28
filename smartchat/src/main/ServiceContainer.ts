@@ -99,6 +99,9 @@ import { IAuthSettingsService } from './services/auth/IAuthSettingsService'
 import type { IWAEventBus } from './services/whatsapp/IWAEventBus'
 import { createMessageFormatterRegistry, MessageFormatterRegistry } from './services/messages/formatters'
 
+import { SocketAccessor } from './services/whatsapp/types'
+import { WAWorkerBridge } from './workers/WAWorkerBridge'
+import { dbPath } from './auth'
 import { HistorySyncManager } from './services/whatsapp/HistorySyncManager'
 import { IHistorySyncManager } from './services/whatsapp/IHistorySyncManager'
 import { WAEventWiringService } from './services/whatsapp/WAEventWiringService'
@@ -107,7 +110,6 @@ import { IWASocketFactory } from './services/whatsapp/IWASocketFactory'
 import { WASocketFactory } from './services/whatsapp/WASocketFactory'
 import { IWACatchUpManager } from './services/whatsapp/IWACatchUpManager'
 import { WACatchUpManager } from './services/whatsapp/WACatchUpManager'
-import { SocketAccessor } from './services/whatsapp/types'
 
 import { IKeyStorage } from './services/ai/IKeyStorage'
 import { FSKeyStorage } from './services/ai/FSKeyStorage'
@@ -281,6 +283,15 @@ export function createServices(
 
 
   // 4. WhatsApp Event Lifecycle & Sync Services
+  const workerPath = path.join(__dirname, 'whatsapp.worker.js')
+  const userDataPath = app.getPath('userData')
+  const waWorkerBridge = new WAWorkerBridge(
+    workerPath,
+    dbPath,
+    userDataPath,
+    getBus,
+    getMainWindow
+  )
   const socketFactory: IWASocketFactory = new WASocketFactory(messageQueryRepository)
   const catchUpManager: IWACatchUpManager = new WACatchUpManager(embeddingService, authSettingsService)
   const historySyncManager = new HistorySyncManager(services, getMainWindow, authSettingsService)
@@ -326,9 +337,10 @@ export function createServices(
     identityReconciliationService,
     profileSyncService,
     messageFormatterRegistry,
+    waWorkerBridge,
+    aiKeyService,
     historySyncManager,
     waEventWiringService,
-    aiKeyService,
     socketFactory,
     catchUpManager,
     apiServer
@@ -378,9 +390,10 @@ export type ServiceContainer = {
   identityReconciliationService: IIdentityReconciliationService
   profileSyncService: IProfileSyncService
   messageFormatterRegistry: MessageFormatterRegistry
+  waWorkerBridge: WAWorkerBridge
+  aiKeyService: IAIKeyService
   historySyncManager: IHistorySyncManager
   waEventWiringService: IWAEventWiringService
-  aiKeyService: IAIKeyService
   socketFactory: IWASocketFactory
   catchUpManager: IWACatchUpManager
   apiServer: IAPIServer

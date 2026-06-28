@@ -185,11 +185,8 @@ app.whenReady().then(() => {
     services.authSettingsService,
     services.chatRepository,
     services.dataWipeService,
-    services.historySyncManager,
-    services.waEventWiringService,
     () => new WAEventBus(),
-    services.socketFactory,
-    services.catchUpManager
+    services.waWorkerBridge
   )
   registerIpcHandlers(services, getSock, waConnectionManager)
   initVectorDb(services.vectorSyncService)

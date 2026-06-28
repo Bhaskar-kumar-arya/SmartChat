@@ -136,11 +136,11 @@ This document maps the architectural boundaries, public interfaces, internal mod
 ---
 
 ## `main/workers/`
-- **Purpose:** Runs CPU-intensive computations in background Node threads.
+- **Purpose:** Runs CPU-intensive computations (embeddings) and low-level WhatsApp connection management, encryption/decryption, and DB writing in background Node.js worker threads.
 - **Public exports (`index.ts` is missing):** None.
-- **Internal only:** `embedding.worker.ts`.
-- **Consumes:** None.
-- **Consumed by:** `services/search/` (`EmbeddingWorkerManager`).
+- **Internal only:** `embedding.worker.ts`, `whatsapp.worker.ts`, `WAWorkerBridge.ts`, `bootstrapWorkerRepositories.ts`.
+- **Consumes:** `services/whatsapp/`, `services/contacts/`, `services/chats/`, `services/messages/`
+- **Consumed by:** `services/search/` (`EmbeddingWorkerManager`), `services/whatsapp/` (via `WhatsAppConnectionManager` consuming `WAWorkerBridge`)
 
 ---
 
