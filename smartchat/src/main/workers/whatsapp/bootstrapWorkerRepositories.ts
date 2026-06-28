@@ -1,74 +1,78 @@
 import { PrismaClient } from '@prisma/client'
-import { ChatRepository } from '../services/chats/ChatRepository'
-import { CommunityRepository } from '../services/chats/CommunityRepository'
-import { ChatMemberRepository } from '../services/chats/ChatMemberRepository'
-import { IdentityRepository } from '../services/contacts/IdentityRepository'
-import { AliasRepository } from '../services/contacts/AliasRepository'
-import { LidMapRepository } from '../services/contacts/LidMapRepository'
-import { MessageRepository } from '../services/messages/MessageRepository'
-import { MessageQueryRepository } from '../services/messages/MessageQueryRepository'
-import { ReceiptRepository } from '../services/messages/ReceiptRepository'
-import { ReactionRepository } from '../services/messages/ReactionRepository'
-import { SyncRepository } from '../services/sync/SyncRepository'
-import { AuthStateRepository } from '../services/auth/AuthStateRepository'
-import { AuthSettingsService } from '../services/auth/AuthSettingsService'
+import { ChatRepository } from '../../services/chats/ChatRepository'
+import { CommunityRepository } from '../../services/chats/CommunityRepository'
+import { ChatMemberRepository } from '../../services/chats/ChatMemberRepository'
+import { IdentityRepository } from '../../services/contacts/IdentityRepository'
+import { AliasRepository } from '../../services/contacts/AliasRepository'
+import { LidMapRepository } from '../../services/contacts/LidMapRepository'
+import { MessageRepository } from '../../services/messages/MessageRepository'
+import { MessageQueryRepository } from '../../services/messages/MessageQueryRepository'
+import { ReceiptRepository } from '../../services/messages/ReceiptRepository'
+import { ReactionRepository } from '../../services/messages/ReactionRepository'
+import { SyncRepository } from '../../services/sync/SyncRepository'
+import { AuthStateRepository } from '../../services/auth/AuthStateRepository'
+import { AuthSettingsService } from '../../services/auth/AuthSettingsService'
 
-import { ContactCache } from '../services/contacts/ContactCache'
-import { LidPnLinker } from '../services/contacts/LidPnLinker'
-import { ContactNameResolver } from '../services/contacts/ContactNameResolver'
-import { ContactService } from '../services/contacts/ContactService'
+import { ContactCache } from '../../services/contacts/ContactCache'
+import { LidPnLinker } from '../../services/contacts/LidPnLinker'
+import { ContactNameResolver } from '../../services/contacts/ContactNameResolver'
+import { ContactService } from '../../services/contacts/ContactService'
 
 import {
   PnJidStrategy,
   LidJidStrategy,
   GroupJidStrategy,
   BotJidStrategy
-} from '../services/contacts/JidStrategies'
+} from '../../services/contacts/JidStrategies'
 
-import { GroupMembershipService } from '../services/chats/GroupMembershipService'
-import { ChatService } from '../services/chats/ChatService'
+import { GroupMembershipService } from '../../services/chats/GroupMembershipService'
+import { ChatService } from '../../services/chats/ChatService'
 
-import { CommunitySyncHandler } from '../services/chats/sync/CommunitySyncHandler'
-import { ChatSyncHandler } from '../services/chats/sync/ChatSyncHandler'
-import { MembershipSyncHandler } from '../services/chats/sync/MembershipSyncHandler'
-import { GroupHydrationService } from '../services/chats/GroupHydrationService'
-import { IdentityReconciliationService } from '../services/contacts/IdentityReconciliationService'
+import { CommunitySyncHandler } from '../../services/chats/sync/CommunitySyncHandler'
+import { ChatSyncHandler } from '../../services/chats/sync/ChatSyncHandler'
+import { MembershipSyncHandler } from '../../services/chats/sync/MembershipSyncHandler'
+import { GroupHydrationService } from '../../services/chats/GroupHydrationService'
+import { IdentityReconciliationService } from '../../services/contacts/IdentityReconciliationService'
 
-import { SecretMessageService } from '../services/whatsapp/secret/SecretMessageService'
-import { MessageReactionStrategy } from '../services/whatsapp/secret/MessageReactionStrategy'
-import { MessageParser } from '../services/messages/MessageParser'
-import { MessageEnricher } from '../services/messages/MessageEnricher'
-import { MessageIdentityResolver } from '../services/messages/MessageIdentityResolver'
+import { SecretMessageService } from '../../services/whatsapp/secret/SecretMessageService'
+import { MessageReactionStrategy } from '../../services/whatsapp/secret/MessageReactionStrategy'
+import { MessageParser } from '../../services/messages/MessageParser'
+import { MessageEnricher } from '../../services/messages/MessageEnricher'
+import { MessageIdentityResolver } from '../../services/messages/MessageIdentityResolver'
 
-import { SecretMessageProcessor } from '../services/messages/processors/SecretMessageProcessor'
-import { ProtocolMessageProcessor } from '../services/messages/processors/ProtocolMessageProcessor'
-import { ReactionMessageProcessor } from '../services/messages/processors/ReactionMessageProcessor'
-import { StandardMessageProcessor } from '../services/messages/processors/StandardMessageProcessor'
+import { SecretMessageProcessor } from '../../services/messages/processors/SecretMessageProcessor'
+import { ProtocolMessageProcessor } from '../../services/messages/processors/ProtocolMessageProcessor'
+import { ReactionMessageProcessor } from '../../services/messages/processors/ReactionMessageProcessor'
+import { StandardMessageProcessor } from '../../services/messages/processors/StandardMessageProcessor'
 
-import { MessageService } from '../services/messages/MessageService'
-import { ReceiptService } from '../services/whatsapp/ReceiptService'
-import { WAEventBus } from '../services/whatsapp/WAEventBus'
-import { WAEventHandler } from '../services/whatsapp/WAEventHandler'
+import { MessageService } from '../../services/messages/MessageService'
+import { ReceiptService } from '../../services/whatsapp/ReceiptService'
+import { WAEventBus } from '../../services/whatsapp/WAEventBus'
+import { WAEventHandler } from '../../services/whatsapp/WAEventHandler'
 
-import { PersistenceSubscriber } from '../services/whatsapp/subscribers/PersistenceSubscriber'
-import { ContactGroupSubscriber } from '../services/whatsapp/subscribers/ContactGroupSubscriber'
-import { ReceiptSubscriber } from '../services/whatsapp/subscribers/ReceiptSubscriber'
-import { FavoriteStickerSubscriber } from '../services/whatsapp/subscribers/FavoriteStickerSubscriber'
+import { PersistenceSubscriber } from '../../services/whatsapp/subscribers/PersistenceSubscriber'
+import { ContactGroupSubscriber } from '../../services/whatsapp/subscribers/ContactGroupSubscriber'
+import { ReceiptSubscriber } from '../../services/whatsapp/subscribers/ReceiptSubscriber'
+import { FavoriteStickerSubscriber } from '../../services/whatsapp/subscribers/FavoriteStickerSubscriber'
 
-import {
-  WorkerFavoriteStickerService,
-  WorkerMediaService,
-  WorkerHistorySyncManager
-} from './WorkerServices'
+import { WorkerFavoriteStickerService } from './services/WorkerFavoriteStickerService'
+import { WorkerMediaService } from './services/WorkerMediaService'
+import { WorkerHistorySyncManager } from './services/WorkerHistorySyncManager'
+import { WorkerNullChatListEnricher } from './services/WorkerNullChatListEnricher'
+import { IWorkerBootstrap } from './IWorkerBootstrap'
+import { IWorkerEventPublisher } from './events/IWorkerEventPublisher'
+import { WorkerEventBusAdapter } from './events/WorkerEventBusAdapter'
+import type { WASocket } from '@whiskeysockets/baileys'
 
 export function bootstrapWorkerRepositories(
   prisma: PrismaClient,
   userDataPath: string,
-  postDomainEvent: (event: string, data?: any) => void,
-  getSock: () => any
-) {
+  eventPublisher: IWorkerEventPublisher,
+  getSock: () => WASocket | null
+): IWorkerBootstrap {
   // Event Bus
-  const eventBus = new WAEventBus()
+  const rawEventBus = new WAEventBus()
+  const eventBus = new WorkerEventBusAdapter(rawEventBus, eventPublisher)
   const getBus = () => eventBus
 
   // Repositories
@@ -119,7 +123,7 @@ export function bootstrapWorkerRepositories(
     communityRepository,
     contactService,
     groupMembershipService,
-    null as any, // chatListEnricher is not needed by the worker's write paths
+    new WorkerNullChatListEnricher(), // chatListEnricher is not needed by the worker's write paths
     getSock
   )
 
@@ -132,8 +136,7 @@ export function bootstrapWorkerRepositories(
   const mediaService = new WorkerMediaService(
     messageRepository,
     messageQueryRepository,
-    null as any, // messageService reference is set dynamically below
-    null as any, // messageParserService reference is set dynamically below
+    messageEnricher,
     contactNameResolver,
     favoriteStickerService,
     userDataPath
@@ -183,10 +186,6 @@ export function bootstrapWorkerRepositories(
     messageProcessors
   )
 
-  // Resolve circular reference on mediaService
-  ;(mediaService as any).messageService = messageService
-  ;(mediaService as any).messageParserService = messageService
-
   // Receipt Service
   const receiptService = new ReceiptService(
     receiptRepository,
@@ -219,7 +218,7 @@ export function bootstrapWorkerRepositories(
       identityReconciliationService
     },
     authSettingsService,
-    postDomainEvent
+    eventPublisher
   )
 
   // Event Handler

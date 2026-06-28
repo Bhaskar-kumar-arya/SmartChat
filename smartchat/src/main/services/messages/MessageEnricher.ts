@@ -6,6 +6,7 @@ import { WAMessageContent } from '../whatsapp/types'
 import { DBMessageWithSender } from '../../domain/db.types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { EnrichedReaction } from '../../ipc/reaction.types'
+import { IMessageEnricher } from './IMessageEnricher'
 
 /**
  * MessageEnricher — Single Responsibility: transform raw database message rows
@@ -15,7 +16,7 @@ import { EnrichedReaction } from '../../ipc/reaction.types'
  * This class must NEVER perform database writes or contain business logic.
  * It is a pure read + transform layer for the presentation/IPC boundary.
  */
-export class MessageEnricher {
+export class MessageEnricher implements IMessageEnricher {
   constructor(private readonly contactService: IContactQueryService) {}
 
   /**

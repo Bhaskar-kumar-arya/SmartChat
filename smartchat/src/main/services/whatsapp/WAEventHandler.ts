@@ -125,9 +125,12 @@ export class WAEventHandler {
         fromMe: (procObj.key as proto.IMessageKey | undefined)?.fromMe ?? false
       })
     } else if (procObj.subType === SUBTYPE_EDIT) {
+      const editKey = procObj.key as proto.IMessageKey | undefined
       await this.bus.emit('message:edited', {
         messageId: procObj.targetId as string,
-        chatJid: (procObj.chatJid as string | undefined) || cleanJid((procObj.key as proto.IMessageKey | undefined)?.remoteJid || ''),
+        chatJid: (procObj.chatJid as string | undefined) || cleanJid(editKey?.remoteJid || ''),
+        fromMe: editKey?.fromMe ?? false,
+        participant: cleanJid(editKey?.participant ?? '') || null,
         editedTextContent: (procObj.editedTextContent as string | undefined) ?? null,
         editedContent: (procObj.editedContent as proto.IMessage | undefined) ?? null,
         sock
@@ -197,6 +200,8 @@ export class WAEventHandler {
         await this.bus.emit('message:decrypted', {
           messageId,
           chatJid,
+          fromMe: itemKey.fromMe ?? false,
+          participant: cleanJid(itemKey.participant ?? '') || null,
           messageType,
           textContent,
           content: rawMessage ?? {},
@@ -236,6 +241,8 @@ export class WAEventHandler {
     await this.bus.emit('message:edited', {
       messageId: key.id!,
       chatJid,
+      fromMe: key.fromMe ?? false,
+      participant: cleanJid(key.participant ?? '') || null,
       editedTextContent: textContent,
       editedContent: editedMsg,
       sock

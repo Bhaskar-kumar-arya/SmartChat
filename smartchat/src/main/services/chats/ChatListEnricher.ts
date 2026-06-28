@@ -5,8 +5,9 @@ import { IReactionRepository } from '../messages/IReactionRepository'
 import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
 import { IContactQueryService } from '../contacts/IContactService'
 import { ContactNameResolver } from '../contacts/ContactNameResolver'
+import { IChatListEnricher } from './IChatListEnricher'
 
-export class ChatListEnricher {
+export class ChatListEnricher implements IChatListEnricher {
   constructor(
     private readonly chatRepository: IChatRepository,
     private readonly messageQueryRepository: IMessageSearchRepository,

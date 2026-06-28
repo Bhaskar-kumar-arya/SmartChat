@@ -1,5 +1,5 @@
 import makeWASocket from '@whiskeysockets/baileys'
-import { IWACommandSender } from '../../../workers/IWACommandSender'
+import { IWACommandSender } from '../../../workers/bridge/IWACommandSender'
 import { ISocketUserContext } from '../../contacts/IContactService'
 
 /** Type alias for the Baileys WhatsApp socket instance. */

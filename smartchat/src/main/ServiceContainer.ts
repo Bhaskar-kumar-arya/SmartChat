@@ -100,7 +100,8 @@ import type { IWAEventBus } from './services/whatsapp/IWAEventBus'
 import { createMessageFormatterRegistry, MessageFormatterRegistry } from './services/messages/formatters'
 
 import { SocketAccessor } from './services/whatsapp/types'
-import { WAWorkerBridge } from './workers/WAWorkerBridge'
+import { WAWorkerBridge } from './workers/bridge/WAWorkerBridge'
+import { IWindowEventEmitter } from './workers/bridge/IWindowEventEmitter'
 import { dbPath } from './auth'
 import { HistorySyncManager } from './services/whatsapp/HistorySyncManager'
 import { IHistorySyncManager } from './services/whatsapp/IHistorySyncManager'
@@ -129,6 +130,17 @@ import { APIConfigProvider } from './services/apiServer/APIConfigProvider'
 import { IAPIConfigProvider } from './services/apiServer/IAPIConfigProvider'
 
 
+
+class ElectronWindowEmitter implements IWindowEventEmitter {
+  constructor(private readonly getMainWindow: () => BrowserWindow | null) {}
+
+  public send(channel: string, data?: unknown): void {
+    const mainWindow = this.getMainWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, data)
+    }
+  }
+}
 
 export function createServices(
   prisma: PrismaClient,
@@ -285,12 +297,13 @@ export function createServices(
   // 4. WhatsApp Event Lifecycle & Sync Services
   const workerPath = path.join(__dirname, 'whatsapp.worker.js')
   const userDataPath = app.getPath('userData')
+  const windowEmitter = new ElectronWindowEmitter(getMainWindow)
   const waWorkerBridge = new WAWorkerBridge(
     workerPath,
     dbPath,
     userDataPath,
     getBus,
-    getMainWindow
+    windowEmitter
   )
   const socketFactory: IWASocketFactory = new WASocketFactory(messageQueryRepository)
   const catchUpManager: IWACatchUpManager = new WACatchUpManager(embeddingService, authSettingsService)

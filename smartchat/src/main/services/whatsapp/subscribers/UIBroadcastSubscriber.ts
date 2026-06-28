@@ -88,11 +88,27 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     const win = this.window
     if (!win) return
     try {
+      // DB read is needed for immutable identity fields (fromMe, participant) and
+      // non-content fields (timestamp, senderId, status) that are not available at emit time.
       const dbMsg = await this.messageQueryRepository.findMessageById(event.messageId)
       if (!dbMsg) return
-      const senderJid = cleanJid(dbMsg.participant || dbMsg.chatJid)
+
+      // Only overlay the fields that actually change during an edit or decrypt.
+      // fromMe and participant are immutable per-message identity fields — always use the DB value.
+      const isEdit = 'editedTextContent' in event
+      const merged = {
+        ...dbMsg,
+        textContent: isEdit ? event.editedTextContent : event.textContent,
+        messageType: isEdit ? dbMsg.messageType : event.messageType,
+        content:     isEdit
+          ? (event.editedContent ? JSON.stringify(event.editedContent) : dbMsg.content)
+          : JSON.stringify(event.content),
+        isEdited:    isEdit ? true : dbMsg.isEdited,
+      }
+
+      const senderJid = cleanJid(merged.participant || merged.chatJid)
       const nameMap = await this.contactService.batchResolveNames([senderJid], event.sock)
-      const enriched = await this.messageQueryService.enrichMessage(dbMsg, event.sock, nameMap)
+      const enriched = await this.messageQueryService.enrichMessage(merged, event.sock, nameMap)
       this.send('message-edited', enriched)
     } catch (err) {
       console.error('[UIBroadcastSubscriber] Error broadcasting message-edited:', err)

@@ -1,10 +1,11 @@
 import { Worker } from 'worker_threads';
-import { BrowserWindow } from 'electron';
+import type { GroupMetadata } from '@whiskeysockets/baileys';
 import { IWACommandSender } from './IWACommandSender';
-import { ISocketUserContext } from '../services/contacts/IContactService';
-import { IWAEventBus } from '../services/whatsapp/IWAEventBus';
-import { WAEventMap } from '../services/whatsapp/WAEventTypes';
-import { WorkerCommandMessage, WorkerEventMessage } from './whatsappWorker.types';
+import { ISocketUserContext } from '../../services/contacts/IContactService';
+import { IWAEventBus } from '../../services/whatsapp/IWAEventBus';
+import { WAEventMap } from '../../services/whatsapp/WAEventTypes';
+import { WorkerCommandMessage, WorkerEventMessage } from '../whatsapp/whatsappWorker.types';
+import { IWindowEventEmitter } from './IWindowEventEmitter';
 
 /**
  * WAWorkerBridge
@@ -20,13 +21,14 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext {
     { resolve: (val: unknown) => void; reject: (err: Error) => void }
   >();
   private currentUser: { id: string; name?: string | null; lid?: string | null } | null | undefined = null;
+  private commandCounter = 0;
 
   constructor(
     private readonly workerPath: string,
     private readonly dbPath: string,
     private readonly userDataPath: string,
     private readonly getBus: () => IWAEventBus | null,
-    private readonly getMainWindow: () => BrowserWindow | null
+    private readonly windowEmitter: IWindowEventEmitter
   ) {}
 
   public get user(): { id: string; name?: string | null; lid?: string | null } | null | undefined {
@@ -100,10 +102,7 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext {
             domainEvent === 'wa-sync-status' ||
             domainEvent === 'wa-sync-complete'
           ) {
-            const mainWindow = this.getMainWindow();
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send(domainEvent, data);
-            }
+            this.windowEmitter.send(domainEvent, data);
           }
 
           const bus = this.getBus();
@@ -170,7 +169,7 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext {
     if (!this.worker) {
       throw new Error('Worker thread is not running');
     }
-    const correlationId = Math.random().toString(36).substring(7);
+    const correlationId = `cmd-${++this.commandCounter}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     return new Promise<T>((resolve, reject) => {
       this.pendingReplies.set(correlationId, { resolve: resolve as (val: unknown) => void, reject });
 
@@ -200,12 +199,12 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext {
     await this.sendCommand('chat_modify', { jid, modification });
   }
 
-  public async groupFetchAllParticipating(): Promise<any> {
-    return this.sendCommand<any>('group_fetch_all');
+  public async groupFetchAllParticipating(): Promise<Record<string, GroupMetadata>> {
+    return this.sendCommand<Record<string, GroupMetadata>>('group_fetch_all');
   }
 
-  public async groupMetadata(jid: string): Promise<any> {
-    return this.sendCommand<any>('group_metadata', { jid });
+  public async groupMetadata(jid: string): Promise<GroupMetadata> {
+    return this.sendCommand<GroupMetadata>('group_metadata', { jid });
   }
 
   public async logout(): Promise<void> {

@@ -39,11 +39,13 @@ export interface MessageDeletedEvent {
 
 /**
  * Fired when a message is edited.
- * Contains the full parsed edit content so subscribers don't need to re-query.
+ * Carries fromMe and participant so subscribers don't need an extra DB read for identity context.
  */
 export interface MessageEditedEvent {
   messageId: string
   chatJid: string
+  fromMe: boolean
+  participant: string | null
   editedTextContent: string | null
   editedContent: proto.IMessage | null  // null = already persisted by strategy, skip DB write
   sock: ISocketUserContext
@@ -81,10 +83,13 @@ export interface ReactionProcessedEvent {
 
 /**
  * Fired when a message is successfully decrypted.
+ * Carries fromMe and participant so subscribers don't need an extra DB read for identity context.
  */
 export interface MessageDecryptedEvent {
   messageId: string
   chatJid: string
+  fromMe: boolean
+  participant: string | null
   messageType: string
   textContent: string | null
   content: Record<string, unknown>

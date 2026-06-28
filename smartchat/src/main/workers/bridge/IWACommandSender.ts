@@ -1,3 +1,5 @@
+import { GroupMetadata } from '@whiskeysockets/baileys';
+
 /**
  * Interface abstracting away Baileys socket operations from other main process services.
  * Implemented by components that send commands to the WhatsApp socket (or the worker thread).
@@ -13,9 +15,9 @@ export interface IWACommandSender {
 
   chatModify(modification: unknown, jid: string): Promise<void>;
 
-  groupFetchAllParticipating(): Promise<any>;
+  groupFetchAllParticipating(): Promise<Record<string, GroupMetadata>>;
 
-  groupMetadata(jid: string): Promise<any>;
+  groupMetadata(jid: string): Promise<GroupMetadata>;
 
   logout(): Promise<void>;
 

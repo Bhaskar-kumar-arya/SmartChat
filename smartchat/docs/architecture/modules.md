@@ -138,7 +138,15 @@ This document maps the architectural boundaries, public interfaces, internal mod
 ## `main/workers/`
 - **Purpose:** Runs CPU-intensive computations (embeddings) and low-level WhatsApp connection management, encryption/decryption, and DB writing in background Node.js worker threads.
 - **Public exports (`index.ts` is missing):** None.
-- **Internal only:** `embedding.worker.ts`, `whatsapp.worker.ts`, `WAWorkerBridge.ts`, `bootstrapWorkerRepositories.ts`.
+- **Internal only:**
+  - `bridge/` (`WAWorkerBridge.ts`, `IWindowEventEmitter.ts`, `IWACommandSender.ts`)
+  - `whatsapp/` (`whatsapp.worker.ts`, `IWorkerBootstrap.ts`, `bootstrapWorkerRepositories.ts`, `whatsappWorker.types.ts`)
+  - `whatsapp/services/` (`WorkerFavoriteStickerService.ts`, `WorkerMediaService.ts`, `WorkerHistorySyncManager.ts`, `WorkerNullChatListEnricher.ts`)
+  - `whatsapp/socket/` (`connectSocket.ts`, `useLocalPrismaAuthState.ts`, `workerConnectionHandler.ts`, `workerConnectionManager.ts`)
+  - `whatsapp/events/` (`IWorkerEventPublisher.ts`, `WorkerEventBusAdapter.ts`, `workerEventDispatcher.ts`)
+  - `whatsapp/routing/` (`workerCommandRouter.ts`)
+  - `whatsapp/utils/` (`workerUtils.ts`)
+  - `embedding/` (`embedding.worker.ts`)
 - **Consumes:** `services/whatsapp/`, `services/contacts/`, `services/chats/`, `services/messages/`
 - **Consumed by:** `services/search/` (`EmbeddingWorkerManager`), `services/whatsapp/` (via `WhatsAppConnectionManager` consuming `WAWorkerBridge`)
 

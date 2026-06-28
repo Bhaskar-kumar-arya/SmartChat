@@ -139,6 +139,8 @@ export class MessageActionService implements IMessageActionService {
     this.getBus()?.emit('message:edited', {
       messageId,
       chatJid: enriched.chatJid,
+      fromMe: dbMsg.fromMe,
+      participant: dbMsg.participant ?? null,
       editedTextContent: newText,
       editedContent: JSON.parse(updatedContentJson) as WAMessageContent,
       sock

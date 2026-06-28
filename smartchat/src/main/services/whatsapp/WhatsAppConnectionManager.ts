@@ -5,7 +5,7 @@ import { createSubscribers, SubscriberServices } from './subscribers'
 import { IAuthSettingsService } from '../auth/IAuthSettingsService'
 import { IChatRepository } from '../chats/IChatRepository'
 import type { IEmbeddingOperationalControl } from '../search/IEmbeddingService'
-import { WAWorkerBridge } from '../../workers/WAWorkerBridge'
+import { WAWorkerBridge } from '../../workers/bridge/WAWorkerBridge'
 
 export interface WhatsAppConnectionDependencies extends SubscriberServices {
   embeddingService: IEmbeddingOperationalControl

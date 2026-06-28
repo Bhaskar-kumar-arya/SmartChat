@@ -6,7 +6,7 @@ import { SocketAccessor } from '../whatsapp/types'
 import { ChatListEntry } from '../../domain/chatList.types'
 import { IChatRepository } from './IChatRepository'
 import { ICommunityRepository } from './ICommunityRepository'
-import { ChatListEnricher } from './ChatListEnricher'
+import { IChatListEnricher } from './IChatListEnricher'
 import { IChatService, GroupParticipant } from './IChatService'
 import { IGroupMembershipService } from './IGroupMembershipService'
 
@@ -16,7 +16,7 @@ export class ChatService implements IChatService {
     private readonly communityRepository: ICommunityRepository,
     private readonly contactService: IContactNameResolver,
     private readonly groupMembershipService: IGroupMembershipService,
-    private readonly chatListEnricher: ChatListEnricher,
+    private readonly chatListEnricher: IChatListEnricher,
     private readonly sockAccessor: SocketAccessor
   ) {}
 
