@@ -67,6 +67,16 @@ export interface NotificationSettingSyncEvent {
   setting: string
 }
 
+export interface WASyncProgressPayload {
+  progress: number
+  syncType: number
+  syncFullHistory: boolean
+}
+
+export type WASyncStatusPayload = string
+export type WASyncCompletePayload = void
+export type WAConnectedPayload = void
+
 export interface SyncEventMap {
   'app-state:sync': AppStateSyncEvent
   'app-state:favorite-sticker': FavoriteStickerSyncEvent
@@ -77,5 +87,10 @@ export interface SyncEventMap {
   'app-state:setting': SettingSyncEvent
   'app-state:lock': LockSyncEvent
   'app-state:notification-setting': NotificationSettingSyncEvent
+  'wa-sync-progress': WASyncProgressPayload
+  'wa-sync-status': WASyncStatusPayload
+  'wa-sync-complete': WASyncCompletePayload
+  'wa-connected': WAConnectedPayload
 }
+
 

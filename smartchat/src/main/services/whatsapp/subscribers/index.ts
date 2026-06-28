@@ -15,7 +15,7 @@ import type { IWAEventSubscriber } from './IWAEventSubscriber'
 
 import { NotificationSubscriber }  from './NotificationSubscriber'
 import { UIBroadcastSubscriber }   from './UIBroadcastSubscriber'
-
+import { EmbeddingSyncSubscriber } from './EmbeddingSyncSubscriber'
 
 import type { IMessageWriterService } from '../../messages/IMessageWriterService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
@@ -30,6 +30,7 @@ import type { INotificationService } from '../../notification/INotificationServi
 import type { IMessageQueryRepository } from '../../messages/IMessageQueryRepository'
 import type { IReceiptService } from '../IReceiptService'
 import type { IFavoriteStickerService } from '../../messages/IFavoriteStickerService'
+import type { IEmbeddingOperationalControl } from '../../search/IEmbeddingService'
 
 export type { IWAEventSubscriber }
 
@@ -47,6 +48,7 @@ export interface SubscriberServices {
   messageQueryRepository: IMessageQueryRepository
   receiptService: IReceiptService
   favoriteStickerService: IFavoriteStickerService
+  embeddingService: IEmbeddingOperationalControl
 }
 
 /**
@@ -62,6 +64,7 @@ export function createSubscribers(
   const subscribers: IWAEventSubscriber[] = [
     new NotificationSubscriber(services.chatService, services.contactService, services.profileSyncService, services.notificationService),
     new UIBroadcastSubscriber(services.contactService, services.messageQueryService, services.messageQueryRepository, getMainWindow),
+    new EmbeddingSyncSubscriber(services.embeddingService),
   ]
 
   // Register each subscriber on the bus — order matters for same-event handlers

@@ -109,6 +109,70 @@ let shouldSyncHistory = false
 let dbPath = ''
 let userDataPath = ''
 
+let isWaitingForCatchUp = false
+let catchUpTimeout: NodeJS.Timeout | null = null
+let hasReceivedPendingNotifications = false
+
+function startCatchUp(syncFullHistoryVal: boolean) {
+  console.log('[WhatsAppWorker] Reconnect: history sync previously completed. Waiting for offline catch-up...')
+  isWaitingForCatchUp = true
+
+  // Notify main process to pause embedding
+  parentPort?.postMessage({
+    type: 'domain_event',
+    payload: { event: 'wa-connected' }
+  })
+
+  if (catchUpTimeout) {
+    clearTimeout(catchUpTimeout)
+  }
+
+  catchUpTimeout = setTimeout(() => {
+    console.warn('[WhatsAppWorker] Catch-up safety timeout reached. Forcing transition.')
+    completeCatchUp(syncFullHistoryVal)
+  }, 30000)
+
+  // Show status in UI
+  parentPort?.postMessage({
+    type: 'domain_event',
+    payload: { event: 'wa-sync-status', data: 'Syncing missed messages...' }
+  })
+}
+
+function completeCatchUp(syncFullHistoryVal: boolean) {
+  if (!isWaitingForCatchUp) return
+  isWaitingForCatchUp = false
+
+  if (catchUpTimeout) {
+    clearTimeout(catchUpTimeout)
+    catchUpTimeout = null
+  }
+
+  console.log('[WhatsAppWorker] Catch-up finished. Unpausing embedding and completing sync.')
+
+  parentPort?.postMessage({
+    type: 'domain_event',
+    payload: {
+      event: 'wa-sync-progress',
+      data: { progress: 100, syncType: 6, syncFullHistory: syncFullHistoryVal }
+    }
+  })
+
+  parentPort?.postMessage({
+    type: 'domain_event',
+    payload: { event: 'wa-sync-complete' }
+  })
+}
+
+function resetCatchUp() {
+  if (catchUpTimeout) {
+    clearTimeout(catchUpTimeout)
+    catchUpTimeout = null
+  }
+  isWaitingForCatchUp = false
+  hasReceivedPendingNotifications = false
+}
+
 async function wipeAllData(prismaClient: PrismaClient, userPath: string): Promise<void> {
   await prismaClient.reaction.deleteMany()
   await prismaClient.messageVector.deleteMany()
@@ -241,7 +305,15 @@ async function connect() {
   sock.ev.process(async (events) => {
     if (events['connection.update']) {
       const update = events['connection.update']
-      const { connection, lastDisconnect, qr } = update
+      const { connection, lastDisconnect, qr, receivedPendingNotifications } = update
+
+      if (receivedPendingNotifications !== undefined) {
+        hasReceivedPendingNotifications = receivedPendingNotifications
+        if (receivedPendingNotifications === true && isWaitingForCatchUp) {
+          console.log('[WhatsAppWorker] Received pending notifications (catch-up complete).')
+          completeCatchUp(syncFullHistory)
+        }
+      }
 
       if (qr) {
         console.log('[WhatsAppWorker] Got QR string:', qr)
@@ -253,6 +325,7 @@ async function connect() {
       }
 
       if (connection === 'close') {
+        resetCatchUp()
         const lastDisconnectObj = lastDisconnect as Record<string, unknown> | null | undefined
         const statusCode = (lastDisconnectObj?.error as Boom | undefined)?.output?.statusCode
         const errorData = (lastDisconnectObj?.error as Record<string, unknown> | undefined)?.data as Record<string, unknown> | undefined
@@ -295,17 +368,22 @@ async function connect() {
           const isHistorySyncCompleted = await repos!.authSettingsService.getHistorySyncCompleted()
 
           if (isHistorySyncCompleted) {
-            parentPort?.postMessage({
-              type: 'domain_event',
-              payload: {
-                event: 'wa-sync-progress',
-                data: { progress: 100, syncType: 6, syncFullHistory }
-              }
-            })
-            parentPort?.postMessage({
-              type: 'domain_event',
-              payload: { event: 'wa-sync-complete' }
-            })
+            if (hasReceivedPendingNotifications) {
+              console.log('[WhatsAppWorker] Already received pending notifications. Skipping catchup.')
+              parentPort?.postMessage({
+                type: 'domain_event',
+                payload: {
+                  event: 'wa-sync-progress',
+                  data: { progress: 100, syncType: 6, syncFullHistory }
+                }
+              })
+              parentPort?.postMessage({
+                type: 'domain_event',
+                payload: { event: 'wa-sync-complete' }
+              })
+            } else {
+              startCatchUp(syncFullHistory)
+            }
           } else {
             console.log('[WhatsAppWorker] Reconnect: history sync NOT completed, continuing sync')
             parentPort?.postMessage({
