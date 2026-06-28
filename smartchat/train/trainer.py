@@ -582,7 +582,7 @@ def train(cfg):
 
     # ── Test evaluation ────────────────────────────────────────────────────────
     print("Loading best model for final test evaluation...")
-    ckpt = torch.load(best_model_path, map_location=device)
+    ckpt = torch.load(best_model_path, map_location=device, weights_only=False)
     model.load_state_dict(ckpt["model_state_dict"])
 
     test_metrics = evaluate(model, test_loader, device)
@@ -617,7 +617,7 @@ class ReplyScorerInference:
     def __init__(self, model_dir, device=None):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
-        ckpt        = torch.load(Path(model_dir) / "best_model.pt", map_location=self.device)
+        ckpt        = torch.load(Path(model_dir) / "best_model.pt", map_location=self.device, weights_only=False)
         cfg_dict    = ckpt["cfg"]
         self.max_seq_len     = cfg_dict["max_seq_len"]
         self.thread_max_msgs = cfg_dict.get("thread_max_msgs", 10)
