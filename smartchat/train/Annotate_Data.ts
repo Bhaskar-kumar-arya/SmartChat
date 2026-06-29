@@ -27,9 +27,16 @@ const KEYWORD_UNKNOWN = 'Unknown';
 const GROUP_JID_SUFFIX = '@g.us';
 const FORMAT_TRANSCRIPT = 'transcript';
 const TRUNCATE_LIMIT_REPLY = 35;
-const MAX_MESSAGE_CHAR_LIMIT = 1000; // gets truncated if larger
+const MAX_MESSAGE_CHAR_LIMIT = 750; // gets truncated if larger
 const MIN_MESSAGES_PER_CHAT = 50;
-const MAX_MESSAGES_PER_CHAT = 200;
+const MAX_MESSAGES_PER_CHAT = 7000;
+
+
+const RPM_LIMIT = 15;           // N requests per minute limit
+const MAX_CONCURRENCY = 15;     // Maximum simultaneous active requests across all chats
+const MAX_CONCURRENT_CHATS = 5; // Maximum chats being annotated at the same time
+const LAUNCH_INTERVAL = (60 * 1000) / RPM_LIMIT; // Minimum ms between request dispatches
+const MAX_RETRIES = 5;          // Max attempts per window before giving up
 
 // API KEY CONFIGURATION
 const GEMINI_API_KEY = "AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0";
@@ -577,6 +584,8 @@ Each message has:
                    [Document]— a file was sent
                    [Contact] — a contact card was sent
                    (Message deleted) — message was retracted
+  
+  Note : if a messsage is too long , it is truncated from the mid of the text. ex. [long text start]...[long text end]. the ... represents truncation.
 
 ═══════════════════════════════════════════════
 SECTION 2 — OUTPUT SCHEMA
@@ -1071,12 +1080,33 @@ Before writing the final JSON, verify:
 
 Output only the raw JSON object. Do not include markdown fences, explanatory prose, or any text outside the JSON structure.`;
 
+  // ── Phase 1: Load all chat messages and build per-chat window lists ──────────
+
+  interface ChatContext {
+    chat: any;
+    safeChatName: string;
+    threadsJsonPath: string;
+    messages: any[];
+    isDM: boolean;
+    windows: WindowSlice[];
+    totalWindows: number;
+  }
+
+  interface PendingTask {
+    w: WindowSlice;
+    chatJid: string;
+    totalWindows: number;
+  }
+
+  const chatContexts: ChatContext[] = [];
+  const allPendingTasks: PendingTask[] = [];
+
   for (let chatIdx = 0; chatIdx < chatsResult.length; chatIdx++) {
     const chat = chatsResult[chatIdx];
     const safeChatName = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0];
     const threadsJsonPath = path.resolve(threadsDir, `${chat.jid}.json`);
 
-    console.log(`--- [Chat ${chatIdx + 1}/${chatsResult.length}] Processing ${colors.yellow}${safeChatName}${colors.reset} (${chat.jid}) ---`);
+    console.log(`--- [Chat ${chatIdx + 1}/${chatsResult.length}] Loading ${colors.yellow}${safeChatName}${colors.reset} (${chat.jid}) ---`);
 
     if (fs.existsSync(threadsJsonPath)) {
       console.log(`⏭️ Threads file already exists for this chat. Skipping.\n`);
@@ -1089,7 +1119,7 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
       `SELECT id, chatJid, senderId, participant, fromMe, timestamp, messageType, content, textContent, isDeleted, isEdited, status 
        FROM Message WHERE chatJid = '${chat.jid}' ORDER BY timestamp ASC LIMIT ${MAX_MESSAGES_PER_CHAT};`
     );
-    
+
     const messages = rawMessages.map((m: any) => ({
       ...m,
       fromMe: m.fromMe === 1,
@@ -1107,112 +1137,87 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
 
     console.log(`📦 Organizing streams into optimization boundary blocks...`);
     const windows = chunkMessagesIntoWindows(messages, nameMap, isDM, formatterRegistry, 2000, 20);
-    console.log(`🧩 Analysis partition slots determined: ${colors.yellow}${windows.length}${colors.reset}\n`);
+    console.log(`🧩 Analysis partition slots: ${colors.yellow}${windows.length}${colors.reset}\n`);
 
-    const tasks = windows.filter(w => !completedWindows.has(`${chat.jid}:${w.windowIndex}`));
+    chatContexts.push({ chat, safeChatName, threadsJsonPath, messages, isDM, windows, totalWindows: windows.length });
 
-    if (tasks.length > 0) {
-      console.log(`⚡ Processing ${colors.yellow}${tasks.length}${colors.reset} remaining windows concurrently...`);
-      
-      const RPM_LIMIT = 15;        // N requests per minute limit
-      const MAX_CONCURRENCY = 15;   // Maximum simultaneous active requests
-      const LAUNCH_INTERVAL = (60 * 1000) / RPM_LIMIT; // Minimum ms gap between request initiations
-      
-      let taskIndex = 0;
-      let activeRequests = 0;
-      let lastLaunchTime = 0;
-
-      // Use a Promise to block main execution until all parallel tasks finish
-      await new Promise<void>((resolve) => {
-        function processQueue() {
-          if (taskIndex >= tasks.length && activeRequests === 0) {
-            resolve();
-            return;
-          }
-
-          const now = Date.now();
-          const timeSinceLastLaunch = now - lastLaunchTime;
-
-          if (taskIndex < tasks.length && activeRequests < MAX_CONCURRENCY && timeSinceLastLaunch >= LAUNCH_INTERVAL) {
-            const w = tasks[taskIndex++];
-            activeRequests++;
-            lastLaunchTime = now;
-
-            executeWindowTask(w, chat.jid).finally(() => {
-              activeRequests--;
-              processQueue();
-            });
-          }
-
-          if (taskIndex < tasks.length || activeRequests > 0) {
-            const nextDelay = activeRequests >= MAX_CONCURRENCY ? 50 : Math.max(0, LAUNCH_INTERVAL - (Date.now() - lastLaunchTime));
-            setTimeout(processQueue, nextDelay);
-          }
-        }
-
-        processQueue();
-      });
-    } else {
-      console.log(`✅ All windows already processed and cached in annotations file.`);
-    }
-
-    async function executeWindowTask(w: WindowSlice, chatJid: string) {
-      console.log(`[Window ${w.windowIndex + 1}/${windows.length}] Evaluating context indices ${w.startIndex} to ${w.endIndex}`);
-
-      const userPrompt = `Analyze the following chat window and output the JSON links structure:\n\n${w.formattedText}\n\nJSON Output:`;
-
-      let success = false;
-      let retries = 3;
-      let rawResponse = "";
-      let parsedAnnotation: any = null;
-
-      while (!success && retries > 0) {
-        try {
-          const response = await ai.models.generateContent({
-            model: 'gemma-4-31b-it',
-            contents: userPrompt,
-            config: {
-              systemInstruction: systemPrompt,
-              responseMimeType: 'application/json'
-            }
-          });
-
-          rawResponse = response.text || '';
-          parsedAnnotation = JSON.parse(rawResponse.trim());
-
-          const errors = validateAnnotation(parsedAnnotation, w.messages.length);
-          if (errors.length > 0) {
-            retries--;
-            continue;
-          }
-          success = true;
-        } catch (err) {
-          retries--;
-          console.error(`${colors.red} Window ${w.windowIndex + 1} failed, Retrying. Error : ${err}${colors.reset}`);
-          if (retries > 0) {
-            await new Promise(res => setTimeout(res, 2000));
-          }
-        }
+    for (const w of windows) {
+      if (!completedWindows.has(`${chat.jid}:${w.windowIndex}`)) {
+        allPendingTasks.push({ w, chatJid: chat.jid, totalWindows: windows.length });
       }
-
-      if (!success) {
-        console.error(`${colors.red}❌ Window ${w.windowIndex + 1} failed definitively after multiple retries.${colors.reset}`);
-        return;
-      }
-
-      const annotationLog = {
-        chatJid: chatJid,
-        windowIndex: w.windowIndex,
-        startIndex: w.startIndex,
-        endIndex: w.endIndex,
-        annotation: parsedAnnotation
-      };
-      
-      fs.appendFileSync(annotationsPath, JSON.stringify(annotationLog) + '\n', 'utf8');
-      console.log(`${colors.green}✅ Window ${w.windowIndex + 1}/${windows.length} completed and flushed to disk.${colors.reset}`);
     }
+  }
 
-    console.log(`\n🔍 Parsing contextual reference points from native reply targets...`);
+  // ── Phase 2: Build per-chat pending counters + thread-extraction helper ──────
+
+
+  // ── Error classification ──────────────────────────────────────────────────────
+  // Returns the error category so the retry loop can apply the right strategy:
+  //   'retryable'    — transient server/network error (500, 502, 503, fetch failed)
+  //                    → exponential backoff retry
+  //   'rate-limited' — 429 Too Many Requests
+  //                    → long fixed pause then retry
+  //   'fatal'        — client error (400, 401, 403, 404 …) or parse failure
+  //                    → give up immediately, no retry
+  function classifyError(err: unknown): 'retryable' | 'rate-limited' | 'fatal' {
+    if (!(err instanceof Error)) return 'retryable';
+    const msg = err.message;
+
+    // Network-layer failures are always retryable
+    if (
+      msg.includes('fetch failed') ||
+      msg.includes('ECONNRESET') ||
+      msg.includes('ETIMEDOUT') ||
+      msg.includes('ENOTFOUND') ||
+      msg.includes('socket hang up') ||
+      msg.includes('network error')
+    ) return 'retryable';
+
+    // Try to extract HTTP status code from ApiError JSON embedded in the message
+    try {
+      const match = msg.match(/\{.*\}/s);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        const code: number = parsed?.error?.code ?? 0;
+        if (code === 429) return 'rate-limited';
+        if (code >= 500) return 'retryable';   // 5xx — transient server error
+        if (code >= 400) return 'fatal';        // 4xx — bad request, auth error, etc.
+      }
+    } catch { /* ignore JSON parse failure */ }
+
+    // Unknown error — assume transient
+    return 'retryable';
+  }
+
+  // Exponential backoff delay for retryable errors (2 s → 4 s → 8 s → 16 s → 32 s, capped)
+  function retryDelay(attempt: number): number {
+    const base = 2000;
+    const cap  = 32_000;
+    const jitter = Math.random() * 1000;
+    return Math.min(base * Math.pow(2, attempt - 1), cap) + jitter;
+  }
+
+  // Map chatJid → number of windows still awaiting annotation
+  const chatPendingCount = new Map<string, number>();
+  // Map chatJid → its ChatContext (for quick lookup inside callbacks)
+  const chatContextByJid = new Map<string, ChatContext>();
+
+  for (const ctx of chatContexts) {
+    const pendingCount = ctx.windows.filter(
+      w => !completedWindows.has(`${ctx.chat.jid}:${w.windowIndex}`)
+    ).length;
+    chatPendingCount.set(ctx.chat.jid, pendingCount);
+    chatContextByJid.set(ctx.chat.jid, ctx);
+  }
+
+  // Runs thread extraction for a single chat and writes its threads JSON.
+  // Called as soon as the last window for a chat is annotated (or immediately
+  // if it had zero pending windows), so each chat is unblocked independently.
+  function extractAndSaveThreads(ctx: ChatContext): void {
+    const { chat, safeChatName, threadsJsonPath, messages, isDM } = ctx;
+    console.log(`\n--- 🔗 Thread extraction: ${colors.yellow}${safeChatName}${colors.reset} (${chat.jid}) ---`);
+
+    console.log(`🔍 Parsing contextual reference points from native reply targets...`);
     const { seedEdges } = buildSeedThreadsFromQuoteReplies(messages, formatterRegistry);
 
     console.log(`🔗 Executing unified graph union passes across tracking components...`);
@@ -1228,9 +1233,188 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
 
     fs.writeFileSync(threadsJsonPath, JSON.stringify(globalThreads, null, 2), 'utf8');
 
-    console.log(`\n${colors.green}🚀 Thread extraction complete for chat!${colors.reset}`);
+    console.log(`${colors.green}🚀 Thread extraction complete for chat!${colors.reset}`);
     console.log(`📊 Total Continuous Threads Formed : ${colors.yellow}${globalThreads.length}${colors.reset}`);
     console.log(`📁 Target Output Workspace Storage: ${colors.cyan}${threadsJsonPath}${colors.reset}\n`);
+  }
+
+  // Fire thread extraction immediately for any chat that already had all its
+  // windows annotated in a previous run (0 pending tasks this session).
+  for (const ctx of chatContexts) {
+    if (chatPendingCount.get(ctx.chat.jid) === 0) {
+      extractAndSaveThreads(ctx);
+    }
+  }
+
+  // ── Phase 3: Global rate-limited parallel pool with per-chat concurrency ──────
+
+  // Group pending tasks by chat so we can activate MAX_CONCURRENT_CHATS at a time.
+  // Tasks within each chat preserve their natural window order.
+  const chatJidsWithTasks: string[] = [];
+  const tasksByChat = new Map<string, PendingTask[]>();
+  for (const task of allPendingTasks) {
+    if (!tasksByChat.has(task.chatJid)) {
+      chatJidsWithTasks.push(task.chatJid);
+      tasksByChat.set(task.chatJid, []);
+    }
+    tasksByChat.get(task.chatJid)!.push(task);
+  }
+
+  // dispatchQueue holds tasks whose chats are currently "active" (allowed to run).
+  // activateNextChats() tops it up whenever a chat slot becomes free.
+  const activeChats = new Set<string>();
+  const dispatchQueue: PendingTask[] = [];
+  let chatCursor = 0;
+
+  function activateNextChats(): void {
+    while (activeChats.size < MAX_CONCURRENT_CHATS && chatCursor < chatJidsWithTasks.length) {
+      const jid = chatJidsWithTasks[chatCursor++];
+      activeChats.add(jid);
+      const tasks = tasksByChat.get(jid) ?? [];
+      dispatchQueue.push(...tasks);
+      const shortJid = jid.split('@')[0];
+      console.log(`🟢 Activating chat ${colors.cyan}${shortJid}${colors.reset} (${tasks.length} windows queued). Active chats: ${activeChats.size}/${MAX_CONCURRENT_CHATS}`);
+    }
+  }
+
+  async function executeWindowTask(w: WindowSlice, chatJid: string, totalWindows: number): Promise<void> {
+    console.log(`[Chat ${chatJid.split('@')[0]} | Window ${w.windowIndex + 1}/${totalWindows}] Evaluating indices ${w.startIndex}–${w.endIndex}`);
+
+    const userPrompt = `Analyze the following chat window and output the JSON links structure:\n\n${w.formattedText}\n\nJSON Output:`;
+
+    let success = false;
+    let attempt = 0;
+    let parsedAnnotation: any = null;
+
+    while (!success && attempt < MAX_RETRIES) {
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemma-4-31b-it',
+          contents: userPrompt,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json'
+          }
+        });
+
+        const rawResponse = response.text || '';
+        parsedAnnotation = JSON.parse(rawResponse.trim());
+
+        const errors = validateAnnotation(parsedAnnotation, w.messages.length);
+        if (errors.length > 0) {
+          // Validation failure — treat like a soft error and retry
+          attempt++;
+          if (attempt < MAX_RETRIES) {
+            const delay = retryDelay(attempt);
+            console.warn(`${colors.yellow}⚠ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1} validation failed (${errors[0]}). Retry ${attempt}/${MAX_RETRIES} in ${Math.round(delay / 1000)}s…${colors.reset}`);
+            await new Promise(res => setTimeout(res, delay));
+          }
+          continue;
+        }
+        success = true;
+
+      } catch (err) {
+        attempt++;
+        const kind = classifyError(err);
+
+        if (kind === 'fatal') {
+          // 4xx client errors won't be fixed by retrying — bail out immediately
+          console.error(`${colors.red}❌ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1} non-retryable error: ${err}${colors.reset}`);
+          break;
+        }
+
+        if (attempt >= MAX_RETRIES) break;
+
+        const delay = kind === 'rate-limited'
+          ? 60_000 + Math.random() * 5_000   // 429 → wait ~60 s before retry
+          : retryDelay(attempt);              // 5xx / network → exponential backoff
+
+        const kindLabel = kind === 'rate-limited' ? '429 rate-limited' : kind;
+        console.warn(`${colors.yellow}⚠ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1} ${kindLabel} (attempt ${attempt}/${MAX_RETRIES}). Retrying in ${Math.round(delay / 1000)}s… Error: ${err}${colors.reset}`);
+        await new Promise(res => setTimeout(res, delay));
+      }
+    }
+
+    if (!success) {
+      console.error(`${colors.red}❌ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1} gave up after ${attempt} attempt(s).${colors.reset}`);
+      // Still decrement so a partially-failed chat eventually reaches 0 and gets extracted
+    } else {
+      const annotationLog = {
+        chatJid,
+        windowIndex: w.windowIndex,
+        startIndex: w.startIndex,
+        endIndex: w.endIndex,
+        annotation: parsedAnnotation
+      };
+      fs.appendFileSync(annotationsPath, JSON.stringify(annotationLog) + '\n', 'utf8');
+      console.log(`${colors.green}✅ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1}/${totalWindows} completed and flushed to disk.${colors.reset}`);
+    }
+
+    // Decrement this chat's pending counter; extract threads when it hits 0
+    const remaining = (chatPendingCount.get(chatJid) ?? 1) - 1;
+    chatPendingCount.set(chatJid, remaining);
+    if (remaining === 0) {
+      // Free the chat slot and immediately activate the next waiting chat
+      activeChats.delete(chatJid);
+      activateNextChats();
+      const ctx = chatContextByJid.get(chatJid);
+      if (ctx) extractAndSaveThreads(ctx);
+    }
+  }
+
+  if (allPendingTasks.length > 0) {
+    const totalTasks = allPendingTasks.length;
+    console.log(`⚡ Dispatching ${colors.yellow}${totalTasks}${colors.reset} pending windows across ${colors.yellow}${chatContexts.length}${colors.reset} chats`);
+    console.log(`   concurrency=${MAX_CONCURRENCY} requests | max_chats=${MAX_CONCURRENT_CHATS} | RPM=${RPM_LIMIT}\n`);
+
+    // Seed the dispatch queue with the first batch of chats
+    activateNextChats();
+
+    let dispatchIdx = 0;
+    let activeRequests = 0;
+    let lastLaunchTime = 0;
+
+    await new Promise<void>((resolve) => {
+      function processQueue() {
+        // Done when all tasks dispatched AND all in-flight requests settled
+        if (dispatchIdx >= dispatchQueue.length && activeRequests === 0) {
+          resolve();
+          return;
+        }
+
+        const now = Date.now();
+        const timeSinceLastLaunch = now - lastLaunchTime;
+
+        if (
+          dispatchIdx < dispatchQueue.length &&
+          activeRequests < MAX_CONCURRENCY &&
+          timeSinceLastLaunch >= LAUNCH_INTERVAL
+        ) {
+          const { w, chatJid, totalWindows } = dispatchQueue[dispatchIdx++];
+          activeRequests++;
+          lastLaunchTime = now;
+
+          executeWindowTask(w, chatJid, totalWindows).finally(() => {
+            activeRequests--;
+            processQueue();
+          });
+        }
+
+        if (dispatchIdx < dispatchQueue.length || activeRequests > 0) {
+          const nextDelay =
+            activeRequests >= MAX_CONCURRENCY
+              ? 50
+              : Math.max(0, LAUNCH_INTERVAL - (Date.now() - lastLaunchTime));
+          setTimeout(processQueue, nextDelay);
+        }
+      }
+
+      processQueue();
+    });
+
+    console.log(`\n${colors.green}✅ Global annotation pool complete.${colors.reset}\n`);
+  } else {
+    console.log(`✅ All windows across all chats are already annotated and cached.\n`);
   }
 }
 
