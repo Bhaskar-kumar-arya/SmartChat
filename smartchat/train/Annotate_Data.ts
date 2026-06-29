@@ -27,6 +27,7 @@ const KEYWORD_UNKNOWN = 'Unknown';
 const GROUP_JID_SUFFIX = '@g.us';
 const FORMAT_TRANSCRIPT = 'transcript';
 const TRUNCATE_LIMIT_REPLY = 35;
+const MAX_MESSAGE_CHAR_LIMIT = 1000; // gets truncated if larger
 const MIN_MESSAGES_PER_CHAT = 50;
 const MAX_MESSAGES_PER_CHAT = 200;
 
@@ -176,7 +177,15 @@ export function formatMessageForPrompt(
 ): string {
   const timeStr = new Date(Number(m.timestamp) * 1000).toLocaleTimeString();
   const senderLabel = getSenderLabel(m, isDM, nameMap);
-  const formattedContent = formatMessageContent(m, unwrapped, formatterRegistry);
+  const rawContent = formatMessageContent(m, unwrapped, formatterRegistry);
+
+  // Apply middle truncation if message content is too long
+  let formattedContent = rawContent;
+  if (rawContent.length > MAX_MESSAGE_CHAR_LIMIT) {
+    const half = Math.floor((MAX_MESSAGE_CHAR_LIMIT - 3) / 2);
+    formattedContent = rawContent.substring(0, half) + '...' + rawContent.substring(rawContent.length - half);
+  }
+
   const replyContext = getReplyContextString(unwrapped, nameMap, isDM, formatterRegistry);
 
   return `[${index}] [${timeStr}] ${senderLabel}: ${replyContext}${formattedContent}`;

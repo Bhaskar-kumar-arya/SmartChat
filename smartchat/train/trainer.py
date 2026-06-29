@@ -353,6 +353,83 @@ def build_training_pairs(link_map, thread_clusters, msg_texts, msg_to_thread, qu
 # STEP 4: DATASET
 # ─────────────────────────────────────────────────────────────────────────────
 
+def truncate_middle(token_ids, target_len, marker_ids=None):
+    target_len = max(0, target_len)
+    if len(token_ids) <= target_len:
+        return token_ids
+
+    if marker_ids:
+        marker_len = len(marker_ids)
+        if target_len > marker_len:
+            target_len -= marker_len
+        else:
+            marker_ids = None
+
+    half = target_len // 2
+    left = token_ids[:half]
+    right = token_ids[-(target_len - half):]
+
+    if marker_ids:
+        return left + marker_ids + right
+    return left + right
+
+
+def prepare_middle_truncated_input(tokenizer, text1, text2, max_seq_len):
+    # Tokenize separately without special tokens
+    t1_enc = tokenizer(text1, add_special_tokens=False)
+    t2_enc = tokenizer(text2, add_special_tokens=False)
+
+    ids1 = t1_enc["input_ids"]
+    ids2 = t2_enc["input_ids"]
+
+    target_len1 = len(ids1)
+    target_len2 = len(ids2)
+
+    # 3 special tokens: [CLS] text1 [SEP] text2 [SEP]
+    excess = (len(ids1) + len(ids2)) - (max_seq_len - 3)
+    if excess > 0:
+        if len(ids1) > len(ids2):
+            diff = len(ids1) - len(ids2)
+            reduce1 = min(excess, diff)
+            target_len1 -= reduce1
+            excess -= reduce1
+        elif len(ids2) > len(ids1):
+            diff = len(ids2) - len(ids1)
+            reduce2 = min(excess, diff)
+            target_len2 -= reduce2
+            excess -= reduce2
+
+        if excess > 0:
+            reduce_each = excess // 2
+            target_len1 -= reduce_each
+            target_len2 -= (excess - reduce_each)
+
+    target_len1 = max(0, target_len1)
+    target_len2 = max(0, target_len2)
+
+    marker_ids = tokenizer.encode("...", add_special_tokens=False)
+    ids1 = truncate_middle(ids1, target_len1, marker_ids)
+    ids2 = truncate_middle(ids2, target_len2, marker_ids)
+
+    cls_id = tokenizer.cls_token_id
+    sep_id = tokenizer.sep_token_id
+    pad_id = tokenizer.pad_token_id
+
+    input_ids = [cls_id] + ids1 + [sep_id] + ids2 + [sep_id]
+    token_type_ids = [0] * (len(ids1) + 2) + [1] * (len(ids2) + 1)
+
+    padding_len = max_seq_len - len(input_ids)
+    attention_mask = [1] * len(input_ids) + [0] * padding_len
+    input_ids = input_ids + [pad_id] * padding_len
+    token_type_ids = token_type_ids + [0] * padding_len
+
+    return {
+        "input_ids": torch.tensor(input_ids, dtype=torch.long),
+        "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
+        "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long)
+    }
+
+
 class ThreadReplyDataset(Dataset):
     def __init__(self, pairs, tokenizer, max_seq_len):
         self.pairs       = pairs
@@ -365,27 +442,17 @@ class ThreadReplyDataset(Dataset):
     def __getitem__(self, idx):
         pair = self.pairs[idx]
 
-        # BERT input: [CLS] thread_text [SEP] candidate_message [SEP]
-        # truncation="only_first" -> thread is truncated if too long;
-        # candidate message mj is always preserved in full.
-        encoding = self.tokenizer(
+        inputs = prepare_middle_truncated_input(
+            self.tokenizer,
             pair["thread_text"],
             pair["message_text"],
-            max_length=self.max_seq_len,
-            padding="max_length",
-            truncation="only_first",
-            return_tensors="pt"
+            self.max_seq_len
         )
 
-        token_type_ids = encoding.get(
-            "token_type_ids",
-            torch.zeros(self.max_seq_len, dtype=torch.long)
-        ).squeeze(0)
-
         return {
-            "input_ids":      encoding["input_ids"].squeeze(0),
-            "attention_mask": encoding["attention_mask"].squeeze(0),
-            "token_type_ids": token_type_ids,
+            "input_ids":      inputs["input_ids"],
+            "attention_mask": inputs["attention_mask"],
+            "token_type_ids": inputs["token_type_ids"],
             "label":          torch.tensor(pair["label"], dtype=torch.float)
         }
 
@@ -721,18 +788,24 @@ class ReplyScorerInference:
             batch        = threads[i : i + batch_size]
             thread_texts = [" | ".join(t["messages"][-self.thread_max_msgs:]) for t in batch]
 
-            enc = self.tokenizer(
-                thread_texts,
-                [candidate_message] * len(batch),
-                max_length=self.max_seq_len,
-                padding="max_length",
-                truncation="only_first",
-                return_tensors="pt"
-            )
+            batch_input_ids = []
+            batch_attention_mask = []
+            batch_token_type_ids = []
 
-            input_ids      = enc["input_ids"].to(self.device)
-            attention_mask = enc["attention_mask"].to(self.device)
-            token_type_ids = enc.get("token_type_ids", torch.zeros_like(input_ids)).to(self.device)
+            for t_text in thread_texts:
+                inputs = prepare_middle_truncated_input(
+                    self.tokenizer,
+                    t_text,
+                    candidate_message,
+                    self.max_seq_len
+                )
+                batch_input_ids.append(inputs["input_ids"])
+                batch_attention_mask.append(inputs["attention_mask"])
+                batch_token_type_ids.append(inputs["token_type_ids"])
+
+            input_ids      = torch.stack(batch_input_ids).to(self.device)
+            attention_mask = torch.stack(batch_attention_mask).to(self.device)
+            token_type_ids = torch.stack(batch_token_type_ids).to(self.device)
 
             with torch.no_grad():
                 scores = self.model(input_ids, attention_mask, token_type_ids)
