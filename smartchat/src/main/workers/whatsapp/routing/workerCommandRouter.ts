@@ -21,8 +21,6 @@ export class WorkerCommandRouter {
   ) {}
 
   public async handleCommand(command: WorkerCommandMessage) {
-    console.log(`[WhatsAppWorker] Received command: ${command.type}`)
-    
     try {
       switch (command.type) {
         case 'init': {
