@@ -29,7 +29,14 @@ export class ProfileSyncService implements IProfileSyncService {
         if (url) this.imageCache.set(jid, url)
         return url || null
       } catch (e) {
-        console.warn(`[ProfileSyncService] Failed to fetch full profile picture for ${jid}:`, e)
+        const errorVal = e as any
+        const errorMessage = errorVal?.message || String(errorVal)
+        const isExpectedPPError =
+          errorMessage.includes('item-not-found') || errorMessage.includes('not-authorized')
+
+        if (!isExpectedPPError) {
+          console.warn(`[ProfileSyncService] Failed to fetch full profile picture for ${jid}:`, e)
+        }
         return null
       }
     }

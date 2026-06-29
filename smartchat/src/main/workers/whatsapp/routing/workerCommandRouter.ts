@@ -166,12 +166,20 @@ export class WorkerCommandRouter {
         }
       }
     } catch (err: unknown) {
-      const errorVal = err as Error
-      console.error(`[WhatsAppWorker] Error processing command ${command.type}:`, errorVal)
+      const errorVal = err as any
+      const errorMessage = errorVal?.message || String(errorVal)
+      const isExpectedPPError =
+        command.type === 'profile_picture_url' &&
+        (errorMessage.includes('item-not-found') || errorMessage.includes('not-authorized'))
+
+      if (!isExpectedPPError) {
+        console.error(`[WhatsAppWorker] Error processing command ${command.type}:`, err)
+      }
+
       parentPort?.postMessage({
         type: 'reply_error',
         correlationId: command.correlationId,
-        error: errorVal.message || String(errorVal)
+        error: errorMessage
       })
     }
   }
