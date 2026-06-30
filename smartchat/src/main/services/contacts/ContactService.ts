@@ -159,17 +159,30 @@ export class ContactService implements IContactService {
     options: { overwriteName?: boolean }
   ): Promise<number> {
     if (!identityId) {
-      const newIdentity = await this.identityRepository.createIdentity({
-        phoneNumber,
-        displayName: newName,
-        pushName: newNotify,
-        verifiedName: newVerifiedName
-      })
-      const newId = newIdentity.id
-      if (phoneNumber) this.cache.setIdentityId(phoneNumber, newId)
-      this.cache.setIdentityId(id, newId)
-      if (lid) this.cache.setIdentityId(lid, newId)
-      return newId
+      try {
+        const newIdentity = await this.identityRepository.createIdentity({
+          phoneNumber,
+          displayName: newName,
+          pushName: newNotify,
+          verifiedName: newVerifiedName
+        })
+        const newId = newIdentity.id
+        if (phoneNumber) this.cache.setIdentityId(phoneNumber, newId)
+        this.cache.setIdentityId(id, newId)
+        if (lid) this.cache.setIdentityId(lid, newId)
+        return newId
+      } catch (err: unknown) {
+        if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002') {
+          const existing = await this.findExistingIdentityId(id, phoneNumber, lid)
+          if (existing) {
+            identityId = existing
+          } else {
+            throw err
+          }
+        } else {
+          throw err
+        }
+      }
     }
 
     const updateData: {

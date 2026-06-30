@@ -127,7 +127,6 @@
 
 /* ─── AI Chat Modals (History & Settings) ────────────────────────── */
 
-.modal-overlay,
 .ai-modal-overlay {
   position: absolute;
   top: 0;

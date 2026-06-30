@@ -179,6 +179,7 @@ const MessageItem = memo(function MessageItem({
 
   const [downloading, setDownloading] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
+  const [dropdownPos, setDropdownPos] = useState<'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'>('bottom-right')
   const [isEditing, setIsEditing] = useState(false)
   const [editText, setEditText] = useState(msg.textContent || '')
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -269,6 +270,39 @@ const MessageItem = memo(function MessageItem({
       setDownloading(true)
       try { await onDownloadMedia(msg.id) }
       finally { setDownloading(false) }
+    }
+  }
+
+  const handleDropdownToggle = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation()
+    if (showDropdown) {
+      setShowDropdown(false)
+      return
+    }
+    const rect = e.currentTarget.getBoundingClientRect()
+    const windowWidth = window.innerWidth
+    const windowHeight = window.innerHeight
+
+    // Approximate dimensions of the dropdown menu
+    const dropdownHeight = 220
+    const dropdownWidth = 150
+
+    const isNearBottom = rect.bottom + dropdownHeight > windowHeight
+    const isNearRight = rect.right + dropdownWidth > windowWidth
+
+    const vertical = isNearBottom ? 'top' : 'bottom';
+    const horizontal = isNearRight ? 'right' : 'left';
+    setDropdownPos(`${vertical}-${horizontal}` as 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left')
+    setShowDropdown(true)
+  }
+
+  const getDropdownStyle = (): React.CSSProperties => {
+    switch (dropdownPos) {
+      case 'top-right': return { bottom: '100%', right: 0, top: 'auto', left: 'auto', marginBottom: '4px', marginTop: 0 }
+      case 'top-left': return { bottom: '100%', left: 0, top: 'auto', right: 'auto', marginBottom: '4px', marginTop: 0 }
+      case 'bottom-left': return { top: '100%', left: 0, bottom: 'auto', right: 'auto', marginTop: '4px', marginBottom: 0 }
+      case 'bottom-right':
+      default: return { top: '100%', right: 0, bottom: 'auto', left: 'auto', marginTop: '4px', marginBottom: 0 }
     }
   }
 
@@ -523,12 +557,12 @@ const MessageItem = memo(function MessageItem({
         </div>
 
         <div className="message-dropdown-container" ref={dropdownRef}>
-          <button className="action-btn" onClick={() => setShowDropdown(!showDropdown)} title="Message Options">
+          <button className="action-btn" onClick={handleDropdownToggle} title="Message Options">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
           </button>
 
           {showDropdown && (
-            <div className="dropdown-menu">
+            <div className="dropdown-menu" style={getDropdownStyle()}>
               <button className="dropdown-item" onClick={() => { onReply(msg); setShowDropdown(false); }}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v1.5" /></svg>
                 Reply

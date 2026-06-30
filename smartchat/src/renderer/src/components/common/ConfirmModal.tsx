@@ -24,8 +24,8 @@ export default function ConfirmModal({
   if (!isOpen) return null
 
   return (
-    <div className="ai-modal-overlay" onClick={onCancel}>
-      <div className="ai-modal-container" onClick={e => e.stopPropagation()} style={{ maxWidth: '380px' }}>
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal-container" onClick={e => e.stopPropagation()} style={{ maxWidth: '380px' }}>
         <div style={{ padding: '20px' }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', fontWeight: '600', color: 'var(--wa-text-primary)' }}>
             {title}
