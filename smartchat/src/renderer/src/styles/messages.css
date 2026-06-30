@@ -105,6 +105,15 @@
   padding: 0 !important;
 }
 
+.bubble-sticker-reply {
+  padding: 4px 4px 6px 4px !important;
+}
+
+.bubble-sticker-reply .message-quote {
+  margin-bottom: 4px;
+}
+
+
 .bubble-media {
   padding: 3px !important;
   width: min-content;

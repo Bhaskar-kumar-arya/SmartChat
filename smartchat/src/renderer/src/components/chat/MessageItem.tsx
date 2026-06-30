@@ -329,8 +329,10 @@ const MessageItem = memo(function MessageItem({
   const ctx = rawMsg?.extendedTextMessage?.contextInfo ||
     rawMsg?.imageMessage?.contextInfo ||
     rawMsg?.videoMessage?.contextInfo ||
+    rawMsg?.ptvMessage?.contextInfo ||
     rawMsg?.documentMessage?.contextInfo ||
     rawMsg?.audioMessage?.contextInfo ||
+    rawMsg?.stickerMessage?.contextInfo ||
     rawMsg?.contextInfo
 
   const isReply = !!ctx?.quotedMessage
@@ -457,9 +459,10 @@ const MessageItem = memo(function MessageItem({
     ? (hasCaption ? 'bubble-media-caption' : 'bubble-media')
     : ''
 
+  const isStickerReply = msg.messageType === 'stickerMessage' && isReply
   return (
     <div id={`msg-${msg.id}`} className={`message-bubble-wrapper ${msg.fromMe ? 'sent' : 'received'}`}>
-      <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.isEdited ? 'bubble-edited' : ''} ${msg.messageType === 'stickerMessage' ? 'bubble-sticker' : ''} ${isTemplateMessage ? 'bubble-template' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
+      <div className={`message-bubble ${msg.fromMe ? 'bubble-sent' : 'bubble-received'} ${msg.isEdited ? 'bubble-edited' : ''} ${msg.messageType === 'stickerMessage' && !isReply ? 'bubble-sticker' : ''} ${isStickerReply ? 'bubble-sticker-reply' : ''} ${isTemplateMessage ? 'bubble-template' : ''} ${mediaBubbleClass} ${msg.reactions && msg.reactions.length > 0 ? 'has-reactions' : ''}`}>
         {!msg.fromMe && msg.participantName && msg.chatJid.endsWith('@g.us') && (
           <span className="message-sender-name" style={{ color: senderColor }}>
             <EmojiText text={msg.participantName} />

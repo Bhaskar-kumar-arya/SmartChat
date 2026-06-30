@@ -5,7 +5,18 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
+import { setGlobalDispatcher, Agent } from 'undici';
+
+// Configure global undici dispatcher to prevent HeadersTimeoutError during long LLM generation/prefill times
+// connectTimeout: raised from the default 10 s to 60 s — avoids ConnectTimeoutError on slow/cold
+// TCP handshakes to generativelanguage.googleapis.com (seen as "Connect Timeout Error, timeout: 10000ms")
+setGlobalDispatcher(new Agent({
+  connectTimeout: 60_000,  // 60 seconds — TCP handshake to googleapis.com
+  headersTimeout: 300_000, // 5 minutes  — time until first response byte
+  bodyTimeout:    300_000, // 5 minutes  — time to stream full response body
+}));
+
 
 // ANSI escape codes for professional console styling
 const colors = {
@@ -29,7 +40,7 @@ const FORMAT_TRANSCRIPT = 'transcript';
 const TRUNCATE_LIMIT_REPLY = 35;
 const MAX_MESSAGE_CHAR_LIMIT = 750; // gets truncated if larger
 const MIN_MESSAGES_PER_CHAT = 50;
-const MAX_MESSAGES_PER_CHAT = 7000;
+const MAX_MESSAGES_PER_CHAT = 2000;
 
 
 const RPM_LIMIT = 15;           // N requests per minute limit
@@ -477,6 +488,7 @@ function extractGlobalThreads(
 
 async function main() {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  let lastLaunchTime = 0;
   let dbPath = path.resolve(process.cwd(), 'prisma/dev.db');
   if (!fs.existsSync(dbPath)) {
     dbPath = path.resolve(__dirname, '../prisma/dev.db');
@@ -1160,6 +1172,7 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
   //   'fatal'        — client error (400, 401, 403, 404 …) or parse failure
   //                    → give up immediately, no retry
   function classifyError(err: unknown): 'retryable' | 'rate-limited' | 'fatal' {
+    if ((err as any)?.isFatalSafetyBlock) return 'fatal';
     if (!(err instanceof Error)) return 'retryable';
     const msg = err.message;
 
@@ -1170,7 +1183,9 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
       msg.includes('ETIMEDOUT') ||
       msg.includes('ENOTFOUND') ||
       msg.includes('socket hang up') ||
-      msg.includes('network error')
+      msg.includes('network error') ||
+      msg.includes('Timeout') ||
+      err.name === 'HeadersTimeoutError'
     ) return 'retryable';
 
     // Try to extract HTTP status code from ApiError JSON embedded in the message
@@ -1277,6 +1292,44 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
     }
   }
 
+  function logAnnotationError(
+    chatJid: string,
+    windowIndex: number,
+    attempt: number,
+    error: any,
+    rawResponse: string,
+    responseObj?: any
+  ): void {
+    const logDir = path.dirname(fileURLToPath(import.meta.url));
+    const logPath = path.resolve(logDir, 'annotation_errors.jsonl');
+
+    const finishReason = responseObj?.candidates?.[0]?.finishReason;
+    const safetyRatings = responseObj?.candidates?.[0]?.safetyRatings;
+
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      chatJid,
+      windowIndex,
+      attempt,
+      error: {
+        name: error instanceof Error ? error.name : 'UnknownError',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      },
+      finishReason,
+      safetyRatings,
+      rawResponseLength: rawResponse?.length || 0,
+      rawResponse: rawResponse,
+      responseRaw: responseObj,
+    };
+
+    try {
+      fs.appendFileSync(logPath, JSON.stringify(logEntry) + '\n', 'utf8');
+    } catch (writeErr) {
+      console.error('Failed to write to annotation_errors.jsonl:', writeErr);
+    }
+  }
+
   async function executeWindowTask(w: WindowSlice, chatJid: string, totalWindows: number): Promise<void> {
     console.log(`[Chat ${chatJid.split('@')[0]} | Window ${w.windowIndex + 1}/${totalWindows}] Evaluating indices ${w.startIndex}–${w.endIndex}`);
 
@@ -1287,39 +1340,64 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
     let parsedAnnotation: any = null;
 
     while (!success && attempt < MAX_RETRIES) {
+      let response: any = null;
+      let rawResponse = '';
       try {
-        const response = await ai.models.generateContent({
+        // Coordinate rate limiting slot reservation globally (accounts for both launches and retries)
+        const now = Date.now();
+        const targetTime = Math.max(now, (lastLaunchTime === 0 ? now : lastLaunchTime + LAUNCH_INTERVAL));
+        lastLaunchTime = targetTime;
+
+        if (targetTime > now) {
+          await new Promise(resolve => setTimeout(resolve, targetTime - now));
+        }
+
+        response = await ai.models.generateContent({
           model: 'gemma-4-31b-it',
           contents: userPrompt,
           config: {
             systemInstruction: systemPrompt,
-            responseMimeType: 'application/json'
+            responseMimeType: 'application/json',
+            safetySettings: [
+              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE }
+            ]
           }
         });
 
-        const rawResponse = response.text || '';
+        rawResponse = response.text || '';
+        if (!rawResponse.trim()) {
+          const blockReason = response?.promptFeedback?.blockReason;
+          if (blockReason === 'PROHIBITED_CONTENT' || blockReason === 'SAFETY') {
+            const fatalErr = new Error(`Prompt blocked by Gemini safety filter. Block reason: ${blockReason}`);
+            (fatalErr as any).isFatalSafetyBlock = true;
+            throw fatalErr;
+          }
+          const finishReason = response?.candidates?.[0]?.finishReason;
+          throw new Error(`Empty response received from Gemini. Finish reason: ${finishReason || 'UNKNOWN'}`);
+        }
+
         parsedAnnotation = JSON.parse(rawResponse.trim());
 
         const errors = validateAnnotation(parsedAnnotation, w.messages.length);
         if (errors.length > 0) {
-          // Validation failure — treat like a soft error and retry
-          attempt++;
-          if (attempt < MAX_RETRIES) {
-            const delay = retryDelay(attempt);
-            console.warn(`${colors.yellow}⚠ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1} validation failed (${errors[0]}). Retry ${attempt}/${MAX_RETRIES} in ${Math.round(delay / 1000)}s…${colors.reset}`);
-            await new Promise(res => setTimeout(res, delay));
-          }
-          continue;
+          throw new Error(`Validation failed: ${errors[0]}`);
         }
         success = true;
 
       } catch (err) {
         attempt++;
+        logAnnotationError(chatJid, w.windowIndex, attempt, err, rawResponse, response);
+
         const kind = classifyError(err);
+        const causeStr = (err instanceof Error && 'cause' in err && err.cause) ? ` (Cause: ${err.cause})` : '';
 
         if (kind === 'fatal') {
           // 4xx client errors won't be fixed by retrying — bail out immediately
-          console.error(`${colors.red}❌ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1} non-retryable error: ${err}${colors.reset}`);
+          console.error(`${colors.red}❌ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1} non-retryable error: ${err}${causeStr}${colors.reset}`);
           break;
         }
 
@@ -1330,7 +1408,7 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
           : retryDelay(attempt);              // 5xx / network → exponential backoff
 
         const kindLabel = kind === 'rate-limited' ? '429 rate-limited' : kind;
-        console.warn(`${colors.yellow}⚠ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1} ${kindLabel} (attempt ${attempt}/${MAX_RETRIES}). Retrying in ${Math.round(delay / 1000)}s… Error: ${err}${colors.reset}`);
+        console.warn(`${colors.yellow}⚠ [${chatJid.split('@')[0]}] Window ${w.windowIndex + 1} ${kindLabel} (attempt ${attempt}/${MAX_RETRIES}). Retrying in ${Math.round(delay / 1000)}s… Error: ${err}${causeStr}${colors.reset}`);
         await new Promise(res => setTimeout(res, delay));
       }
     }
@@ -1372,7 +1450,6 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
 
     let dispatchIdx = 0;
     let activeRequests = 0;
-    let lastLaunchTime = 0;
 
     await new Promise<void>((resolve) => {
       function processQueue() {
@@ -1382,17 +1459,12 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
           return;
         }
 
-        const now = Date.now();
-        const timeSinceLastLaunch = now - lastLaunchTime;
-
         if (
           dispatchIdx < dispatchQueue.length &&
-          activeRequests < MAX_CONCURRENCY &&
-          timeSinceLastLaunch >= LAUNCH_INTERVAL
+          activeRequests < MAX_CONCURRENCY
         ) {
           const { w, chatJid, totalWindows } = dispatchQueue[dispatchIdx++];
           activeRequests++;
-          lastLaunchTime = now;
 
           executeWindowTask(w, chatJid, totalWindows).finally(() => {
             activeRequests--;
@@ -1401,11 +1473,8 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
         }
 
         if (dispatchIdx < dispatchQueue.length || activeRequests > 0) {
-          const nextDelay =
-            activeRequests >= MAX_CONCURRENCY
-              ? 50
-              : Math.max(0, LAUNCH_INTERVAL - (Date.now() - lastLaunchTime));
-          setTimeout(processQueue, nextDelay);
+          // Poll frequently to check for capacity/slots
+          setTimeout(processQueue, 50);
         }
       }
 
