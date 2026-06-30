@@ -36,7 +36,6 @@ export default function ChatLayout() {
     loading: loadingMessages,
     isJumping,
     loadMore,
-    loadInitialMessages,
     jumpToMessage,
     handleDownloadMedia,
     sendMessage,
@@ -145,13 +144,7 @@ export default function ChatLayout() {
     setTargetMessageId(messageId)
   }, [jumpToMessage])
 
-  // Restore the most-recent messages view after a jump
-  const handleJumpToLatest = useCallback(async () => {
-    if (activeJid) {
-      setTargetMessageId(null)
-      await loadInitialMessages(activeJid)
-    }
-  }, [activeJid, loadInitialMessages])
+
 
   const handleToggleAI = useCallback(() => {
     setIsAIOpen((prev) => {
@@ -225,7 +218,6 @@ export default function ChatLayout() {
               targetMessageId={targetMessageId}
               onTargetScrolled={handleTargetScrolled}
               onScrollToMessage={handleSelectSearchMessage}
-              onJumpToLatest={handleJumpToLatest}
             />
             <MessageInput
               onSend={handleSendMessage}
