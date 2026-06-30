@@ -99,7 +99,9 @@ export function useAIStream({
       mentions,
       { ...aiOptionsRef.current, isSystem },
       (chunk) => {
-        setLoading(false)
+        if (chunk.trim().length > 0) {
+          setLoading(false)
+        }
         if (streamingBuffers.current[aiMsgId] === undefined) {
           streamingBuffers.current[aiMsgId] = ''
         }
