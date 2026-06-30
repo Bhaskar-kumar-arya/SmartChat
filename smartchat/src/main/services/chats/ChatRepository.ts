@@ -168,12 +168,12 @@ export class ChatRepository implements IChatRepository {
   /**
    * Increments the unread count for a chat.
    */
-  async incrementUnread(jid: string, timestamp: bigint): Promise<Chat> {
+  async incrementUnread(jid: string, timestamp: bigint, amount: number = 1): Promise<Chat> {
     const type = jid.endsWith('@g.us') ? 'GROUP' : 'DM'
     return this.prisma.chat.upsert({
       where: { jid },
-      update: { unreadCount: { increment: 1 }, timestamp },
-      create: { jid, type, unreadCount: 1, timestamp }
+      update: { unreadCount: { increment: amount }, timestamp },
+      create: { jid, type, unreadCount: amount, timestamp }
     })
   }
 

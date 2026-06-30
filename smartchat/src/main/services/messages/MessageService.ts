@@ -280,6 +280,55 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
 
     if (newRows.length > 0) {
       await this.repository.bulkCreateMessages(newRows)
+
+      // Group new messages by chatJid to increment unread counts and update timestamps
+      const chatUpdates = new Map<string, { unreadIncrement: number; maxTimestamp: bigint }>()
+
+      for (const row of newRows) {
+        const isSelfChat = meJids.includes(row.chatJid)
+        const isIncoming = !row.fromMe && !isSelfChat
+
+        let current = chatUpdates.get(row.chatJid)
+        if (!current) {
+          current = { unreadIncrement: 0, maxTimestamp: 0n }
+          chatUpdates.set(row.chatJid, current)
+        }
+
+        if (isIncoming) {
+          current.unreadIncrement++
+        }
+
+        if (row.timestamp > current.maxTimestamp) {
+          current.maxTimestamp = row.timestamp
+        }
+      }
+
+      // Apply chat updates and emit events
+      for (const [chatJid, updateInfo] of chatUpdates.entries()) {
+        try {
+          let updatedChat
+          if (updateInfo.unreadIncrement > 0) {
+            updatedChat = await this.chatRepository.incrementUnread(chatJid, updateInfo.maxTimestamp, updateInfo.unreadIncrement)
+          } else if (updateInfo.maxTimestamp > 0n) {
+            updatedChat = await this.chatRepository.updateTimestamp(chatJid, updateInfo.maxTimestamp)
+          }
+
+          if (updatedChat) {
+            const bus = this.getBus()
+            if (bus) {
+              await bus.emit('chat:updated', {
+                jid: chatJid,
+                update: {
+                  unreadCount: updatedChat.unreadCount,
+                  timestamp: updatedChat.timestamp
+                }
+              })
+            }
+          }
+        } catch (err: unknown) {
+          console.error(`[MessageService] Error updating chat ${chatJid} during bulkPersistMessages:`, err)
+        }
+      }
     }
 
     console.log(

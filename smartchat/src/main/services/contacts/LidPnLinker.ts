@@ -9,7 +9,7 @@ export class LidPnLinker implements ILidPnLinker {
     private readonly identityRepository: IIdentityRepository,
     private readonly aliasRepository: IAliasRepository,
     private readonly lidMapRepository: ILidMapRepository
-  ) {}
+  ) { }
 
   /**
    * Links a LID to a PN explicitly (e.g., from lid-mapping.update events).
@@ -38,7 +38,7 @@ export class LidPnLinker implements ILidPnLinker {
     // Find identities for both
     const lidAlias = await this.aliasRepository.findIdentityAlias(cleanLid)
     let pnIdentity = await this.identityRepository.findIdentityByPhoneNumber(cleanPn)
-    
+
     if (!pnIdentity) {
       // Look for PN alias
       const pnAlias = await this.aliasRepository.findIdentityAlias(cleanPn)
@@ -58,7 +58,7 @@ export class LidPnLinker implements ILidPnLinker {
 
       // Delete the old LID-only stub if nothing else references it
       if (orphanId) {
-        const { aliases: aliasCount, messages: msgCount, members: memberCount, reactions: reactionCount } = 
+        const { aliases: aliasCount, messages: msgCount, members: memberCount, reactions: reactionCount } =
           await this.identityRepository.countIdentityReferences(orphanId)
 
         if (aliasCount === 0 && msgCount === 0 && memberCount === 0 && reactionCount === 0) {
