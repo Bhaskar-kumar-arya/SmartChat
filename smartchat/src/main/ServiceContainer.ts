@@ -273,7 +273,7 @@ export function createServices(
     messageRepository, messageQueryRepository, messageService, messageService, contactService, favoriteStickerService
   )
   const searchService = new SearchService(chatRepository, messageQueryRepository, messageVectorRepository, identityRepository, contactService, embeddingService)
-  const profileSyncService = new ProfileSyncService(prisma, contactService)
+  const profileSyncService = new ProfileSyncService(identityRepository, chatRepository, contactService)
 
   // 3. AI services
   const reactStrategy = new ReactProtocolStrategy()
