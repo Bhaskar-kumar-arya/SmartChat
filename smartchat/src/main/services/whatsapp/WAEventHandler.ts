@@ -51,7 +51,8 @@ export class WAEventHandler {
   constructor(
     private messageProcessingService: IMessageProcessingService,
     private messageParserService: IMessageParserService,
-    private bus: IWAEventBus
+    private bus: IWAEventBus,
+    private checkHistorySyncComplete?: () => Promise<boolean>
   ) {}
 
   // ── messages.upsert ───────────────────────────────────────────────────────
@@ -62,7 +63,11 @@ export class WAEventHandler {
   ): Promise<void> {
     const { messages, type } = data
 
-    if (type === TYPE_APPEND) {
+    const isHistorySyncCompleted = this.checkHistorySyncComplete
+      ? await this.checkHistorySyncComplete()
+      : true
+
+    if (type === TYPE_APPEND && !isHistorySyncCompleted) {
       await this.processBacklogMessages(messages, sock)
       return
     }

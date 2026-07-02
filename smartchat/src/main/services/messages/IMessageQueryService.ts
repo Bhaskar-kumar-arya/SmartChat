@@ -28,4 +28,9 @@ export interface IMessageQueryService {
     sock: unknown | null,
     nameMap: Map<string, string>
   ): Promise<EnrichedMessage>
+
+  enrichSingleMessage(
+    msg: DBMessageWithSender,
+    sock: unknown | null
+  ): Promise<EnrichedMessage>
 }

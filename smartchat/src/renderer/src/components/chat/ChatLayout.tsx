@@ -113,6 +113,23 @@ export default function ChatLayout() {
     }
   }, [handleSelectChat, api])
 
+  useEffect(() => {
+    if (!activeJid) return
+    const unsubscribe = api.onChatUpdated((update) => {
+      if (update.jid === activeJid) {
+        if (update.name !== undefined) {
+          setActiveName(update.name)
+        }
+        if (update.profilePictureUrl !== undefined) {
+          setActiveProfilePic(update.profilePictureUrl)
+        }
+      }
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [activeJid, api])
+
   const handleSendMessage = useCallback(async (text: string, mentions?: string[]) => {
     await sendMessage(text, replyingTo?.id, mentions)
     setReplyingTo(null)
@@ -218,6 +235,7 @@ export default function ChatLayout() {
               targetMessageId={targetMessageId}
               onTargetScrolled={handleTargetScrolled}
               onScrollToMessage={handleSelectSearchMessage}
+              onSelectChat={handleSelectChat}
             />
             <MessageInput
               onSend={handleSendMessage}

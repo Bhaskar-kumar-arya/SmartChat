@@ -225,7 +225,8 @@ export function bootstrapWorkerRepositories(
   const eventHandler = new WAEventHandler(
     messageService,
     messageService,
-    eventBus
+    eventBus,
+    () => authSettingsService.getHistorySyncCompleted()
   )
 
   // Register Subscribers

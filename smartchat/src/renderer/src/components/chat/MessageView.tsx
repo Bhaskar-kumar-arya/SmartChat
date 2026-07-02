@@ -17,6 +17,7 @@ interface MessageViewProps {
   targetMessageId?: string | null
   onTargetScrolled?: () => void
   onScrollToMessage?: (messageId: string) => void
+  onSelectChat?: (jid: string, name: string) => void
 }
 
 export default function MessageView({
@@ -30,7 +31,8 @@ export default function MessageView({
   onDownloadMedia,
   targetMessageId,
   onTargetScrolled,
-  onScrollToMessage
+  onScrollToMessage,
+  onSelectChat
 }: MessageViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -221,6 +223,7 @@ export default function MessageView({
               onDownloadMedia={handleDownloadMedia}
               onViewReactions={handleViewReactions}
               onScrollToMessage={onScrollToMessage}
+              onSelectChat={onSelectChat}
             />
           </div>
         ))

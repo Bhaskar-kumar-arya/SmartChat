@@ -41,6 +41,39 @@ export class MessageEnricher implements IMessageEnricher {
       // Non-fatal: keep empty object
     }
 
+    if (msg.messageType === 'system') {
+      const stubType = finalContent.stubType
+      const params = finalContent.parameters
+
+      const isJid = (val: unknown): val is string =>
+        typeof val === 'string' &&
+        (val.includes('@s.whatsapp.net') || val.includes('@lid') || val.includes('@g.us'))
+
+      const resolveContact = (jidOrStr: string) => {
+        if (isJid(jidOrStr)) {
+          const name = nameMap.get(jidOrStr) || jidOrStr.split('@')[0]
+          return { jid: jidOrStr, name }
+        }
+        return jidOrStr
+      }
+
+      const enrichedParams = Array.isArray(params)
+        ? params.map((p) => resolveContact(String(p)))
+        : []
+
+      finalContent = {
+        stubType: typeof stubType === 'string' ? stubType : 'UNKNOWN',
+        parameters: enrichedParams
+      }
+
+      return {
+        ...msg,
+        participantName,
+        timestamp: msg.timestamp.toString(),
+        content: JSON.stringify(finalContent)
+      }
+    }
+
     const unwrapped = unwrapMessage(finalContent)
     const ctx = this._extractContextInfo(unwrapped)
 

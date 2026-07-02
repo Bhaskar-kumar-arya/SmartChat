@@ -79,9 +79,19 @@ export class MessageParser {
 
     const isDeleted = msg.messageStubType === WAMessageStubType.REVOKE
 
+    let rawMsgCopy = rawMessage
+
     if (msg.messageStubType === WAMessageStubType.CIPHERTEXT) {
       messageType = 'ciphertext'
       textContent = 'Waiting for this message. This may take a while.'
+    } else if (msg.messageStubType !== undefined && msg.messageStubType !== null && msg.messageStubType !== WAMessageStubType.REVOKE) {
+      messageType = 'system'
+      rawMsgCopy = {
+        stubType: typeof msg.messageStubType === 'number'
+          ? (WAMessageStubType[msg.messageStubType] || 'UNKNOWN')
+          : String(msg.messageStubType),
+        parameters: msg.messageStubParameters || []
+      }
     }
 
     const status = mapBaileysStatus(msg.status)
@@ -93,7 +103,7 @@ export class MessageParser {
       participantString,
       timestamp,
       messageType,
-      rawMessage,
+      rawMessage: rawMsgCopy,
       textContent,
       pushName: msg.pushName ?? null,
       status,

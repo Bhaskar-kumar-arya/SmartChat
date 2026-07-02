@@ -159,9 +159,18 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     if (messageType === 'senderKeyDistributionMessage') return null
 
     let finalTextContent = textContent
+    let rawMsgCopy = rawMessage
     if (baileysMsg.messageStubType === WAMessageStubType.CIPHERTEXT) {
       messageType = 'ciphertext'
       finalTextContent = 'Waiting for this message. This may take a while.'
+    } else if (baileysMsg.messageStubType !== undefined && baileysMsg.messageStubType !== null && baileysMsg.messageStubType !== WAMessageStubType.REVOKE) {
+      messageType = 'system'
+      rawMsgCopy = {
+        stubType: typeof baileysMsg.messageStubType === 'number'
+          ? (WAMessageStubType[baileysMsg.messageStubType] || 'UNKNOWN')
+          : String(baileysMsg.messageStubType),
+        parameters: baileysMsg.messageStubParameters || []
+      }
     }
 
     const timestamp = parseBaileysTimestamp(baileysMsg.messageTimestamp ?? 0)
@@ -169,7 +178,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     const context: IMessageProcessingContext = {
       msg: baileysMsg,
       sock,
-      rawMessage,
+      rawMessage: rawMsgCopy,
       unwrapped,
       remoteJid,
       participantString,
@@ -184,7 +193,8 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
       repository: this.repository,
       reactionRepository: this.reactionRepository,
       embeddingService: this.embeddingService,
-      secretMessageService: this.secretMessageService
+      secretMessageService: this.secretMessageService,
+      contactService: this.contactService
     }
 
     return this.dispatchProcessors(context, dependencies)
@@ -344,6 +354,21 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     messages.forEach(m => {
       try {
         const content = JSON.parse(m.content)
+        if (m.messageType === 'system') {
+          const params = content.parameters
+          if (Array.isArray(params)) {
+            const isJid = (val: string) => typeof val === 'string' && (val.includes('@s.whatsapp.net') || val.includes('@lid') || val.includes('@g.us'))
+            params.forEach(param => {
+              if (isJid(param)) {
+                additionalJids.add(param)
+              }
+            })
+          }
+          if (m.participant) {
+            additionalJids.add(m.participant)
+          }
+          return
+        }
         const unwrapped = unwrapMessage(content)
         const unwrappedRaw = unwrapped as Record<string, unknown>
         const ctx = (
@@ -429,6 +454,24 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     sock: unknown | null,
     nameMap: Map<string, string>
   ): Promise<EnrichedMessage> {
+    return this.enricher.enrichMessage(msg, sock as ISocketUserContext | null, nameMap)
+  }
+
+  /**
+   * Enrich a single message by performing batch resolution of names first.
+   */
+  async enrichSingleMessage(
+    msg: DBMessageWithSender,
+    sock: unknown | null
+  ): Promise<EnrichedMessage> {
+    const additionalJids = this.collectAdditionalJidsForResolve([msg])
+    const participantOrChat = cleanJid(msg.participant || msg.chatJid)
+    additionalJids.add(participantOrChat)
+
+    const nameMap = await this.contactService.batchResolveNames(
+      Array.from(additionalJids),
+      sock as ISocketUserContext | null
+    )
     return this.enricher.enrichMessage(msg, sock as ISocketUserContext | null, nameMap)
   }
 

@@ -9,6 +9,7 @@ import MessageInfoModal from './MessageInfoModal'
 import { TextMessage } from './messages/TextMessage'
 import { ImageMessage, StickerMessage, VideoMessage, DocumentMessage, AudioMessage } from './messages/MediaMessages'
 import { TemplateMessage } from './messages/TemplateMessage'
+import { SystemMessageBubble } from './messages/SystemMessage'
 import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
 import { useAPI } from '../../context/APIContext'
 import ConfirmModal from '../common/ConfirmModal'
@@ -67,8 +68,7 @@ function getSenderColor(chatJid: string, participantJid: string | null | undefin
     hash = hashKey.charCodeAt(i) + ((hash << 5) - hash)
   }
 
-  // Offset the hash by 7 to shuffle the assigned colors
-  const index = (Math.abs(hash) + 7) % colors.length
+  const index = Math.abs(hash) % colors.length
   return colors[index]
 }
 
@@ -154,6 +154,7 @@ interface MessageItemProps {
   onDownloadMedia?: (msgId: string) => Promise<void>
   onViewReactions: (msg: IMessageItem) => void
   onScrollToMessage?: (messageId: string) => void
+  onSelectChat?: (jid: string, name: string) => void
 }
 
 const MessageItem = memo(function MessageItem({
@@ -163,8 +164,12 @@ const MessageItem = memo(function MessageItem({
   onDelete,
   onDownloadMedia,
   onViewReactions,
-  onScrollToMessage
+  onScrollToMessage,
+  onSelectChat
 }: MessageItemProps) {
+  if (msg.messageType === 'system') {
+    return <SystemMessageBubble msg={msg} onSelectChat={onSelectChat} />
+  }
   const api = useAPI()
 
   let rawMsg: RawMessageContent = {}

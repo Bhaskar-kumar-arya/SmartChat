@@ -5,7 +5,7 @@ import { IMessageRepository } from '../IMessageRepository'
 import { IReactionRepository } from '../IReactionRepository'
 import { IMessageIndexer } from '../../search/IEmbeddingService'
 import { SecretMessageService } from '../../whatsapp/secret/SecretMessageService'
-import { ISocketUserContext } from '../../contacts/IContactService'
+import { ISocketUserContext, IContactNameResolver } from '../../contacts/IContactService'
 
 export interface IMessageProcessingContext {
   msg: BaileysMessage
@@ -26,6 +26,7 @@ export interface IMessageServiceDependencyAccessor {
   reactionRepository: IReactionRepository
   embeddingService: IMessageIndexer
   secretMessageService: SecretMessageService
+  contactService: IContactNameResolver
 }
 
 export interface IMessageProcessorStrategy {

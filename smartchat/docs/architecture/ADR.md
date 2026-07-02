@@ -254,4 +254,23 @@ Offload the Baileys network/decryption logic, message parsing, and database writ
 **Constrains:** All interaction with the WhatsApp client from the Main process must go through the command-sending API of `WAWorkerBridge`. Payloads sent over the worker boundary must be clean, serializable, and free of closures or complex classes.
 **Watch for:** Sync latency or serialization bottlenecks on massive object structures.
 
+---
+
+## ADR-15: WhatsApp System Stubs Handling & OCP Normalization
+
+**Date:** 2026-07-02
+**Status:** Accepted
+
+### Context
+WhatsApp background events (stubs) were unhandled, resulting in blank system messages or missing/unresolved JIDs in group/call notification bubbles. Previous implementation plans proposed specialized write-time handlers, which caused duplicate parsing logic and split-brain resolution between live and historical messages. Later backend representations hardcoded layout layouts violating the Open-Closed Principle (OCP) and Single Responsibility Principle (SRP).
+
+### Decision
+Normalize stubs into standard database rows with `messageType: 'system'` and serialized `content` storing a unified `parameters` list of raw JIDs/strings. 
+Perform JID name resolution dynamically at read-time in the backend `MessageEnricher` (using the pre-loaded nameMap) to enrich JIDs into clickable `{ jid, name }` structures. Keep the backend enricher completely generic and closed to stub-type layout modifications. Expose a layout registry (`SYSTEM_STUB_REGISTRY`) entirely on the frontend React layer (`SystemMessage.tsx`) to format and render stubs as clickable navigation links.
+
+### Consequences
+**Enables:** Dynamic name updates (display names are always resolved to the latest contact cache at read-time), fully clickable userChips in notifications, and strict OCP compliance on both main and worker processes.
+**Constrains:** Frontend must handle the parsed parameter structures type-safely.
+**Watch for:** Unregistered stub types falling back gracefully.
+
 

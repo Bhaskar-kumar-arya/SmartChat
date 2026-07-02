@@ -105,7 +105,9 @@ export const useMessages = (activeJid: string | null) => {
         }
 
         setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev
+          if (prev.some((m) => m.id === msg.id)) {
+            return prev
+          }
           return [...prev, msg]
         })
       }

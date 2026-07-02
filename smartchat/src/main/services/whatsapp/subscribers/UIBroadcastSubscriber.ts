@@ -63,13 +63,13 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
 
   private async onIncoming(event: IncomingMessageEvent): Promise<void> {
     const win = this.window
-    if (!win) return
+    if (!win) {
+      console.warn('[UIBroadcastSubscriber] onIncoming ignored - window is null')
+      return
+    }
     try {
       const { processed, sock } = event
-      const participantOrChat = cleanJid(processed.participant || processed.chatJid)
-      const nameMap = await this.contactService.batchResolveNames([participantOrChat], sock)
-      const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap)
-      console.log('[UIBroadcastSubscriber] onIncoming message:', enriched.id, 'type:', enriched.messageType, 'chat:', enriched.chatJid)
+      const enriched = await this.messageQueryService.enrichSingleMessage(processed, sock)
       this.send('new-message', enriched)
     } catch (err) {
       console.error('[UIBroadcastSubscriber] Error broadcasting new-message:', err)

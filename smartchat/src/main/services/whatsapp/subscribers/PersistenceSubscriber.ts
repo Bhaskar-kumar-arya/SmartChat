@@ -58,12 +58,12 @@ export class PersistenceSubscriber implements IWAEventSubscriber {
   private async onIncoming(event: IncomingMessageEvent): Promise<void> {
     const { chatJid, messageType, fromMe, timestamp } = event
     try {
-      if (!fromMe) {
-        if (messageType !== 'reactionMessage') {
+      if (messageType !== 'reactionMessage') {
+        if (!fromMe && messageType !== 'system') {
           await this.chatService.incrementUnread(chatJid, timestamp)
+        } else {
+          await this.chatService.updateTimestamp(chatJid, timestamp)
         }
-      } else if (messageType !== 'reactionMessage') {
-        await this.chatService.updateTimestamp(chatJid, timestamp)
       }
     } catch (err) {
       console.error('[PersistenceSubscriber] Error updating chat for incoming message:', err)
