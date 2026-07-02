@@ -9,8 +9,8 @@ const api = {
     ipcRenderer.on('wa-qr', listener)
     return () => { ipcRenderer.removeListener('wa-qr', listener) }
   },
-  onWaConnected: (callback: () => void) => {
-    const listener = () => callback()
+  onWaConnected: (callback: (data?: { isCatchup?: boolean }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: any) => callback(data)
     ipcRenderer.on('wa-connected', listener)
     return () => { ipcRenderer.removeListener('wa-connected', listener) }
   },

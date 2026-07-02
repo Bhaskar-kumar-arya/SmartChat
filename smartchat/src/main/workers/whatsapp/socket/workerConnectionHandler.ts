@@ -43,7 +43,7 @@ export class WorkerConnectionHandler {
     console.log('[WhatsAppWorker] Reconnect: history sync previously completed. Waiting for offline catch-up...')
     this.isWaitingForCatchUp = true
 
-    this.eventPublisher.publish('wa-connected')
+    this.eventPublisher.publish('wa-connected', { isCatchup: true })
 
     if (this.catchUpTimeout) {
       clearTimeout(this.catchUpTimeout)
@@ -52,7 +52,7 @@ export class WorkerConnectionHandler {
     this.catchUpTimeout = setTimeout(() => {
       console.warn('[WhatsAppWorker] Catch-up safety timeout reached. Forcing transition.')
       this.completeCatchUp()
-    }, 30000)
+    }, 60000)
 
     this.eventPublisher.publish('wa-sync-status', 'Syncing missed messages...')
   }
@@ -157,13 +157,13 @@ export class WorkerConnectionHandler {
             }
           } else {
             console.log('[WhatsAppWorker] Reconnect: history sync NOT completed, continuing sync')
-            this.eventPublisher.publish('wa-connected')
+            this.eventPublisher.publish('wa-connected', { isCatchup: false })
           }
         } else {
           console.log('[WhatsAppWorker] Fresh login or active sync reconnect detected, showing/continuing sync screen')
           repos.historySyncManager.setInProgress(true)
           this.setIsFreshLogin(false)
-          this.eventPublisher.publish('wa-connected')
+          this.eventPublisher.publish('wa-connected', { isCatchup: false })
         }
       }
     }

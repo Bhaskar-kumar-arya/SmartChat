@@ -53,7 +53,7 @@ export interface IAPIService {
   onChatUpdated(callback: (update: Partial<ChatItem> & { jid: string }) => void): (() => void)
   onPresenceUpdate(callback: (update: PresenceUpdate) => void): (() => void)
   onWaQr(callback: (qr: string) => void): (() => void)
-  onWaConnected(callback: () => void): (() => void)
+  onWaConnected(callback: (data?: { isCatchup?: boolean }) => void): (() => void)
   onWaLoggedOut(callback: () => void): (() => void)
   onWaSyncProgress(
     callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void

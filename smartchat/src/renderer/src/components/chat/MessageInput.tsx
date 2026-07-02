@@ -33,6 +33,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
   const editorRef = useRef<HTMLDivElement>(null)
   const pickerContainerRef = useRef<HTMLDivElement>(null)
   const smileButtonRef = useRef<HTMLButtonElement>(null)
+  const lastCaretOffsetRef = useRef<number>(0)
 
   useEffect(() => {
     setShowPicker(false)
@@ -84,6 +85,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
       editorRef.current.innerHTML = ''
     }
     setText('')
+    lastCaretOffsetRef.current = 0
   }, [activeJid])
 
   useEffect(() => {
@@ -114,6 +116,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
 
     setText(plainText)
     const caret = getCaretCharacterOffsetWithin(editor)
+    lastCaretOffsetRef.current = caret
     handleInputChange(plainText, caret)
   }
 
@@ -122,6 +125,8 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     if (!editor) return
 
     editor.focus()
+    setCaretPosition(editor, lastCaretOffsetRef.current)
+
     const sel = window.getSelection()
     if (!sel) return
 
@@ -192,6 +197,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         editor.focus()
         const newPos = lastAtPos + number.length + 2
         setCaretPosition(editor, newPos)
+        lastCaretOffsetRef.current = newPos
       }, 0)
     }
   }
@@ -209,6 +215,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
       if (editorRef.current) {
         editorRef.current.innerHTML = ''
       }
+      lastCaretOffsetRef.current = 0
       clearMentions()
     } finally {
       setSending(false)
@@ -262,6 +269,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     if (!editor) return
     const plainText = getEditableText(editor)
     const caret = getCaretCharacterOffsetWithin(editor)
+    lastCaretOffsetRef.current = caret
     handleInputChange(plainText, caret)
   }
 
@@ -367,6 +375,8 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
               onInput={handleEditorInput}
               onKeyDown={handleKeyDown}
               onSelect={handleSelect}
+              onKeyUp={handleSelect}
+              onMouseUp={handleSelect}
               onPaste={handlePaste}
               style={{
                 maxHeight: '120px',

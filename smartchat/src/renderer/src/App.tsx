@@ -39,10 +39,14 @@ export function App() {
       setAppState('qr')
     })
 
-    const unSubConn = api.onWaConnected(() => {
+    const unSubConn = api.onWaConnected((data) => {
       setQr(null)
-      setAppState('syncing')
-      setSyncProgress(0)
+      if (data?.isCatchup) {
+        setAppState('connected')
+      } else {
+        setAppState('syncing')
+        setSyncProgress(0)
+      }
     })
 
     const unSubLogout = api.onWaLoggedOut(() => {
