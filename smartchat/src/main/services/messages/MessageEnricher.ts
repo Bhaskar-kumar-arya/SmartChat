@@ -45,16 +45,65 @@ export class MessageEnricher implements IMessageEnricher {
       const stubType = finalContent.stubType
       const params = finalContent.parameters
 
-      const isJid = (val: unknown): val is string =>
+      const isJid = (val: unknown): boolean =>
         typeof val === 'string' &&
         (val.includes('@s.whatsapp.net') || val.includes('@lid') || val.includes('@g.us'))
 
-      const resolveContact = (jidOrStr: string) => {
-        if (isJid(jidOrStr)) {
-          const name = nameMap.get(jidOrStr) || jidOrStr.split('@')[0]
-          return { jid: jidOrStr, name }
+      /**
+       * Produce a display-safe name from an arbitrary stub parameter string.
+       *
+       * Baileys encodes LID participants as JSON-stringified objects like:
+       *   '{"id":"<lid>@lid","phoneNumber":"<pn>@s.whatsapp.net","admin":null}'
+       *
+       * Resolution priority:
+       *   1. Proper JID string  → look up in nameMap, fallback to local part before '@'.
+       *   2. Bare number string → use as display name (no @-domain present).
+       *   3. JSON blob          → extract phoneNumber (preferred) or id JID, resolve from nameMap.
+       *   4. Plain string       → render as-is (e.g. a group subject change value).
+       */
+      const resolveContact = (raw: string): { jid: string; name: string } | string => {
+        // Baileys LID/PN JSON blob: {id, phoneNumber, admin, ...}
+        if (raw.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(raw) as Record<string, unknown>
+            const pnJid = typeof parsed.phoneNumber === 'string' && isJid(parsed.phoneNumber)
+              ? parsed.phoneNumber : null
+            const lidJid = typeof parsed.id === 'string' && isJid(parsed.id)
+              ? parsed.id : null
+
+            // Prioritize LID JID for opening/selecting chat in the UI.
+            const clickJid = lidJid ?? pnJid ?? ''
+
+            const pnName = pnJid ? nameMap.get(pnJid) : null
+            const lidName = lidJid ? nameMap.get(lidJid) : null
+
+            // A name is a fallback if it is missing or consists solely of digits (indicating raw ID / number)
+            const isFallback = (n: string | null | undefined) => !n || /^\d+$/.test(n.trim())
+
+            let resolvedName = ''
+            if (pnName && !isFallback(pnName)) {
+              resolvedName = pnName
+            } else if (lidName && !isFallback(lidName)) {
+              resolvedName = lidName
+            } else {
+              // Fallback to nameMap values (even if numeric/fallback) or split JID prefix.
+              resolvedName = pnName || lidName || (pnJid ? pnJid.split('@')[0] : '') || (lidJid ? lidJid.split('@')[0] : 'Unknown')
+            }
+
+            return { jid: clickJid, name: resolvedName }
+          } catch { /* not JSON */ }
         }
-        return jidOrStr
+
+        if (isJid(raw)) {
+          const name = nameMap.get(raw) || raw.split('@')[0]
+          return { jid: raw, name }
+        }
+        // Bare numeric phone number (no domain).
+        if (/^\d+$/.test(raw.trim())) {
+          return { jid: '', name: raw.trim() }
+        }
+        // Plain non-JID, non-numeric string — render as-is (e.g. group subject).
+        return raw
       }
 
       const enrichedParams = Array.isArray(params)
@@ -126,7 +175,20 @@ export class MessageEnricher implements IMessageEnricher {
     if (msg.fromMe) return 'Me'
     if (msg.sender) return ContactNameResolver.getDisplayName(msg.sender, 'Unknown')
     if (msg.participant) {
-      return nameMap.get(msg.participant) ?? msg.participant.replace(/@.*$/, '')
+      const fromMap = nameMap.get(msg.participant)
+      if (fromMap) return fromMap
+      // Guard against malformed JSON-like participant strings (e.g. Baileys LID blobs).
+      const stripped = msg.participant.replace(/@.*$/, '')
+      if (/^[{[]/.test(stripped)) {
+        // Looks like a JSON fragment — try to extract a numeric id.
+        try {
+          const parsed = JSON.parse(msg.participant) as Record<string, unknown>
+          const id = String(parsed.id ?? parsed.jid ?? '')
+          if (id && /^\d+$/.test(id)) return id
+        } catch { /* not JSON */ }
+        return 'Unknown'
+      }
+      return stripped
     }
     return 'Unknown'
   }

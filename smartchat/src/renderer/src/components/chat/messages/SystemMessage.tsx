@@ -127,24 +127,41 @@ const SYSTEM_STUB_REGISTRY: Record<
     return actorChip ? <>{actorChip} left the group</> : <>A participant left</>
   },
   GROUP_PARTICIPANT_PROMOTE: (content, onSelectChat, msg) => {
+    // Self-promotion: no external promoter, and it happened to the current user.
+    if (msg.fromMe && !msg.participant) {
+      return <>You were promoted to admin</>
+    }
     const promoterJid = msg.participant
-    const promoterChip = promoterJid ? <NameChip jid={promoterJid} name={msg.participantName || promoterJid.split('@')[0]} onSelectChat={onSelectChat} /> : null
+    const promoterChip = promoterJid
+      ? <NameChip jid={promoterJid} name={msg.participantName || promoterJid.split('@')[0]} onSelectChat={onSelectChat} />
+      : null
     const partsChip = formatParticipants(content.parameters, onSelectChat)
-    return promoterChip ? (
-      <>{promoterChip} promoted {partsChip} to admin</>
-    ) : (
-      <>{partsChip} is now an admin</>
-    )
+    if (promoterChip) {
+      return partsChip
+        ? <>{promoterChip} promoted {partsChip} to admin</>
+        : <>{promoterChip} was promoted to admin</>
+    }
+    return partsChip
+      ? <>{partsChip} {msg.fromMe ? 'were' : 'was'} promoted to admin</>
+      : <>A participant was promoted to admin</>
   },
   GROUP_PARTICIPANT_DEMOTE: (content, onSelectChat, msg) => {
+    if (msg.fromMe && !msg.participant) {
+      return <>You were removed as admin</>
+    }
     const demoterJid = msg.participant
-    const demoterChip = demoterJid ? <NameChip jid={demoterJid} name={msg.participantName || demoterJid.split('@')[0]} onSelectChat={onSelectChat} /> : null
+    const demoterChip = demoterJid
+      ? <NameChip jid={demoterJid} name={msg.participantName || demoterJid.split('@')[0]} onSelectChat={onSelectChat} />
+      : null
     const partsChip = formatParticipants(content.parameters, onSelectChat)
-    return demoterChip ? (
-      <>{demoterChip} demoted {partsChip}</>
-    ) : (
-      <>{partsChip} is no longer an admin</>
-    )
+    if (demoterChip) {
+      return partsChip
+        ? <>{demoterChip} removed {partsChip} as admin</>
+        : <>{demoterChip} was removed as admin</>
+    }
+    return partsChip
+      ? <>{partsChip} {msg.fromMe ? 'were' : 'was'} removed as admin</>
+      : <>A participant was removed as admin</>
   },
   CHANGE_EPHEMERAL_SETTING: (content, onSelectChat) => {
     const timerSeconds = parseInt(typeof content.parameters?.[0] === 'string' ? content.parameters[0] : '0', 10)
@@ -188,6 +205,71 @@ const SYSTEM_STUB_REGISTRY: Record<
     const actor = content.parameters?.[0]
     const actorChip = isEnrichedContact(actor) ? <NameChip jid={actor.jid} name={actor.name} onSelectChat={onSelectChat} /> : null
     return actorChip ? <>{actorChip} changed their phone number</> : <>A contact changed their phone number</>
+  },
+  // ── Invite / join variants ───────────────────────────────────────────────────
+  GROUP_PARTICIPANT_INVITE: (content, onSelectChat) => {
+    const partsChip = formatParticipants(content.parameters, onSelectChat)
+    return partsChip ? <>{partsChip} joined via invite link</> : <>Someone joined via invite link</>
+  },
+  GROUP_PARTICIPANT_ACCEPT: (content, onSelectChat) => {
+    const partsChip = formatParticipants(content.parameters, onSelectChat)
+    return partsChip ? <>{partsChip} joined the group</> : <>Someone joined the group</>
+  },
+  GROUP_PARTICIPANT_ADD_REQUEST_JOIN: (content, onSelectChat) => {
+    const partsChip = formatParticipants(content.parameters, onSelectChat)
+    return partsChip ? <>{partsChip} requested to join</> : <>Someone requested to join</>
+  },
+  GROUP_PARTICIPANT_CHANGE_NUMBER: (content, onSelectChat) => {
+    const partsChip = formatParticipants(content.parameters, onSelectChat)
+    return partsChip ? <>{partsChip} changed their phone number</> : <>A member changed their phone number</>
+  },
+  // ── Group settings ───────────────────────────────────────────────────────────
+  GROUP_CHANGE_RESTRICT: (content, onSelectChat) => {
+    const actor = content.parameters?.[0]
+    const actorChip = isEnrichedContact(actor) ? <NameChip jid={actor.jid} name={actor.name} onSelectChat={onSelectChat} /> : null
+    const mode = typeof content.parameters?.[1] === 'string' ? content.parameters[1] : ''
+    const state = mode === 'on' ? 'only admins can send messages' : 'all members can send messages'
+    return actorChip ? <>{actorChip} changed the group so {state}</> : <>Group: {state}</>
+  },
+  GROUP_CHANGE_ANNOUNCE: (content, onSelectChat) => {
+    const actor = content.parameters?.[0]
+    const actorChip = isEnrichedContact(actor) ? <NameChip jid={actor.jid} name={actor.name} onSelectChat={onSelectChat} /> : null
+    const mode = typeof content.parameters?.[1] === 'string' ? content.parameters[1] : ''
+    const state = mode === 'on' ? 'only admins can edit group info' : 'all members can edit group info'
+    return actorChip ? <>{actorChip} changed the group so {state}</> : <>Group: {state}</>
+  },
+  GROUP_CHANGE_INVITE_LINK: (content, onSelectChat) => {
+    const actor = content.parameters?.[0]
+    const actorChip = isEnrichedContact(actor) ? <NameChip jid={actor.jid} name={actor.name} onSelectChat={onSelectChat} /> : null
+    return actorChip ? <>{actorChip} reset the invite link</> : <>The invite link was reset</>
+  },
+  GROUP_DELETE: () => <>This group was deleted</>,
+  ADMIN_REVOKE: (content, onSelectChat) => {
+    const partsChip = formatParticipants(content.parameters, onSelectChat)
+    return partsChip ? <>{partsChip} was removed by admin</> : <>A participant was removed by admin</>
+  },
+  // ── Encryption / security ────────────────────────────────────────────────────
+  E2E_ENCRYPTED: () => <>Messages are end-to-end encrypted.</>,
+  E2E_ENCRYPTED_NOW: () => <>Messages are now end-to-end encrypted.</>,
+  E2E_DEVICE_CHANGED: (content, onSelectChat) => {
+    const actor = content.parameters?.[0]
+    const actorChip = isEnrichedContact(actor) ? <NameChip jid={actor.jid} name={actor.name} onSelectChat={onSelectChat} /> : null
+    return actorChip ? <>{actorChip}&apos;s security code changed</> : <>A security code changed</>
+  },
+  // ── Community ────────────────────────────────────────────────────────────────
+  COMMUNITY_PARTICIPANT_PROMOTE: (content, onSelectChat) => {
+    const partsChip = formatParticipants(content.parameters, onSelectChat)
+    return partsChip ? <>{partsChip} was promoted to admin in this community</> : <>A member was promoted to admin</>
+  },
+  COMMUNITY_PARTICIPANT_DEMOTE: (content, onSelectChat) => {
+    const partsChip = formatParticipants(content.parameters, onSelectChat)
+    return partsChip ? <>{partsChip} was removed as admin in this community</> : <>A member was removed as admin</>
+  },
+  // ── Pinned messages ──────────────────────────────────────────────────────────
+  PINNED_MESSAGE_IN_CHAT: (content, onSelectChat) => {
+    const actor = content.parameters?.[0]
+    const actorChip = isEnrichedContact(actor) ? <NameChip jid={actor.jid} name={actor.name} onSelectChat={onSelectChat} /> : null
+    return actorChip ? <>{actorChip} pinned a message</> : <>A message was pinned</>
   }
 }
 
@@ -206,11 +288,14 @@ export function SystemMessageBubble({
   }
 
   const renderer = SYSTEM_STUB_REGISTRY[content.stubType]
+  // Unknown stubs: try to show participant names if available, else a generic notice.
+  // Never expose raw stubType enum keys or JSON blobs to the user.
   const renderedElement = renderer
     ? renderer(content, onSelectChat, msg)
-    : (content.parameters && content.parameters.length > 0)
-    ? formatParticipants(content.parameters, onSelectChat)
-    : <>System notice: {content.stubType}</>
+    : (() => {
+        const chip = formatParticipants(content.parameters, onSelectChat)
+        return chip || <>Group activity</>
+      })()
 
   return (
     <div

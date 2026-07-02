@@ -359,8 +359,21 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
           if (Array.isArray(params)) {
             const isJid = (val: string) => typeof val === 'string' && (val.includes('@s.whatsapp.net') || val.includes('@lid') || val.includes('@g.us'))
             params.forEach(param => {
-              if (isJid(param)) {
-                additionalJids.add(param)
+              const paramStr = String(param)
+              if (isJid(paramStr)) {
+                additionalJids.add(paramStr)
+              } else {
+                try {
+                  const parsed = JSON.parse(paramStr) as Record<string, unknown>
+                  if (typeof parsed.phoneNumber === 'string' && isJid(parsed.phoneNumber)) {
+                    additionalJids.add(parsed.phoneNumber)
+                  }
+                  if (typeof parsed.id === 'string' && isJid(parsed.id)) {
+                    additionalJids.add(parsed.id)
+                  }
+                } catch {
+                  // Not JSON
+                }
               }
             })
           }
