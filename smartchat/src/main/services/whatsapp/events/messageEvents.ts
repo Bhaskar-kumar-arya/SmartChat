@@ -2,11 +2,12 @@ import { proto } from '@whiskeysockets/baileys'
 import { ProcessedMessage } from '../../../domain/db.types'
 import { ISocketUserContext } from '../../contacts/IContactService'
 import { BaileysMessage } from '../types'
+import { EnrichedMessage } from '../../../ipc/message.types'
 
 /**
  * Fired for each real-time incoming message (Baileys type='notify').
- * Enrichment (name resolution, profile pic) happens inside the subscriber
- * that needs it, keeping the handler lean.
+ * Enrichment (name resolution, profile pic) happens inside the handler
+ * before the event is emitted to guarantee IPC ordering.
  */
 export interface IncomingMessageEvent {
   chatJid: string
@@ -17,6 +18,7 @@ export interface IncomingMessageEvent {
   timestamp: bigint
   processed: ProcessedMessage  // full processed row for subscribers that need detail
   sock: ISocketUserContext
+  enriched: EnrichedMessage
 }
 
 /**

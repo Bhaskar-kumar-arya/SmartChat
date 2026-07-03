@@ -232,6 +232,8 @@ export function bootstrapWorkerRepositories(
   const eventHandler = new WAEventHandler(
     messageService,
     messageService,
+    contactService,
+    messageService,
     eventBus,
     () => authSettingsService.getHistorySyncCompleted()
   )

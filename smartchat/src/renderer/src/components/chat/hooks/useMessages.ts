@@ -195,7 +195,15 @@ export const useMessages = (activeJid: string | null) => {
     if (!activeJid || !text.trim()) return
     try {
       const sentMsg = await api.sendMessage(activeJid, text.trim(), replyId, mentions)
-      setMessages((prev) => [...prev, sentMsg])
+      setMessages((prev) => {
+        const idx = prev.findIndex(m => m.id === sentMsg.id)
+        if (idx !== -1) {
+          const updated = [...prev]
+          updated[idx] = sentMsg
+          return updated
+        }
+        return [...prev, sentMsg]
+      })
       return sentMsg
     } catch (err) {
       console.error('Failed to send message:', err)
@@ -207,7 +215,15 @@ export const useMessages = (activeJid: string | null) => {
     if (!activeJid) return
     try {
       const sentMsg = await api.sendMediaMessage(activeJid, filePath, text.trim(), replyId, mentions)
-      setMessages((prev) => [...prev, sentMsg])
+      setMessages((prev) => {
+        const idx = prev.findIndex(m => m.id === sentMsg.id)
+        if (idx !== -1) {
+          const updated = [...prev]
+          updated[idx] = sentMsg
+          return updated
+        }
+        return [...prev, sentMsg]
+      })
       return sentMsg
     } catch (err) {
       console.error('Failed to send media message:', err)

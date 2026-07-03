@@ -68,9 +68,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
       return
     }
     try {
-      const { processed, sock } = event
-      const enriched = await this.messageQueryService.enrichSingleMessage(processed, sock)
-      this.send('new-message', enriched)
+      this.send('new-message', event.enriched)
     } catch (err) {
       console.error('[UIBroadcastSubscriber] Error broadcasting new-message:', err)
     }

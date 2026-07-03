@@ -208,7 +208,8 @@ export class MessageSenderService implements IMessageSenderService {
       fromMe: enriched.fromMe,
       timestamp: BigInt(enriched.timestamp),
       processed: pendingMsg,
-      sock
+      sock,
+      enriched
     }).catch((err) => {
       console.error('[MessageSenderService] Failed to emit message:incoming event:', err)
     })
@@ -318,7 +319,8 @@ export class MessageSenderService implements IMessageSenderService {
       fromMe: enriched.fromMe,
       timestamp: BigInt(enriched.timestamp),
       processed: pendingMsg,
-      sock
+      sock,
+      enriched
     }).catch((err) => {
       console.error('[MessageSenderService] Failed to emit message:incoming event:', err)
     })

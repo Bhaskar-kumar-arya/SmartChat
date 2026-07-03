@@ -47,9 +47,8 @@ export class NotificationSubscriber implements IWAEventSubscriber {
       const isMuted = await this.chatService.isChatMuted(chatJid)
       if (isMuted) return
 
-      // Resolve sender display name
-      const nameMap = await this.contactService.batchResolveNames([senderJid], sock)
-      const senderName = nameMap.get(senderJid) || senderJid.split('@')[0]
+      // Use pre-resolved sender display name
+      const senderName = event.enriched.participantName || senderJid.split('@')[0]
 
       // Resolve chat display name via contactService
       let chatName = chatJid

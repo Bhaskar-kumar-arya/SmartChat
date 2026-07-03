@@ -26,7 +26,7 @@ describe('Milestone 3 Integration Tests', () => {
 
     bus = new WAEventBus()
     services = createTestServiceContainer(prisma, bus)
-    eventHandler = new WAEventHandler(services.messageProcessingService, services.messageParserService, bus)
+    eventHandler = new WAEventHandler(services.messageProcessingService, services.messageParserService, services.contactService, services.messageQueryService, bus)
     sock = createMockSocket()
 
     await services.contactService.registerMe({

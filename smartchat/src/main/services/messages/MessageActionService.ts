@@ -182,7 +182,8 @@ export class MessageActionService implements IMessageActionService {
       fromMe: enriched.fromMe,
       timestamp: BigInt(enriched.timestamp),
       processed: processed,
-      sock
+      sock,
+      enriched
     }).catch((err) => {
       console.error('[MessageActionService] Failed to emit message:incoming event:', err);
     });

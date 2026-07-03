@@ -4,9 +4,10 @@
  * Thin dispatcher: receives raw Baileys event payloads, parses them into
  * typed domain events, and emits them on the WAEventBus.
  *
- * This class has ONE job: translate raw Baileys data → clean domain events.
- * It does NOT perform notifications, IPC sends, DB writes, or name resolution.
- * All of that lives in the subscribers (see subscribers/).
+ * This class acts as a dispatcher: translates raw Baileys data → clean domain events.
+ * It eagerly enriches realtime messages with name resolution before dispatching
+ * to guarantee IPC event ordering, but otherwise delegates all heavy lifting
+ * to subscribers (see subscribers/).
  */
 
 import {
@@ -27,6 +28,8 @@ import {
 } from '../../constants'
 import { IMessageParserService } from '../messages/IMessageParserService'
 import { IMessageProcessingService } from '../messages/IMessageProcessingService'
+import { IMessageQueryService } from '../messages/IMessageQueryService'
+import { IContactNameResolver } from '../contacts/IContactService'
 import type { IWAEventBus } from './IWAEventBus'
 import { AppStateSyncParser } from './AppStateSyncParser'
 import { proto } from '@whiskeysockets/baileys'
@@ -51,6 +54,8 @@ export class WAEventHandler {
   constructor(
     private messageProcessingService: IMessageProcessingService,
     private messageParserService: IMessageParserService,
+    private contactService: IContactNameResolver,
+    private messageQueryService: IMessageQueryService,
     private bus: IWAEventBus,
     private checkHistorySyncComplete?: () => Promise<boolean>
   ) {}
@@ -109,15 +114,20 @@ export class WAEventHandler {
     }
 
     // Regular incoming message
+    const senderJid = cleanJid(processed.participant || processed.chatJid)
+    const nameMap = await this.contactService.batchResolveNames([senderJid], sock)
+    const enriched = await this.messageQueryService.enrichMessage(processed, sock, nameMap)
+
     await this.bus.emit('message:incoming', {
       chatJid: processed.chatJid,
-      senderJid: cleanJid(processed.participant || processed.chatJid),
+      senderJid,
       messageType: processed.messageType,
       textContent: processed.textContent,
       fromMe: processed.fromMe,
       timestamp: processed.timestamp,
       processed,
-      sock
+      sock,
+      enriched
     })
   }
 
