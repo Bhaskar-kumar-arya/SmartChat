@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { useAPI } from '../../../context/APIContext'
 import { ChatItem, MessageItem } from '../../../types/chatTypes'
 import { formatSenderName } from '../../../utils/formatters'
+import { isSameJid } from '../../../utils/jidUtils'
 import { formatMessagePreview } from '../../../utils/messagePreview'
 
 /**
@@ -115,7 +116,7 @@ export const useChats = (activeJid: string | null) => {
 
       let hasChat = false
       setChats((prev) => {
-        hasChat = prev.some((c) => c.jid === msg.chatJid)
+        hasChat = prev.some((c) => isSameJid(c.jid, msg.chatJid))
         return prev
       })
 
@@ -124,13 +125,13 @@ export const useChats = (activeJid: string | null) => {
           const chatData = await api.getChat(msg.chatJid)
           if (chatData) {
             setChats((prev) => {
-              const exists = prev.some((c) => c.jid === msg.chatJid)
+              const exists = prev.some((c) => isSameJid(c.jid, msg.chatJid))
               if (exists) {
                 return prev.map((c) => {
-                  if (c.jid !== msg.chatJid) return c
+                  if (!isSameJid(c.jid, msg.chatJid)) return c
                   return {
                     ...c,
-                    unreadCount: msg.messageType === 'reactionMessage' ? c.unreadCount : (activeJidRef.current === msg.chatJid ? 0 : c.unreadCount + (msg.fromMe ? 0 : 1)),
+                    unreadCount: msg.messageType === 'reactionMessage' ? c.unreadCount : (isSameJid(activeJidRef.current, msg.chatJid) ? 0 : c.unreadCount + (msg.fromMe ? 0 : 1)),
                     timestamp: msg.timestamp,
                     lastMessage: lastMessageText,
                     lastMessageType: msg.messageType,
@@ -148,7 +149,7 @@ export const useChats = (activeJid: string | null) => {
               
               const newChat: ChatItem = {
                 ...chatData,
-                unreadCount: activeJidRef.current === msg.chatJid ? 0 : (msg.messageType === 'reactionMessage' ? (chatData.unreadCount || 0) : (chatData.unreadCount || 1)),
+                unreadCount: isSameJid(activeJidRef.current, msg.chatJid) ? 0 : (msg.messageType === 'reactionMessage' ? (chatData.unreadCount || 0) : (chatData.unreadCount || 1)),
                 timestamp: msg.timestamp,
                 lastMessage: lastMessageText,
                 lastMessageType: msg.messageType,
@@ -172,9 +173,9 @@ export const useChats = (activeJid: string | null) => {
       }
 
       setChats((prev) => {
-        const idx = prev.findIndex((c) => c.jid === msg.chatJid)
+        const idx = prev.findIndex((c) => isSameJid(c.jid, msg.chatJid))
         if (idx === -1 && !hasChat) {
-          const isCurrentChat = activeJidRef.current === msg.chatJid
+          const isCurrentChat = isSameJid(activeJidRef.current, msg.chatJid)
           const fallbackChat: ChatItem = {
             jid: msg.chatJid,
             name: msg.chatJid.replace(/@.*$/, ''),
@@ -197,7 +198,7 @@ export const useChats = (activeJid: string | null) => {
         if (idx === -1) return prev
 
         const existing = prev[idx]
-        const isCurrentChat = activeJidRef.current === msg.chatJid
+        const isCurrentChat = isSameJid(activeJidRef.current, msg.chatJid)
 
         const updatedChat: ChatItem = {
           ...existing,
@@ -214,7 +215,7 @@ export const useChats = (activeJid: string | null) => {
           lastMessageTargetText: msg.messageType === 'reactionMessage' ? targetMsgPreview : null,
           lastMessageReactionText: msg.messageType === 'reactionMessage' ? reactionText : null
         }
-        const filtered = prev.filter((c) => c.jid !== msg.chatJid)
+        const filtered = prev.filter((c) => !isSameJid(c.jid, msg.chatJid))
         return sortChats([updatedChat, ...filtered])
       })
     })
@@ -222,7 +223,7 @@ export const useChats = (activeJid: string | null) => {
     const unSubChatUpd = api.onChatUpdated(async (update) => {
       let hasChat = false
       setChats((prev) => {
-        hasChat = prev.some((c) => c.jid === update.jid)
+        hasChat = prev.some((c) => isSameJid(c.jid, update.jid))
         return prev
       })
 
@@ -231,12 +232,12 @@ export const useChats = (activeJid: string | null) => {
           const chatData = await api.getChat(update.jid)
           if (chatData) {
             setChats((prev) => {
-              const exists = prev.some((c) => c.jid === update.jid)
+              const exists = prev.some((c) => isSameJid(c.jid, update.jid))
               if (exists) {
-                return prev.map(c => c.jid === update.jid ? { ...c, ...update } as ChatItem : c)
+                return prev.map(c => isSameJid(c.jid, update.jid) ? { ...c, ...update } as ChatItem : c)
               }
               const newChat = { ...chatData, ...update } as ChatItem
-              if (newChat.jid === activeJidRef.current) {
+              if (isSameJid(newChat.jid, activeJidRef.current)) {
                 newChat.unreadCount = 0
               }
               return sortChats([newChat, ...prev])
@@ -249,22 +250,22 @@ export const useChats = (activeJid: string | null) => {
       }
 
       setChats((prev) => {
-        const idx = prev.findIndex((c) => c.jid === update.jid)
+        const idx = prev.findIndex((c) => isSameJid(c.jid, update.jid))
         if (idx === -1) return prev
         
         const updatedChat = { ...prev[idx], ...update } as ChatItem
-        if (updatedChat.jid === activeJidRef.current) {
+        if (isSameJid(updatedChat.jid, activeJidRef.current)) {
           updatedChat.unreadCount = 0
         }
         
-        const filtered = prev.filter((c) => c.jid !== update.jid)
+        const filtered = prev.filter((c) => !isSameJid(c.jid, update.jid))
         return sortChats([updatedChat, ...filtered])
       })
     })
 
     const unSubMsgEdited = api.onMessageEdited((msg: MessageItem) => {
       setChats((prev) => {
-        const idx = prev.findIndex((c) => c.jid === msg.chatJid)
+        const idx = prev.findIndex((c) => isSameJid(c.jid, msg.chatJid))
         if (idx === -1) return prev
 
         const existing = prev[idx]
@@ -284,7 +285,7 @@ export const useChats = (activeJid: string | null) => {
             lastMessageFromMe: msg.fromMe,
             lastMessageId: msg.id
           }
-          const filtered = prev.filter((c) => c.jid !== msg.chatJid)
+          const filtered = prev.filter((c) => !isSameJid(c.jid, msg.chatJid))
           return sortChats([updatedChat, ...filtered])
         }
         return prev
@@ -293,7 +294,7 @@ export const useChats = (activeJid: string | null) => {
 
     const unSubMsgStatus = api.onMessageStatusUpdated((update) => {
       setChats((prev) => {
-        const idx = prev.findIndex((c) => c.jid === update.chatJid)
+        const idx = prev.findIndex((c) => isSameJid(c.jid, update.chatJid))
         if (idx === -1) return prev
 
         const existing = prev[idx]
@@ -302,7 +303,7 @@ export const useChats = (activeJid: string | null) => {
             ...existing,
             lastMessageStatus: update.status
           }
-          const filtered = prev.filter((c) => c.jid !== update.chatJid)
+          const filtered = prev.filter((c) => !isSameJid(c.jid, update.chatJid))
           return sortChats([updatedChat, ...filtered])
         }
         return prev
@@ -321,7 +322,7 @@ export const useChats = (activeJid: string | null) => {
   useEffect(() => {
     if (activeJid) {
       setChats(prev => prev.map(c => 
-        c.jid === activeJid ? { ...c, unreadCount: 0 } : c
+        isSameJid(c.jid, activeJid) ? { ...c, unreadCount: 0 } : c
       ))
     }
   }, [activeJid])
@@ -336,7 +337,7 @@ export const useChats = (activeJid: string | null) => {
 
   const clearUnreadCount = (jid: string) => {
     setChats(prev => prev.map(c => 
-      c.jid === jid ? { ...c, unreadCount: 0 } : c
+      isSameJid(c.jid, jid) ? { ...c, unreadCount: 0 } : c
     ))
   }
 

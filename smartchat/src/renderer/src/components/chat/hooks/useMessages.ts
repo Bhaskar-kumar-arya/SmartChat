@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAPI } from '../../../context/APIContext'
 import { MessageItem, ReactionItem } from '../../../types/chatTypes'
+import { isSameJid } from '../../../utils/jidUtils'
 
 /**
  * Hook to manage messages for a specific chat.
@@ -98,7 +99,7 @@ export const useMessages = (activeJid: string | null) => {
     if (!activeJid) return
 
     const unSub = api.onNewMessage((msg: MessageItem) => {
-      if (msg.chatJid === activeJid) {
+      if (isSameJid(msg.chatJid, activeJid)) {
         if (msg.messageType === 'reactionMessage') {
           handleReactionUpdate(msg)
           return
@@ -114,13 +115,13 @@ export const useMessages = (activeJid: string | null) => {
     })
 
     const unSubEdit = api.onMessageEdited((msg: MessageItem) => {
-      if (msg.chatJid === activeJid) {
+      if (isSameJid(msg.chatJid, activeJid)) {
         setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
       }
     })
 
     const unSubDelete = api.onMessageDeleted((update: { id: string, chatJid: string, fromMe: boolean }) => {
-      if (update.chatJid === activeJid) {
+      if (isSameJid(update.chatJid, activeJid)) {
         setMessages((prev) =>
           prev.map((m) => (m.id === update.id ? { ...m, isDeleted: true } : m))
         )
@@ -128,7 +129,7 @@ export const useMessages = (activeJid: string | null) => {
     })
 
     const unSubStatus = api.onMessageStatusUpdated((update: { id: string, chatJid: string, status: string }) => {
-      if (update.chatJid === activeJid) {
+      if (isSameJid(update.chatJid, activeJid)) {
         setMessages((prev) =>
           prev.map((m) => (m.id === update.id ? { ...m, status: update.status } : m))
         )

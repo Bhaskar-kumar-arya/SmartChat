@@ -3,7 +3,7 @@ import { IMessageCompoundRepository } from './IMessageCompoundRepository'
 export type { MessageUpsertData }
 
 export interface IMessageWriteRepository {
-  upsertMessage(data: MessageUpsertData): Promise<void>
+  upsertMessage(data: MessageUpsertData): Promise<{ content: string; messageType: string; textContent: string | null }>
   bulkCreateMessages(rows: MessageUpsertData[]): Promise<void>
   revokeMessage(messageId: string): Promise<void>
   editMessage(

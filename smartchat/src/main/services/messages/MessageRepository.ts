@@ -49,25 +49,43 @@ export class MessageRepository implements IMessageRepository {
    * Preserves any `localURI` that was previously saved on media message content,
    * so that re-sync events do not wipe cached file paths.
    */
-  async upsertMessage(data: MessageUpsertData): Promise<void> {
+  async upsertMessage(data: MessageUpsertData): Promise<{ content: string; messageType: string; textContent: string | null }> {
     let contentToStore = data.content
+    let messageType = data.messageType
+    let textContent = data.textContent
 
-    // Preserve existing localURI on media messages
+    // Preserve existing content, messageType, and textContent if incoming is empty/unknown
     const existing = await this.prisma.message.findUnique({
       where: { id: data.id },
-      select: { content: true }
+      select: { content: true, messageType: true, textContent: true }
     })
-    if (existing?.content && data.content) {
-      contentToStore = this.preserveLocalUri(existing.content, data.content)
+
+    if (existing) {
+      const isNewContentEmpty = !data.content || data.content === '{}'
+      const isNewTypeUnknown = data.messageType === 'unknown'
+
+      if (isNewContentEmpty && existing.content && existing.content !== '{}') {
+        contentToStore = existing.content
+      }
+      if (isNewTypeUnknown && existing.messageType && existing.messageType !== 'unknown') {
+        messageType = existing.messageType
+      }
+      if (!textContent && existing.textContent) {
+        textContent = existing.textContent
+      }
+    }
+
+    if (existing?.content && contentToStore) {
+      contentToStore = this.preserveLocalUri(existing.content, contentToStore)
     }
 
     const { id, ...rest } = data
-    await this.prisma.message
+    const saved = await this.prisma.message
       .upsert({
         where: { id },
         update: {
-          textContent: rest.textContent,
-          messageType: rest.messageType,
+          textContent,
+          messageType,
           content: contentToStore,
           timestamp: rest.timestamp,
           senderId: rest.senderId,
@@ -76,11 +94,24 @@ export class MessageRepository implements IMessageRepository {
           ...(rest.isDeleted ? { isDeleted: true } : {}),
           ...(rest.isEdited !== undefined ? { isEdited: rest.isEdited } : {})
         },
-        create: { id, ...rest, content: contentToStore }
+        create: {
+          id,
+          ...rest,
+          messageType,
+          textContent,
+          content: contentToStore ?? '{}'
+        }
       })
       .catch((err: unknown) => {
         console.error(`[MessageRepository] Failed to upsert message ${id}:`, err)
+        return null
       })
+
+    return {
+      content: saved ? saved.content : (contentToStore ?? '{}'),
+      messageType: saved ? saved.messageType : messageType,
+      textContent: saved ? saved.textContent : (textContent ?? null)
+    }
   }
 
   /**

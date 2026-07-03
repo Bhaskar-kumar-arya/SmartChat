@@ -4,7 +4,7 @@ import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageIndexer } from '../search/IEmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { cleanJid } from '../../utils/jidUtils'
-import { parseBaileysTimestamp, unwrapMessage } from '../../utils/messageUtils'
+import { parseBaileysTimestamp, unwrapMessage, getMessageType } from '../../utils/messageUtils'
 import {
   BaileysMessage,
   ProtocolResult,
@@ -152,9 +152,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     const textContent = this.parser.extractTextContent(unwrapped)
 
     // Determine message type
-    let messageType = unwrapped
-       ? (Object.keys(unwrapped).find(k => k !== 'messageContextInfo') ?? 'unknown')
-       : 'unknown'
+    let messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
 
     if (messageType === 'senderKeyDistributionMessage') return null
 

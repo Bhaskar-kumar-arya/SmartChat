@@ -24,7 +24,7 @@ export class StandardMessageProcessor implements IMessageProcessorStrategy {
     const isSelfChat = (myId && cleanedRemote === myId) || (myLid && cleanedRemote === myLid)
     const status = isSelfChat ? 'READ' : mapBaileysStatus(context.msg.status)
 
-    await dependencies.repository.upsertMessage({
+    const saved = await dependencies.repository.upsertMessage({
       id: context.msg.key.id!,
       chatJid: context.remoteJid,
       fromMe: context.msg.key.fromMe === true,
@@ -54,9 +54,9 @@ export class StandardMessageProcessor implements IMessageProcessorStrategy {
       senderId: context.senderId,
       participant: context.participantString,
       timestamp: context.timestamp,
-      messageType: context.messageType,
-      textContent: context.textContent,
-      content: JSON.stringify(context.rawMessage ?? {}),
+      messageType: saved.messageType,
+      textContent: saved.textContent,
+      content: saved.content,
       isDeleted: isDeletedResult,
       isEdited: false,
       status
