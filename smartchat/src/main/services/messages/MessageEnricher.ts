@@ -7,6 +7,7 @@ import { DBMessageWithSender } from '../../domain/db.types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { EnrichedReaction } from '../../ipc/reaction.types'
 import { IMessageEnricher } from './IMessageEnricher'
+import { ICallQueryService } from '../calls/ICallService'
 
 /**
  * MessageEnricher — Single Responsibility: transform raw database message rows
@@ -17,7 +18,11 @@ import { IMessageEnricher } from './IMessageEnricher'
  * It is a pure read + transform layer for the presentation/IPC boundary.
  */
 export class MessageEnricher implements IMessageEnricher {
-  constructor(private readonly contactService: IContactQueryService) {}
+  constructor(
+    private readonly contactService: IContactQueryService,
+    private readonly callService: ICallQueryService
+  ) {}
+
 
   /**
    * Enrich a single database message with contact display names and
@@ -130,6 +135,31 @@ export class MessageEnricher implements IMessageEnricher {
 
     if (ctx) {
       await this._enrichContextInfo(ctx, sock, nameMap)
+    }
+
+    if (msg.messageType === 'call' || msg.messageType === 'callLogMesssage' || msg.messageType === 'scheduledCallCreationMessage') {
+      const callObj = (finalContent?.call || finalContent?.callLogMesssage || finalContent) as Record<string, unknown>
+      let callKey = callObj?.callKey as string | undefined
+      
+      if (callKey) {
+        try {
+          // Protobuf serializes the callKey bytes to base64, but the actual ID is an ascii string
+          if (typeof callKey === 'string' && !/^[0-9a-fA-F]+$/.test(callKey)) {
+            callKey = Buffer.from(callKey, 'base64').toString('utf-8')
+          }
+
+          const callLog = await this.callService.getCallLog(callKey)
+          if (callLog) {
+            finalContent.callLog = {
+              isVideo: callLog.isVideo,
+              isGroup: callLog.isGroup,
+              status: callLog.status
+            }
+          }
+        } catch (e) {
+          console.error(`[MessageEnricher] Failed to fetch call log for callKey ${callKey}`, e)
+        }
+      }
     }
 
     return {

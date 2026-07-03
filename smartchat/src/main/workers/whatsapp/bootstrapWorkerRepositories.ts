@@ -53,7 +53,12 @@ import { WAEventHandler } from '../../services/whatsapp/WAEventHandler'
 import { PersistenceSubscriber } from '../../services/whatsapp/subscribers/PersistenceSubscriber'
 import { ContactGroupSubscriber } from '../../services/whatsapp/subscribers/ContactGroupSubscriber'
 import { ReceiptSubscriber } from '../../services/whatsapp/subscribers/ReceiptSubscriber'
+import { CallEventSubscriber } from '../../services/whatsapp/subscribers/CallEventSubscriber'
 import { FavoriteStickerSubscriber } from '../../services/whatsapp/subscribers/FavoriteStickerSubscriber'
+import { IWAEventSubscriber } from '../../services/whatsapp/subscribers/IWAEventSubscriber'
+
+import { CallRepository } from '../../services/calls/CallRepository'
+import { CallService } from '../../services/calls/CallService'
 
 import { WorkerFavoriteStickerService } from './services/WorkerFavoriteStickerService'
 import { WorkerMediaService } from './services/WorkerMediaService'
@@ -131,7 +136,9 @@ export function bootstrapWorkerRepositories(
   const favoriteStickerService = new WorkerFavoriteStickerService(prisma, userDataPath)
   
   const messageParser = new MessageParser()
-  const messageEnricher = new MessageEnricher(contactService)
+  const callRepository = new CallRepository(prisma)
+  const callService = new CallService(callRepository)
+  const messageEnricher = new MessageEnricher(contactService, callService)
   
   const mediaService = new WorkerMediaService(
     messageRepository,
@@ -230,10 +237,11 @@ export function bootstrapWorkerRepositories(
   )
 
   // Register Subscribers
-  const subscribers = [
+  const subscribers: IWAEventSubscriber[] = [
     new PersistenceSubscriber(messageService, chatService),
     new ContactGroupSubscriber(contactService, chatService, groupMembershipService, chatMemberRepository),
-    new ReceiptSubscriber(receiptService, messageService, contactService),
+    new ReceiptSubscriber(receiptService, messageService),
+    new CallEventSubscriber(callService, contactService),
     new FavoriteStickerSubscriber(favoriteStickerService)
   ]
 

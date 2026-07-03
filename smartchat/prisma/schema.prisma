@@ -294,3 +294,20 @@ model FavoriteSticker {
   createdAt  BigInt
 }
 
+// ── 15. CALL LOG ───────────────────────────────────────────────────────────────
+model CallLog {
+  /// The callKey from the message, acts as the unique identifier for the call.
+  id        String   @id
+  /// The JID of the caller.
+  callerJid String
+  /// True if it is a video call, false for voice.
+  isVideo   Boolean  @default(false)
+  /// True if it is a group call.
+  isGroup   Boolean  @default(false)
+  /// Status of the call: 'offer', 'accept', 'reject', 'timeout', etc.
+  status    String
+  /// Unix timestamp (seconds) of the call event.
+  timestamp BigInt
+}
+
+

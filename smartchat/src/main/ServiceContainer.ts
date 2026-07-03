@@ -95,6 +95,9 @@ import { ISyncRepository } from './services/sync/ISyncRepository'
 import { AuthStateRepository } from './services/auth/AuthStateRepository'
 import { AuthSettingsService } from './services/auth/AuthSettingsService'
 import { IAuthSettingsService } from './services/auth/IAuthSettingsService'
+import { CallRepository } from './services/calls/CallRepository'
+import { CallService } from './services/calls/CallService'
+import { ICallQueryService, ICallMutationService } from './services/calls/ICallService'
 
 import type { IWAEventBus } from './services/whatsapp/IWAEventBus'
 import { createMessageFormatterRegistry, MessageFormatterRegistry } from './services/messages/formatters'
@@ -170,6 +173,7 @@ export function createServices(
   const syncRepository = new SyncRepository(prisma)
   const authStateRepository = new AuthStateRepository(prisma)
   const authSettingsService = new AuthSettingsService(authStateRepository)
+  const callRepository = new CallRepository(prisma)
 
   // AI Key Storage & Service
   const keyStorage: IKeyStorage = new FSKeyStorage()
@@ -217,6 +221,7 @@ export function createServices(
   const secretMessageService = new SecretMessageService(prisma)
   secretMessageService.registerStrategy(new MessageReactionStrategy(getBus))
   const favoriteStickerService = new FavoriteStickerService(prisma)
+  const callService = new CallService(callRepository)
 
   // 2. Services with service dependencies
   const chatListEnricher = new ChatListEnricher(chatRepository, messageQueryRepository, reactionRepository, contactService, messageFormatterRegistry)
@@ -230,7 +235,7 @@ export function createServices(
     membershipSyncHandler
   )
   const messageParser = new MessageParser()
-  const messageEnricher = new MessageEnricher(contactService)
+  const messageEnricher = new MessageEnricher(contactService, callService)
   const messageIdentityResolver = new MessageIdentityResolver(
     contactService,
     identityRepository,
@@ -356,7 +361,8 @@ export function createServices(
     waEventWiringService,
     socketFactory,
     catchUpManager,
-    apiServer
+    apiServer,
+    callService
   })
 
 
@@ -410,5 +416,6 @@ export type ServiceContainer = {
   socketFactory: IWASocketFactory
   catchUpManager: IWACatchUpManager
   apiServer: IAPIServer
+  callService: ICallQueryService & ICallMutationService
 }
 

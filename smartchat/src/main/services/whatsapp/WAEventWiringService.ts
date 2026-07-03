@@ -121,7 +121,7 @@ export class WAEventWiringService implements IWAEventWiringService {
 
       // ── Call Events ───────────────────────────────────────────────────────
       if (events['call']) {
-        await eventHandler.handleCallEvent(events['call'])
+        await eventHandler.handleCallEvent(events['call'], sock)
       }
 
       // ── App State Sync ────────────────────────────────────────────────────

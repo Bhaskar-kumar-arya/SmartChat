@@ -24,6 +24,8 @@ export interface BaileysCall {
     attrs?: Record<string, string>
   }
   attrs?: Record<string, string>
+  isVideo?: boolean
+  isGroup?: boolean
 }
 
 /** Baileys Contact structure from Baileys events */

@@ -15,25 +15,21 @@ import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import type {
   MessageStatusEvent,
   ReceiptEvent,
-  ReactionEvent,
-  CallEvent,
+  ReactionEvent
 } from '../WAEventTypes'
 import type { IReceiptService } from '../IReceiptService'
 import type { IMessageProcessingService } from '../../messages/IMessageProcessingService'
-import type { IContactMutationService } from '../../contacts/IContactService'
 
 export class ReceiptSubscriber implements IWAEventSubscriber {
   constructor(
     private receiptService: IReceiptService,
-    private messageProcessingService: IMessageProcessingService,
-    private contactService: IContactMutationService
+    private messageProcessingService: IMessageProcessingService
   ) {}
 
   register(bus: IWAEventBus): void {
     bus.on('message:status', this.onMessageStatus.bind(this))
     bus.on('receipt:update', this.onReceipt.bind(this))
     bus.on('reaction:update', this.onReaction.bind(this))
-    bus.on('call:event',     this.onCall.bind(this))
   }
 
   dispose(): void {
@@ -79,34 +75,5 @@ export class ReceiptSubscriber implements IWAEventSubscriber {
     }
   }
 
-  private async onCall(event: CallEvent): Promise<void> {
-    for (const call of event.calls) {
-      try {
-        const fromJid = call.from
-        const altPn = call.callerPn || call.content?.attrs?.['caller_pn'] || call.attrs?.['caller_pn']
-        const altLid = call.content?.attrs?.['caller_lid'] || call.attrs?.['caller_lid']
 
-        const ids = [fromJid, altPn, altLid].filter(Boolean) as string[]
-        let callLid: string | null = null
-        let callPn: string | null = null
-
-        for (const id of ids) {
-          if (typeof id === 'string') {
-            if (id.includes('@lid')) callLid = id
-            if (id.includes('@s.whatsapp.net')) callPn = id
-          }
-        }
-
-        if (callLid && callPn) {
-          await this.contactService
-            .linkLidAndPn(callLid, callPn, 'call.event')
-            .catch((err) => {
-               console.error('[ReceiptSubscriber] Failed to link LID and PN in call event:', err)
-            })
-        }
-      } catch (err) {
-        console.error('[ReceiptSubscriber] Error processing call event:', err)
-      }
-    }
-  }
 }

@@ -20,6 +20,14 @@ export function SystemMessageBubble({
   // Never expose raw stubType enum keys or JSON blobs to the user.
   const renderedElement = renderer
     ? renderer(content, onSelectChat, msg)
+    : msg.messageType === 'call' || msg.messageType === 'callLogMesssage' || msg.messageType === 'scheduledCallCreationMessage'
+    ? (() => {
+        const callLog = (content as any).callLog
+        if (callLog) {
+          return <>📞 {callLog.isVideo ? 'Video' : 'Voice'} Call {callLog.isGroup ? '(Group)' : ''}</>
+        }
+        return <>📞 Call</>
+      })()
     : (() => {
         const chip = formatParticipants(content.parameters, onSelectChat)
         return chip || <>Group activity</>

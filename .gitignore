@@ -4,3 +4,8 @@ smartchat/dist/
 smartchat/out/
 *.log*
 .DS_Store
+.agents/skills/ui-ux-pro-max
+smartchat/train/threads
+smartchat/train/__pycache__
+smartchat/train/venv
+smartchat/train/annotations.jsonl

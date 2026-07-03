@@ -167,7 +167,7 @@ const MessageItem = memo(function MessageItem({
   onScrollToMessage,
   onSelectChat
 }: MessageItemProps) {
-  if (msg.messageType === 'system') {
+  if (msg.messageType === 'system' || msg.messageType === 'call' || msg.messageType === 'callLogMesssage' || msg.messageType === 'scheduledCallCreationMessage') {
     return <SystemMessageBubble msg={msg} onSelectChat={onSelectChat} />
   }
   const api = useAPI()

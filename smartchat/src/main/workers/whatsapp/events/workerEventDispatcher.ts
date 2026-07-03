@@ -77,8 +77,9 @@ export class WorkerEventDispatcher {
         await repos.eventHandler.handleMessageReceiptUpdate(events['message-receipt.update'], sock)
       }
 
+      // ── Call Events ───────────────────────────────────────────────────────
       if (events['call']) {
-        await repos.eventHandler.handleCallEvent(events['call'])
+        await repos.eventHandler.handleCallEvent(events['call'], sock)
       }
 
       if (events['app-state.sync']) {

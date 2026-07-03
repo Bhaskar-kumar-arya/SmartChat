@@ -385,8 +385,35 @@ export class WAEventHandler {
     await this.bus.emit('receipt:update', { updates, sock })
   }
 
-  async handleCallEvent(calls: BaileysCall[]): Promise<void> {
+  async handleCallEvent(calls: BaileysCall[], sock?: WASocket): Promise<void> {
     await this.bus.emit('call:event', { calls })
+
+    if (sock) {
+      for (const call of calls) {
+        // Only synthesize a message when the call first starts to avoid duplicates for 'ringing' or 'terminate'
+        if (call.status === 'offer') {
+          const syntheticMsg: BaileysMessage = {
+            key: {
+              remoteJid: cleanJid(call.from),
+              id: `call_${call.id}`,
+              fromMe: false, 
+            },
+            message: proto.Message.create({
+              call: { callKey: Buffer.from(call.id, 'utf-8') }
+            }),
+            messageTimestamp: Math.floor(Date.now() / 1000)
+          }
+
+          try {
+            console.log(`[WAEventHandler] Synthesizing message for call ${call.id}`)
+            await this.processRealtimeMessage(syntheticMsg, sock)
+            console.log(`[WAEventHandler] Successfully synthesized message for call ${call.id}`)
+          } catch (err) {
+            console.error('[WAEventHandler] Error processing synthetic call message:', err)
+          }
+        }
+      }
+    }
   }
 
   async handleAppStateSync(syncEvents: unknown[], sock: WASocket): Promise<void> {
