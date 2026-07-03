@@ -362,7 +362,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
               const paramStr = String(param)
               if (isJid(paramStr)) {
                 additionalJids.add(paramStr)
-              } else {
+              } else if (paramStr.trim().startsWith('{')) {
                 try {
                   const parsed = JSON.parse(paramStr) as Record<string, unknown>
                   if (typeof parsed.phoneNumber === 'string' && isJid(parsed.phoneNumber)) {
@@ -371,8 +371,8 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
                   if (typeof parsed.id === 'string' && isJid(parsed.id)) {
                     additionalJids.add(parsed.id)
                   }
-                } catch {
-                  // Not JSON
+                } catch (err: unknown) {
+                  console.warn(`[MessageService] Failed to parse system parameter as JSON:`, err)
                 }
               }
             })
@@ -403,8 +403,9 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
               (qCtx.mentionedJid as string[]).forEach(j => additionalJids.add(j))
           }
         }
-      } catch {
+      } catch (err: unknown) {
         // Non-fatal: malformed content
+        console.warn(`[MessageService] Failed to parse message content for JID extraction:`, err)
       }
     })
     return additionalJids

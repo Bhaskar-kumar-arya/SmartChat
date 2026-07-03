@@ -37,8 +37,8 @@ export class MessageEnricher implements IMessageEnricher {
     let finalContent: Record<string, unknown> = {}
     try {
       finalContent = JSON.parse(msg.content) as Record<string, unknown>
-    } catch {
-      // Non-fatal: keep empty object
+    } catch (err: unknown) {
+      console.warn(`[MessageEnricher] Failed to parse message content for ${msg.id}:`, err)
     }
 
     if (msg.messageType === 'system') {
@@ -91,7 +91,9 @@ export class MessageEnricher implements IMessageEnricher {
             }
 
             return { jid: clickJid, name: resolvedName }
-          } catch { /* not JSON */ }
+          } catch (err: unknown) {
+            console.warn('[MessageEnricher] Failed to parse stub parameter as JSON:', err)
+          }
         }
 
         if (isJid(raw)) {
@@ -185,7 +187,9 @@ export class MessageEnricher implements IMessageEnricher {
           const parsed = JSON.parse(msg.participant) as Record<string, unknown>
           const id = String(parsed.id ?? parsed.jid ?? '')
           if (id && /^\d+$/.test(id)) return id
-        } catch { /* not JSON */ }
+        } catch (err: unknown) {
+          console.warn('[MessageEnricher] Failed to parse participant as JSON:', err)
+        }
         return 'Unknown'
       }
       return stripped
