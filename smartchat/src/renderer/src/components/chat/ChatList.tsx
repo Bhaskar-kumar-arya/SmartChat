@@ -450,7 +450,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
                         ) : (
                           <span className={`chat-item-preview ${presenceText ? 'presence-typing' : ''}`}>
                             {isChild && chat.isAnnounce && <span className="announce-tag">[Announcement] </span>}
-                            {chat.lastMessageFromMe && chat.lastMessageType !== 'reactionMessage' && (
+                            {!presenceText && chat.lastMessageFromMe && chat.lastMessageType !== 'reactionMessage' && (
                               <MessageStatusTick status={chat.lastMessageStatus || 'SENT'} className="chat-item-status-tick" style={{ marginLeft: 0 }} />
                             )}
                             <span className="chat-item-preview-text">
