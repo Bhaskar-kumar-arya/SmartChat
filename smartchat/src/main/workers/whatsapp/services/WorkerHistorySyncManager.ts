@@ -74,16 +74,18 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
 
   async handleSyncChunk(data: unknown, syncFullHistory: boolean, sock: WASocket): Promise<void> {
     try {
-      this.deps.embeddingService.setPaused(true)
-      this.deps.mediaService.setFavoriteStickerQueuePaused(true)
-      this.isInitialSyncInProgress = true
       this.syncChunkCount++
       const rawData = data as Record<string, unknown>
       const reportedProgress = typeof rawData.progress === 'number' ? rawData.progress : undefined
       const syncType = typeof rawData.syncType === 'number' ? rawData.syncType : undefined
 
-      if (this.syncTimeout) clearTimeout(this.syncTimeout)
-      this.syncTimeout = setTimeout(() => this.finishSync(sock, syncFullHistory), HISTORY_SYNC_TIMEOUT_MS)
+      if (!this.syncComplete) {
+        this.deps.embeddingService.setPaused(true)
+        this.deps.mediaService.setFavoriteStickerQueuePaused(true)
+        this.isInitialSyncInProgress = true
+        if (this.syncTimeout) clearTimeout(this.syncTimeout)
+        this.syncTimeout = setTimeout(() => this.finishSync(sock, syncFullHistory), HISTORY_SYNC_TIMEOUT_MS)
+      }
 
       const syncResult = await handleHistorySync(
         data as HistorySyncData,
@@ -101,6 +103,10 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       ).catch((err) => {
         console.error('[WorkerHistorySync] Failed to process favorite stickers from sync:', err)
       })
+
+      if (this.syncComplete) {
+        return // Do not broadcast progress updates if the initial sync phase is already complete
+      }
 
       let calculatedProgress: number | undefined = undefined
 
