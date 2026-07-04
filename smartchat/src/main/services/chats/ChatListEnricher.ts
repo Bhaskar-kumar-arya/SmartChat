@@ -29,7 +29,7 @@ export class ChatListEnricher implements IChatListEnricher {
     for (const chat of chats) {
       if (chat.type === 'COMMUNITY') {
         communityJids.add(chat.jid)
-      } else if ((chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') && chat.community?.jid) {
+      } else if (chat.type !== 'COMMUNITY' && chat.community?.jid) {
         communityJids.add(chat.community.jid)
       }
     }
@@ -153,7 +153,7 @@ export class ChatListEnricher implements IChatListEnricher {
       profilePictureUrl: chat.profilePictureUrl,
       isCommunity: chat.type === 'COMMUNITY',
       isAnnounce: chat.type === 'ANNOUNCE',
-      linkedParentJid: (chat.type === 'SUBGROUP' || chat.type === 'ANNOUNCE') ? (chat.community?.jid ?? null) : null,
+      linkedParentJid: (chat.type !== 'COMMUNITY') ? (chat.community?.jid ?? null) : null,
       lastMessageSender,
       lastMessageStatus: isReactionNewer ? null : (lastMsg?.status || null),
       lastMessageFromMe: isReactionNewer ? (lastReaction?.sender.isMe ?? false) : (lastMsg?.fromMe || false),
