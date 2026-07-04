@@ -39,10 +39,28 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
 from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
+from torch.cuda.amp import GradScaler, autocast
 from torch.optim import AdamW
 from sklearn.metrics import roc_auc_score, classification_report
 import numpy as np
 from tqdm import tqdm
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRUNCATION CONSTANTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Individual messages longer than this (in tokens) are middle-truncated first.
+# Keeps any single long message from consuming the entire context budget.
+MSG_TRUNC_ABOVE_TOKENS: int = 80
+
+# A message that would be shrunk below this length is left at this floor instead.
+# Prevents a message from being squeezed to meaningless gibberish.
+MSG_MIN_TOKENS: int = 40
+
+# Candidate messages longer than this (in tokens) are middle-truncated.
+# This ensures we always leave enough space for the thread context.
+CANDIDATE_MAX_TOKENS: int = 120
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,7 +82,7 @@ class Config:
 
     # Data construction
     neg_per_pos: int      = 3    # negative thread samples per positive pair
-    thread_max_msgs: int  = 10   # use the N most recent thread messages as context
+    thread_max_msgs: int  = 9999 # pass ALL thread messages; middle truncation handles the 512-token BERT limit
     min_thread_size: int  = 1    # skip threads smaller than this as negatives
     val_split: float      = 0.15
     test_split: float     = 0.10
@@ -81,6 +99,9 @@ class Config:
 
     # Inference
     top_k: int = 5   # score top-K recent threads per candidate message
+
+    # Reply context inclusion
+    include_reply_context: bool = True
 
     # Testing / Diagnostics
     limit_threads: Optional[int] = None
@@ -129,7 +150,7 @@ def get_quote_replies_map(db_path="prisma/dev.db"):
     return quote_map
 
 
-def load_threads(threads_path: str, db_path: str = "prisma/dev.db") -> tuple:
+def load_threads(threads_path: str, db_path: str = "prisma/dev.db", include_reply_context: bool = False) -> tuple:
     """
     Parse threads from a file or a directory of chat threads JSON files.
     """
@@ -159,11 +180,11 @@ def load_threads(threads_path: str, db_path: str = "prisma/dev.db") -> tuple:
         files_to_load.append(threads_path)
 
     thread_clusters = {}
-    msg_texts       = {}
     msg_to_thread   = {}
     chat_offsets    = {}
     msg_to_chat     = {}
     thread_to_chat  = {}
+    msg_id_to_sender_text = {}
 
     for idx, filepath in enumerate(files_to_load):
         if os.path.isdir(threads_path):
@@ -193,14 +214,34 @@ def load_threads(threads_path: str, db_path: str = "prisma/dev.db") -> tuple:
             thread_clusters[unique_tid] = offset_messages
 
             for msg in offset_messages:
-                gidx = msg["globalIndex"]
                 msg_id = msg.get("messageId")
-                if msg_id and msg_id in quote_map:
-                    quote_reply_gidxs.add(gidx)
+                if msg_id:
+                    msg_id_to_sender_text[msg_id] = (msg["sender"], msg["text"])
 
-                msg_texts[gidx] = f"[{msg['timeString']}] {msg['sender']}: {msg['text']}"
-                msg_to_thread[gidx] = unique_tid
-                msg_to_chat[gidx] = chat_jid
+    msg_texts = {}
+    for unique_tid, offset_messages in thread_clusters.items():
+        chat_jid = thread_to_chat[unique_tid]
+        for msg in offset_messages:
+            gidx = msg["globalIndex"]
+            msg_id = msg.get("messageId")
+            
+            reply_context = ""
+            if msg_id and msg_id in quote_map:
+                quote_reply_gidxs.add(gidx)
+                if include_reply_context:
+                    quoted_id = quote_map[msg_id]
+                    if quoted_id in msg_id_to_sender_text:
+                        quoted_sender, quoted_text = msg_id_to_sender_text[quoted_id]
+                        truncated_text = re.sub(r"\s+", " ", quoted_text).strip()
+                        if len(truncated_text) > 35:
+                            short_text = truncated_text[:35] + "..."
+                        else:
+                            short_text = truncated_text
+                        reply_context = f'(Reply to {quoted_sender}: "{short_text}") '
+
+            msg_texts[gidx] = f"[{msg['timeString']}] {msg['sender']}: {reply_context}{msg['text']}"
+            msg_to_thread[gidx] = unique_tid
+            msg_to_chat[gidx] = chat_jid
 
     return thread_clusters, msg_texts, msg_to_thread, quote_reply_gidxs, chat_offsets, msg_to_chat, thread_to_chat
 
@@ -318,10 +359,10 @@ def build_training_pairs(link_map, thread_clusters, msg_texts, msg_to_thread, qu
                 "label":        1.0
             })
 
-        # ── NEGATIVES ─────────────────────────────────────────────────────────
+        # ── NEGATIVES (hard: sorted by temporal proximity to mj) ───────────────
         own_tid = msg_to_thread.get(global_j)
         chat_jid = msg_to_chat.get(global_j)
-        
+
         eligible_neg_tids = [
             tid for tid in all_thread_ids
             if tid not in positive_tids
@@ -330,8 +371,16 @@ def build_training_pairs(link_map, thread_clusters, msg_texts, msg_to_thread, qu
             and any(m["globalIndex"] < global_j for m in thread_clusters[tid])
         ]
 
+        # Sort by minimum globalIndex distance to mj — closest threads are the
+        # hardest negatives and match the real inference distribution: at runtime
+        # the scorer only ever evaluates the top-K most RECENT concurrent threads,
+        # never temporally distant ones. Training on the same distribution is correct.
+        eligible_neg_tids.sort(
+            key=lambda tid: min(abs(m["globalIndex"] - global_j) for m in thread_clusters[tid])
+        )
+
         n_neg        = cfg.neg_per_pos * max(1, len(positive_tids))
-        sampled_negs = rng.sample(eligible_neg_tids, min(n_neg, len(eligible_neg_tids)))
+        sampled_negs = eligible_neg_tids[:n_neg]
 
         for neg_tid in sampled_negs:
             thread_text = format_thread_context(
@@ -374,59 +423,151 @@ def truncate_middle(token_ids, target_len, marker_ids=None):
     return left + right
 
 
+def _tokenize_messages_individually(tokenizer, thread_text):
+    """
+    Split the pipe-joined thread text back into individual message strings,
+    tokenize each one separately, and return a list of token-id lists.
+    The pipe separator ' | ' is used consistently by format_thread_context.
+    """
+    messages = thread_text.split(" | ")
+    return [tokenizer.encode(m, add_special_tokens=False) for m in messages if m]
+
+
+def _rejoin_message_tokens(tokenizer, msg_token_lists):
+    """
+    Re-join per-message token lists with the separator tokens for ' | '.
+    Returns a flat list of token ids.
+    """
+    sep_tokens = tokenizer.encode(" | ", add_special_tokens=False)
+    result = []
+    for i, toks in enumerate(msg_token_lists):
+        if i > 0:
+            result.extend(sep_tokens)
+        result.extend(toks)
+    return result
+
+
+def _find_optimal_cap(msg_lengths, sep_cost, target_budget, N, M):
+    """
+    Finds the largest message token cap (C >= M) such that the total length
+    of all messages (after capping those > N at C, but keeping them at least M)
+    fits within target_budget.
+    """
+    max_len = max(msg_lengths) if msg_lengths else 0
+    if max_len <= M:
+        return M
+
+    low = M
+    high = max_len
+    best_c = M
+
+    while low <= high:
+        mid = (low + high) // 2
+        current_total = 0
+        for L in msg_lengths:
+            if L > N:
+                # Cap the message at mid, but ensure it is at least M
+                current_total += max(M, min(L, mid))
+            else:
+                current_total += L
+        current_total += sep_cost
+
+        if current_total <= target_budget:
+            best_c = mid
+            low = mid + 1  # Try to find a larger cap to keep more content
+        else:
+            high = mid - 1
+
+    return best_c
+
+
 def prepare_middle_truncated_input(tokenizer, text1, text2, max_seq_len):
-    # Tokenize separately without special tokens
-    t1_enc = tokenizer(text1, add_special_tokens=False)
-    t2_enc = tokenizer(text2, add_special_tokens=False)
+    """
+    3-phase truncation strategy to maximise useful context within max_seq_len:
 
-    ids1 = t1_enc["input_ids"]
-    ids2 = t2_enc["input_ids"]
+    Phase 1 — Fit check:
+        Tokenize both parts. If total tokens (+ 3 special tokens) already fit
+        in max_seq_len, assemble and return immediately — no truncation at all.
 
-    target_len1 = len(ids1)
-    target_len2 = len(ids2)
+    Phase 2 — Per-message individual truncation (Dynamic Cap):
+        If the thread exceeds the budget, split text1 into individual messages.
+        Find the optimal (largest) token cap C >= MSG_MIN_TOKENS such that capping
+        messages that exceed MSG_TRUNC_ABOVE_TOKENS fits the budget perfectly.
+        This ensures we occupy the maximum of the max_seq_len without shrinking
+        more than required.
+        Re-check if we now fit — if yes, assemble and return.
 
-    # 3 special tokens: [CLS] text1 [SEP] text2 [SEP]
-    excess = (len(ids1) + len(ids2)) - (max_seq_len - 3)
-    if excess > 0:
-        if len(ids1) > len(ids2):
-            diff = len(ids1) - len(ids2)
-            reduce1 = min(excess, diff)
-            target_len1 -= reduce1
-            excess -= reduce1
-        elif len(ids2) > len(ids1):
-            diff = len(ids2) - len(ids1)
-            reduce2 = min(excess, diff)
-            target_len2 -= reduce2
-            excess -= reduce2
-
-        if excess > 0:
-            reduce_each = excess // 2
-            target_len1 -= reduce_each
-            target_len2 -= (excess - reduce_each)
-
-    target_len1 = max(0, target_len1)
-    target_len2 = max(0, target_len2)
-
+    Phase 3 — Concatenated context middle truncation:
+        If still over budget (even after capping all over-budget messages to
+        MSG_MIN_TOKENS), middle-truncate the concatenated context to the
+        remaining thread budget, inserting a '...' marker at the cut point.
+        text2 (candidate message) is never truncated.
+    """
     marker_ids = tokenizer.encode("...", add_special_tokens=False)
-    ids1 = truncate_middle(ids1, target_len1, marker_ids)
-    ids2 = truncate_middle(ids2, target_len2, marker_ids)
+    cls_id     = tokenizer.cls_token_id
+    sep_id     = tokenizer.sep_token_id
+    pad_id     = tokenizer.pad_token_id
 
-    cls_id = tokenizer.cls_token_id
-    sep_id = tokenizer.sep_token_id
-    pad_id = tokenizer.pad_token_id
+    # --- candidate tokens (text2) ---
+    ids2 = tokenizer.encode(text2, add_special_tokens=False)
+    if len(ids2) > CANDIDATE_MAX_TOKENS:
+        ids2 = truncate_middle(ids2, CANDIDATE_MAX_TOKENS, marker_ids)
 
-    input_ids = [cls_id] + ids1 + [sep_id] + ids2 + [sep_id]
+    # 3 special tokens: [CLS] thread [SEP] candidate [SEP]
+    thread_budget = max_seq_len - 3 - len(ids2)
+    thread_budget = max(0, thread_budget)
+
+    # ── Phase 1: Fit check ────────────────────────────────────────────────────
+    ids1_raw = tokenizer.encode(text1, add_special_tokens=False)
+    if len(ids1_raw) <= thread_budget:
+        # Everything fits — assemble directly
+        ids1 = ids1_raw
+    else:
+        # ── Phase 2: Per-message individual truncation ────────────────────────
+        msg_token_lists = _tokenize_messages_individually(tokenizer, text1)
+        msg_lengths = [len(toks) for toks in msg_token_lists]
+
+        # Calculate separator overhead tokens
+        sep_tokens = tokenizer.encode(" | ", add_special_tokens=False)
+        sep_cost = (len(msg_token_lists) - 1) * len(sep_tokens) if msg_token_lists else 0
+
+        # Find the largest cap C that makes the thread fit the budget
+        opt_cap = _find_optimal_cap(
+            msg_lengths,
+            sep_cost,
+            thread_budget,
+            MSG_TRUNC_ABOVE_TOKENS,
+            MSG_MIN_TOKENS
+        )
+
+        # Apply the optimal cap to all messages > MSG_TRUNC_ABOVE_TOKENS
+        for idx, toks in enumerate(msg_token_lists):
+            if len(toks) > MSG_TRUNC_ABOVE_TOKENS:
+                new_len = max(MSG_MIN_TOKENS, min(len(toks), opt_cap))
+                if len(toks) > new_len:
+                    msg_token_lists[idx] = truncate_middle(toks, new_len, marker_ids)
+
+        ids1_phase2 = _rejoin_message_tokens(tokenizer, msg_token_lists)
+
+        if len(ids1_phase2) <= thread_budget:
+            ids1 = ids1_phase2
+        else:
+            # ── Phase 3: Concatenated middle truncation ───────────────────────
+            ids1 = truncate_middle(ids1_phase2, thread_budget, marker_ids)
+
+    # ── Assembly ──────────────────────────────────────────────────────────────
+    input_ids      = [cls_id] + ids1 + [sep_id] + ids2 + [sep_id]
     token_type_ids = [0] * (len(ids1) + 2) + [1] * (len(ids2) + 1)
 
-    padding_len = max_seq_len - len(input_ids)
+    padding_len    = max_seq_len - len(input_ids)
     attention_mask = [1] * len(input_ids) + [0] * padding_len
-    input_ids = input_ids + [pad_id] * padding_len
-    token_type_ids = token_type_ids + [0] * padding_len
+    input_ids      = input_ids      + [pad_id] * padding_len
+    token_type_ids = token_type_ids + [0]      * padding_len
 
     return {
-        "input_ids": torch.tensor(input_ids, dtype=torch.long),
+        "input_ids":      torch.tensor(input_ids,      dtype=torch.long),
         "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
-        "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long)
+        "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
     }
 
 
@@ -503,11 +644,17 @@ class ThreadReplyScorer(nn.Module):
 # STEP 6: TRAINING & EVALUATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def evaluate(model, loader, device):
+def evaluate(model, loader, device, criterion=None):
+    """
+    Evaluate the model. When `criterion` is provided (the same BCEWithLogitsLoss
+    used during training, including pos_weight) the reported val loss is on the
+    exact same scale as the training loss, making the two directly comparable.
+    Falls back to plain BCELoss if no criterion is passed.
+    """
     model.eval()
     all_labels, all_scores = [], []
     total_loss = 0.0
-    criterion  = nn.BCELoss()
+    use_logits = criterion is not None
 
     with torch.no_grad():
         for batch in loader:
@@ -516,8 +663,14 @@ def evaluate(model, loader, device):
             token_type_ids = batch["token_type_ids"].to(device)
             labels         = batch["label"].to(device)
 
-            scores     = model(input_ids, attention_mask, token_type_ids)
-            total_loss += criterion(scores, labels).item()
+            if use_logits:
+                # Use raw logits so BCEWithLogitsLoss+pos_weight matches training
+                logits = model.forward_logits(input_ids, attention_mask, token_type_ids)
+                total_loss += criterion(logits, labels).item()
+                scores = torch.sigmoid(logits)
+            else:
+                scores = model(input_ids, attention_mask, token_type_ids)
+                total_loss += nn.BCELoss()(scores, labels).item()
 
             all_labels.extend(labels.cpu().numpy())
             all_scores.extend(scores.cpu().numpy())
@@ -557,7 +710,7 @@ def train(cfg):
         chat_offsets,
         msg_to_chat,
         thread_to_chat,
-    ) = load_threads(cfg.threads_path)
+    ) = load_threads(cfg.threads_path, include_reply_context=cfg.include_reply_context)
     print(f"  {len(thread_clusters)} threads  |  {len(msg_texts)} messages  |  {len(quote_reply_gidxs)} quote replies")
 
     if cfg.limit_threads:
@@ -629,13 +782,18 @@ def train(cfg):
     pos_weight_tensor = torch.tensor([cfg.pos_weight], device=device)
     criterion         = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
 
+    # Mixed-precision scaler — halves activation memory (~3.7 GB → ~2 GB on 4 GB VRAM)
+    use_amp = device.type == "cuda"
+    scaler  = GradScaler(enabled=use_amp)
+
     # ── Training loop ─────────────────────────────────────────────────────────
     best_val_auc    = 0.0
     best_model_path = (Path(cfg.output_dir) / "best_model.pt").resolve()
 
     for epoch in range(1, cfg.epochs + 1):
         model.train()
-        epoch_loss = 0.0
+        epoch_loss  = 0.0
+        recent_loss = 0.0   # exponential moving average for display (α=0.05)
 
         progress_bar = tqdm(enumerate(train_loader, 1), total=len(train_loader), desc=f"Epoch {epoch}")
         for step, batch in progress_bar:
@@ -645,18 +803,31 @@ def train(cfg):
             labels         = batch["label"].to(device)
 
             optimizer.zero_grad()
-            logits = model.forward_logits(input_ids, attention_mask, token_type_ids)
-            loss   = criterion(logits, labels)
-            loss.backward()
+            with autocast(enabled=use_amp):
+                logits = model.forward_logits(input_ids, attention_mask, token_type_ids)
+                loss   = criterion(logits, labels)
 
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
             scheduler.step()
 
-            epoch_loss += loss.item()
-            progress_bar.set_postfix({"loss": f"{epoch_loss/step:.4f}"})
+            loss_val    = loss.item()
+            epoch_loss += loss_val
+            # EMA of recent loss — reacts within ~20 steps, unlike cumulative avg
+            alpha       = 0.05
+            recent_loss = alpha * loss_val + (1 - alpha) * (recent_loss if step > 1 else loss_val)
+            current_lr  = scheduler.get_last_lr()[0]
+            progress_bar.set_postfix({
+                "loss": f"{loss_val:.4f}",        # instantaneous
+                "ema":  f"{recent_loss:.4f}",     # smoothed recent trend
+                "avg":  f"{epoch_loss/step:.4f}", # epoch cumulative
+                "lr":   f"{current_lr:.2e}"
+            })
 
-        val_metrics = evaluate(model, val_loader, device)
+        val_metrics = evaluate(model, val_loader, device, criterion)
         print(f"\nEpoch {epoch} — Train loss: {epoch_loss/len(train_loader):.4f} "
               f"| Val loss: {val_metrics['loss']:.4f} | Val AUC: {val_metrics['auc']:.4f}")
         print(val_metrics["report"])
@@ -836,6 +1007,7 @@ if __name__ == "__main__":
     parser.add_argument("--pos_weight",      type=float, default=3.0)
     parser.add_argument("--seed",            type=int,   default=42)
     parser.add_argument("--limit_threads",   type=int,   default=None)
+    parser.add_argument("--no_reply_context", action="store_false", dest="include_reply_context", help="Disable including reply context in training")
     args = parser.parse_args()
 
     cfg = Config(
@@ -852,6 +1024,7 @@ if __name__ == "__main__":
         pos_weight=args.pos_weight,
         seed=args.seed,
         limit_threads=args.limit_threads,
+        include_reply_context=args.include_reply_context,
     )
 
     train(cfg)

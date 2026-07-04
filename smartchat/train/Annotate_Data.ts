@@ -12,10 +12,11 @@ import { setGlobalDispatcher, Agent } from 'undici';
 // connectTimeout: raised from the default 10 s to 60 s — avoids ConnectTimeoutError on slow/cold
 // TCP handshakes to generativelanguage.googleapis.com (seen as "Connect Timeout Error, timeout: 10000ms")
 setGlobalDispatcher(new Agent({
-  connectTimeout: 60_000,  // 60 seconds — TCP handshake to googleapis.com
-  headersTimeout: 300_000, // 5 minutes  — time until first response byte
-  bodyTimeout:    300_000, // 5 minutes  — time to stream full response body
+  connectTimeout: 60_000,
+  headersTimeout: 900_000, // 15 minutes
+  bodyTimeout:    900_000, // 15 minutes
 }));
+
 
 
 // ANSI escape codes for professional console styling
@@ -39,15 +40,15 @@ const GROUP_JID_SUFFIX = '@g.us';
 const FORMAT_TRANSCRIPT = 'transcript';
 const TRUNCATE_LIMIT_REPLY = 35;
 const MAX_MESSAGE_CHAR_LIMIT = 750; // gets truncated if larger
-const MIN_MESSAGES_PER_CHAT = 50;
-const MAX_MESSAGES_PER_CHAT = 2000;
+const MIN_MESSAGES_PER_CHAT = 10;
+const MAX_MESSAGES_PER_CHAT = 100000;
 
 
 const RPM_LIMIT = 15;           // N requests per minute limit
-const MAX_CONCURRENCY = 15;     // Maximum simultaneous active requests across all chats
+const MAX_CONCURRENCY = 10;     // Maximum simultaneous active requests across all chats
 const MAX_CONCURRENT_CHATS = 5; // Maximum chats being annotated at the same time
 const LAUNCH_INTERVAL = (60 * 1000) / RPM_LIMIT; // Minimum ms between request dispatches
-const MAX_RETRIES = 5;          // Max attempts per window before giving up
+const MAX_RETRIES = 15;          // Max attempts per window before giving up
 
 // API KEY CONFIGURATION
 const GEMINI_API_KEY = "AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0";
@@ -1184,7 +1185,7 @@ Output only the raw JSON object. Do not include markdown fences, explanatory pro
       msg.includes('ENOTFOUND') ||
       msg.includes('socket hang up') ||
       msg.includes('network error') ||
-      msg.includes('Timeout') ||
+      msg.includes('Timeout') || 
       err.name === 'HeadersTimeoutError'
     ) return 'retryable';
 
