@@ -160,9 +160,10 @@ export class ContactService implements IContactService {
   ): Promise<number> {
     if (!identityId) {
       try {
+        const isMaskedName = newName ? /[\u2219\u2022]{3,}/.test(newName) : false
         const newIdentity = await this.identityRepository.createIdentity({
           phoneNumber,
-          displayName: newName,
+          displayName: isMaskedName ? null : newName,
           pushName: newNotify,
           verifiedName: newVerifiedName
         })
@@ -195,7 +196,10 @@ export class ContactService implements IContactService {
     if (newNotify !== undefined) updateData.pushName = newNotify
     if (newVerifiedName !== undefined) updateData.verifiedName = newVerifiedName
     if (newName !== undefined && options.overwriteName) {
-      updateData.displayName = newName
+      const isMaskedName = /[\u2219\u2022]{3,}/.test(newName)
+      if (!isMaskedName) {
+        updateData.displayName = newName
+      }
     }
 
     if (Object.keys(updateData).length > 0) {
