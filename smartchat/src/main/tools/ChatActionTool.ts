@@ -68,13 +68,13 @@ WHAT YOU RECEIVE BACK:
 
     switch (action) {
       case 'mute': {
-        let durationMs = 8 * 60 * 60 * 1000 // default 8 hours
+        let muteExpiration = Date.now() + 8 * 60 * 60 * 1000 // default 8 hours
         if (duration === '1_week') {
-          durationMs = 7 * 24 * 60 * 60 * 1000
+          muteExpiration = Date.now() + 7 * 24 * 60 * 60 * 1000
         } else if (duration === 'always') {
-          durationMs = -1
+          muteExpiration = -1
         }
-        res = await this.chatActionService.muteChat(sock, jid, durationMs)
+        res = await this.chatActionService.muteChat(sock, jid, muteExpiration)
         break
       }
       case 'unmute':
