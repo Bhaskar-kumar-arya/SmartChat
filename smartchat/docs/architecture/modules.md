@@ -18,7 +18,7 @@ This document maps the architectural boundaries, public interfaces, internal mod
 ## `services/chats/`
 - **Purpose:** Manages group chat memberships, community metadata, chat list aggregation, and group participant status.
 - **Public exports (`index.ts`):** None (unformalized empty barrel).
-- **Internal only:** `ChatService.ts`, `GroupMembershipService.ts`, `ChatListEnricher.ts`, `GroupHydrationService.ts`, `sync/` (`CommunitySyncHandler.ts`, `ChatSyncHandler.ts`, `MembershipSyncHandler.ts`), interfaces (`IChatQueryService`, `IChatMutationService`, `IGroupParticipantResolver`, `IGroupMetadataFetcher`), and repository implementations/interfaces (`Chat`, `Community`, `ChatMember`).
+- **Internal only:** `ChatService.ts`, `GroupMembershipService.ts`, `ChatListEnricher.ts`, `GroupHydrationService.ts`, `ChatActionService.ts`, `sync/` (`CommunitySyncHandler.ts`, `ChatSyncHandler.ts`, `MembershipSyncHandler.ts`), interfaces (`IChatQueryService`, `IChatMutationService`, `IGroupParticipantResolver`, `IGroupMetadataFetcher`, `IChatActionService`), and repository implementations/interfaces (`Chat`, `Community`, `ChatMember`).
 - **Consumes:** `services/contacts/`, `services/messages/`
 - **Consumed by:** `services/whatsapp/`, `services/messages/`, `services/search/`
 
@@ -163,8 +163,8 @@ This document maps the architectural boundaries, public interfaces, internal mod
 ## `main/tools/`
 - **Purpose:** Concrete implementation of tools for the AI agent loop.
 - **Public exports (`index.ts` is missing):** None.
-- **Internal only:** `ExecuteScriptTool.ts`, `MessageActionTool.ts`, `QueryDatabaseTool.ts`, `ReadMessagesTool.ts`, `SendMessageTool.ts`.
-- **Consumes:** `services/ai/`, `services/messages/`, `services/chats/`
+- **Internal only:** `ExecuteScriptTool.ts`, `MessageActionTool.ts`, `ChatActionTool.ts`, `QueryDatabaseTool.ts`, `ReadMessagesTool.ts`, `SendMessageTool.ts`.
+- **Consumes:** `services/ai/`, `services/messages/`, `services/chats/`, `services/whatsapp/`
 - **Consumed by:** `services/ai/` (`AIToolInitializer`)
 
 ---

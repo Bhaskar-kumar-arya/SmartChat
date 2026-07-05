@@ -94,28 +94,28 @@ function registerChatAndMessageHandlers(
   ipcMain.handle('mute-chat', async (_event, jid: string, durationMs: number) => {
     const sock = getSock()
     if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
-    await sock.chatModify({ mute: durationMs }, jid)
+    await services.chatActionService.muteChat(sock, jid, durationMs)
     return true
   })
 
   ipcMain.handle('unmute-chat', async (_event, jid: string) => {
     const sock = getSock()
     if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
-    await sock.chatModify({ mute: null }, jid)
+    await services.chatActionService.muteChat(sock, jid, null)
     return true
   })
 
   ipcMain.handle('pin-chat', async (_event, jid: string) => {
     const sock = getSock()
     if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
-    await sock.chatModify({ pin: true }, jid)
+    await services.chatActionService.pinChat(sock, jid, true)
     return true
   })
 
   ipcMain.handle('unpin-chat', async (_event, jid: string) => {
     const sock = getSock()
     if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
-    await sock.chatModify({ pin: false }, jid)
+    await services.chatActionService.pinChat(sock, jid, false)
     return true
   })
 }

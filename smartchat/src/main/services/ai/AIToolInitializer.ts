@@ -2,6 +2,7 @@ import { SendMessageTool } from '../../tools/SendMessageTool';
 import { ReadMessagesTool } from '../../tools/ReadMessagesTool';
 import { QueryDatabaseTool } from '../../tools/QueryDatabaseTool';
 import { MessageActionTool } from '../../tools/MessageActionTool';
+import { ChatActionTool } from '../../tools/ChatActionTool';
 import { ExecuteScriptTool } from '../../tools/ExecuteScriptTool';
 import { WASocket } from '../whatsapp/types';
 import { ServiceContainer } from '../../ServiceContainer';
@@ -26,6 +27,7 @@ export class AIToolInitializer {
     );
     const queryDatabaseTool = new QueryDatabaseTool();
     const messageActionTool = new MessageActionTool(getSock, services.messageActionService);
+    const chatActionTool = new ChatActionTool(getSock, services.chatActionService, services.getBus);
     // ExecuteScriptTool must be instantiated last — its initialize() builds the
     // injected-tool list from the registry, so all other tools must be registered first.
     const executeScriptTool = new ExecuteScriptTool(services.toolRegistry);
@@ -35,6 +37,7 @@ export class AIToolInitializer {
     services.toolRegistry.registerTool(readMessagesTool);
     services.toolRegistry.registerTool(queryDatabaseTool);
     services.toolRegistry.registerTool(messageActionTool);
+    services.toolRegistry.registerTool(chatActionTool);
     services.toolRegistry.registerTool(executeScriptTool);
 
     // 3. Run optional async initialization on tools that need it (fire-and-forget)

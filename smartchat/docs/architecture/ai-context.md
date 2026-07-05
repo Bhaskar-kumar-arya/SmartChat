@@ -24,7 +24,7 @@ Electron + React + TS | Decoupled, Layered SOLID | SQLite (Prisma ORM), better-s
 | Module | Public Interface | Owned Concrete Classes |
 |---|---|---|
 | `contacts` | `IContactQueryService`, `IContactMutationService`, `IContactNameResolver`, `IContactCacheManager`, `IIdentityReconciliationService` | `ContactService`, `LidPnLinker`, `ContactNameResolver`, `ContactCache`, `IdentityReconciliationService` |
-| `chats` | `IChatQueryService`, `IChatMutationService`, `IGroupParticipantResolver`, `IGroupMembershipService`, `IGroupHydrationService` | `ChatService`, `GroupMembershipService`, `ChatListEnricher`, `GroupHydrationService` |
+| `chats` | `IChatQueryService`, `IChatMutationService`, `IGroupParticipantResolver`, `IGroupMembershipService`, `IGroupHydrationService`, `IChatActionService` | `ChatService`, `GroupMembershipService`, `ChatListEnricher`, `GroupHydrationService`, `ChatActionService` |
 | `messages` | `IMessageWriterService`, `IMessageQueryService`, `IMessageActionService`, `IMediaService`, `IMessageSenderService` | `MessageService`, `MessageParser`, `MessageEnricher`, `MediaService`, `MessageActionService`, `MessageSenderService` |
 | `search` | `ISearchService`, `IEmbeddingComputer`, `IMessageIndexer`, `IEmbeddingModelConfig`, `IEmbeddingOperationalControl` | `SearchService`, `EmbeddingService`, `VectorSyncService`, `EmbeddingWorkerManager` |
 | `ai` | `IAIService`, `IAIChatSessionService`, `IAIKeyService`, `IToolRegistry`, `ISystemInstructionBuilder` | `AIService`, `AIChatSessionService`, `AIKeyService`, `ToolRegistry`, `SystemPromptBuilder` |

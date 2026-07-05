@@ -22,6 +22,8 @@ import { ReceiptService } from './services/whatsapp/ReceiptService'
 import { IReceiptService } from './services/whatsapp/IReceiptService'
 import { ChatService } from './services/chats/ChatService'
 import { IChatService } from './services/chats/IChatService'
+import { ChatActionService } from './services/chats/ChatActionService'
+import { IChatActionService } from './services/chats/IChatActionService'
 import { GroupMembershipService } from './services/chats/GroupMembershipService'
 import { IGroupMembershipService } from './services/chats/IGroupMembershipService'
 import { ChatListEnricher } from './services/chats/ChatListEnricher'
@@ -226,6 +228,7 @@ export function createServices(
   // 2. Services with service dependencies
   const chatListEnricher = new ChatListEnricher(chatRepository, messageQueryRepository, reactionRepository, contactService, messageFormatterRegistry)
   const chatService = new ChatService(chatRepository, communityRepository, contactService, groupMembershipService, chatListEnricher, getSock)
+  const chatActionService = new ChatActionService(chatService)
   const communitySyncHandler = new CommunitySyncHandler(syncRepository)
   const chatSyncHandler = new ChatSyncHandler(syncRepository)
   const membershipSyncHandler = new MembershipSyncHandler(syncRepository, contactService)
@@ -336,6 +339,7 @@ export function createServices(
     dataWipeService,
     receiptService,
     chatService,
+    chatActionService,
     groupHydrationService,
     messageWriterService: messageService,
     messageQueryService: messageService,
@@ -362,7 +366,8 @@ export function createServices(
     socketFactory,
     catchUpManager,
     apiServer,
-    callService
+    callService,
+    getBus
   })
 
 
@@ -390,6 +395,7 @@ export type ServiceContainer = {
   dataWipeService: IDataWipeService
   receiptService: IReceiptService
   chatService: IChatService
+  chatActionService: IChatActionService
   groupHydrationService: IGroupHydrationService
   messageWriterService: IMessageWriterService
   messageQueryService: IMessageQueryService
@@ -417,5 +423,6 @@ export type ServiceContainer = {
   catchUpManager: IWACatchUpManager
   apiServer: IAPIServer
   callService: ICallQueryService & ICallMutationService
+  getBus: () => IWAEventBus | null
 }
 
