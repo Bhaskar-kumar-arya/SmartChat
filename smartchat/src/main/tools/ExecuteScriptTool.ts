@@ -54,20 +54,7 @@ The user is looking for specific information. A simple search might return isola
 }
 </tool_call>
 
-User: "summarize this week's messages"
-
-<thought>
-The user wants a summary of the past week's messages. I need to fetch all messages from the last 7 days. Since this spans multiple chats, I'll use groupByChat: true so the output is cleanly organised per chat without needing to sort in SQL.
-</thought>
-<tool_call>
-{
-  "tool": "executeScript",
-  "arguments": {
-    "script": "const now = Math.floor(Date.now() / 1000);\\nconst sevenDaysAgo = now - (7 * 24 * 60 * 60);\\n\\nreturn await readMessages({\\n  sql: \\"SELECT id FROM Message WHERE timestamp >= ?\\",\\n  params: [sevenDaysAgo],\\n  groupByChat: true\\n});",
-    "explanation": "Retrieve and format all messages from the last 7 days, grouped by chat, using readMessages."
-  }
-}
-</tool_call> 
+ 
 
 AVAILABLE TOOLS (injected as globals):
 `;

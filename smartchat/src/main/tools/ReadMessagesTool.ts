@@ -74,7 +74,15 @@ CONSTRAINTS:
 FORMATTING BEHAVIOR:
 - The tool groups consecutive messages belonging to the same chat under a single header.
 - To avoid highly fragmented output when retrieving messages across multiple chats (e.g., when querying by keywords or time range), it is recommended to sort by chat first, then chronologically (e.g., ORDER BY chatJid ASC, timestamp ASC), provided that order is acceptable for the task.
-- Use 'groupByChat: true' to automatically pre-group and sort all messages by chat before formatting, regardless of the original query order. This is ideal when the query mixes messages from multiple chats and you want a clean per-chat breakdown without having to sort in SQL.`;
+- Use 'groupByChat: true' to automatically pre-group and sort all messages by chat before formatting, regardless of the original query order. This is ideal when the query mixes messages from multiple chats and you want a clean per-chat breakdown without having to sort in SQL.
+
+EXAMPLES:
+- To fetch all messages from today across all chats:
+  { "sql": "SELECT id FROM Message WHERE timestamp >= CAST(strftime('%s', 'now', 'localtime', 'start of day', 'utc') AS INT)", "groupByChat": true }
+- To fetch all messages from this week (since Sunday) across all chats:
+  { "sql": "SELECT id FROM Message WHERE timestamp >= CAST(strftime('%s', 'now', 'localtime', '-6 days', 'weekday 0', 'start of day', 'utc') AS INT)", "groupByChat": true }
+- To fetch all messages from this month across all chats:
+  { "sql": "SELECT id FROM Message WHERE timestamp >= CAST(strftime('%s', 'now', 'localtime', 'start of month', 'utc') AS INT)", "groupByChat": true }`;
 
   requiresPermission = true;
   parametersSchema = {

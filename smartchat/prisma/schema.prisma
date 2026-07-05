@@ -148,7 +148,9 @@ model Message {
   /// True if the logged-in user sent this message, false if received. In SQL, use 'fromMe = 1' to filter for messages sent by the user.
   fromMe      Boolean
   /// Unix timestamp in SECONDS when the message was sent.
-  /// [AI RULE]: To compare timestamps, convert ISO date/time strings to seconds: timestamp >= CAST(strftime('%s', 'YYYY-MM-DD HH:MM:SS') AS INT)
+  /// [AI RULE]: To compare timestamps, convert ISO strings to seconds. NEVER use the 'localtime' modifier on explicit date strings!
+  /// For LOCAL time strings, ALWAYS use the 'utc' modifier: CAST(strftime('%s', 'YYYY-MM-DD HH:MM:SS', 'utc') AS INT). (SQLite assumes strings are UTC; the 'utc' modifier paradoxically tells it to treat the string as local time and shift it to UTC).
+  /// For explicitly UTC time strings: CAST(strftime('%s', 'YYYY-MM-DD HH:MM:SS') AS INT) (omit modifiers).
   timestamp   BigInt
   /// WhatsApp message types include:
   ///   -STANDARD: "conversation" (plain text), "extendedTextMessage" (formatted/link preview), "imageMessage", "videoMessage", "ptvMessage" (video notes), "audioMessage" (voice notes), "documentMessage", "documentWithCaptionMessage", "stickerMessage", "locationMessage", "liveLocationMessage", "contactMessage", "contactsArrayMessage", "reactionMessage"/"encReactionMessage" (reactions), "groupInviteMessage", "pollCreationMessage" (group polls), "pollUpdateMessage" (poll votes), "protocolMessage" (deletes/edits), "editedMessage" (edit updates).
