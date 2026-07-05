@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { Paperclip, Smile, X, Mic, Send, Trash2, StopCircle, Play, Pause } from 'lucide-react'
+import { Paperclip, Smile, X, Mic, Send, Trash2, StopCircle, Play, Pause, Plus } from 'lucide-react'
 import { useMentions } from '../../hooks/useMentions'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'
@@ -348,18 +348,18 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         {!isRecording && !audioBlob ? (
           <>
             <button 
-              className="recording-action-btn"
+              className="recording-action-btn attach-btn"
               onClick={handleAttachClick}
               disabled={sending}
               title="Attach file"
             >
-              <Paperclip size={24} />
+              <Plus size={26} />
             </button>
 
             <button 
               ref={smileButtonRef}
               type="button"
-              className={`recording-action-btn ${showPicker ? 'active' : ''}`}
+              className={`recording-action-btn emoji-btn ${showPicker ? 'active' : ''}`}
               onClick={() => setShowPicker(!showPicker)}
               disabled={sending}
               title="Emojis, Stickers, GIFs"
@@ -371,7 +371,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
               ref={editorRef}
               className="message-input"
               contentEditable={!sending}
-              data-placeholder="Type a message..."
+              data-placeholder="Type a message"
               onInput={handleEditorInput}
               onKeyDown={handleKeyDown}
               onSelect={handleSelect}
@@ -432,7 +432,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
             {text.trim() ? (
                 <Send size={24} />
             ) : (
-                <Mic size={24} />
+                <Mic size={22} strokeWidth={2.5} />
             )}
         </button>
       )}

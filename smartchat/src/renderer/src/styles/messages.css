@@ -8,16 +8,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  /* Multi-layer: dark overlay (94% opaque) sits on top of the tile,
-     dimming the doodle pattern to ~6% — same subtle look as the
-     official WhatsApp Desktop dark mode. Adjust rgba alpha to taste. */
-  background-image:
-    linear-gradient(rgba(20, 20, 20, 0.94), rgba(20, 20, 20, 0.94)),
-    url('../assets/images/bg-chat-tile-dark.png');
-  background-color: #1a1a1a;
-  background-repeat: repeat;
-  background-size: auto, 600px; /* 'auto' keeps gradient full-size; 600px scales the tile up */
-  background-attachment: fixed;
+  background-color: transparent;
   scrollbar-width: thin;
   scrollbar-color: var(--wa-border) transparent;
 }
