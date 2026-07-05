@@ -410,6 +410,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
                          e.stopPropagation();
                          onShowProfilePic(chat.jid, chat.name);
                        }}
+                       isCommunity={isRoot}
                     />
                     <div className="chat-item-content">
                       <div className="chat-item-top">

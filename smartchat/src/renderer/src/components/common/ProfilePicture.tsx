@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react'
-import { User, Users } from 'lucide-react'
 import { useAPI } from '../../context/APIContext'
 
 interface ProfilePictureProps {
@@ -8,14 +7,18 @@ interface ProfilePictureProps {
   size?: number
   className?: string
   onClick?: (e: React.MouseEvent) => void
+  isCommunity?: boolean
 }
+
+import { getAvatarColor, DefaultUserIcon, DefaultGroupIcon } from './DefaultAvatars'
 
 export const ProfilePicture: React.FC<ProfilePictureProps> = ({
   jid,
   initialUrl,
   size = 40,
   className = '',
-  onClick
+  onClick,
+  isCommunity = false
 }) => {
   const api = useAPI()
   const [url, setUrl] = useState<string | null>(initialUrl || null)
@@ -61,15 +64,27 @@ export const ProfilePicture: React.FC<ProfilePictureProps> = ({
     setUrl(null)
   }
 
+  const colorScheme = getAvatarColor(jid)
+  const isGroup = jid.endsWith('@g.us') || isCommunity
+  const borderRadius = isCommunity ? '30%' : '50%'
+
   const getFallbackContent = () => {
-    // Always use generic icons if no profile picture is available
-    return jid.endsWith('@g.us') ? <Users size={size * 0.6} /> : <User size={size * 0.6} />
+    return isGroup ? (
+      <DefaultGroupIcon color={colorScheme.fg} />
+    ) : (
+      <DefaultUserIcon color={colorScheme.fg} />
+    )
   }
 
   const fallback = (
     <div 
-      className={`flex items-center justify-center text-white font-medium shrink-0 aspect-square overflow-hidden bg-linear-to-br from-emerald-500 to-emerald-600 ${className}`}
-      style={{ width: size, height: size, fontSize: size / 2.5, borderRadius: '50%' }}
+      className={`flex items-center justify-center shrink-0 overflow-hidden ${className}`}
+      style={{ 
+        width: size, 
+        height: size, 
+        backgroundColor: colorScheme.bg,
+        borderRadius 
+      }}
       onClick={onClick}
     >
       {getFallbackContent()}
@@ -82,8 +97,8 @@ export const ProfilePicture: React.FC<ProfilePictureProps> = ({
     <img
       src={url}
       alt="Profile"
-      className={`object-cover cursor-pointer hover:opacity-90 transition-opacity shrink-0 aspect-square overflow-hidden ${className}`}
-      style={{ width: size, height: size, borderRadius: '50%' }}
+      className={`object-cover cursor-pointer hover:opacity-90 transition-opacity shrink-0 overflow-hidden ${className}`}
+      style={{ width: size, height: size, borderRadius }}
       onClick={onClick}
       onError={handleImageError}
     />
