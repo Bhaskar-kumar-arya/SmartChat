@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { Paperclip, Smile, X, Mic, Send, Trash2, StopCircle, Play, Pause, Plus } from 'lucide-react'
+import { Smile, X, Mic, Send, Trash2, StopCircle, Play, Pause, Plus } from 'lucide-react'
 import { useMentions } from '../../hooks/useMentions'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'

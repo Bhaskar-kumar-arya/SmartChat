@@ -1,6 +1,6 @@
-import { app, shell, BrowserWindow, ipcMain, protocol, net } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
 import { join } from 'path'
-import { pathToFileURL } from 'url'
+
 import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -10,6 +10,8 @@ import { prisma, initVectorDb } from './auth'
 import { registerIpcHandlers } from './ipcHandlers'
 import { createServices } from './ServiceContainer'
 import { TrayService } from './services/notification/TrayService'
+import { SecureFileRegistry } from './services/protocol/SecureFileRegistry'
+import { AppProtocolHandler } from './services/protocol/AppProtocolHandler'
 
 function getLogFile(): string {
   try {
@@ -65,7 +67,7 @@ if (!gotTheLock) {
 
   // Register 'app' protocol as privileged BEFORE app is ready
   protocol.registerSchemesAsPrivileged([
-    { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
+    { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } }
   ])
 
   let mainWindow: BrowserWindow | null = null
@@ -133,34 +135,17 @@ function createWindow(): void {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron.smartchat')
 
-  protocol.handle('app', async (request) => {
-    try {
-      const { host, pathname } = new URL(request.url)
-      if (host === 'media') {
-        const fileName = pathname.startsWith('/') ? pathname.slice(1) : pathname
-        const filePath = join(app.getPath('userData'), 'media', fileName)
-        
-        if (fs.existsSync(filePath)) {
-          return net.fetch(pathToFileURL(filePath).href)
-        }
-      } else if (host === 'favourites') {
-        const fileName = pathname.startsWith('/') ? pathname.slice(1) : pathname
-        const filePath = join(app.getPath('userData'), 'favourites', fileName)
-        
-        if (fs.existsSync(filePath)) {
-          return net.fetch(pathToFileURL(filePath).href)
-        }
-      } else if (host === 'local') {
-        const filePath = decodeURIComponent(pathname.startsWith('/') ? pathname.slice(1) : pathname)
-        if (fs.existsSync(filePath)) {
-          return net.fetch(pathToFileURL(filePath).href)
-        }
-      }
-    } catch (err) {
-      console.error('[Protocol] Error handling app:// request:', err)
-    }
-    return new Response('Not Found', { status: 404 })
-  })
+  // Setup Secure Protocol Handler
+  const secureRegistry = new SecureFileRegistry();
+  secureRegistry.registerDirectory('media', join(app.getPath('userData'), 'media'));
+  secureRegistry.registerDirectory('favourites', join(app.getPath('userData'), 'favourites'));
+  // Note: 'local' directory access is intentionally removed to prevent Local File Inclusion (LFI) vulnerabilities.
+  
+  const protocolHandler = new AppProtocolHandler(
+    secureRegistry, 
+    process.env['ELECTRON_RENDERER_URL'] || 'http://localhost:5173'
+  );
+  protocol.handle('app', (request) => protocolHandler.handleRequest(request));
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
