@@ -1,0 +1,56 @@
+# Business Contact Identity Analysis & Resolution Strategy
+
+## 1. Background & The Problem
+During the initial device linking process, WhatsApp provides a massive History Sync payload. While it includes the `pushName` (display name) for most regular users, WhatsApp **deliberately strips out the names of Business Accounts**. 
+
+Official Business Accounts (like Amazon, WhatsApp themselves, or verified brands) operate on the Multi-Device infrastructure primarily using **LIDs** (e.g., `70364952572103@lid`). Because they hide their real phone numbers and their names are excluded from the initial sync, they end up stored in the database as "empty" or "nameless" contact stubs. This causes their chats to appear blank in the UI.
+
+## 2. Findings from Diagnostic Logs
+By injecting an `EmptyContactLogger` at the absolute edge of all data pipelines, we traced exactly where these empty contacts originate.
+
+1. **Total Volume**: There are currently **7,243** contacts in the database with completely missing names (`displayName`, `pushName`, and `verifiedName` are all `NULL`).
+2. **Group Hydration**: The vast majority (~5,461) originate from the `group-hydration` phase. These are mostly regular users in large community groups whose privacy settings hide their names, or whose names simply weren't included in the metadata.
+3. **Business LIDs**: We identified **354 unique empty contacts** originating from `history-sync` and `message-participant`. 
+4. **The SQLite Alias Discovery**: 
+   - We initially failed to find Official Business Accounts (like Amazon) in the logs because we assumed their LID was stored in the `phoneNumber` column.
+   - **Crucial Discovery:** For Official Business Accounts, the `phoneNumber` column in the `Identity` table is actually `NULL`. Their LID is stored in a separate table (`IdentityAlias`). 
+   - Because they lack a phone number entirely, they can *only* be identified by joining the `Identity` and `IdentityAlias` tables.
+
+## 3. The Proposed Solution (Background Fetcher)
+Since WhatsApp refuses to send business names during the passive sync, we must **actively request them** from the WhatsApp servers. We will achieve this by implementing a **Background Business Profile Fetcher**.
+
+### Step 1: Database Targeting
+Create a scheduled task or a post-sync worker that queries the local SQLite database for empty accounts.
+```sql
+-- The exact query required to find nameless LIDs
+SELECT i.id, ia.jid 
+FROM Identity i
+LEFT JOIN IdentityAlias ia ON i.id = ia.identityId
+WHERE i.displayName IS NULL 
+  AND i.pushName IS NULL 
+  AND i.verifiedName IS NULL;
+```
+
+### Step 2: The `w:biz` IQ Query
+For each nameless JID found, the worker will use the Baileys socket to dispatch a Business Profile query to the WhatsApp server:
+```typescript
+const profile = await sock.getBusinessProfile(jid);
+```
+If the account is a business, WhatsApp will return a `verifiedNameCertificate`. We will extract the `verifiedName` from this certificate.
+
+### Step 3: Rate Limiting & Safety
+> [!WARNING]  
+> **Anti-Spam Risk**: We cannot blast 7,000+ business queries at once. WhatsApp's anti-spam system will immediately flag and ban the account.
+
+The fetcher must process the queue in small batches (e.g., 5-10 requests at a time) with a random delay (jitter) between batches.
+
+### Step 4: Persistence & Caching
+- **Success**: If a `verifiedName` is returned, we update the `Identity` table. The UI will instantly react and display the business name.
+- **Failure (Regular Users)**: If the query returns nothing (meaning it's just a regular user from a group without a name), we must remember that we already checked them. 
+  - We will introduce a local cache (e.g., a simple JSON file or an in-memory Set stored via Redis/File) tracking `checked_empty_jids` so we don't continuously waste network requests on regular users.
+
+## Open Questions for Implementation
+> [!IMPORTANT]  
+> Before we begin building the `BusinessProfileFetcher`, please confirm:
+> 1. Where should this worker live? Should it be a standalone service (e.g., `BusinessProfileSyncService`), or part of an existing background job manager?
+> 2. For caching the "already checked" regular users, do you want to add a new column to the Prisma schema (e.g., `isBusinessChecked Boolean DEFAULT false`), or prefer a lightweight local JSON cache file to avoid database migrations right now?
