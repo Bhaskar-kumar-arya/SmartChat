@@ -21,12 +21,12 @@
     "//test_instruction_1_single": "To run a single test: 'npm run test:run -- <file-path>'",
     "//test_instruction_2_all": "To run all tests sequentially (do not run in parallel): 'npm run test:run:all'",
     "//test_instruction_3_critical": "CRITICAL: After testing, you must run 'npm run test:rebuild:electron' before running the app ('npm run dev') again. Tests rebuild for Node.js, while the app rebuilds for Electron.",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "node scripts/generate-template.js && npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
     "@electron-fonts/noto-color-emoji": "^1.2.0",
