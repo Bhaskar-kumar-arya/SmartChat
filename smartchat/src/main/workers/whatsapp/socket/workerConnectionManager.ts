@@ -174,35 +174,40 @@ export class WorkerConnectionManager {
     this.connect()
   }
 
-  private async wipeAllData(prismaClient: PrismaClient, userPath: string): Promise<void> {
-    await prismaClient.reaction.deleteMany()
-    await prismaClient.messageVector.deleteMany()
-    await prismaClient.message.deleteMany()
-    await prismaClient.chatMember.deleteMany()
-    await prismaClient.chat.deleteMany()
-    await prismaClient.community.deleteMany()
-    await prismaClient.identityAlias.deleteMany()
-    await prismaClient.identity.deleteMany()
-    await prismaClient.authState.deleteMany()
-    await prismaClient.favoriteSticker.deleteMany().catch((err) => {
-      console.error('[WhatsAppWorker] Failed to wipe favoriteSticker:', err)
-    })
-
+  private clearDirectory(dirPath: string): void {
     try {
-      const favsDir = join(userPath, 'favourites')
-      if (fs.existsSync(favsDir)) {
-        const files = fs.readdirSync(favsDir)
-        for (const file of files) {
-          try {
-            fs.unlinkSync(join(favsDir, file))
-          } catch (err) {
-            console.error('[WhatsAppWorker] Failed to unlink favourite file:', err)
-          }
-        }
+      if (fs.existsSync(dirPath)) {
+        fs.rmSync(dirPath, { recursive: true, force: true })
+        fs.mkdirSync(dirPath, { recursive: true })
       }
     } catch (e) {
-      console.error('[WhatsAppWorker] Failed to clear favourites folder:', e)
+      console.error(`[WhatsAppWorker] Failed to clear directory ${dirPath}:`, e)
     }
+  }
+
+  private async wipeAllData(prismaClient: PrismaClient, userPath: string): Promise<void> {
+    try {
+      const tables = await prismaClient.$queryRawUnsafe<{ name: string }[]>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_prisma_migrations'"
+      )
+
+      await prismaClient.$executeRawUnsafe('PRAGMA foreign_keys = OFF;')
+      for (const table of tables) {
+        await prismaClient.$executeRawUnsafe(`DELETE FROM "${table.name}";`)
+      }
+      await prismaClient.$executeRawUnsafe("DELETE FROM sqlite_sequence;").catch((err: unknown) => {
+        console.warn('[WhatsAppWorker] sqlite_sequence reset skipped:', (err as Error)?.message || err)
+      })
+      await prismaClient.$executeRawUnsafe('PRAGMA foreign_keys = ON;')
+    } catch (err) {
+      console.error('[WhatsAppWorker] Failed to dynamically clear tables:', err)
+    }
+
+    this.clearDirectory(join(userPath, 'favourites'))
+    this.clearDirectory(join(userPath, 'media'))
+    this.clearDirectory(join(userPath, 'temp'))
+    this.clearDirectory(join(userPath, 'temp_stickers'))
+
     console.log('[WhatsAppWorker] All database tables cleared (including AuthState).')
   }
 
