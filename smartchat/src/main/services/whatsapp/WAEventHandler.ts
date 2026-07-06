@@ -411,7 +411,7 @@ export class WAEventHandler {
             message: proto.Message.create({
               call: { callKey: Buffer.from(call.id, 'utf-8') }
             }),
-            messageTimestamp: Math.floor(Date.now() / 1000)
+            messageTimestamp: Math.floor((call.date?.getTime() || Date.now()) / 1000)
           }
 
           try {

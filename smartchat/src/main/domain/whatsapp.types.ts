@@ -18,6 +18,7 @@ export interface BaileysCall {
   from: string
   status: string
   timestamp?: number | bigint | null
+  date?: Date
   callerPn?: string
   callerLid?: string
   content?: {
