@@ -118,7 +118,8 @@ export class MessageSenderService implements IMessageSenderService {
   private getMediaTypeAndInitialContent(
     filePath: string,
     caption?: string,
-    localUri?: string
+    localUri?: string,
+    contextInfo?: WAContextInfo
   ): { messageType: string; content: string } {
     const lowerPath = filePath.toLowerCase()
     let typeKey = 'documentMessage'
@@ -147,6 +148,9 @@ export class MessageSenderService implements IMessageSenderService {
     }
     if (typeKey === 'documentMessage') {
       payload.fileName = filePath.split(/[\\/]/).pop() || 'Document'
+    }
+    if (contextInfo) {
+      payload.contextInfo = contextInfo
     }
 
     return {
@@ -197,7 +201,11 @@ export class MessageSenderService implements IMessageSenderService {
     await this.messageRepository.upsertMessage(pendingMsg)
     await this.chatService.updateTimestamp(targetJid, timestamp)
 
-    const nameMap = await this.contactService.batchResolveNames([targetJid, ...(mentions || [])], sock)
+    const jidsToResolve = [targetJid, ...(mentions || [])]
+    if (contextInfo?.participant) {
+      jidsToResolve.push(contextInfo.participant)
+    }
+    const nameMap = await this.contactService.batchResolveNames(jidsToResolve, sock)
     const enriched = await this.messageQueryService.enrichMessage(pendingMsg, sock, nameMap)
 
     this.getBus()?.emit('message:incoming', {
@@ -288,7 +296,7 @@ export class MessageSenderService implements IMessageSenderService {
     }
 
     const localUri = `${APP_MEDIA_PREFIX}${fileName}`
-    const { messageType, content } = this.getMediaTypeAndInitialContent(finalPathToSend, caption, localUri)
+    const { messageType, content } = this.getMediaTypeAndInitialContent(finalPathToSend, caption, localUri, contextInfo)
 
     const pendingMsg: ProcessedMessage = {
       id: msgId,
@@ -308,7 +316,11 @@ export class MessageSenderService implements IMessageSenderService {
     await this.messageRepository.upsertMessage(pendingMsg)
     await this.chatService.updateTimestamp(targetJid, timestamp)
 
-    const nameMap = await this.contactService.batchResolveNames([targetJid, ...(mentions || [])], sock)
+    const jidsToResolve = [targetJid, ...(mentions || [])]
+    if (contextInfo?.participant) {
+      jidsToResolve.push(contextInfo.participant)
+    }
+    const nameMap = await this.contactService.batchResolveNames(jidsToResolve, sock)
     const enriched = await this.messageQueryService.enrichMessage(pendingMsg, sock, nameMap)
 
     this.getBus()?.emit('message:incoming', {

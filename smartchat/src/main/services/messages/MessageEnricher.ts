@@ -230,22 +230,24 @@ export class MessageEnricher implements IMessageEnricher {
   private _extractContextInfo(
     unwrapped: WAMessageContent | Record<string, unknown> | null | undefined
   ): Record<string, unknown> | null {
-    if (!unwrapped) return null
+    if (!unwrapped || typeof unwrapped !== 'object') return null
+
     const rawMsg = unwrapped as Record<string, unknown>
-    return (
-      (rawMsg.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
-        undefined ??
-      (rawMsg.imageMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
-        undefined ??
-      (rawMsg.videoMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
-        undefined ??
-      (rawMsg.documentMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
-        undefined ??
-      (rawMsg.audioMessage as Record<string, unknown> | undefined)?.contextInfo as Record<string, unknown> |
-        undefined ??
-      (rawMsg.contextInfo as Record<string, unknown> | undefined) ??
-      null
-    )
+
+    // 1. Check if contextInfo exists at the root level
+    if (rawMsg.contextInfo && typeof rawMsg.contextInfo === 'object') {
+      return rawMsg.contextInfo as Record<string, unknown>
+    }
+
+    // 2. Check if contextInfo exists inside the specific message type wrapper (e.g. imageMessage)
+    for (const key of Object.keys(rawMsg)) {
+      const inner = rawMsg[key]
+      if (inner && typeof inner === 'object' && 'contextInfo' in inner) {
+        return (inner as Record<string, unknown>).contextInfo as Record<string, unknown>
+      }
+    }
+
+    return null
   }
 
   /**
@@ -276,15 +278,7 @@ export class MessageEnricher implements IMessageEnricher {
 
     if (ctx.quotedMessage && typeof ctx.quotedMessage === 'object') {
       const q = unwrapMessage(ctx.quotedMessage as WAMessageContent)
-      const qRaw = q as Record<string, unknown>
-      const qCtx =
-        (qRaw?.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo as
-          | Record<string, unknown>
-          | undefined ??
-        (qRaw?.imageMessage as Record<string, unknown> | undefined)?.contextInfo as
-          | Record<string, unknown>
-          | undefined ??
-        (qRaw?.contextInfo as Record<string, unknown> | undefined)
+      const qCtx = this._extractContextInfo(q)
 
       if (qCtx?.mentionedJid && Array.isArray(qCtx.mentionedJid)) {
         qCtx.mentions = Object.fromEntries(
