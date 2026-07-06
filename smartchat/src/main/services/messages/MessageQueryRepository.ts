@@ -5,7 +5,7 @@ import { MessageQueryFilter } from '../../domain/filters'
 import { MessageWithChatAndSender, LastMessageWithSender } from '../../domain/projections'
 
 export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlExecutor {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient) { }
 
   private buildPrismaWhere(filter: MessageQueryFilter): Prisma.MessageWhereInput {
     const where: Prisma.MessageWhereInput = {}
@@ -56,9 +56,15 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
    * Fetch the most recent message for preview in a chat.
    */
   async findLastMessage(chatJid: string): Promise<LastMessageWithSender | null> {
-    return this.prisma.message.findFirst({
-      where: { chatJid },
-      orderBy: { timestamp: 'desc' },
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM Message
+      WHERE chatJid = ${chatJid}
+      ORDER BY timestamp DESC, rowid DESC
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    return this.prisma.message.findUnique({
+      where: { id: rows[0].id },
       select: {
         id: true,
         textContent: true,
@@ -129,15 +135,20 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
     }) as Promise<MessageWithChatAndSender[]>
   }
 
-  /**
-   * Find messages in a chat, ordered descending by timestamp.
-   */
   async findMessagesByChat(chatJid: string, limit: number): Promise<Message[]> {
-    return this.prisma.message.findMany({
-      where: { chatJid },
-      orderBy: { timestamp: 'desc' },
-      take: limit
-    }) as Promise<Message[]>
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM Message
+      WHERE chatJid = ${chatJid}
+      ORDER BY timestamp DESC, rowid DESC
+      LIMIT ${limit}
+    `
+    if (rows.length === 0) return []
+    const ids = rows.map(r => r.id)
+    const messages = await this.prisma.message.findMany({
+      where: { id: { in: ids } }
+    })
+    const map = new Map(messages.map(m => [m.id, m]))
+    return ids.map(id => map.get(id)).filter(Boolean) as Message[]
   }
 
   /**
@@ -183,13 +194,24 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
     skip: number,
     take: number
   ): Promise<Array<Message & { sender: import('@prisma/client').Identity | null }>> {
-    return this.prisma.message.findMany({
-      where: { chatJid },
-      orderBy: { timestamp: 'desc' },
-      skip,
-      take,
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM Message
+      WHERE chatJid = ${chatJid}
+      ORDER BY timestamp DESC, rowid DESC
+      LIMIT ${take} OFFSET ${skip}
+    `
+    if (rows.length === 0) return []
+
+    const ids = rows.map(r => r.id)
+    const messages = await this.prisma.message.findMany({
+      where: { id: { in: ids } },
       include: { sender: true }
-    }) as Promise<Array<Message & { sender: import('@prisma/client').Identity | null }>>
+    })
+
+    const messageMap = new Map(messages.map(m => [m.id, m]))
+    return ids
+      .map(id => messageMap.get(id))
+      .filter(Boolean) as Array<Message & { sender: import('@prisma/client').Identity | null }>
   }
 
   /**
@@ -220,24 +242,35 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
     fromTimestamp: bigint,
     lookBehind: number
   ): Promise<Array<Message & { sender: import('@prisma/client').Identity | null }>> {
-    const [fromTarget, before] = await Promise.all([
-      // target message up to the newest
-      this.prisma.message.findMany({
-        where: { chatJid, timestamp: { gte: fromTimestamp } },
-        orderBy: { timestamp: 'asc' },
-        include: { sender: true }
-      }),
-      // look-behind context before the target
-      this.prisma.message.findMany({
-        where: { chatJid, timestamp: { lt: fromTimestamp } },
-        orderBy: { timestamp: 'desc' },
-        take: lookBehind,
-        include: { sender: true }
-      })
+    const [fromTargetRows, beforeRows] = await Promise.all([
+      this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM Message
+        WHERE chatJid = ${chatJid} AND timestamp >= ${fromTimestamp}
+        ORDER BY timestamp ASC, rowid ASC
+      `,
+      this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM Message
+        WHERE chatJid = ${chatJid} AND timestamp < ${fromTimestamp}
+        ORDER BY timestamp DESC, rowid DESC
+        LIMIT ${lookBehind}
+      `
     ])
 
-    // before is newest-first; reverse it so combined list is chronological
-    const combined = [...before.reverse(), ...fromTarget]
-    return combined as Array<Message & { sender: import('@prisma/client').Identity | null }>
+    const combinedIds = [
+      ...beforeRows.map(r => r.id).reverse(),
+      ...fromTargetRows.map(r => r.id)
+    ]
+
+    if (combinedIds.length === 0) return []
+
+    const messages = await this.prisma.message.findMany({
+      where: { id: { in: combinedIds } },
+      include: { sender: true }
+    })
+
+    const messageMap = new Map(messages.map(m => [m.id, m]))
+    return combinedIds
+      .map(id => messageMap.get(id))
+      .filter(Boolean) as Array<Message & { sender: import('@prisma/client').Identity | null }>
   }
 }
