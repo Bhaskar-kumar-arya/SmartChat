@@ -273,4 +273,25 @@ Perform JID name resolution dynamically at read-time in the backend `MessageEnri
 **Constrains:** Frontend must handle the parsed parameter structures type-safely.
 **Watch for:** Unregistered stub types falling back gracefully.
 
+---
+
+## ADR-16: Dynamic Data Wiping Strategy on Logout
+
+**Date:** 2026-07-06
+**Status:** Accepted
+
+### Context
+When logging out, hardcoded `PrismaClient.model.deleteMany()` statements frequently went out of sync as new tables (e.g., AI sessions, log tables) were added. This risked data leaks upon logout.
+
+### Decision
+Implement a dynamic, metadata-driven wiping strategy:
+1. Use raw SQL (`sqlite_master`) to dynamically discover and delete from all user tables at runtime.
+2. Explicitly exclude `_prisma_migrations`.
+3. Recursively clear the `favourites`, `media`, `temp`, and `temp_stickers` directories using `fs.rmSync`.
+
+### Consequences
+**Enables:** Future-proofing against schema changes and reduced boilerplate code.
+**Constrains:** Tightly couples wiping logic to SQLite's internal metadata tables.
+**Watch for:** Accidental deletions of future system-level tables that should survive logout.
+
 
