@@ -100,6 +100,78 @@ $1}`;
         console.warn('[BaileysPatcher] Could not locate decode-wa-message.js to apply patches.');
       }
 
+      // 4. Patch chats.js to fix profile picture token structure
+      const possibleChatsPaths = [
+        path.join(process.cwd(), 'node_modules', '@whiskeysockets', 'baileys', 'lib', 'Socket', 'chats.js'),
+        path.join(__dirname, '..', '..', '..', 'node_modules', '@whiskeysockets', 'baileys', 'lib', 'Socket', 'chats.js')
+      ];
+
+      let targetChatsPath: string | null = null;
+      for (const p of possibleChatsPaths) {
+        if (fs.existsSync(p)) {
+          targetChatsPath = p;
+          break;
+        }
+      }
+
+      if (targetChatsPath) {
+        let chatsContent = fs.readFileSync(targetChatsPath, 'utf8');
+        let chatsModified = false;
+
+        const regex = /const profilePictureUrl = async \(jid, type = 'preview', timeoutMs\) => \{[\s\S]*?const child = getBinaryNodeChild\(result, 'picture'\);\r?\n\s*return child\?\.attrs\?\.url;\r?\n\s*\};/;
+        if (regex.test(chatsContent) && !chatsContent.includes('// NEST the tctoken here as a child')) {
+          const replacement = `const profilePictureUrl = async (jid, type = 'preview', timeoutMs) => {
+        jid = jidNormalizedUser(jid);
+        const storageJid = isLidUser(jid) ? jid : (await getLIDForPN(jid)) || jid;
+        const tcTokenData = await authState.keys.get('tctoken', [storageJid]);
+        const tokenEntry = tcTokenData?.[storageJid];
+
+        const result = await query({
+            tag: 'iq',
+            attrs: {
+                to: S_WHATSAPP_NET,
+                type: 'get',
+                xmlns: 'w:profile:picture',
+                target: jid,
+            },
+            content: [
+                {
+                    tag: 'picture',
+                    attrs: { 
+                        type, 
+                        query: 'url'
+                    },
+                    // NEST the tctoken here as a child, NOT as a sibling node
+                    content: tokenEntry ? [
+                        {
+                            tag: 'tctoken',
+                            attrs: {
+                                // The server requires the timestamp attribute to validate the token lifecycle
+                                t: tokenEntry.timestamp.toString() 
+                            },
+                            content: tokenEntry.token // The raw binary buffer/string token
+                        }
+                    ] : undefined
+                }
+            ]
+        }, timeoutMs);
+        const child = getBinaryNodeChild(result, 'picture');
+        return child?.attrs?.url;
+    };`;
+          chatsContent = chatsContent.replace(regex, replacement);
+          console.log('[BaileysPatcher] Successfully patched chats.js for profile picture URL logic.');
+          chatsModified = true;
+        }
+
+        if (chatsModified) {
+          fs.writeFileSync(targetChatsPath, chatsContent, 'utf8');
+        } else {
+          console.log('[BaileysPatcher] chats.js is already fully patched.');
+        }
+      } else {
+        console.warn('[BaileysPatcher] Could not locate chats.js to apply patches.');
+      }
+
     } catch (error) {
       console.error('[BaileysPatcher] Error applying patches:', error);
     }

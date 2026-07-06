@@ -2,6 +2,11 @@ import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
 import { join } from 'path'
 
 import fs from 'fs'
+import { BaileysPatcher } from './services/whatsapp/BaileysPatcher'
+
+// Apply all node_modules patches for Baileys library before anything else starts
+BaileysPatcher.patch()
+
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { WhatsAppConnectionManager } from './services/whatsapp/WhatsAppConnectionManager'

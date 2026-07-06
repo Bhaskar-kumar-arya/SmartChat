@@ -196,7 +196,7 @@ export class ContactService implements IContactService {
     if (newNotify !== undefined) updateData.pushName = newNotify
     if (newVerifiedName !== undefined) updateData.verifiedName = newVerifiedName
     if (newName !== undefined && options.overwriteName) {
-      const isMaskedName = /[\u2219\u2022]{3,}/.test(newName)
+      const isMaskedName = newName ? /[\u2219\u2022]{3,}/.test(newName) : false
       if (!isMaskedName) {
         updateData.displayName = newName
       }
