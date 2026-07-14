@@ -1,5 +1,5 @@
 import { app } from 'electron';
-import fs from 'fs';
+import * as fs from 'fs';
 import { join } from 'path';
 import { IKeyStorage } from './IKeyStorage';
 

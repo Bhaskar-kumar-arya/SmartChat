@@ -1,6 +1,6 @@
 import { app, BrowserWindow, nativeImage } from 'electron'
 import { join } from 'path'
-import fs from 'fs'
+import * as fs from 'fs'
 import { INotificationService, NotificationOptions, NotificationPreferences } from './INotificationService'
 import { INotificationProvider } from './INotificationProvider'
 import { ElectronNotificationProvider } from './ElectronNotificationProvider'
