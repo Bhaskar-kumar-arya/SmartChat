@@ -5,38 +5,7 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { vi, beforeAll, afterAll } from 'vitest'
 
-// Mock Electron globally for all tests
-vi.mock('electron', () => {
-  return {
-    app: {
-      getPath: (name: string) => {
-        if (name === 'userData') {
-          const path = join(__dirname, '../../../../prisma/test-user-data')
-          const fs = require('fs')
-          if (!fs.existsSync(path)) {
-            fs.mkdirSync(path, { recursive: true })
-          }
-          return path
-        }
-        return ''
-      },
-      getAppPath: () => join(__dirname, '../../../..')
-    },
-    BrowserWindow: class MockBrowserWindow {
-      isDestroyed() { return false }
-      isFocused() { return false }
-      webContents = {
-        send: () => {}
-      }
-    },
-    Notification: class MockNotification {
-      static isSupported() { return true }
-      constructor() {}
-      show() {}
-      on() {}
-    }
-  }
-})
+// Electron is mocked via vitest.config.ts alias pointing to electron-mock.ts
 
 // Mock EmbeddingService globally
 vi.mock('../services/search/EmbeddingService', () => {
