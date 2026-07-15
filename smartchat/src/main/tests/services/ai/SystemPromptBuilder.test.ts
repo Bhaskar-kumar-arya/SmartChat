@@ -39,8 +39,8 @@ describe('SystemPromptBuilder', () => {
       description: 'A test tool',
       parametersSchema: { type: 'object', properties: {} },
       requiresPermission: false,
-      execute: vi.fn()
-    }]
+      execute: vi.fn() as any
+    } as AITool]
 
     vi.mocked(ToolFormatter.formatTools).mockReturnValue('FORMATTED TOOLS')
 

@@ -25,7 +25,7 @@ describe('APIServer', () => {
   let mockToolRegistry: Mocked<IToolRegistry>
   let mockChatService: Mocked<IChatService>
   let mockMessageActionService: Mocked<IMessageActionService>
-  let mockGetSock: ReturnType<typeof vi.fn>
+  let mockGetSock: any
   let server: APIServer
 
   beforeEach(() => {
