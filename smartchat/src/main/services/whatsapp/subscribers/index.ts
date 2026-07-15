@@ -16,6 +16,11 @@ import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import { NotificationSubscriber }  from './NotificationSubscriber'
 import { UIBroadcastSubscriber }   from './UIBroadcastSubscriber'
 import { EmbeddingSyncSubscriber } from './EmbeddingSyncSubscriber'
+import { PersistenceSubscriber } from './PersistenceSubscriber'
+import { ReceiptSubscriber } from './ReceiptSubscriber'
+import { ContactGroupSubscriber } from './ContactGroupSubscriber'
+import { FavoriteStickerSubscriber } from './FavoriteStickerSubscriber'
+import { CallEventSubscriber } from './CallEventSubscriber'
 
 import type { IMessageWriterService } from '../../messages/IMessageWriterService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
@@ -31,6 +36,7 @@ import type { IMessageQueryRepository } from '../../messages/IMessageQueryReposi
 import type { IReceiptService } from '../IReceiptService'
 import type { IFavoriteStickerService } from '../../messages/IFavoriteStickerService'
 import type { IEmbeddingOperationalControl } from '../../search/IEmbeddingService'
+import type { ICallMutationService } from '../../calls/ICallService'
 
 export type { IWAEventSubscriber }
 
@@ -49,6 +55,7 @@ export interface SubscriberServices {
   receiptService: IReceiptService
   favoriteStickerService: IFavoriteStickerService
   embeddingService: IEmbeddingOperationalControl
+  callService: ICallMutationService
 }
 
 /**
@@ -65,6 +72,11 @@ export function createSubscribers(
     new NotificationSubscriber(services.chatService, services.contactService, services.profileSyncService, services.notificationService),
     new UIBroadcastSubscriber(services.contactService, services.messageQueryService, services.messageQueryRepository, getMainWindow),
     new EmbeddingSyncSubscriber(services.embeddingService),
+    new PersistenceSubscriber(services.messageWriterService, services.chatService),
+    new ReceiptSubscriber(services.receiptService, services.messageProcessingService),
+    new ContactGroupSubscriber(services.contactService, services.chatService, services.groupMembershipService, services.chatMemberRepository),
+    new FavoriteStickerSubscriber(services.favoriteStickerService),
+    new CallEventSubscriber(services.callService, services.contactService)
   ]
 
   // Register each subscriber on the bus — order matters for same-event handlers

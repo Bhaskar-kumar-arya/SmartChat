@@ -68,7 +68,9 @@ export class ContactNameResolver implements IContactNameResolver {
     for (let i = 0; i < uniqueJids.length; i += BATCH_SIZE) {
       const chunk = uniqueJids.slice(i, i + BATCH_SIZE)
       const res = await this.repository.findIdentityAliases(chunk)
-      aliases.push(...res)
+      if (res) {
+        aliases.push(...res)
+      }
     }
 
     const nameMap = new Map<string, string>()

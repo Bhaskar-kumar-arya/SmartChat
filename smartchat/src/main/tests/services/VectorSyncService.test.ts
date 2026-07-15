@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.unmock('../../services/search/VectorSyncService')
+
 import { VectorSyncService } from '../../services/search/VectorSyncService'
 import { IMessageVectorRepository } from '../../services/messages/IMessageVectorRepository'
 
@@ -9,7 +12,7 @@ describe('VectorSyncService', () => {
   beforeEach(() => {
     repo = {
       getAllVectors: vi.fn(),
-      deleteVector: vi.fn(),
+      deleteVector: vi.fn().mockResolvedValue(undefined),
       deleteFromVecMessages: vi.fn(),
       insertIntoVecMessages: vi.fn(),
     } as any
