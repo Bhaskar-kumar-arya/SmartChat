@@ -8,10 +8,16 @@ export default defineConfig({
     setupFiles: ['./src/main/tests/setup.ts'],
     include: ['src/main/tests/**/*.test.ts'],
     testTimeout: 15000,
+    server: {
+      deps: {
+        inline: ['@electron-toolkit/utils']
+      }
+    }
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, './src')
+      '@': resolve(__dirname, './src'),
+      'electron': resolve(__dirname, './src/main/tests/electron-mock.ts')
     }
   }
 })

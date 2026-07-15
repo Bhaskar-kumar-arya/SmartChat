@@ -6,6 +6,11 @@ import { createServices, ServiceContainer } from '../ServiceContainer'
 import type { IWAEventBus } from '../services/whatsapp/IWAEventBus'
 import { WAEventHandler } from '../services/whatsapp/WAEventHandler'
 import { createSubscribers } from '../services/whatsapp/subscribers'
+import { PersistenceSubscriber } from '../services/whatsapp/subscribers/PersistenceSubscriber'
+import { ContactGroupSubscriber } from '../services/whatsapp/subscribers/ContactGroupSubscriber'
+import { ReceiptSubscriber } from '../services/whatsapp/subscribers/ReceiptSubscriber'
+import { FavoriteStickerSubscriber } from '../services/whatsapp/subscribers/FavoriteStickerSubscriber'
+import { CallEventSubscriber } from '../services/whatsapp/subscribers/CallEventSubscriber'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -106,6 +111,15 @@ export function createTestServiceContainer(
 
   const services = createServices(prisma, () => mockWindow, () => bus, () => null)
   createSubscribers(bus, services, () => mockWindow)
+
+  const workerSubscribers = [
+    new PersistenceSubscriber(services.messageWriterService, services.chatService),
+    new ContactGroupSubscriber(services.contactService, services.chatService, services.groupMembershipService, services.chatMemberRepository),
+    new ReceiptSubscriber(services.receiptService, services.messageProcessingService),
+    new FavoriteStickerSubscriber(services.favoriteStickerService),
+    new CallEventSubscriber(services.callService, services.contactService)
+  ]
+  workerSubscribers.forEach(s => s.register(bus))
 
   return services
 }

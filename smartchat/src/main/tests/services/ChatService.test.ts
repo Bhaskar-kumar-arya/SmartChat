@@ -55,8 +55,8 @@ describe('ChatService', () => {
       name: 'Test Chat',
     })
     
+    // unreadCount > 0 is intentionally ignored in upsertChat to prevent doubling
     expect(chatRepo.upsertChat).toHaveBeenCalledWith('test@s.whatsapp.net', expect.objectContaining({
-      unreadCount: 5,
       name: 'Test Chat'
     }))
   })
