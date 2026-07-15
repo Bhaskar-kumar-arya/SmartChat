@@ -19,7 +19,7 @@ describe('CommunitySyncHandler', () => {
   beforeEach(() => {
     mockSyncRepo = {
       bulkUpsertCommunities: vi.fn(),
-      bulkUpdateCommunityAnnounces: vi.fn().mockResolvedValue(undefined)
+      bulkUpdateCommunityAnnounces: vi.fn().mockImplementation(async () => undefined)
     } as any
 
     handler = new CommunitySyncHandler(mockSyncRepo)
