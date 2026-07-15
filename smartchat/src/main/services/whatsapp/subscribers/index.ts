@@ -16,11 +16,6 @@ import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import { NotificationSubscriber }  from './NotificationSubscriber'
 import { UIBroadcastSubscriber }   from './UIBroadcastSubscriber'
 import { EmbeddingSyncSubscriber } from './EmbeddingSyncSubscriber'
-import { PersistenceSubscriber } from './PersistenceSubscriber'
-import { ReceiptSubscriber } from './ReceiptSubscriber'
-import { ContactGroupSubscriber } from './ContactGroupSubscriber'
-import { FavoriteStickerSubscriber } from './FavoriteStickerSubscriber'
-import { CallEventSubscriber } from './CallEventSubscriber'
 
 import type { IMessageWriterService } from '../../messages/IMessageWriterService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
@@ -71,12 +66,7 @@ export function createSubscribers(
   const subscribers: IWAEventSubscriber[] = [
     new NotificationSubscriber(services.chatService, services.contactService, services.profileSyncService, services.notificationService),
     new UIBroadcastSubscriber(services.contactService, services.messageQueryService, services.messageQueryRepository, getMainWindow),
-    new EmbeddingSyncSubscriber(services.embeddingService),
-    new PersistenceSubscriber(services.messageWriterService, services.chatService),
-    new ReceiptSubscriber(services.receiptService, services.messageProcessingService),
-    new ContactGroupSubscriber(services.contactService, services.chatService, services.groupMembershipService, services.chatMemberRepository),
-    new FavoriteStickerSubscriber(services.favoriteStickerService),
-    new CallEventSubscriber(services.callService, services.contactService)
+    new EmbeddingSyncSubscriber(services.embeddingService)
   ]
 
   // Register each subscriber on the bus — order matters for same-event handlers
