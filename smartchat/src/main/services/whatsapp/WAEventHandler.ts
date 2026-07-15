@@ -58,7 +58,7 @@ export class WAEventHandler {
     private messageQueryService: IMessageQueryService,
     private bus: IWAEventBus,
     private checkHistorySyncComplete?: () => Promise<boolean>
-  ) {}
+  ) { }
 
   // ── messages.upsert ───────────────────────────────────────────────────────
 
@@ -406,7 +406,7 @@ export class WAEventHandler {
             key: {
               remoteJid: cleanJid(call.from),
               id: `call_${call.id}`,
-              fromMe: false, 
+              fromMe: false,
             },
             message: proto.Message.create({
               call: { callKey: Buffer.from(call.id, 'utf-8') }

@@ -39,8 +39,8 @@ export class ChatService implements IChatService {
       communityId?: number | null
     } = {}
 
-    if (typeof update.unreadCount === 'number') {
-      data.unreadCount = update.unreadCount
+    if (typeof update.unreadCount === 'number' && update.unreadCount === 0) {
+      data.unreadCount = 0
     }
     if (update.pinned !== undefined) {
       data.pinned = update.pinned === null ? 0 : Number(update.pinned)

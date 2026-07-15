@@ -9,7 +9,7 @@ import { DBMessageWithSender } from '../../domain/db.types'
  * operations related to the `Message` table.
  */
 export class MessageRepository implements IMessageRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient) { }
 
   private preserveLocalUri(existingJson: string, newContent: string): string {
     try {

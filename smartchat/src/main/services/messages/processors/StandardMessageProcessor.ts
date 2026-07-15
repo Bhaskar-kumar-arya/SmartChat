@@ -17,7 +17,7 @@ export class StandardMessageProcessor implements IMessageProcessorStrategy {
     dependencies: IMessageServiceDependencyAccessor
   ): Promise<ProcessedMessage | ProtocolResult | null> {
     const isDeleted = context.msg.messageStubType === WAMessageStubType.REVOKE
-    
+
     const myId = context.sock?.user?.id ? cleanJid(context.sock.user.id) : null
     const myLid = context.sock?.user?.lid ? cleanJid(context.sock.user.lid) : null
     const cleanedRemote = cleanJid(context.remoteJid)

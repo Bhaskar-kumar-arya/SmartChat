@@ -22,4 +22,4 @@ export interface IMessageWriteRepository {
   updateMessageDeleted(id: string): Promise<void>
 }
 
-export interface IMessageRepository extends IMessageWriteRepository, IMessageCompoundRepository {}
+export interface IMessageRepository extends IMessageWriteRepository, IMessageCompoundRepository { }

@@ -225,7 +225,16 @@ export const useChats = (activeJid: string | null) => {
             setChats((prev) => {
               const exists = prev.some((c) => isSameJid(c.jid, update.jid))
               if (exists) {
-                return prev.map(c => isSameJid(c.jid, update.jid) ? { ...c, ...update } as ChatItem : c)
+                return prev.map(c => {
+                  if (isSameJid(c.jid, update.jid)) {
+                    let newUnread = c.unreadCount || 0
+                    if (typeof update.unreadCount === 'number' && update.unreadCount === 0) {
+                      newUnread = 0
+                    }
+                    return { ...c, ...update, unreadCount: newUnread } as ChatItem
+                  }
+                  return c
+                })
               }
               const newChat = { ...chatData, ...update } as ChatItem
               if (isSameJid(newChat.jid, activeJidRef.current)) {
@@ -246,7 +255,13 @@ export const useChats = (activeJid: string | null) => {
           const idx = prev.findIndex((c) => isSameJid(c.jid, update.jid))
           if (idx === -1) return prev
           
-          const updatedChat = { ...prev[idx], ...update } as ChatItem
+          const existing = prev[idx]
+          let newUnread = existing.unreadCount || 0
+          if (typeof update.unreadCount === 'number' && update.unreadCount === 0) {
+            newUnread = 0
+          }
+          
+          const updatedChat = { ...existing, ...update, unreadCount: newUnread } as ChatItem
           if (isSameJid(updatedChat.jid, activeJidRef.current)) {
             updatedChat.unreadCount = 0
           }
