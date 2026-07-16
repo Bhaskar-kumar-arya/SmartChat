@@ -134,6 +134,11 @@ import { IAPIServer } from './services/apiServer/IAPIServer'
 import { APIConfigProvider } from './services/apiServer/APIConfigProvider'
 import { IAPIConfigProvider } from './services/apiServer/IAPIConfigProvider'
 
+import { AIMentionEnricher } from './services/ai/mentions/AIMentionEnricher'
+import { DMEnrichmentStrategy } from './services/ai/mentions/strategies/DMEnrichmentStrategy'
+import { GroupEnrichmentStrategy } from './services/ai/mentions/strategies/GroupEnrichmentStrategy'
+import { CommunityEnrichmentStrategy } from './services/ai/mentions/strategies/CommunityEnrichmentStrategy'
+import { DefaultEnrichmentStrategy } from './services/ai/mentions/strategies/DefaultEnrichmentStrategy'
 
 
 class ElectronWindowEmitter implements IWindowEventEmitter {
@@ -283,12 +288,20 @@ export function createServices(
   const searchService = new SearchService(chatRepository, messageQueryRepository, messageVectorRepository, identityRepository, contactService, embeddingService)
   const profileSyncService = new ProfileSyncService(identityRepository, chatRepository, contactService)
 
-  // 3. AI services
   const reactStrategy = new ReactProtocolStrategy()
   const standardStrategy = new StandardProtocolStrategy()
   const promptBuilder = new SystemPromptBuilder(reactStrategy, standardStrategy)
   const toolRegistry: IToolRegistry & ISystemInstructionBuilder = new ToolRegistry(promptBuilder)
-  const aiService = new AIService(aiKeyService, contactService, toolRegistry)
+  
+  const aiMentionStrategies = [
+    new DMEnrichmentStrategy(contactService),
+    new GroupEnrichmentStrategy(),
+    new CommunityEnrichmentStrategy(chatRepository),
+    new DefaultEnrichmentStrategy()
+  ]
+  const aiMentionEnricher = new AIMentionEnricher(chatRepository, contactService, aiMentionStrategies)
+  const aiService = new AIService(aiKeyService, contactService, toolRegistry, aiMentionEnricher)
+  
   const aiChatSessionService = new AIChatSessionService(prisma)
   const aiChatExportService = new AIChatExportService()
   const apiConfigProvider: IAPIConfigProvider = new APIConfigProvider(app.getPath('userData'))

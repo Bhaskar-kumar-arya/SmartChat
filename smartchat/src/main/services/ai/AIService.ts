@@ -13,6 +13,7 @@ import { IAIService, AIMention, AIChatContext, AIHistoryMessage } from './IAISer
 import { IToolRegistry } from './IToolRegistry'
 import { ISystemInstructionBuilder } from './ISystemInstructionBuilder'
 import { UserDetails } from './ISystemPromptBuilder'
+import { IAIMentionEnricher } from './mentions/IAIMentionEnricher'
 
 export class AIService implements IAIService {
   private providers: Record<string, IBaseAIProvider> = {}
@@ -23,7 +24,8 @@ export class AIService implements IAIService {
   constructor(
     private readonly aiKeyService: IAIKeyService,
     private readonly contactService: IContactQueryService,
-    private readonly toolRegistry: IToolRegistry & ISystemInstructionBuilder
+    private readonly toolRegistry: IToolRegistry & ISystemInstructionBuilder,
+    private readonly mentionEnricher: IAIMentionEnricher
   ) {
     this.registerProvider('gemini', new GeminiProvider(this.aiKeyService, this.toolRegistry));
     this.registerProvider('groq', new GroqProvider(this.aiKeyService, this.toolRegistry));
@@ -115,18 +117,7 @@ export class AIService implements IAIService {
     }
   }
 
-  private formatMentions(prompt: string, mentions?: AIMention[]): string {
-    let result = prompt
-    if (mentions && mentions.length > 0) {
-      for (const m of mentions) {
-        const trimmedName = (m.name || '').trim()
-        const safeName = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const mentionRegex = new RegExp(`@${safeName}`, 'g')
-        result = result.replace(mentionRegex, m.jid)
-      }
-    }
-    return result
-  }
+
 
   private formatChatHistory(chat: AIChatContext): string {
     let contextSection = `\n<chat_history id="${chat.jid}" name="${chat.name || 'Unknown'}">\n`
@@ -156,8 +147,8 @@ export class AIService implements IAIService {
     return contextSection
   }
 
-  private buildFullPrompt(prompt: string, contextFiles?: AIChatContext[], mentions?: AIMention[]): string {
-    let fullPrompt = this.formatMentions(prompt, mentions)
+  private buildFullPrompt(prompt: string, contextFiles?: AIChatContext[]): string {
+    let fullPrompt = prompt
 
     if (contextFiles && contextFiles.length > 0) {
       for (const chat of contextFiles) {
@@ -206,14 +197,23 @@ export class AIService implements IAIService {
     const modelId = this.normalizeModelId(options?.model || this.currentModelId);
     const provider = this.getProviderForModel(modelId);
     
-    const fullPrompt = this.buildFullPrompt(prompt, contextFiles, mentions);
+    let enrichedPrompt = prompt
+    if (mentions && mentions.length > 0) {
+      enrichedPrompt = await this.mentionEnricher.enrichMentionsInline(prompt, mentions)
+    }
 
-    const processedHistory = (history || []).map(msg => {
+    const fullPrompt = this.buildFullPrompt(enrichedPrompt, contextFiles);
+
+    const processedHistory = await Promise.all((history || []).map(async msg => {
       if (msg.role === 'user') {
-        return { ...msg, content: this.buildFullPrompt(msg.content, msg.contexts, msg.mentions) };
+        let enrichedHistoryContent = msg.content
+        if (msg.mentions && msg.mentions.length > 0) {
+          enrichedHistoryContent = await this.mentionEnricher.enrichMentionsInline(msg.content, msg.mentions)
+        }
+        return { ...msg, content: this.buildFullPrompt(enrichedHistoryContent, msg.contexts) };
       }
       return msg;
-    });
+    }));
 
     let signal: AbortSignal | undefined;
     if (options?.requestId) {
