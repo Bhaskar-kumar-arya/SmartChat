@@ -17,6 +17,7 @@ describe('AIService', () => {
   let mockKeyService: Mocked<IAIKeyService>
   let mockContactService: Mocked<IContactQueryService>
   let mockToolRegistry: Mocked<IToolRegistry & ISystemInstructionBuilder>
+  let mockMentionEnricher: Mocked<any> // IAIMentionEnricher
   let aiService: AIService
   let mockProvider: Mocked<IBaseAIProvider & IFullResponseProvider>
 
@@ -39,7 +40,13 @@ describe('AIService', () => {
       getToolDefinitions: vi.fn()
     } as any
 
-    aiService = new AIService(mockKeyService, mockContactService, mockToolRegistry)
+    mockMentionEnricher = {
+      enrichMentionsInline: vi.fn().mockImplementation(async (prompt, mentions) => {
+        return prompt.replace('@test', `<mentioned_chat jid="${mentions[0].jid}"><name>${mentions[0].name}</name></mentioned_chat>`)
+      })
+    }
+
+    aiService = new AIService(mockKeyService, mockContactService, mockToolRegistry, mockMentionEnricher)
 
     mockProvider = {
       canHandleModel: vi.fn().mockReturnValue(true),
@@ -75,7 +82,7 @@ describe('AIService', () => {
 
     expect(response).toBe('RESPONSE')
     expect(mockProvider.generateResponse).toHaveBeenCalledWith(
-      expect.stringContaining('Hello 123@s.whatsapp.net'),
+      expect.stringContaining('Hello <mentioned_chat jid="123@s.whatsapp.net"><name>test</name></mentioned_chat>'),
       expect.any(Array),
       expect.objectContaining({ systemPrompt: 'SYSTEM_PROMPT' }),
       undefined
