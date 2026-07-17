@@ -41,7 +41,7 @@ CONSTRAINTS:
     private messageActionService: IMessageActionService
   ) {}
 
-  async execute(args: Record<string, unknown>): Promise<unknown> {
+  async execute(args: Record<string, unknown>, _ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext): Promise<import('../services/ai/IToolRegistry').ToolResult> {
     const jid = args.jid as string | undefined;
     const text = args.text as string | undefined;
     const mentions = args.mentions as string[] | undefined;
@@ -53,8 +53,10 @@ CONSTRAINTS:
     await this.messageActionService.sendMessageWorkflow(sock, jid, text, undefined, mentions);
 
     return { 
-      success: true, 
-      detail: `Message sent successfully to ${jid}${mentions ? ` with ${mentions.length} mentions` : ''}` 
+      text: JSON.stringify({
+        success: true, 
+        detail: `Message sent successfully to ${jid}${mentions ? ` with ${mentions.length} mentions` : ''}` 
+      }, null, 2)
     };
   }
 }

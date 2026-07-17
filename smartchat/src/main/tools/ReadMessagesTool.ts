@@ -47,7 +47,8 @@ interface ChatRun {
  */
 export class ReadMessagesTool implements AITool {
   name = 'readMessages';
-  description = `Read formatted WhatsApp messages history.
+  get description() {
+    return `Read formatted WhatsApp messages history.
 
 CAN BE USED FOR:
 - Reading chat logs or messages when you need a clean, human-readable transcript.
@@ -72,7 +73,7 @@ CONSTRAINTS:
 - 'sql' mode is read-only. Modifications are rejected.
 
 FORMATTING BEHAVIOR:
-- The tool groups consecutive messages belonging to the same chat under a single header.
+${this.supportsCitations ? '- Each message starts with indexing ([N]).\n' : ''}- The tool groups consecutive messages belonging to the same chat under a single header.
 - To avoid highly fragmented output when retrieving messages across multiple chats (e.g., when querying by keywords or time range), it is recommended to sort by chat first, then chronologically (e.g., ORDER BY chatJid ASC, timestamp ASC), provided that order is acceptable for the task.
 - Use 'groupByChat: true' to automatically pre-group and sort all messages by chat before formatting, regardless of the original query order. This is ideal when the query mixes messages from multiple chats and you want a clean per-chat breakdown without having to sort in SQL.
 
@@ -83,7 +84,9 @@ EXAMPLES:
   { "sql": "SELECT id FROM Message WHERE timestamp >= CAST(strftime('%s', 'now', 'localtime', '-6 days', 'weekday 0', 'start of day', 'utc') AS INT)", "groupByChat": true }
 - To fetch all messages from this month across all chats:
   { "sql": "SELECT id FROM Message WHERE timestamp >= CAST(strftime('%s', 'now', 'localtime', 'start of month', 'utc') AS INT)", "groupByChat": true }`;
+  }
 
+  readonly supportsCitations = true;
   requiresPermission = true;
   parametersSchema = {
     type: 'object',
@@ -123,13 +126,13 @@ EXAMPLES:
     private readonly chatRepository: IChatRepository
   ) {}
 
-  async execute(args: Record<string, unknown>): Promise<string> {
+  async execute(args: Record<string, unknown>, ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext): Promise<import('../services/ai/IToolRegistry').ToolResult> {
     const { messagesToFormat, isJidMode, hasMore } = await this.getMessagesFromArgs(args);
     const groupByChat = args.groupByChat as boolean | undefined;
 
     if (messagesToFormat.length === 0) {
       const jid = args.jid as string | undefined;
-      return isJidMode ? `No messages found in chat ${jid}.` : 'No messages found.';
+      return isJidMode ? { text: `No messages found in chat ${jid}.` } : { text: 'No messages found.' };
     }
 
     let finalMessages = messagesToFormat;
@@ -139,7 +142,11 @@ EXAMPLES:
 
     const { nameMap, chatInfoMap } = await this.resolveNamesAndChats(finalMessages);
     const chatRuns = this.buildChatRuns(finalMessages, nameMap, chatInfoMap);
-    return this.formatChatRuns(chatRuns, isJidMode, hasMore, finalMessages, nameMap);
+    const text = this.formatChatRuns(chatRuns, isJidMode, hasMore, finalMessages, nameMap, ctx);
+    return {
+      text,
+      citations: ctx?.citationEmitter?.getEntries()
+    };
   }
 
   private async getMessagesFromArgs(args: Record<string, unknown>): Promise<{
@@ -292,7 +299,8 @@ EXAMPLES:
     isJidMode: boolean,
     hasMore: boolean,
     messagesToFormat: Message[],
-    nameMap: Map<string, string>
+    nameMap: Map<string, string>,
+    ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext
   ): string {
     let formattedResponse = '';
     
@@ -316,9 +324,9 @@ EXAMPLES:
 
     for (const run of chatRuns) {
       if (run.messages.length <= 1) {
-        formattedResponse += this.formatSingleMessageRun(run, nameMap);
+        formattedResponse += this.formatSingleMessageRun(run, nameMap, ctx);
       } else {
-        formattedResponse += this.formatMultiMessageRun(run, nameMap);
+        formattedResponse += this.formatMultiMessageRun(run, nameMap, ctx);
       }
     }
 
@@ -337,7 +345,7 @@ EXAMPLES:
     return date.toLocaleDateString(LOCALE_EN_US, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   }
 
-  private formatSingleMessageRun(run: ChatRun, nameMap: Map<string, string>): string {
+  private formatSingleMessageRun(run: ChatRun, nameMap: Map<string, string>, ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext): string {
     let response = '';
     for (const m of run.messages) {
       const senderLabel = this.getSenderLabel(m, run.isDM, nameMap);
@@ -354,12 +362,18 @@ EXAMPLES:
       const formattedContent = this.formatMessageContent(m, unwrapped);
       const replyContext = this.getReplyContextString(unwrapped, nameMap, run.isDM);
       
-      response += `[Chat: ${run.chatName} (${run.chatType})] [${dateTimeStr}] ${senderLabel}: ${replyContext}${formattedContent}\n`;
+      let citationStr = '';
+      if (ctx?.citationEmitter) {
+        const idx = ctx.citationEmitter.register({ type: 'message', chatJid: m.chatJid || KEY_UNKNOWN_CHAT, messageId: m.id });
+        citationStr = `[${idx}] `;
+      }
+      
+      response += `${citationStr}[Chat: ${run.chatName} (${run.chatType})] [${dateTimeStr}] ${senderLabel}: ${replyContext}${formattedContent}\n`;
     }
     return response;
   }
 
-  private formatMultiMessageRun(run: ChatRun, nameMap: Map<string, string>): string {
+  private formatMultiMessageRun(run: ChatRun, nameMap: Map<string, string>, ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext): string {
     let response = `=== Chat: ${run.chatName} (${run.chatType}) (${run.chatJid}) ===\n`;
 
     interface DateGroup {
@@ -425,7 +439,13 @@ EXAMPLES:
           const formattedContent = this.formatMessageContent(m, unwrapped);
           const replyContext = this.getReplyContextString(unwrapped, nameMap, run.isDM);
           
-          response += `  - [${timeStr}] ${replyContext}${formattedContent}\n`;
+          let citationStr = '';
+          if (ctx?.citationEmitter) {
+            const idx = ctx.citationEmitter.register({ type: 'message', chatJid: m.chatJid || KEY_UNKNOWN_CHAT, messageId: m.id });
+            citationStr = `[${idx}] `;
+          }
+          
+          response += `  - ${citationStr}[${timeStr}] ${replyContext}${formattedContent}\n`;
         }
       }
     }

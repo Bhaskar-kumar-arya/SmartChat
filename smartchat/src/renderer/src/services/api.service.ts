@@ -1,5 +1,6 @@
 import { ChatItem, MessageItem, SearchFilters, SearchResults, MessageReceiptInfo, PresenceUpdate, SelectedContext, NotificationPreferences } from '../types/chatTypes'
 import { AIChatMessage, AIChatOptions, ToolDefinition, ModelInfo, AIChatSessionItem, AIContextItem } from '../types/aiTypes'
+import { CitationEntity } from '../types/ai/citation.types'
 import { IAPIService } from './IAPIService'
 
 // This service wraps the window.api (Electron bridge) to provide a clean abstraction.
@@ -158,14 +159,23 @@ export const api: IAPIService = {
   abortAiChat: (channelId: string): Promise<boolean> =>
     window.api.abortAiChat(channelId),
 
-  executeTool: (toolName: string, args: Record<string, any>): Promise<any> =>
-    window.api.executeTool(toolName, args),
+  executeTool: (toolName: string, args: Record<string, any>, sessionId?: string | null): Promise<any> =>
+    window.api.executeTool(toolName, args, sessionId),
 
   getAiTools: (): Promise<ToolDefinition[]> =>
     window.api.getAiTools(),
 
   getAiModels: (): Promise<ModelInfo[]> =>
     window.api.getAiModels(),
+
+  resolveCitation: async (sessionId: string, index: number): Promise<CitationEntity | null> => {
+    return window.api.resolveCitation(sessionId, index)
+  },
+
+  resolveAllCitations: async (sessionId: string): Promise<ReadonlyMap<number, CitationEntity>> => {
+    const entries = await window.api.resolveAllCitations(sessionId)
+    return new Map(entries) as ReadonlyMap<number, CitationEntity>
+  },
 
   getAiOptions: (): Promise<AIChatOptions> =>
     window.api.getAiOptions(),

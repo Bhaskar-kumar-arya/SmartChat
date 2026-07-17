@@ -114,6 +114,16 @@ export default function ChatLayout() {
   }, [handleSelectChat, api])
 
   useEffect(() => {
+    const handler = (e: Event) => {
+      const { jid, targetMessageId } = (e as CustomEvent<{ jid: string; targetMessageId?: string }>).detail
+      const chatName = '' // ChatList resolves name from its own data
+      handleSelectChat(jid, chatName, null, targetMessageId ?? null)
+    }
+    window.addEventListener('smartchat:open-chat', handler)
+    return () => window.removeEventListener('smartchat:open-chat', handler)
+  }, [handleSelectChat])
+
+  useEffect(() => {
     if (!activeJid) return
     const unsubscribe = api.onChatUpdated((update) => {
       if (update.jid === activeJid) {

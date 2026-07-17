@@ -279,7 +279,7 @@ export class QueryDatabaseTool implements AITool {
 
   // ── Execution ─────────────────────────────────────────────────────────────────
 
-  async execute(args: unknown): Promise<unknown> {
+  async execute(args: unknown, _ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext): Promise<import('../services/ai/IToolRegistry').ToolResult> {
     if (!args || typeof args !== 'object') {
       throw new Error('Invalid arguments passed to QueryDatabaseTool');
     }
@@ -319,10 +319,12 @@ export class QueryDatabaseTool implements AITool {
     const explanationStr = typeof explanation === 'string' ? explanation : 'No explanation provided.';
 
     return {
-      explanation: explanationStr,
-      rowCount: serialized.length,
-      cappedAt: MAX_ROWS,
-      rows: serialized
+      text: JSON.stringify({
+        explanation: explanationStr,
+        rowCount: serialized.length,
+        cappedAt: MAX_ROWS,
+        rows: serialized
+      }, null, 2)
     };
   }
 }

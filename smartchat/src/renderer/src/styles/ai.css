@@ -109,3 +109,94 @@
   50% { opacity: 0.8; }
   100% { opacity: 0.4; }
 }
+
+/* ─── Citation Pills ─────────────────────────────────────────────── */
+
+.citation-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 0.75em;
+  font-weight: 500;
+  color: var(--wa-text-primary);
+  cursor: pointer;
+  margin: 0 4px;
+  transition: all 0.2s ease;
+  vertical-align: middle;
+  text-decoration: none;
+  line-height: 1.2;
+}
+
+.citation-pill:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.citation-pill:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.citation-pill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Variants */
+.citation-pill--message {
+  color: var(--wa-accent-primary, #00a884);
+  border-color: rgba(0, 168, 132, 0.3);
+  background: rgba(0, 168, 132, 0.1);
+}
+
+.citation-pill--message:hover:not(:disabled) {
+  background: rgba(0, 168, 132, 0.2);
+  border-color: rgba(0, 168, 132, 0.4);
+}
+
+.citation-pill--chat {
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.citation-pill--chat:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.citation-pill--file {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.citation-pill--file:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.citation-pill--loading {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.citation-pill__spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: citation-spin 1s linear infinite;
+}
+
+@keyframes citation-spin {
+  to { transform: rotate(360deg); }
+}

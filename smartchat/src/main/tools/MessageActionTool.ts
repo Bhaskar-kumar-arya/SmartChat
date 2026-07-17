@@ -59,7 +59,7 @@ WHAT YOU RECEIVE BACK:
     private messageActionService: IMessageActionService
   ) { }
 
-  async execute(args: Record<string, unknown>): Promise<unknown> {
+  async execute(args: Record<string, unknown>, _ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext): Promise<import('../services/ai/IToolRegistry').ToolResult> {
     const action = args.action as string | undefined;
     const messageId = args.messageId as string | undefined;
     const newText = args.newText as string | undefined;
@@ -74,25 +74,25 @@ WHAT YOU RECEIVE BACK:
 
     if (action === 'delete') {
       await this.messageActionService.deleteMessage(sock, messageId);
-      return { messageId };
+      return { text: JSON.stringify({ messageId }) };
     } else if (action === 'edit') {
       if (!newText) {
         throw new Error('Missing required argument: newText is required for editing a message');
       }
       await this.messageActionService.editMessage(sock, messageId, newText);
-      return { messageId };
+      return { text: JSON.stringify({ messageId }) };
     } else if (action === 'forward') {
       if (!targetJids || targetJids.length === 0) {
         throw new Error('Missing required argument: targetJids is required for forwarding a message');
       }
       const res = await this.messageActionService.forwardMessage(sock, messageId, targetJids);
-      return { results: res.results };
+      return { text: JSON.stringify({ results: res.results }) };
     } else if (action === 'react') {
       if (reaction === undefined) {
         throw new Error('Missing required argument: reaction is required for reacting to a message');
       }
       await this.messageActionService.reactToMessage(sock, messageId, reaction);
-      return { messageId };
+      return { text: JSON.stringify({ messageId }) };
     } else {
       throw new Error(`Unknown action: ${action}`);
     }

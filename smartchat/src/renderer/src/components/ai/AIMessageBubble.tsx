@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -11,15 +11,16 @@ function escapeRe(s: string) {
 }
 
 function renderWithMentions(content: string, mentions: SelectedContext[]): React.ReactNode {
+  const urlTransform = (url: string) => url.startsWith('cite:') ? url : defaultUrlTransform(url);
   if (!mentions || mentions.length === 0) {
-    return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{content}</ReactMarkdown>
+    return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} urlTransform={urlTransform}>{content}</ReactMarkdown>
   }
   const sorted = [...mentions].sort((a, b) => (b.name?.length ?? 0) - (a.name?.length ?? 0))
   const pattern = sorted.map((m) => escapeRe(`@${m.name}`)).join('|')
   const regex = new RegExp(`(${pattern})`, 'g')
   const parts = content.split(regex)
   // If no splits happened, just use markdown
-  if (parts.length === 1) return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{content}</ReactMarkdown>
+  if (parts.length === 1) return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} urlTransform={(url) => url.startsWith('cite:') ? url : defaultUrlTransform(url)}>{content}</ReactMarkdown>
 
   return (
     <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
@@ -36,6 +37,7 @@ import AIToolCard from './AIToolCard'
 import AISmartInput from './AISmartInput'
 import { AIChatMessage, ToolDefinition } from '../../types/aiTypes'
 import { SelectedContext, ChatItem } from '../../types/chatTypes'
+import { useCitationMarkdownComponents } from './CitationMarkdownRenderer'
 
 interface AIMessageBubbleProps {
   message: AIChatMessage
@@ -47,6 +49,7 @@ interface AIMessageBubbleProps {
   onReRun?: (messageId: string) => void
   onSave?: (messageId: string, newContent: string, mentions: SelectedContext[]) => void
   chatList: ChatItem[]
+  sessionId?: string
 }
 
 const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({ 
@@ -58,10 +61,12 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
   onRetry,
   onReRun,
   onSave,
-  chatList
+  chatList,
+  sessionId
 }) => {
   const [thoughtExpanded, setThoughtExpanded] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const citationComponents = useCitationMarkdownComponents(sessionId ?? null)
 
   if (message.isHidden) return null
 
@@ -85,9 +90,11 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
   }
 
   // Clean the display content: strip thought/think and <tool_call> blocks
+  // Also sanitize malformed AI citations (e.g., [](cite:12] -> [](cite:12))
   const displayContent = message.content
     .replace(/<(thought|think)>[\s\S]*?<\/\1>/g, '')
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .replace(/(\[[^\]]*\]\(cite:[^\])]+)\]/g, '$1)')
     .trim()
 
   return (
@@ -119,7 +126,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
             </button>
             {thoughtExpanded && (
               <div className="ai-thought-content">
-                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{thoughtContent}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} urlTransform={(url) => url.startsWith('cite:') ? url : defaultUrlTransform(url)}>{thoughtContent}</ReactMarkdown>
               </div>
             )}
           </div>
@@ -181,7 +188,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
             {displayContent && (
               message.role === 'user' && message.mentions && message.mentions.length > 0
                 ? renderWithMentions(displayContent, message.mentions)
-                : <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{displayContent}</ReactMarkdown>
+                : <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={citationComponents} urlTransform={(url) => url.startsWith('cite:') ? url : defaultUrlTransform(url)}>{displayContent}</ReactMarkdown>
             )}
 
             {message.role === 'user' && (

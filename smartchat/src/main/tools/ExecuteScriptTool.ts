@@ -108,7 +108,7 @@ export class ExecuteScriptTool implements AITool {
 
   // ── Execution ──────────────────────────────────────────────────────────────
 
-  async execute(args: unknown): Promise<unknown> {
+  async execute(args: unknown, ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext): Promise<import('../services/ai/IToolRegistry').ToolResult> {
     if (!args || typeof args !== 'object') {
       throw new Error('[ExecuteScriptTool] Invalid arguments passed to ExecuteScriptTool');
     }
@@ -126,7 +126,8 @@ export class ExecuteScriptTool implements AITool {
       () => toolCallCount,
       () => {
         toolCallCount++;
-      }
+      },
+      ctx
     );
 
     const context = vm.createContext(sandbox);
@@ -142,11 +143,14 @@ export class ExecuteScriptTool implements AITool {
     } catch (syntaxErr: unknown) {
       const syntaxErrMsg = syntaxErr instanceof Error ? syntaxErr.message : String(syntaxErr);
       return {
-        explanation,
-        success: false,
-        error: `Syntax error: ${syntaxErrMsg}`,
-        logs,
-        toolCallCount
+        text: JSON.stringify({
+          explanation,
+          success: false,
+          error: `Syntax error: ${syntaxErrMsg}`,
+          logs,
+          toolCallCount
+        }, null, 2),
+        citations: ctx?.citationEmitter?.getEntries()
       };
     }
 
@@ -161,28 +165,35 @@ export class ExecuteScriptTool implements AITool {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       return {
-        explanation,
-        success: false,
-        timedOut,
-        error: errMsg,
-        logs,
-        toolCallCount
+        text: JSON.stringify({
+          explanation,
+          success: false,
+          timedOut,
+          error: errMsg,
+          logs,
+          toolCallCount
+        }, null, 2),
+        citations: ctx?.citationEmitter?.getEntries()
       };
     }
 
     return {
-      explanation,
-      success: true,
-      result: result !== undefined ? result : MSG_NO_RETURN_VALUE,
-      logs,
-      toolCallCount
+      text: JSON.stringify({
+        explanation,
+        success: true,
+        result: result !== undefined ? result : MSG_NO_RETURN_VALUE,
+        logs,
+        toolCallCount
+      }, null, 2),
+      citations: ctx?.citationEmitter?.getEntries()
     };
   }
 
   private buildSandbox(
     logs: string[],
     getCallCount: () => number,
-    incrementCallCount: () => void
+    incrementCallCount: () => void,
+    ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext
   ): Record<string, unknown> {
     const sandbox: Record<string, unknown> = {
       // Safe JS built-ins only
@@ -228,7 +239,17 @@ export class ExecuteScriptTool implements AITool {
         }
         incrementCallCount();
         logs.push(`[tool:${tool.name}] call #${getCallCount()}`);
-        return tool.execute(toolArgs as Record<string, unknown>);
+        const result = await tool.execute(toolArgs as Record<string, unknown>, ctx);
+        
+        // Unwrap ToolResult for the script environment if it's a JSON string
+        if (result && typeof result.text === 'string') {
+          try {
+            return JSON.parse(result.text);
+          } catch {
+            return result.text;
+          }
+        }
+        return result;
       };
     }
 

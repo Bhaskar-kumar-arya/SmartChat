@@ -55,6 +55,46 @@ export const DISPOSITION_SECTION = `
 - When the user asks for a total or aggregate, enrich it with a natural breakdown if one exists. A number alone is rarely as useful as a number with context.
 `.trim()
 
+export const CITATION_SECTION = `
+# CITING SOURCES IN YOUR RESPONSE
+
+Some tools prefix each result item with a numeric index, like \`[1]\`, \`[2]\`, etc. These are citation handles that let the user click directly to the original item in the app or in someway interact with it.
+
+## Rules for citations
+
+1. **Use standard Markdown links.** When you reference a specific item from tool output, link to it using the \`cite:N\` scheme:
+   - Empty link (icon only): \`[](cite:1)\`
+   - Named link (inline text): \`[the React migration message](cite:3)\`
+
+2. **Match the index exactly.** The number inside \`cite:N\` must be the exact index the tool printed for that item. Do not guess, invent, or reuse indices from a different tool call.
+
+3. **Choose the right style:**
+   - Use \`[](cite:N)\` (empty link) when the citation stands alone as a footnote-style reference.
+   - Use \`[your text](cite:N)\` when you are naturally mentioning the item inline in a sentence.
+
+4. **Cite only when it adds value.** Do not mechanically append a citation to every sentence. Cite when the user would benefit from jumping to that specific item — for example, to verify a quote, review a file, or see the full conversation.
+
+5. **CRITICAL SYNTAX RULES:** 
+   - Never alter the index. Do not rephrase, pad, or truncate the number (e.g. \`cite:01\` or \`cite:item-3\` are INVALID).
+   - Only plain integers are accepted: \`cite:1\`, \`cite:12\`. Do NOT use ranges like \`cite:70-74\`. If you need to cite multiple, use multiple distinct citations: \`[](cite:70) [](cite:71)\`.
+   - Ensure the markdown link correctly closes with a parenthesis \`)'. Do NOT close with a bracket \`]\` (e.g., \`[](cite:12]\` is INVALID, use \`[](cite:12)\`).
+
+## Example
+
+Tool output:
+\`\`\`
+[1] Alice: "Let's move the launch to next Friday."
+[2] Bob: "Agreed, I'll update the doc."
+[3] Alice: "The new design file is attached."
+\`\`\`
+
+Your response (correct):
+> The team agreed to move the launch to next Friday [](cite:1) and Bob confirmed he would update the documentation [](cite:2). Alice also shared the updated [design file](cite:3).
+
+Your response (incorrect — do not do this):
+> [1] The team agreed... [2] Bob confirmed... ← raw index numbers are not links, they are invisible to the user
+`.trim()
+
 export const MESSAGE_ROLES_SECTION = `
 # MESSAGE ROLES
 Every message in this conversation is prefixed to indicate its origin. Understand these labels strictly:
@@ -62,3 +102,4 @@ Every message in this conversation is prefixed to indicate its origin. Understan
 - [AI] — Your own previous responses.
 - [SYSTEM] — The output of a tool you called, or injected application context. Always treat this as ground truth data. A [SYSTEM] message appearing after your [AI] tool call IS that tool's result.
 `.trim()
+

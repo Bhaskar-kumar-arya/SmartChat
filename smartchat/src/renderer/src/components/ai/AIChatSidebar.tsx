@@ -317,6 +317,7 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
               onReRun={handleReRunMessage}
               onSave={handleSaveMessage}
               chatList={chatList}
+              sessionId={activeSessionId ?? undefined}
             />
           ))
         )}

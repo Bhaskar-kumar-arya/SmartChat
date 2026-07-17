@@ -309,10 +309,15 @@ function registerAIServiceHandlers(
     })
   })
 
-  ipcMain.handle('execute-tool', async (_event, toolName: string, args: Record<string, unknown> | undefined) => {
+  ipcMain.handle('execute-tool', async (_event, toolName: string, args: Record<string, unknown> | undefined, sessionId?: string | null) => {
     const tool = services.toolRegistry.getTool(toolName);
     if (!tool) throw new Error(`[IPC] Tool ${toolName} not found`);
-    return await tool.execute(args || {});
+    const ctx = sessionId ? { citationEmitter: await services.citationSessionManager.createEmitter(sessionId) } : undefined;
+    const result = await tool.execute(args || {}, ctx);
+    if (sessionId && result.citations && result.citations.size > 0) {
+      await services.citationSessionManager.persist(sessionId, result.citations);
+    }
+    return result;
   });
 
   ipcMain.handle('get-ai-tools', async () => {
@@ -446,6 +451,14 @@ function registerAIChatSessionHandlers(services: ServiceContainer): void {
   ipcMain.handle('duplicate-exported-ai-chat', async (_event, sessionId: string) => {
     return await services.aiChatExportService.duplicateExportedChat(sessionId)
   })
+
+  ipcMain.handle('citation:resolve', async (_event, sessionId: string, citationIndex: number) => {
+    return await services.citationSessionManager.resolve(sessionId, citationIndex);
+  });
+
+  ipcMain.handle('citation:resolveAll', async (_event, sessionId: string) => {
+    return await services.citationSessionManager.resolveAll(sessionId);
+  });
 }
 
 function registerNotificationHandlers(

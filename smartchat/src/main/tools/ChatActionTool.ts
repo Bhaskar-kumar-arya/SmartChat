@@ -1,4 +1,4 @@
-import { AITool } from '../services/ai/IToolRegistry'
+import { AITool, ToolExecutionContext, ToolResult } from '../services/ai/IToolRegistry'
 import { IChatActionService } from '../services/chats/IChatActionService'
 import { WASocket } from '../services/whatsapp/types'
 import { IWAEventBus } from '../services/whatsapp/IWAEventBus'
@@ -52,7 +52,7 @@ WHAT YOU RECEIVE BACK:
     private readonly getBus: () => IWAEventBus | null
   ) {}
 
-  async execute(args: Record<string, unknown>): Promise<unknown> {
+  async execute(args: Record<string, unknown>, _ctx?: ToolExecutionContext): Promise<ToolResult> {
     const action = args.action as string
     const jid = args.jid as string
     const duration = args.duration as string | undefined
@@ -106,7 +106,7 @@ WHAT YOU RECEIVE BACK:
         throw new Error(`Unknown action: ${action}`)
     }
 
-    return res
+    return { text: JSON.stringify(res) }
   }
 
   private notifyFrontendChatUpdate(jid: string, update: ChatUpdatePayload): void {

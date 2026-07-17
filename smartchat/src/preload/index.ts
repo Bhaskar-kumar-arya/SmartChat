@@ -230,14 +230,20 @@ const api = {
   getChatContext: (jid: string) => {
     return ipcRenderer.invoke('get-chat-context', jid)
   },
-  executeTool: (toolName: string, args: Record<string, unknown>) => {
-    return ipcRenderer.invoke('execute-tool', toolName, args)
+  executeTool: (toolName: string, args: Record<string, unknown>, sessionId?: string | null) => {
+    return ipcRenderer.invoke('execute-tool', toolName, args, sessionId)
   },
   getAiTools: () => {
     return ipcRenderer.invoke('get-ai-tools')
   },
   getAiModels: () => {
     return ipcRenderer.invoke('get-ai-models')
+  },
+  resolveCitation: (sessionId: string, index: number) => {
+    return ipcRenderer.invoke('citation:resolve', sessionId, index)
+  },
+  resolveAllCitations: (sessionId: string) => {
+    return ipcRenderer.invoke('citation:resolveAll', sessionId)
   },
   getProviderKeys: () => {
     return ipcRenderer.invoke('get-provider-keys')

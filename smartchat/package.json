@@ -15,7 +15,7 @@
     "dev": "electron-vite dev",
     "test": "vitest",
     "test:rebuild:node": "npm rebuild better-sqlite3",
-    "test:rebuild:electron": "npx @electron/rebuild --force --build-from-source -v 39.8.2",
+    "test:rebuild:electron": "npx @electron/rebuild --force -v 39.8.2",
     "test:run": "npm run test:rebuild:node && vitest run",
     "test:run:all": "npm run test:rebuild:node && vitest run --fileParallelism=false --maxWorkers=1",
     "//test_instruction_1_single": "To run a single test: 'npm run test:run -- <file-path>'",

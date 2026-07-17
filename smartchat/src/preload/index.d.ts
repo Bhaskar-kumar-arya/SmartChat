@@ -16,6 +16,7 @@ import {
   MessageReceiptInfo,
   NotificationPreferences
 } from '../renderer/src/types'
+import { CitationEntity } from '../renderer/src/types/ai/citation.types'
 
 declare global {
   interface Window {
@@ -95,9 +96,11 @@ declare global {
       abortAiChat: (channelId: string) => Promise<boolean>
 
       getChatContext: (jid: string) => Promise<MessageItem[]>
-      executeTool: (toolName: string, args: Record<string, any>) => Promise<any>
+      executeTool: (toolName: string, args: Record<string, any>, sessionId?: string | null) => Promise<any>
       getAiTools: () => Promise<ToolDefinition[]>
       getAiModels: () => Promise<ModelInfo[]>
+      resolveCitation: (sessionId: string, index: number) => Promise<CitationEntity | null>
+      resolveAllCitations: (sessionId: string) => Promise<[number, CitationEntity][]>
       getProviderKeys: () => Promise<Record<string, string>>
       setProviderKey: (provider: string, key: string) => Promise<boolean>
 

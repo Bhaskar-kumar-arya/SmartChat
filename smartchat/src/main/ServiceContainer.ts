@@ -139,6 +139,8 @@ import { DMEnrichmentStrategy } from './services/ai/mentions/strategies/DMEnrich
 import { GroupEnrichmentStrategy } from './services/ai/mentions/strategies/GroupEnrichmentStrategy'
 import { CommunityEnrichmentStrategy } from './services/ai/mentions/strategies/CommunityEnrichmentStrategy'
 import { DefaultEnrichmentStrategy } from './services/ai/mentions/strategies/DefaultEnrichmentStrategy'
+import { CitationSessionManager } from './services/ai/citations/CitationSessionManager'
+import { ICitationSessionManager } from './services/ai/citations/ICitationSessionManager'
 
 
 class ElectronWindowEmitter implements IWindowEventEmitter {
@@ -302,6 +304,7 @@ export function createServices(
   const aiMentionEnricher = new AIMentionEnricher(chatRepository, contactService, aiMentionStrategies)
   const aiService = new AIService(aiKeyService, contactService, toolRegistry, aiMentionEnricher)
   
+  const citationSessionManager = new CitationSessionManager(prisma)
   const aiChatSessionService = new AIChatSessionService(prisma)
   const aiChatExportService = new AIChatExportService()
   const apiConfigProvider: IAPIConfigProvider = new APIConfigProvider(app.getPath('userData'))
@@ -364,6 +367,7 @@ export function createServices(
     searchService,
     toolRegistry,
     aiService,
+    citationSessionManager,
     aiChatSessionService,
     aiChatExportService,
     notificationService,
@@ -420,6 +424,7 @@ export type ServiceContainer = {
   searchService: ISearchService
   toolRegistry: IToolRegistry
   aiService: IAIService
+  citationSessionManager: ICitationSessionManager
   aiChatSessionService: IAIChatSessionService
   aiChatExportService: IAIChatExportService
   notificationService: INotificationService

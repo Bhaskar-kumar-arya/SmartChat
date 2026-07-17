@@ -173,7 +173,7 @@ export function useAIStream({
     setExecutingToolId(messageId)
     let resultPayload = ''
     try {
-      const result = await api.executeTool(toolName, args)
+      const result = await api.executeTool(toolName, args, activeSessionIdRef.current)
       resultPayload = JSON.stringify(result, null, 2)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)

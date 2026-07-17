@@ -16,6 +16,7 @@ import {
   AIChatSessionItem,
   AIContextItem
 } from '../types/aiTypes'
+import { CitationEntity } from '../types/ai/citation.types'
 
 export interface IAPIService {
   getChats(page: number, limit: number): Promise<ChatItem[]>
@@ -97,9 +98,11 @@ export interface IAPIService {
     onError: (err: Error) => void
   ): string
   abortAiChat(channelId: string): Promise<boolean>
-  executeTool(toolName: string, args: Record<string, any>): Promise<any>
+  executeTool(toolName: string, args: Record<string, any>, sessionId?: string | null): Promise<any>
   getAiTools(): Promise<ToolDefinition[]>
   getAiModels(): Promise<ModelInfo[]>
+  resolveCitation(sessionId: string, index: number): Promise<CitationEntity | null>
+  resolveAllCitations(sessionId: string): Promise<ReadonlyMap<number, CitationEntity>>
   getAiOptions(): Promise<AIChatOptions>
   setAiOptions(options: AIChatOptions): Promise<void>
   createAiSession(title: string, modelId?: string): Promise<AIChatSessionItem>

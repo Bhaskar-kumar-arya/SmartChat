@@ -6,7 +6,8 @@ import {
   ROLE_SECTION,
   WHATSAPP_CONTEXT_SECTION,
   DISPOSITION_SECTION,
-  MESSAGE_ROLES_SECTION
+  MESSAGE_ROLES_SECTION,
+  CITATION_SECTION
 } from './prompts/SystemPromptContent'
 
 export class SystemPromptBuilder implements ISystemPromptBuilder {
@@ -38,6 +39,9 @@ export class SystemPromptBuilder implements ISystemPromptBuilder {
     const strategy = protocolMode === 'react' ? this.reactStrategy : this.standardStrategy
     const protocolBlock = strategy.getProtocolBlock()
 
+    const hasCitationTools = tools.some(t => t.supportsCitations === true)
+    const citationBlock = hasCitationTools ? `\n\n${CITATION_SECTION}` : ''
+
     return `
 ${ROLE_SECTION}
 
@@ -54,7 +58,7 @@ ${identitySection}
 # YOUR TOOLS
 You have access to a set of registered tools. Each tool's description tells you exactly when, how, and why to use it. Only use tools that are listed.
 
-${formattedTools}
+${formattedTools}${citationBlock}
 
 ${protocolBlock}
 `.trim()
