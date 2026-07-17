@@ -273,7 +273,28 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     handleInputChange(plainText, caret)
   }
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+  const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const files = Array.from(e.clipboardData.files)
+    if (files.length > 0) {
+      e.preventDefault()
+      try {
+        const filePaths: string[] = []
+        for (const file of files) {
+          const arrayBuffer = await file.arrayBuffer()
+          const fileName = file.name || `pasted_image_${Date.now()}.png`
+          const safeFileName = `pasted_${Date.now()}_${fileName}`
+          const filePath = await api.saveTempFile(arrayBuffer, safeFileName)
+          filePaths.push(filePath)
+        }
+        if (filePaths.length > 0 && onAttachFiles) {
+          onAttachFiles(filePaths)
+        }
+      } catch (err) {
+        console.error('Failed to paste files:', err)
+      }
+      return
+    }
+
     e.preventDefault()
     const pastedText = e.clipboardData.getData('text/plain')
     if (!pastedText) return
