@@ -62,6 +62,22 @@ describe('SystemPromptBuilder', () => {
     expect(result).toContain('lid_123')
     expect(result).toContain('phone@s.whatsapp.net')
     expect(result).toContain('linked@lid')
+    expect(result).not.toContain('CITATION GUIDELINES')
+  })
+
+  it('should include citation instructions when a tool supports citations', () => {
+    const tools: AITool[] = [{
+      name: 'test_tool',
+      description: 'A test tool',
+      parametersSchema: { type: 'object', properties: {} },
+      requiresPermission: false,
+      supportsCitations: true,
+      execute: vi.fn() as any
+    }]
+    const result = builder.build(tools, 'standard')
+    
+    expect(result).toContain('CITING SOURCES IN YOUR RESPONSE')
+    expect(result).toContain('[](cite:N)')
   })
 
   it('should format standard strategy prompt without user details', () => {

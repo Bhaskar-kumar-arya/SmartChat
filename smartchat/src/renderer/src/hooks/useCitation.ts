@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useAPI } from '../context/APIContext'
 import { CitationEntity } from '../types/ai/citation.types'
 import { useCitationActions } from './useCitationActions'
