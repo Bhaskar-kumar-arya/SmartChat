@@ -42,7 +42,7 @@ export default function ChatLayout() {
     sendMediaMessage,
     editMessage,
     deleteMessage
-  } = useMessages(activeJid)
+  } = useMessages(activeJid, targetMessageId)
 
   const { getActivePresence } = usePresence()
 
@@ -115,13 +115,21 @@ export default function ChatLayout() {
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const { jid, targetMessageId } = (e as CustomEvent<{ jid: string; targetMessageId?: string }>).detail
+      const { jid, targetMessageId: newTarget } = (e as CustomEvent<{ jid: string; targetMessageId?: string }>).detail
       const chatName = '' // ChatList resolves name from its own data
-      handleSelectChat(jid, chatName, null, targetMessageId ?? null)
+      
+      // If we are already in this chat and just need to jump to a message
+      if (activeJid === jid && newTarget) {
+        jumpToMessage(newTarget).then(() => {
+          setTargetMessageId(newTarget)
+        })
+      } else {
+        handleSelectChat(jid, chatName, null, newTarget ?? null)
+      }
     }
     window.addEventListener('smartchat:open-chat', handler)
     return () => window.removeEventListener('smartchat:open-chat', handler)
-  }, [handleSelectChat])
+  }, [handleSelectChat, activeJid, jumpToMessage])
 
   useEffect(() => {
     if (!activeJid) return

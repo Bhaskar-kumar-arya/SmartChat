@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAPI } from '../../../context/APIContext'
 import { MessageItem, ReactionItem } from '../../../types/chatTypes'
 import { isSameJid } from '../../../utils/jidUtils'
@@ -9,9 +9,15 @@ import { isSameJid } from '../../../utils/jidUtils'
  * and media download state.
  * This satisfies the Single Responsibility Principle.
  */
-export const useMessages = (activeJid: string | null) => {
+export const useMessages = (activeJid: string | null, initialTargetId?: string | null) => {
   const api = useAPI()
   const [messages, setMessages] = useState<MessageItem[]>([])
+  const messagesRef = useRef<MessageItem[]>([])
+  
+  // Keep ref in sync without triggering hook dependencies
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
   const [loading, setLoading] = useState(false)
   const [isJumping, setIsJumping] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -36,13 +42,38 @@ export const useMessages = (activeJid: string | null) => {
     }
   }, [])
 
-  useEffect(() => {
-    if (activeJid) {
-      loadInitialMessages(activeJid)
-    } else {
-      setMessages([])
+  const performJump = useCallback(async (jid: string, messageId: string) => {
+    setIsJumping(true)
+    try {
+      const msgs = await api.getMessagesAround(jid, messageId)
+      setMessages(msgs)
+      setCurrentPage(1)
+      setHasMore(true)
+    } catch (err) {
+      console.error('[useMessages] performJump failed, falling back:', err)
+      await loadInitialMessages(jid)
+    } finally {
+      setIsJumping(false)
     }
-  }, [activeJid, loadInitialMessages])
+  }, [api, loadInitialMessages])
+
+  const lastActiveJid = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (activeJid !== lastActiveJid.current) {
+      lastActiveJid.current = activeJid
+      
+      if (activeJid) {
+        if (initialTargetId) {
+          performJump(activeJid, initialTargetId)
+        } else {
+          loadInitialMessages(activeJid)
+        }
+      } else {
+        setMessages([])
+      }
+    }
+  }, [activeJid, initialTargetId, performJump, loadInitialMessages])
 
   const loadMore = useCallback(async () => {
     if (!activeJid || !hasMore || loading) return 0
@@ -70,19 +101,15 @@ export const useMessages = (activeJid: string | null) => {
    */
   const jumpToMessage = useCallback(async (messageId: string) => {
     if (!activeJid) return
-    setIsJumping(true)
-    try {
-      const msgs = await api.getMessagesAround(activeJid, messageId)
-      setMessages(msgs)
-      setCurrentPage(1)
-      setHasMore(true)
-    } catch (err) {
-      console.error('[useMessages] jumpToMessage failed, falling back:', err)
-      await loadInitialMessages(activeJid)
-    } finally {
-      setIsJumping(false)
+    
+    // Optimization: If the message is already loaded in the DOM, 
+    // skip the backend fetch and just let the UI scroll to it.
+    if (messagesRef.current.some(m => m.id === messageId)) {
+      return
     }
-  }, [activeJid, loadInitialMessages])
+    
+    await performJump(activeJid, messageId)
+  }, [activeJid, performJump])
 
   const handleDownloadMedia = async (msgId: string) => {
     try {
