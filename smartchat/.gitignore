@@ -15,3 +15,5 @@ venv/
 /wiki
 /dev_only
 .env
+/train/generated_threads.json
+*.tsbuildinfo
