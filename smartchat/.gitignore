@@ -14,3 +14,4 @@ venv/
 /scripts/node_modules
 /wiki
 /dev_only
+.env
