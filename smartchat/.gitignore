@@ -11,6 +11,8 @@ venv/
 /src/main/models
 /prisma/dev.db 
 /prisma/dev.db-journal
+/prisma/dev.db-shm
+/prisma/dev.db-wal
 /scripts/node_modules
 /wiki
 /dev_only
