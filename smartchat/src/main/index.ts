@@ -28,6 +28,8 @@ import { ExtensionHost } from './extensions/host/ExtensionHost'
 import { ExtensionSchedulerService } from './extensions/scheduler/ExtensionSchedulerService'
 import { SchedulerCapabilityProvider } from './extensions/capabilities/providers/SchedulerCapabilityProvider'
 import { ToolCapabilityProvider } from './extensions/capabilities/providers/ToolCapabilityProvider'
+import { ContactsCapabilityProvider } from './extensions/capabilities/providers/ContactsCapabilityProvider'
+import { ChatsCapabilityProvider } from './extensions/capabilities/providers/ChatsCapabilityProvider'
 
 function getLogFile(): string {
   try {
@@ -183,6 +185,8 @@ app.whenReady().then(() => {
   extensionRegistry.register('events', new EventCapabilityProvider(eventBridge))
   extensionRegistry.register('scheduler', new SchedulerCapabilityProvider(extensionSchedulerService))
   extensionRegistry.register('tools', new ToolCapabilityProvider(services.toolRegistry, (extId) => logProvider.build({} as any, extId)))
+  extensionRegistry.register('contacts', new ContactsCapabilityProvider(services.contactService))
+  extensionRegistry.register('chats', new ChatsCapabilityProvider(services.chatService))
   
   const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService)
   extensionHost.loadAll().catch(err => logMain('[Main] Failed to load extensions', err))

@@ -51,6 +51,14 @@ export interface IExtensionToolRegisterAPI {
 
 export type IExtensionToolAPI = Partial<IExtensionToolCallAPI & IExtensionToolRegisterAPI>;
 
+export interface IExtensionContactsAPI {
+  getSelfJid(): Promise<string | null>
+}
+
+export interface IExtensionChatsAPI {
+  list(limit?: number): Promise<any[]>
+}
+
 export interface ExtensionContext {
   readonly extensionId: string
   readonly manifest: ExtensionManifest
@@ -63,4 +71,6 @@ export interface ExtensionContext {
   readonly events?: IExtensionEventAPI
   readonly scheduler?: IExtensionSchedulerAPI
   readonly tools?: IExtensionToolAPI
+  readonly contacts?: IExtensionContactsAPI
+  readonly chats?: IExtensionChatsAPI
 }
