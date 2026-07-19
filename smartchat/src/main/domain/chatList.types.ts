@@ -19,4 +19,6 @@ export interface ChatListEntry {
   lastMessageTargetType?: string | null
   lastMessageTargetText?: string | null
   lastMessageReactionText?: string | null
+  source?: 'whatsapp' | 'extension'
+  extensionId?: string
 }

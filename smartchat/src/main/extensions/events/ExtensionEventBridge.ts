@@ -167,4 +167,15 @@ export class ExtensionEventBridge implements IExtensionEventBridge {
       }
     }
   }
+
+  public emitToExtension<K extends ExtensionEventName>(extensionId: string, event: K, payload: ExtensionEventMap[K]): void {
+    const list = this.subscribers.get(extensionId)
+    if (list) {
+      for (const sub of list) {
+        if (sub.event === event) {
+          Promise.resolve(sub.handler(payload)).catch(console.error)
+        }
+      }
+    }
+  }
 }

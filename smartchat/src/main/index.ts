@@ -31,7 +31,11 @@ import { ToolCapabilityProvider } from './extensions/capabilities/providers/Tool
 import { ContactsCapabilityProvider } from './extensions/capabilities/providers/ContactsCapabilityProvider'
 import { ChatsCapabilityProvider } from './extensions/capabilities/providers/ChatsCapabilityProvider'
 import { UICapabilityProvider } from './extensions/capabilities/providers/UICapabilityProvider'
-
+import { DedicatedChatRepository } from './extensions/dedicatedChat/DedicatedChatRepository'
+import { DedicatedChatSessionManager } from './extensions/dedicatedChat/DedicatedChatSessionManager'
+import { VirtualChatProvider } from './extensions/virtualChat/VirtualChatProvider'
+import { DedicatedChatCapabilityProvider } from './extensions/capabilities/providers/DedicatedChatCapabilityProvider'
+import { registerExtensionIpcHandlers } from './extensions/ipc'
 function getLogFile(): string {
   try {
     const logDir = app.isPackaged
@@ -190,7 +194,16 @@ app.whenReady().then(() => {
   extensionRegistry.register('chats', new ChatsCapabilityProvider(services.chatService))
   extensionRegistry.register('ui', new UICapabilityProvider(services.notificationService, () => mainWindow))
   
-  const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService)
+  const chatRepo = new DedicatedChatRepository(prisma)
+  const sessionManager = new DedicatedChatSessionManager(chatRepo, eventBridge, () => mainWindow)
+  const virtualChatProv = new VirtualChatProvider(services.chatRepository)
+  
+  extensionRegistry.register('dedicatedChat', new DedicatedChatCapabilityProvider(chatRepo, () => mainWindow))
+  
+  const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService, virtualChatProv)
+  
+  registerExtensionIpcHandlers(extensionHost, sessionManager, chatRepo)
+
   extensionHost.loadAll().catch(err => logMain('[Main] Failed to load extensions', err))
 
   // Initialize Tray Service

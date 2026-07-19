@@ -257,4 +257,15 @@ export class ChatRepository implements IChatRepository {
       console.warn('[ChatRepository] Failed to bulk-create chats:', err)
     })
   }
+
+  /**
+   * Delete a chat record.
+   */
+  async deleteChat(jid: string): Promise<void> {
+    await this.prisma.chat.delete({
+      where: { jid }
+    }).catch(() => {
+      // Ignore error if chat doesn't exist
+    })
+  }
 }

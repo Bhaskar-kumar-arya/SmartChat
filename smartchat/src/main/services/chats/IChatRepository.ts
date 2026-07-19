@@ -38,6 +38,7 @@ export interface IChatWriteRepository {
   incrementUnread(jid: string, timestamp: bigint, amount?: number): Promise<Chat>
   updateTimestamp(jid: string, timestamp: bigint): Promise<Chat>
   bulkCreateChats(chats: Array<{ jid: string; type: string }>): Promise<void>
+  deleteChat(jid: string): Promise<void>
 }
 
 export interface IChatRepository extends IChatReadRepository, IChatWriteRepository {}

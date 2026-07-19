@@ -8,4 +8,5 @@ export interface IExtensionEventBridge {
   ): () => void
   
   unsubscribeAll(extensionId: string): void
+  emitToExtension<K extends ExtensionEventName>(extensionId: string, event: K, payload: import('../context/ExtensionEventMap').ExtensionEventMap[K]): void
 }

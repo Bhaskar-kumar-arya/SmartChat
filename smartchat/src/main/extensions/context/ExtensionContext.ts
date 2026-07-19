@@ -64,6 +64,29 @@ export interface NotifyAction {
   title: string
 }
 
+export interface DedicatedChatMessage {
+  id: string
+  extensionId: string
+  role: 'user' | 'extension'
+  content: string | any
+  createdAt: Date
+}
+
+export interface DedicatedChatContent {
+  type: 'text' | 'card'
+  text?: string
+  title?: string
+  body?: string
+  buttons?: Array<{ id: string; label: string }>
+}
+
+export interface IExtensionDedicatedChatAPI {
+  send(content: DedicatedChatContent): Promise<void>
+  getHistory(limit?: number): Promise<DedicatedChatMessage[]>
+  clearHistory(): Promise<void>
+  focus(): void
+}
+
 export interface IExtensionUIAPI {
   notify(opts: { title: string; body: string; action?: NotifyAction }): Promise<void>
   toast(msg: string, level?: 'info' | 'success' | 'warning' | 'error'): void
@@ -85,4 +108,5 @@ export interface ExtensionContext {
   readonly contacts?: IExtensionContactsAPI
   readonly chats?: IExtensionChatsAPI
   readonly ui?: IExtensionUIAPI
+  readonly dedicatedChat?: IExtensionDedicatedChatAPI
 }
