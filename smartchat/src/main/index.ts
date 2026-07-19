@@ -27,6 +27,7 @@ import { ExtensionEventBridge } from './extensions/events/ExtensionEventBridge'
 import { ExtensionHost } from './extensions/host/ExtensionHost'
 import { ExtensionSchedulerService } from './extensions/scheduler/ExtensionSchedulerService'
 import { SchedulerCapabilityProvider } from './extensions/capabilities/providers/SchedulerCapabilityProvider'
+import { ToolCapabilityProvider } from './extensions/capabilities/providers/ToolCapabilityProvider'
 
 function getLogFile(): string {
   try {
@@ -176,10 +177,12 @@ app.whenReady().then(() => {
   const extensionRegistry = new ExtensionCapabilityRegistry()
   const eventBridge = new ExtensionEventBridge(() => waConnectionManager?.getBus() ?? null)
   const extensionSchedulerService = new ExtensionSchedulerService()
-  extensionRegistry.register('log', new LogCapabilityProvider(extensionsPath))
+  const logProvider = new LogCapabilityProvider(extensionsPath)
+  extensionRegistry.register('log', logProvider)
   extensionRegistry.register('storage', new StorageCapabilityProvider(new ExtensionStorageRepository(prisma)))
   extensionRegistry.register('events', new EventCapabilityProvider(eventBridge))
   extensionRegistry.register('scheduler', new SchedulerCapabilityProvider(extensionSchedulerService))
+  extensionRegistry.register('tools', new ToolCapabilityProvider(services.toolRegistry, (extId) => logProvider.build({} as any, extId)))
   
   const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService)
   extensionHost.loadAll().catch(err => logMain('[Main] Failed to load extensions', err))

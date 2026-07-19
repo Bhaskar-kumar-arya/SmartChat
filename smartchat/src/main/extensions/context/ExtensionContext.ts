@@ -28,6 +28,29 @@ export interface IExtensionSchedulerAPI {
   onCron(name: string, fn: () => void | Promise<void>): void
 }
 
+export interface ToolResult {
+  text: string;
+}
+
+export interface ExtensionTool {
+  name: string;
+  description: string;
+  schema: object;
+  execute: (args: Record<string, unknown>) => Promise<ToolResult>;
+}
+
+export interface IExtensionToolCallAPI {
+  call(toolName: string, args: Record<string, unknown>): Promise<ToolResult>;
+  list(): string[];
+}
+
+export interface IExtensionToolRegisterAPI {
+  register(tool: ExtensionTool): void;
+  list(): string[];
+}
+
+export type IExtensionToolAPI = Partial<IExtensionToolCallAPI & IExtensionToolRegisterAPI>;
+
 export interface ExtensionContext {
   readonly extensionId: string
   readonly manifest: ExtensionManifest
@@ -39,4 +62,5 @@ export interface ExtensionContext {
   readonly storage?: IExtensionStorageAPI
   readonly events?: IExtensionEventAPI
   readonly scheduler?: IExtensionSchedulerAPI
+  readonly tools?: IExtensionToolAPI
 }
