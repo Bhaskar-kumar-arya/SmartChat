@@ -1,4 +1,12 @@
 import { ExtensionManifest } from '../types/ExtensionManifest'
+import { ExtensionEventName, ExtensionEventMap } from './ExtensionEventMap'
+
+export interface IExtensionEventAPI {
+  on<K extends ExtensionEventName>(
+    event: K,
+    handler: (payload: ExtensionEventMap[K]) => void | Promise<void>
+  ): () => void
+}
 
 export interface IExtensionLogAPI {
   info(msg: string, ...data: any[]): void
@@ -23,4 +31,5 @@ export interface ExtensionContext {
   onDeactivate(fn: () => Promise<void>): void
 
   readonly storage?: IExtensionStorageAPI
+  readonly events?: IExtensionEventAPI
 }

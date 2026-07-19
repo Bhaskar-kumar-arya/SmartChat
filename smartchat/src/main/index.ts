@@ -21,7 +21,9 @@ import { ExtensionLoader } from './extensions/host/ExtensionLoader'
 import { ExtensionCapabilityRegistry } from './extensions/capabilities/ExtensionCapabilityRegistry'
 import { LogCapabilityProvider } from './extensions/capabilities/providers/LogCapabilityProvider'
 import { StorageCapabilityProvider } from './extensions/capabilities/providers/StorageCapabilityProvider'
+import { EventCapabilityProvider } from './extensions/capabilities/providers/EventCapabilityProvider'
 import { ExtensionStorageRepository } from './extensions/storage/ExtensionStorageRepository'
+import { ExtensionEventBridge } from './extensions/events/ExtensionEventBridge'
 import { ExtensionHost } from './extensions/host/ExtensionHost'
 
 function getLogFile(): string {
@@ -170,8 +172,10 @@ app.whenReady().then(() => {
   const extensionsPath = join(app.getPath('userData'), 'extensions')
   const extensionLoader = new ExtensionLoader(extensionsPath)
   const extensionRegistry = new ExtensionCapabilityRegistry()
+  const eventBridge = new ExtensionEventBridge(() => waConnectionManager?.getBus() ?? null)
   extensionRegistry.register('log', new LogCapabilityProvider(extensionsPath))
   extensionRegistry.register('storage', new StorageCapabilityProvider(new ExtensionStorageRepository(prisma)))
+  extensionRegistry.register('events', new EventCapabilityProvider(eventBridge))
   
   const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry)
   extensionHost.loadAll().catch(err => logMain('[Main] Failed to load extensions', err))

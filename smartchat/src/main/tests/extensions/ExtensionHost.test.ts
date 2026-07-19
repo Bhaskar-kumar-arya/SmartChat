@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { ExtensionLoader } from '../../extensions/host/ExtensionLoader'
 import { ExtensionCapabilityRegistry } from '../../extensions/capabilities/ExtensionCapabilityRegistry'
 import { LogCapabilityProvider } from '../../extensions/capabilities/providers/LogCapabilityProvider'
