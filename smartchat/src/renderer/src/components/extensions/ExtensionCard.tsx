@@ -60,7 +60,7 @@ export function ExtensionCard({
       {manifest.dedicatedChat && (
         <div className="ext-card__commands">
           {(manifest.dedicatedChat.commands as SlashCommand[]).slice(0, 3).map((cmd) => (
-            <span key={cmd.command} className="ext-command-chip">/{cmd.command}</span>
+            <span key={cmd.name} className="ext-command-chip">/{cmd.name}</span>
           ))}
         </div>
       )}

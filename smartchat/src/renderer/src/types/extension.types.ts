@@ -1,7 +1,7 @@
 // Phase 9: Shared renderer-side types for the Extension System
 
 export interface SlashCommand {
-  command: string
+  name: string
   description: string
 }
 

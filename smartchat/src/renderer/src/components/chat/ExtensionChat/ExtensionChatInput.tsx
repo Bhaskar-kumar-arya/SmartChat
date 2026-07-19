@@ -20,7 +20,7 @@ export function ExtensionChatInput({ commands, onSend }: ExtensionChatInputProps
     if (text.startsWith('/')) {
       const query = text.slice(1).toLowerCase()
       const matches = commands.filter(
-        (c) => c.command.toLowerCase().startsWith(query)
+        (c) => c.name.toLowerCase().startsWith(query)
       )
       setFilteredCmds(matches)
       setShowAutocomplete(matches.length > 0)
@@ -46,7 +46,7 @@ export function ExtensionChatInput({ commands, onSend }: ExtensionChatInputProps
   }, [text, onSend])
 
   const selectCommand = (cmd: SlashCommand) => {
-    setText(`/${cmd.command} `)
+    setText(`/${cmd.name} `)
     setShowAutocomplete(false)
     inputRef.current?.focus()
   }
@@ -57,11 +57,11 @@ export function ExtensionChatInput({ commands, onSend }: ExtensionChatInputProps
         <div className="ext-slash-autocomplete">
           {filteredCmds.map((cmd) => (
             <div
-              key={cmd.command}
+              key={cmd.name}
               className="ext-slash-item"
               onClick={() => selectCommand(cmd)}
             >
-              <span className="ext-slash-command">/{cmd.command}</span>
+              <span className="ext-slash-command">/{cmd.name}</span>
               <span className="ext-slash-desc">{cmd.description}</span>
             </div>
           ))}

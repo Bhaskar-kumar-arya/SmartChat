@@ -1,0 +1,40 @@
+{
+  "id": "com.smartchat.omni-bot",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "name": "Omni Bot",
+  "description": "The ultimate extension leveraging all SmartChat capabilities, featuring a dedicated bot, AI tool integration, and granular permissions.",
+  "main": "index.js",
+  "permissions": [
+    "storage:read",
+    "storage:write",
+    "scheduler",
+    "tools:read",
+    "tools:register",
+    "contacts:read",
+    "chats:read",
+    "ui:notification",
+    "ui:dedicated_chat",
+    "events:message:incoming",
+    "events:extension:chat-message"
+  ],
+  "dedicatedChat": {
+    "name": "OmniBot",
+    "avatarEmoji": "🤖",
+    "commands": [
+      { "name": "ping", "description": "Verify the dedicated chat IPC bridge is operational" },
+      { "name": "test-tools", "description": "List all dynamic AI tools currently registered by extensions" },
+      { "name": "test-contacts", "description": "Retrieve the JID profile of the currently authenticated user" },
+      { "name": "test-chats", "description": "Fetch and display a summary of your recent active chats" },
+      { "name": "test-ui", "description": "Trigger an in-app toast and native OS desktop notification" },
+      { "name": "test-storage", "description": "Demonstrate persistence by retrieving an SQLite activation counter" },
+      { "name": "test-scheduler", "description": "Test background execution via an asynchronous delayed timer" }
+    ]
+  },
+  "scheduler": {
+    "onStart": true,
+    "intervals": [
+      { "name": "omni-heartbeat", "cron": "*/5 * * * *" }
+    ]
+  }
+}
