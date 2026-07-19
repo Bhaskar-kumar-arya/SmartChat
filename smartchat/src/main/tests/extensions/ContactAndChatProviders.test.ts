@@ -28,7 +28,7 @@ describe('ContactAndChatProviders', () => {
     }
 
     mockChatService = {
-      getChatList: vi.fn(async (page, limit) => {
+      getChatList: vi.fn(async (_page, limit) => {
         return [
           { jid: '1@s.whatsapp.net', name: 'Alice' },
           { jid: '2@s.whatsapp.net', name: 'Bob' }

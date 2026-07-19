@@ -59,6 +59,17 @@ export interface IExtensionChatsAPI {
   list(limit?: number): Promise<any[]>
 }
 
+export interface NotifyAction {
+  id: string
+  title: string
+}
+
+export interface IExtensionUIAPI {
+  notify(opts: { title: string; body: string; action?: NotifyAction }): Promise<void>
+  toast(msg: string, level?: 'info' | 'success' | 'warning' | 'error'): void
+  showSettings(schema: object): Promise<Record<string, unknown>>
+}
+
 export interface ExtensionContext {
   readonly extensionId: string
   readonly manifest: ExtensionManifest
@@ -73,4 +84,5 @@ export interface ExtensionContext {
   readonly tools?: IExtensionToolAPI
   readonly contacts?: IExtensionContactsAPI
   readonly chats?: IExtensionChatsAPI
+  readonly ui?: IExtensionUIAPI
 }
