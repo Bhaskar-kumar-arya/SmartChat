@@ -312,4 +312,28 @@ model CallLog {
   timestamp BigInt
 }
 
+// ── 16. EXTENSIONS ─────────────────────────────────────────────────────────────
+model Extension {
+  id          String   @id
+  name        String
+  version     String
+  enabled     Boolean  @default(true)
+  installedAt DateTime @default(now())
+}
 
+model ExtensionKV {
+  extensionId String
+  key         String
+  value       String
+  updatedAt   DateTime @updatedAt
+  @@id([extensionId, key])
+}
+
+// ── 17. CITATIONS ──────────────────────────────────────────────────────────────
+model Citation {
+  sessionId String
+  index     Int
+  type      String
+  payload   String
+  @@id([sessionId, index])
+}

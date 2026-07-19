@@ -22,6 +22,12 @@ export interface IExtensionStorageAPI {
   keys(): Promise<string[]>
 }
 
+export interface IExtensionSchedulerAPI {
+  setInterval(ms: number, fn: () => void | Promise<void>): () => void
+  setTimeout(ms: number, fn: () => void | Promise<void>): () => void
+  onCron(name: string, fn: () => void | Promise<void>): void
+}
+
 export interface ExtensionContext {
   readonly extensionId: string
   readonly manifest: ExtensionManifest
@@ -32,4 +38,5 @@ export interface ExtensionContext {
 
   readonly storage?: IExtensionStorageAPI
   readonly events?: IExtensionEventAPI
+  readonly scheduler?: IExtensionSchedulerAPI
 }
