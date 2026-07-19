@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { ExtensionLoader } from '../../extensions/host/ExtensionLoader'
-import { ExtensionLoadError, ManifestValidationError, ApiVersionError } from '../../extensions/types/ExtensionErrors'
+import { ManifestValidationError, ApiVersionError } from '../../extensions/types/ExtensionErrors'
 import AdmZip from 'adm-zip'
 import * as fs from 'fs'
 import * as path from 'path'

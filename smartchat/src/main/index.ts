@@ -17,6 +17,12 @@ import { createServices } from './ServiceContainer'
 import { TrayService } from './services/notification/TrayService'
 import { SecureFileRegistry } from './services/protocol/SecureFileRegistry'
 import { AppProtocolHandler } from './services/protocol/AppProtocolHandler'
+import { ExtensionLoader } from './extensions/host/ExtensionLoader'
+import { ExtensionCapabilityRegistry } from './extensions/capabilities/ExtensionCapabilityRegistry'
+import { LogCapabilityProvider } from './extensions/capabilities/providers/LogCapabilityProvider'
+import { StorageCapabilityProvider } from './extensions/capabilities/providers/StorageCapabilityProvider'
+import { ExtensionStorageRepository } from './extensions/storage/ExtensionStorageRepository'
+import { ExtensionHost } from './extensions/host/ExtensionHost'
 
 function getLogFile(): string {
   try {
@@ -159,6 +165,16 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
 
   services = createServices(prisma, () => mainWindow, () => waConnectionManager?.getBus() ?? null, getSock)
+
+  // Extension System Bootstrap
+  const extensionsPath = join(app.getPath('userData'), 'extensions')
+  const extensionLoader = new ExtensionLoader(extensionsPath)
+  const extensionRegistry = new ExtensionCapabilityRegistry()
+  extensionRegistry.register('log', new LogCapabilityProvider(extensionsPath))
+  extensionRegistry.register('storage', new StorageCapabilityProvider(new ExtensionStorageRepository(prisma)))
+  
+  const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry)
+  extensionHost.loadAll().catch(err => logMain('[Main] Failed to load extensions', err))
 
   // Initialize Tray Service
   trayService = new TrayService(
