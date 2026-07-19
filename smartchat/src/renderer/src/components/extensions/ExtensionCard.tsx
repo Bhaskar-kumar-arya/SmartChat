@@ -6,6 +6,7 @@ interface ExtensionCardProps {
   isSelected: boolean
   onToggle: () => void
   onReload: () => void
+  onUninstall: () => void
   onSelect: () => void
   onOpenChat?: () => void
 }
@@ -16,6 +17,7 @@ export function ExtensionCard({
   isSelected,
   onToggle,
   onReload,
+  onUninstall,
   onSelect,
   onOpenChat
 }: ExtensionCardProps) {
@@ -80,6 +82,14 @@ export function ExtensionCard({
             ↺ Reload
           </button>
         )}
+        <button
+          className="ext-btn ext-btn--danger-ghost"
+          style={{ padding: '0 8px' }}
+          onClick={(e) => { e.stopPropagation(); onUninstall(); }}
+          title="Uninstall extension"
+        >
+          🗑️
+        </button>
         {isLoaded && hasChat && onOpenChat && (
           <button
             className="ext-btn ext-btn--ghost"

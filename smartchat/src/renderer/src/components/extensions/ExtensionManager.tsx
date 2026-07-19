@@ -17,7 +17,7 @@ interface ExtensionManagerProps {
  */
 export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat }: ExtensionManagerProps) {
   const api = useAPI()
-  const { extensions, loading, error, install, unload, reload } = useExtensionManager()
+  const { extensions, loading, error, install, unload, reload, uninstall } = useExtensionManager()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
 
@@ -99,10 +99,16 @@ export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat 
                   <ExtensionCard
                     key={ext.id}
                     manifest={ext.manifest}
-                    isLoaded={true}
+                    isLoaded={ext.isLoaded}
                     isSelected={selectedId === ext.id}
-                    onToggle={() => handleToggle(ext.id, true)}
+                    onToggle={() => handleToggle(ext.id, ext.isLoaded)}
                     onReload={() => reload(ext.id)}
+                    onUninstall={() => {
+                      if (window.confirm(`Are you sure you want to uninstall ${ext.manifest.name} and clear its data?`)) {
+                        uninstall(ext.id)
+                        if (selectedId === ext.id) setSelectedId(null)
+                      }
+                    }}
                     onSelect={() => setSelectedId(ext.id === selectedId ? null : ext.id)}
                     onOpenChat={
                       ext.manifest.dedicatedChat && onOpenExtensionChat

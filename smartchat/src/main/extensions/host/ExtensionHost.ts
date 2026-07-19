@@ -4,6 +4,7 @@ import { IExtensionCapabilityRegistry } from '../capabilities/IExtensionCapabili
 import { ExtensionManifest } from '../types/ExtensionManifest'
 import { ExtensionContext } from '../context/ExtensionContext'
 import { ExtensionLoadError } from '../types/ExtensionErrors'
+import { IExtensionEventBridge } from '../events/IExtensionEventBridge'
 
 export class ExtensionHost implements IExtensionHost {
   private loadedManifests = new Map<string, ExtensionManifest>()
@@ -13,7 +14,8 @@ export class ExtensionHost implements IExtensionHost {
     private loader: IExtensionLoader,
     private registry: IExtensionCapabilityRegistry,
     private schedulerService?: any,
-    private virtualChatProv?: any
+    private virtualChatProv?: any,
+    private eventBridge?: IExtensionEventBridge
   ) {}
 
   async loadAll(): Promise<void> {
@@ -104,6 +106,10 @@ export class ExtensionHost implements IExtensionHost {
 
     if (this.schedulerService && this.schedulerService.cancelAll) {
       this.schedulerService.cancelAll(id)
+    }
+
+    if (this.eventBridge && this.eventBridge.unsubscribeAll) {
+      this.eventBridge.unsubscribeAll(id)
     }
 
     if (this.virtualChatProv && this.virtualChatProv.remove) {

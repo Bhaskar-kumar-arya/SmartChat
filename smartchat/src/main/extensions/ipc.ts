@@ -11,7 +11,8 @@ export function registerExtensionIpcHandlers(
   sessionManager: IDedicatedChatSessionManager,
   chatRepo: IDedicatedChatRepository,
   loader?: IExtensionLoader,
-  extensionsDir?: string
+  extensionsDir?: string,
+  storageRepo?: any
 ) {
   // ── Existing Phase 8 handlers ────────────────────────────────────────
   ipcMain.on('extension:chat-send', async (_event, extensionId: string, text: string) => {
@@ -27,11 +28,14 @@ export function registerExtensionIpcHandlers(
   })
 
   ipcMain.handle('extension:list', async () => {
+    if (!loader) return []
+    const installed = await loader.listInstalled()
     const loadedIds = host.listLoaded()
-    return loadedIds.map(id => {
-      const manifest = host.getManifest(id)
-      return { id, manifest }
-    })
+    return installed.map(manifest => ({
+      id: manifest.id,
+      manifest,
+      isLoaded: loadedIds.includes(manifest.id)
+    }))
   })
 
   // ── New Phase 9 handlers ─────────────────────────────────────────────
@@ -44,6 +48,16 @@ export function registerExtensionIpcHandlers(
 
   ipcMain.handle('extension:unload', async (_event, id: string) => {
     return host.unload(id)
+  })
+
+  ipcMain.handle('extension:uninstall', async (_event, id: string) => {
+    if (!loader) return
+    await host.unload(id).catch(() => {})
+    await loader.uninstall(id)
+    await chatRepo.clear(id).catch(() => {})
+    if (storageRepo && storageRepo.clear) {
+      await storageRepo.clear(id).catch(() => {})
+    }
   })
 
   ipcMain.handle('extension:reload', async (_event, id: string) => {

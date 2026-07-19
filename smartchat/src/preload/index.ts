@@ -315,6 +315,7 @@ const api = {
   extensionInstall: (scextPath: string) => ipcRenderer.invoke('extension:install', scextPath),
   extensionUnload: (id: string) => ipcRenderer.invoke('extension:unload', id),
   extensionReload: (id: string) => ipcRenderer.invoke('extension:reload', id),
+  extensionUninstall: (id: string) => ipcRenderer.invoke('extension:uninstall', id),
   extensionGetLog: (id: string) => ipcRenderer.invoke('extension:get-log', id),
   extensionChatSend: (extensionId: string, text: string) =>
     ipcRenderer.send('extension:chat-send', extensionId, text),

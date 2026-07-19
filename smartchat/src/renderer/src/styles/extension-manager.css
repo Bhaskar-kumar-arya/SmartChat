@@ -356,6 +356,18 @@
   color: var(--wa-text-primary);
 }
 
+.ext-btn--danger-ghost {
+  background: transparent;
+  color: var(--wa-text-secondary);
+  border: 1px solid var(--wa-border);
+}
+
+.ext-btn--danger-ghost:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--wa-danger);
+  border-color: var(--wa-danger);
+}
+
 /* ── Log Panel ──────────────────────────────────────────────────────── */
 .ext-log-panel {
   display: flex;

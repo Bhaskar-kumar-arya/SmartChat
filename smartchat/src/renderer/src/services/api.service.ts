@@ -260,11 +260,10 @@ export const api: IAPIService = {
 
   extensionInstall: (scextPath: string) => window.api.extensionInstall(scextPath) as any,
 
-  extensionUnload: (id: string) => window.api.extensionUnload(id),
-
-  extensionReload: (id: string) => window.api.extensionReload(id),
-
-  extensionGetLog: (id: string) => window.api.extensionGetLog(id),
+  extensionUnload: (id) => window.api.extensionUnload(id),
+  extensionReload: (id) => window.api.extensionReload(id),
+  extensionUninstall: (id) => window.api.extensionUninstall(id),
+  extensionGetLog: (id) => window.api.extensionGetLog(id),
 
   extensionChatSend: (extensionId: string, text: string) =>
     window.api.extensionChatSend(extensionId, text),

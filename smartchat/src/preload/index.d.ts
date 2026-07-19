@@ -130,6 +130,7 @@ declare global {
       extensionInstall: (scextPath: string) => Promise<import('../renderer/src/types/extension.types').ExtensionManifest>
       extensionUnload: (id: string) => Promise<void>
       extensionReload: (id: string) => Promise<void>
+      extensionUninstall: (id: string) => Promise<void>
       extensionGetLog: (id: string) => Promise<string>
       extensionChatSend: (extensionId: string, text: string) => void
       extensionChatHistory: (extensionId: string, limit?: number) => Promise<import('../renderer/src/types/extension.types').ExtensionChatMessage[]>

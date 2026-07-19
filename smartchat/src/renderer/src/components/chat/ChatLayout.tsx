@@ -18,6 +18,7 @@ import MultiFilePreview from './MultiFilePreview'
 import { EmojiText } from '../common/EmojiText'
 import { useSidebarResize } from './hooks/useSidebarResize'
 import { ExtensionChatView } from './ExtensionChat/ExtensionChatView'
+import { useExtensionManager } from '../../hooks/useExtensionManager'
 
 export default function ChatLayout() {
   const api = useAPI()
@@ -35,6 +36,10 @@ export default function ChatLayout() {
   // Extension chat routing
   const [activeExtensionId, setActiveExtensionId] = useState<string | null>(null)
   const isExtensionChat = activeExtensionId !== null
+  
+  const { extensions } = useExtensionManager()
+  const activeExtension = extensions.find(e => e.id === activeExtensionId)
+  const activeCommands = (activeExtension?.manifest.dedicatedChat?.commands as import('../../types/extension.types').SlashCommand[]) || []
 
   const {
     messages,
@@ -129,12 +134,17 @@ export default function ChatLayout() {
 
   useEffect(() => {
     const unsubscribe = api.onOpenChat((chat) => {
-      handleSelectChat(chat.jid, chat.name)
+      if (chat.jid.startsWith('extension:')) {
+        const extId = chat.jid.replace('extension:', '')
+        handleOpenExtensionChat(extId, chat.name)
+      } else {
+        handleSelectChat(chat.jid, chat.name)
+      }
     })
     return () => {
       unsubscribe()
     }
-  }, [handleSelectChat, api])
+  }, [handleSelectChat, handleOpenExtensionChat, api])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -147,7 +157,12 @@ export default function ChatLayout() {
           setTargetMessageId(newTarget)
         })
       } else {
-        handleSelectChat(jid, chatName, null, newTarget ?? null)
+        if (jid.startsWith('extension:')) {
+          const extId = jid.replace('extension:', '')
+          handleOpenExtensionChat(extId, chatName)
+        } else {
+          handleSelectChat(jid, chatName, null, newTarget ?? null)
+        }
       }
     }
     window.addEventListener('smartchat:open-chat', handler)
@@ -246,7 +261,7 @@ export default function ChatLayout() {
               </div>
               <ExtensionChatView
                 extensionId={activeExtensionId}
-                commands={[]}
+                commands={activeCommands}
               />
             </>
           ) : (

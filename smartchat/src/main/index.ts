@@ -186,7 +186,8 @@ app.whenReady().then(() => {
   const extensionSchedulerService = new ExtensionSchedulerService()
   const logProvider = new LogCapabilityProvider(extensionsPath)
   extensionRegistry.register('log', logProvider)
-  extensionRegistry.register('storage', new StorageCapabilityProvider(new ExtensionStorageRepository(prisma)))
+  const storageRepo = new ExtensionStorageRepository(prisma)
+  extensionRegistry.register('storage', new StorageCapabilityProvider(storageRepo))
   extensionRegistry.register('events', new EventCapabilityProvider(eventBridge))
   extensionRegistry.register('scheduler', new SchedulerCapabilityProvider(extensionSchedulerService))
   extensionRegistry.register('tools', new ToolCapabilityProvider(services.toolRegistry, (extId) => logProvider.build({} as any, extId)))
@@ -200,9 +201,9 @@ app.whenReady().then(() => {
   
   extensionRegistry.register('dedicatedChat', new DedicatedChatCapabilityProvider(chatRepo, () => mainWindow))
   
-  const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService, virtualChatProv)
+  const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService, virtualChatProv, eventBridge)
   
-  registerExtensionIpcHandlers(extensionHost, sessionManager, chatRepo, extensionLoader, extensionsPath)
+  registerExtensionIpcHandlers(extensionHost, sessionManager, chatRepo, extensionLoader, extensionsPath, storageRepo)
 
   extensionHost.loadAll().catch(err => logMain('[Main] Failed to load extensions', err))
 

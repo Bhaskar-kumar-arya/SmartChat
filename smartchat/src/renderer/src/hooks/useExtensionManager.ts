@@ -53,5 +53,13 @@ export function useExtensionManager() {
     [api, refresh]
   )
 
-  return { extensions, loading, error, install, unload, reload, refresh }
+  const uninstall = useCallback(
+    async (id: string) => {
+      await api.extensionUninstall(id)
+      await refresh()
+    },
+    [api, refresh]
+  )
+
+  return { extensions, loading, error, install, unload, reload, uninstall, refresh }
 }

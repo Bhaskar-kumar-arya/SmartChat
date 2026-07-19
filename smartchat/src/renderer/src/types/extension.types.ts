@@ -21,6 +21,7 @@ export interface ExtensionManifest {
 export interface LoadedExtension {
   id: string
   manifest: ExtensionManifest
+  isLoaded: boolean
 }
 
 export interface ExtensionChatMessage {

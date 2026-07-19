@@ -138,6 +138,7 @@ export interface IAPIService {
   extensionInstall(scextPath: string): Promise<ExtensionManifest>
   extensionUnload(id: string): Promise<void>
   extensionReload(id: string): Promise<void>
+  extensionUninstall(id: string): Promise<void>
   extensionGetLog(id: string): Promise<string>
   extensionChatSend(extensionId: string, text: string): void
   extensionChatHistory(extensionId: string, limit?: number): Promise<ExtensionChatMessage[]>
