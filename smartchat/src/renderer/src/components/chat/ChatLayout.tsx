@@ -17,6 +17,7 @@ import DragDropOverlay from './DragDropOverlay'
 import MultiFilePreview from './MultiFilePreview'
 import { EmojiText } from '../common/EmojiText'
 import { useSidebarResize } from './hooks/useSidebarResize'
+import { ExtensionChatView } from './ExtensionChat/ExtensionChatView'
 
 export default function ChatLayout() {
   const api = useAPI()
@@ -30,6 +31,10 @@ export default function ChatLayout() {
   const [isAIOpen, setIsAIOpen] = useState<boolean>(false)
   const [isChatSearchOpen, setIsChatSearchOpen] = useState<boolean>(false)
   const { sidebarWidth, startResizing } = useSidebarResize(500)
+
+  // Extension chat routing
+  const [activeExtensionId, setActiveExtensionId] = useState<string | null>(null)
+  const isExtensionChat = activeExtensionId !== null
 
   const {
     messages,
@@ -93,6 +98,7 @@ export default function ChatLayout() {
   }, [addFiles, api])
 
   const handleSelectChat = useCallback((jid: string, name: string, profilePictureUrl?: string | null, messageId?: string | null) => {
+    setActiveExtensionId(null) // leaving extension chat
     setActiveJid(jid)
     setActiveName(name)
     setActiveProfilePic(profilePictureUrl || null)
@@ -100,9 +106,26 @@ export default function ChatLayout() {
     setTargetMessageId(messageId || null)
   }, [])
 
+  const handleOpenExtensionChat = useCallback((extensionId: string, name: string) => {
+    setActiveExtensionId(extensionId)
+    setActiveJid(`extension_${extensionId}`)
+    setActiveName(name)
+    setActiveProfilePic(null)
+    setReplyingTo(null)
+    setTargetMessageId(null)
+  }, [])
+
   useEffect(() => {
     api.setActiveChat(activeJid).catch(console.error)
   }, [activeJid, api])
+
+  // Focus listener — extension calls ctx.dedicatedChat.focus()
+  useEffect(() => {
+    const unsubscribe = api.onExtensionFocus((id) => {
+      handleOpenExtensionChat(id, id) // name resolved on next render
+    })
+    return () => unsubscribe()
+  }, [handleOpenExtensionChat, api])
 
   useEffect(() => {
     const unsubscribe = api.onOpenChat((chat) => {
@@ -207,9 +230,27 @@ export default function ChatLayout() {
         activeJid={activeJid}
         onSelectChat={handleSelectChat}
         onShowProfilePic={openOverlay}
+        onOpenExtensionChat={handleOpenExtensionChat}
       />
       <div className="chat-main" {...dragHandlers}>
         {activeJid ? (
+          isExtensionChat && activeExtensionId ? (
+            // Extension chat panel
+            <>
+              <div className="chat-header">
+                <div className="extension-avatar" style={{ fontSize: '24px', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'var(--wa-bg-hover)' }}>🤖</div>
+                <div className="chat-header-info">
+                  <h2 className="chat-header-name">{activeName}</h2>
+                  <p className="chat-header-jid">Extension Bot</p>
+                </div>
+              </div>
+              <ExtensionChatView
+                extensionId={activeExtensionId}
+                commands={[]}
+              />
+            </>
+          ) : (
+          // Normal WhatsApp chat panel
           <>
             <DragDropOverlay isVisible={isDraggingOver} />
             <div className="chat-header">
@@ -275,6 +316,7 @@ export default function ChatLayout() {
               sending={sendingFiles}
             />
           </>
+          ) /* end normal WhatsApp chat */
         ) : (
           <div className="chat-empty">
             <div className="chat-empty-icon">

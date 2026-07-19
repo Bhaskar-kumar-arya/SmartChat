@@ -1,13 +1,19 @@
 import { ipcMain } from 'electron'
+import path from 'path'
+import fs from 'fs/promises'
 import { IExtensionHost } from './host/IExtensionHost'
+import { IExtensionLoader } from './host/IExtensionLoader'
 import { IDedicatedChatSessionManager } from './dedicatedChat/IDedicatedChatSessionManager'
 import { IDedicatedChatRepository } from './dedicatedChat/IDedicatedChatRepository'
 
 export function registerExtensionIpcHandlers(
   host: IExtensionHost,
   sessionManager: IDedicatedChatSessionManager,
-  chatRepo: IDedicatedChatRepository
+  chatRepo: IDedicatedChatRepository,
+  loader?: IExtensionLoader,
+  extensionsDir?: string
 ) {
+  // ── Existing Phase 8 handlers ────────────────────────────────────────
   ipcMain.on('extension:chat-send', async (_event, extensionId: string, text: string) => {
     try {
       await sessionManager.routeUserMessage(extensionId, text)
@@ -26,5 +32,27 @@ export function registerExtensionIpcHandlers(
       const manifest = host.getManifest(id)
       return { id, manifest }
     })
+  })
+
+  // ── New Phase 9 handlers ─────────────────────────────────────────────
+  ipcMain.handle('extension:install', async (_event, scextPath: string) => {
+    if (!loader) throw new Error('ExtensionLoader not available')
+    const manifest = await loader.install(scextPath)
+    await host.load(manifest.id)
+    return manifest
+  })
+
+  ipcMain.handle('extension:unload', async (_event, id: string) => {
+    return host.unload(id)
+  })
+
+  ipcMain.handle('extension:reload', async (_event, id: string) => {
+    return host.reload(id)
+  })
+
+  ipcMain.handle('extension:get-log', async (_event, id: string) => {
+    if (!extensionsDir) return ''
+    const logPath = path.join(extensionsDir, id, 'ext.log')
+    return fs.readFile(logPath, 'utf8').catch(() => '')
   })
 }

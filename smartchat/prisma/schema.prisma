@@ -329,6 +329,14 @@ model ExtensionKV {
   @@id([extensionId, key])
 }
 
+model ExtensionChatMessage {
+  id          String   @id @default(cuid())
+  extensionId String
+  role        String
+  content     String
+  createdAt   DateTime @default(now())
+}
+
 // ── 17. CITATIONS ──────────────────────────────────────────────────────────────
 model Citation {
   sessionId String

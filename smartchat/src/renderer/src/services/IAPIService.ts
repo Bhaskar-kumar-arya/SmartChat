@@ -17,6 +17,7 @@ import {
   AIContextItem
 } from '../types/aiTypes'
 import { CitationEntity } from '../types/ai/citation.types'
+import { ExtensionManifest, ExtensionChatMessage, LoadedExtension } from '../types/extension.types'
 
 export interface IAPIService {
   getChats(page: number, limit: number): Promise<ChatItem[]>
@@ -131,4 +132,15 @@ export interface IAPIService {
   setNotificationPreferences(prefs: Partial<NotificationPreferences>): Promise<void>
   setActiveChat(jid: string | null): Promise<void>
   onOpenChat(callback: (chat: { jid: string; name: string }) => void): (() => void)
+
+  // ── Extension System (Phase 9) ──────────────────────────────────────
+  extensionList(): Promise<LoadedExtension[]>
+  extensionInstall(scextPath: string): Promise<ExtensionManifest>
+  extensionUnload(id: string): Promise<void>
+  extensionReload(id: string): Promise<void>
+  extensionGetLog(id: string): Promise<string>
+  extensionChatSend(extensionId: string, text: string): void
+  extensionChatHistory(extensionId: string, limit?: number): Promise<ExtensionChatMessage[]>
+  onExtensionChatPush(cb: (payload: { extensionId: string; message: ExtensionChatMessage }) => void): () => void
+  onExtensionFocus(cb: (id: string) => void): () => void
 }

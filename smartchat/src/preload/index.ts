@@ -310,6 +310,27 @@ const api = {
     return () => { ipcRenderer.removeListener('open-chat', listener) }
   },
 
+  // ── Extension System (Phase 9) ──────────────────────────────────────
+  extensionList: () => ipcRenderer.invoke('extension:list'),
+  extensionInstall: (scextPath: string) => ipcRenderer.invoke('extension:install', scextPath),
+  extensionUnload: (id: string) => ipcRenderer.invoke('extension:unload', id),
+  extensionReload: (id: string) => ipcRenderer.invoke('extension:reload', id),
+  extensionGetLog: (id: string) => ipcRenderer.invoke('extension:get-log', id),
+  extensionChatSend: (extensionId: string, text: string) =>
+    ipcRenderer.send('extension:chat-send', extensionId, text),
+  extensionChatHistory: (extensionId: string, limit?: number) =>
+    ipcRenderer.invoke('extension:chat-history', extensionId, limit),
+  onExtensionChatPush: (cb: (msg: any) => void) => {
+    const l = (_: IpcRendererEvent, msg: any) => cb(msg)
+    ipcRenderer.on('extension:chat-push', l)
+    return () => ipcRenderer.removeListener('extension:chat-push', l)
+  },
+  onExtensionFocus: (cb: (id: string) => void) => {
+    const l = (_: IpcRendererEvent, id: string) => cb(id)
+    ipcRenderer.on('extension:focus', l)
+    return () => ipcRenderer.removeListener('extension:focus', l)
+  },
+
   // ── File Utilities ──────────────────────────────────────────────────
   // webUtils.getPathForFile is the modern Electron API to get the real
   // filesystem path of a File object dropped into the renderer.

@@ -1,0 +1,23 @@
+{
+  "id": "com.smartchat.hello-bot",
+  "name": "Hello Bot",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "description": "A simple extension bot that says hello and demonstrates the dedicated chat UI features.",
+  "main": "index.js",
+  "permissions": ["log", "ui:dedicated_chat", "events:extension:chat-message"],
+  "dedicatedChat": {
+    "name": "Hello Bot",
+    "avatarEmoji": "🤖",
+    "commands": [
+      {
+        "command": "hello",
+        "description": "Says hello back to you"
+      },
+      {
+        "command": "card",
+        "description": "Shows a rich card message"
+      }
+    ]
+  }
+}

@@ -34,4 +34,8 @@ export interface ExtendedChatItem extends ChatItem {
   parentName?: string
   totalUnreadCount?: number
   children?: ChatItem[]
+  // Extension-sourced synthetic chats
+  source?: 'whatsapp' | 'extension'
+  extensionId?: string
+  extensionEmoji?: string
 }

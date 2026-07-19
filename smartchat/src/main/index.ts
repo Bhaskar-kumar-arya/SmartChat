@@ -202,7 +202,7 @@ app.whenReady().then(() => {
   
   const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService, virtualChatProv)
   
-  registerExtensionIpcHandlers(extensionHost, sessionManager, chatRepo)
+  registerExtensionIpcHandlers(extensionHost, sessionManager, chatRepo, extensionLoader, extensionsPath)
 
   extensionHost.loadAll().catch(err => logMain('[Main] Failed to load extensions', err))
 

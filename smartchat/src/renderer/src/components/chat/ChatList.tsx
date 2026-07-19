@@ -15,14 +15,17 @@ import SettingsModal from '../common/SettingsModal'
 import { MessageStatusTick } from '../common/MessageStatusTick'
 import { ContextMenu } from '../common/ContextMenu'
 import { EmojiText } from '../common/EmojiText'
+import { ExtensionChatListItem } from './ExtensionChatListItem'
+import ExtensionManager from '../extensions/ExtensionManager'
 
 interface ChatListProps {
   activeJid: string | null
   onSelectChat: (jid: string, name: string, profilePictureUrl?: string | null, messageId?: string | null) => void
   onShowProfilePic: (jid: string, name: string) => void
+  onOpenExtensionChat?: (extensionId: string, name: string) => void
 }
 
-export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: ChatListProps) {
+export default function ChatList({ activeJid, onSelectChat, onShowProfilePic, onOpenExtensionChat }: ChatListProps) {
   const api = useAPI()
   const { 
     chats, 
@@ -54,6 +57,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [showIndexConfirm, setShowIndexConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showExtensionManager, setShowExtensionManager] = useState(false)
   const [clearIndexFirst, setClearIndexFirst] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; jid: string; muted: boolean; pinned: boolean } | null>(null)
 
@@ -259,6 +263,13 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
           >
             <span className="sparkle-icon">✦</span>
           </button>
+          <button
+            className="extensions-button"
+            title="Extension Manager"
+            onClick={() => setShowExtensionManager(true)}
+          >
+            🧩
+          </button>
           <button className="settings-button" title="Settings" onClick={() => setShowSettings(true)}>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"></circle>
@@ -364,6 +375,25 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
           ) : (
             <>
               {groupedChats.map((chat) => {
+                // OCP: extension chats delegated to ExtensionChatListItem
+                if ((chat as any).source === 'extension') {
+                  return (
+                    <ExtensionChatListItem
+                      key={chat.jid}
+                      chat={chat as any}
+                      isActive={activeJid === chat.jid}
+                      onSelect={() => {
+                        const extId = chat.jid.replace('extension_', '')
+                        if (onOpenExtensionChat) {
+                          onOpenExtensionChat(extId, chat.name)
+                        } else {
+                          onSelectChat(chat.jid, chat.name)
+                        }
+                      }}
+                    />
+                  )
+                }
+
                 const muted = isMuted(chat.muteExpiration)
                 const pinned = !!(chat.pinned && chat.pinned > 0)
                 const presenceText = getPresenceText(chat)
@@ -538,6 +568,12 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic }: 
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
+      />
+
+      <ExtensionManager
+        isOpen={showExtensionManager}
+        onClose={() => setShowExtensionManager(false)}
+        onOpenExtensionChat={onOpenExtensionChat}
       />
 
       {contextMenu && (

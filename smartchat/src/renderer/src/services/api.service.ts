@@ -254,5 +254,25 @@ export const api: IAPIService = {
 
   onOpenChat: (callback: (chat: { jid: string; name: string }) => void): (() => void) =>
     window.api.onOpenChat(callback),
-}
 
+  // ── Extension System (Phase 9) ──────────────────────────────────────
+  extensionList: () => window.api.extensionList() as any,
+
+  extensionInstall: (scextPath: string) => window.api.extensionInstall(scextPath) as any,
+
+  extensionUnload: (id: string) => window.api.extensionUnload(id),
+
+  extensionReload: (id: string) => window.api.extensionReload(id),
+
+  extensionGetLog: (id: string) => window.api.extensionGetLog(id),
+
+  extensionChatSend: (extensionId: string, text: string) =>
+    window.api.extensionChatSend(extensionId, text),
+
+  extensionChatHistory: (extensionId: string, limit?: number) =>
+    window.api.extensionChatHistory(extensionId, limit) as any,
+
+  onExtensionChatPush: (cb) => window.api.onExtensionChatPush(cb as any),
+
+  onExtensionFocus: (cb) => window.api.onExtensionFocus(cb),
+}

@@ -124,6 +124,17 @@ declare global {
       setActiveChat: (jid: string | null) => Promise<void>
       onOpenChat: (callback: (chat: { jid: string; name: string }) => void) => () => void
       getPathForFile: (file: File) => string
+
+      // ── Extension System (Phase 9) ──────────────────────────────────────
+      extensionList: () => Promise<Array<{ id: string; manifest: import('../renderer/src/types/extension.types').ExtensionManifest }>>
+      extensionInstall: (scextPath: string) => Promise<import('../renderer/src/types/extension.types').ExtensionManifest>
+      extensionUnload: (id: string) => Promise<void>
+      extensionReload: (id: string) => Promise<void>
+      extensionGetLog: (id: string) => Promise<string>
+      extensionChatSend: (extensionId: string, text: string) => void
+      extensionChatHistory: (extensionId: string, limit?: number) => Promise<import('../renderer/src/types/extension.types').ExtensionChatMessage[]>
+      onExtensionChatPush: (cb: (payload: { extensionId: string; message: import('../renderer/src/types/extension.types').ExtensionChatMessage }) => void) => () => void
+      onExtensionFocus: (cb: (id: string) => void) => () => void
     }
   }
 }
