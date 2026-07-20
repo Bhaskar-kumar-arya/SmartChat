@@ -2,8 +2,22 @@ import { ICapabilityProvider } from '../ICapabilityProvider'
 import { IExtensionChatsAPI } from '../../context/ExtensionContext'
 import { IChatService } from '../../../services/chats/IChatService'
 import { ExtensionManifest } from '../../types/ExtensionManifest'
+import { IDocSource, DocSection } from '../../docs/IDocSource'
+import { GENERATED_INTERFACES } from '../../docs/generatedDocs'
 
-export class ChatsCapabilityProvider implements ICapabilityProvider<IExtensionChatsAPI> {
+export class ChatsCapabilityProvider implements ICapabilityProvider<IExtensionChatsAPI>, IDocSource {
+  public getDocSection(): DocSection {
+    let body = `Access chat list.\n\n`
+    if (GENERATED_INTERFACES['IExtensionChatsAPI']) {
+      body += `${GENERATED_INTERFACES['IExtensionChatsAPI']}\n`
+    }
+    return {
+      heading: 'ctx.chats',
+      permissions: ['chats:read'],
+      body: body.trim()
+    }
+  }
+
   readonly permissions = ['chats:read']
 
   constructor(private readonly chatService: IChatService) {}

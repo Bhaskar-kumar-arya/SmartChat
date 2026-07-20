@@ -2,8 +2,22 @@ import { ICapabilityProvider } from '../ICapabilityProvider'
 import { IExtensionSchedulerAPI } from '../../context/ExtensionContext'
 import { ExtensionManifest } from '../../types/ExtensionManifest'
 import { IExtensionSchedulerService } from '../../scheduler/IExtensionSchedulerService'
+import { IDocSource, DocSection } from '../../docs/IDocSource'
+import { GENERATED_INTERFACES } from '../../docs/generatedDocs'
 
-export class SchedulerCapabilityProvider implements ICapabilityProvider<IExtensionSchedulerAPI> {
+export class SchedulerCapabilityProvider implements ICapabilityProvider<IExtensionSchedulerAPI>, IDocSource {
+  public getDocSection(): DocSection {
+    let body = `Schedule background tasks.\n\n`
+    if (GENERATED_INTERFACES['IExtensionSchedulerAPI']) {
+      body += `${GENERATED_INTERFACES['IExtensionSchedulerAPI']}\n`
+    }
+    return {
+      heading: 'ctx.scheduler',
+      permissions: ['scheduler'],
+      body: body.trim()
+    }
+  }
+
   readonly permissions = ['scheduler']
 
   constructor(private schedulerService: IExtensionSchedulerService) {}

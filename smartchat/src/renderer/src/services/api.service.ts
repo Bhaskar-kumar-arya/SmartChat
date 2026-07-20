@@ -264,6 +264,7 @@ export const api: IAPIService = {
   extensionReload: (id) => window.api.extensionReload(id),
   extensionUninstall: (id) => window.api.extensionUninstall(id),
   extensionGetLog: (id) => window.api.extensionGetLog(id),
+  extensionGetDocs: () => window.api.extensionGetDocs(),
 
   extensionChatSend: (extensionId: string, text: string) =>
     window.api.extensionChatSend(extensionId, text),

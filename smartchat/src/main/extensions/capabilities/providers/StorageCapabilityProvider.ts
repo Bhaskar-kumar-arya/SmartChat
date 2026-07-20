@@ -2,8 +2,22 @@ import { ICapabilityProvider } from '../ICapabilityProvider'
 import { ExtensionManifest } from '../../types/ExtensionManifest'
 import { IExtensionStorageAPI } from '../../context/ExtensionContext'
 import { IExtensionStorageRepository } from '../../storage/IExtensionStorageRepository'
+import { IDocSource, DocSection } from '../../docs/IDocSource'
+import { GENERATED_INTERFACES } from '../../docs/generatedDocs'
 
-export class StorageCapabilityProvider implements ICapabilityProvider<IExtensionStorageAPI> {
+export class StorageCapabilityProvider implements ICapabilityProvider<IExtensionStorageAPI>, IDocSource {
+  public getDocSection(): DocSection {
+    let body = `Persistent isolated key-value store.\n\n`
+    if (GENERATED_INTERFACES['IExtensionStorageAPI']) {
+      body += `${GENERATED_INTERFACES['IExtensionStorageAPI']}\n`
+    }
+    return {
+      heading: 'ctx.storage',
+      permissions: ['storage:read', 'storage:write'],
+      body: body.trim()
+    }
+  }
+
   readonly permissions = ['storage:read', 'storage:write']
 
   constructor(private storageRepo: IExtensionStorageRepository) {}

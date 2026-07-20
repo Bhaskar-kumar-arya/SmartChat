@@ -38,7 +38,7 @@ export function ExtensionChatView({ extensionId, commands }: ExtensionChatViewPr
             <p>Send a message to start the conversation</p>
             {commands.length > 0 && (
               <p className="ext-chat-empty-hint">
-                Try /{commands[0].command} — {commands[0].description}
+                Try /{commands[0].name} — {commands[0].description}
               </p>
             )}
           </div>

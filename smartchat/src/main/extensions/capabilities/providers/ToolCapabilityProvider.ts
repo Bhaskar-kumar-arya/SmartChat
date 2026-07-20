@@ -3,8 +3,29 @@ import { ExtensionManifest } from '../../types/ExtensionManifest'
 import { IExtensionToolAPI, ToolResult, ExtensionTool } from '../../context/ExtensionContext'
 import { IToolRegistry, AITool } from '../../../services/ai/IToolRegistry'
 import { IExtensionLogAPI } from '../../context/ExtensionContext'
+import { IDocSource, DocSection } from '../../docs/IDocSource'
 
-export class ToolCapabilityProvider implements ICapabilityProvider<IExtensionToolAPI> {
+import { GENERATED_INTERFACES } from '../../docs/generatedDocs'
+
+export class ToolCapabilityProvider implements ICapabilityProvider<IExtensionToolAPI>, IDocSource {
+  public getDocSection(): DocSection {
+    let body = `Call built-in AI tools or register custom tools.\n\n`
+    if (GENERATED_INTERFACES['IExtensionToolCallAPI']) {
+      body += `Call API:\n${GENERATED_INTERFACES['IExtensionToolCallAPI']}\n\n`
+    }
+    if (GENERATED_INTERFACES['IExtensionToolRegisterAPI']) {
+      body += `Register API:\n${GENERATED_INTERFACES['IExtensionToolRegisterAPI']}\n\n`
+    }
+    if (GENERATED_INTERFACES['ExtensionTool']) {
+      body += `Shape Definitions:\n${GENERATED_INTERFACES['ExtensionTool']}\n`
+    }
+    return {
+      heading: 'ctx.tools',
+      permissions: ['tools:read', 'tools:register'],
+      body: body.trim()
+    }
+  }
+
   readonly permissions: string[] = ['tools:read', 'tools:register']
 
   constructor(

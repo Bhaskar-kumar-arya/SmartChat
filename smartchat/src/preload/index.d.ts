@@ -132,6 +132,7 @@ declare global {
       extensionReload: (id: string) => Promise<void>
       extensionUninstall: (id: string) => Promise<void>
       extensionGetLog: (id: string) => Promise<string>
+      extensionGetDocs: () => Promise<string>
       extensionChatSend: (extensionId: string, text: string) => void
       extensionChatHistory: (extensionId: string, limit?: number) => Promise<import('../renderer/src/types/extension.types').ExtensionChatMessage[]>
       onExtensionChatPush: (cb: (payload: { extensionId: string; message: import('../renderer/src/types/extension.types').ExtensionChatMessage }) => void) => () => void

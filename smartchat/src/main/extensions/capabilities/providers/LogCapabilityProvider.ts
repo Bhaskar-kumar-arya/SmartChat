@@ -3,8 +3,39 @@ import * as path from 'path'
 import { ICapabilityProvider } from '../ICapabilityProvider'
 import { ExtensionManifest } from '../../types/ExtensionManifest'
 import { IExtensionLogAPI } from '../../context/ExtensionContext'
+import { IDocSource, DocSection } from '../../docs/IDocSource'
 
-export class LogCapabilityProvider implements ICapabilityProvider<IExtensionLogAPI> {
+export class LogCapabilityProvider implements ICapabilityProvider<IExtensionLogAPI>, IDocSource {
+  public getDocSection(): DocSection {
+    return {
+      heading: 'ctx.log',
+      permissions: [],
+      body: `Logs messages to the extension's isolated log file.
+Always available — no permission required.
+
+Log file location (read via Extension Manager → select extension → "View Log"):
+  <userData>/extensions/<extensionId>/ext.log
+
+Methods:
+  ctx.log.info(msg: string, ...data: any[]): void
+  ctx.log.warn(msg: string, ...data: any[]): void
+  ctx.log.error(msg: string, ...data: any[]): void
+
+Each call writes a timestamped line:
+  [2026-07-20T08:00:00.000Z] [INFO] Your message { optional: 'data' }
+
+Example:
+  module.exports = async (ctx) => {
+    ctx.log.info('Extension starting', { version: ctx.manifest.version })
+    try {
+      await doWork()
+    } catch (err) {
+      ctx.log.error('doWork failed', err.message)
+    }
+  }`
+    }
+  }
+
   readonly permissions: string[] = [] // Always available
 
   constructor(private extensionsPath: string) {}

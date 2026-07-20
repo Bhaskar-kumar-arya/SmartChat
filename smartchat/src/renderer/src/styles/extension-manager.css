@@ -90,6 +90,22 @@
   cursor: not-allowed;
 }
 
+.ext-copy-docs-btn {
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--wa-primary);
+  border: 1px solid var(--wa-primary);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--wa-transition);
+}
+
+.ext-copy-docs-btn:hover {
+  background: rgba(34, 192, 94, 0.1);
+}
+
 .ext-close-btn {
   background: none;
   border: none;

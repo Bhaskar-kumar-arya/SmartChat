@@ -17,9 +17,10 @@ interface ExtensionManagerProps {
  */
 export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat }: ExtensionManagerProps) {
   const api = useAPI()
-  const { extensions, loading, error, install, unload, reload, uninstall } = useExtensionManager()
+  const { extensions, loading, error, install, unload, reload, uninstall, copyDocs } = useExtensionManager()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   if (!isOpen) return null
 
@@ -59,6 +60,17 @@ export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat 
             <h2>Extension Manager</h2>
           </div>
           <div className="ext-manager-header-actions">
+            <button
+              className="ext-copy-docs-btn"
+              onClick={async () => {
+                await copyDocs()
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
+              }}
+              title="Copy API reference to clipboard"
+            >
+              {copied ? '✅ Copied!' : '📋 Copy Docs'}
+            </button>
             <button
               className="ext-install-btn"
               onClick={handleInstall}

@@ -36,6 +36,8 @@ import { DedicatedChatSessionManager } from './extensions/dedicatedChat/Dedicate
 import { VirtualChatProvider } from './extensions/virtualChat/VirtualChatProvider'
 import { DedicatedChatCapabilityProvider } from './extensions/capabilities/providers/DedicatedChatCapabilityProvider'
 import { registerExtensionIpcHandlers } from './extensions/ipc'
+import { DocRegistry } from './extensions/docs/DocRegistry'
+
 function getLogFile(): string {
   try {
     const logDir = app.isPackaged
@@ -190,23 +192,44 @@ app.whenReady().then(() => {
   const logProvider = new LogCapabilityProvider(extensionsPath)
   extensionRegistry.register('log', logProvider)
   const storageRepo = new ExtensionStorageRepository(prisma)
-  extensionRegistry.register('storage', new StorageCapabilityProvider(storageRepo))
-  extensionRegistry.register('events', new EventCapabilityProvider(eventBridge))
-  extensionRegistry.register('scheduler', new SchedulerCapabilityProvider(extensionSchedulerService))
-  extensionRegistry.register('tools', new ToolCapabilityProvider(services.toolRegistry, (extId) => logProvider.build({} as any, extId)))
-  extensionRegistry.register('contacts', new ContactsCapabilityProvider(services.contactService))
-  extensionRegistry.register('chats', new ChatsCapabilityProvider(services.chatService))
-  extensionRegistry.register('ui', new UICapabilityProvider(services.notificationService, () => mainWindow))
+  
+  const storageProvider = new StorageCapabilityProvider(storageRepo)
+  const eventProvider = new EventCapabilityProvider(eventBridge)
+  const schedulerProvider = new SchedulerCapabilityProvider(extensionSchedulerService)
+  const toolProvider = new ToolCapabilityProvider(services.toolRegistry, (extId) => logProvider.build({} as any, extId))
+  const contactsProvider = new ContactsCapabilityProvider(services.contactService)
+  const chatsProvider = new ChatsCapabilityProvider(services.chatService)
+  const uiProvider = new UICapabilityProvider(services.notificationService, () => mainWindow)
+  
+  extensionRegistry.register('storage', storageProvider)
+  extensionRegistry.register('events', eventProvider)
+  extensionRegistry.register('scheduler', schedulerProvider)
+  extensionRegistry.register('tools', toolProvider)
+  extensionRegistry.register('contacts', contactsProvider)
+  extensionRegistry.register('chats', chatsProvider)
+  extensionRegistry.register('ui', uiProvider)
   
   const chatRepo = new DedicatedChatRepository(prisma)
   const sessionManager = new DedicatedChatSessionManager(chatRepo, eventBridge, () => mainWindow)
   const virtualChatProv = new VirtualChatProvider(services.chatRepository)
   
-  extensionRegistry.register('dedicatedChat', new DedicatedChatCapabilityProvider(chatRepo, () => mainWindow))
+  const dedicatedChatProvider = new DedicatedChatCapabilityProvider(chatRepo, () => mainWindow)
+  extensionRegistry.register('dedicatedChat', dedicatedChatProvider)
+  
+  const docRegistry = new DocRegistry()
+  docRegistry.register(logProvider)
+  docRegistry.register(eventProvider)
+  docRegistry.register(storageProvider)
+  docRegistry.register(toolProvider)
+  docRegistry.register(contactsProvider)
+  docRegistry.register(chatsProvider)
+  docRegistry.register(schedulerProvider)
+  docRegistry.register(uiProvider)
+  docRegistry.register(dedicatedChatProvider)
   
   const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService, virtualChatProv, eventBridge)
   
-  registerExtensionIpcHandlers(extensionHost, sessionManager, chatRepo, extensionLoader, extensionsPath, storageRepo)
+  registerExtensionIpcHandlers(extensionHost, sessionManager, chatRepo, extensionLoader, extensionsPath, storageRepo, docRegistry)
 
   extensionHost.loadAll().catch(err => logMain('[Main] Failed to load extensions', err))
 

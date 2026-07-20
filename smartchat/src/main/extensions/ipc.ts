@@ -5,6 +5,7 @@ import { IExtensionHost } from './host/IExtensionHost'
 import { IExtensionLoader } from './host/IExtensionLoader'
 import { IDedicatedChatSessionManager } from './dedicatedChat/IDedicatedChatSessionManager'
 import { IDedicatedChatRepository } from './dedicatedChat/IDedicatedChatRepository'
+import { IDocRegistry } from './docs/DocRegistry'
 
 export function registerExtensionIpcHandlers(
   host: IExtensionHost,
@@ -12,7 +13,8 @@ export function registerExtensionIpcHandlers(
   chatRepo: IDedicatedChatRepository,
   loader?: IExtensionLoader,
   extensionsDir?: string,
-  storageRepo?: any
+  storageRepo?: any,
+  docRegistry?: IDocRegistry
 ) {
   // ── Existing Phase 8 handlers ────────────────────────────────────────
   ipcMain.on('extension:chat-send', async (_event, extensionId: string, text: string) => {
@@ -68,5 +70,10 @@ export function registerExtensionIpcHandlers(
     if (!extensionsDir) return ''
     const logPath = path.join(extensionsDir, id, 'ext.log')
     return fs.readFile(logPath, 'utf8').catch(() => '')
+  })
+
+  ipcMain.handle('extension:get-docs', async () => {
+    if (!docRegistry) return ''
+    return docRegistry.buildDocs()
   })
 }

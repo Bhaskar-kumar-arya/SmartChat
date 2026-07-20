@@ -3,8 +3,29 @@ import { ExtensionManifest } from '../../types/ExtensionManifest'
 import { IExtensionDedicatedChatAPI, DedicatedChatContent } from '../../context/ExtensionContext'
 import { IDedicatedChatRepository } from '../../dedicatedChat/IDedicatedChatRepository'
 import { BrowserWindow } from 'electron'
+import { IDocSource, DocSection } from '../../docs/IDocSource'
 
-export class DedicatedChatCapabilityProvider implements ICapabilityProvider<IExtensionDedicatedChatAPI> {
+import { GENERATED_INTERFACES } from '../../docs/generatedDocs'
+
+export class DedicatedChatCapabilityProvider implements ICapabilityProvider<IExtensionDedicatedChatAPI>, IDocSource {
+  public getDocSection(): DocSection {
+    let body = `Interact with the extension's dedicated sidebar chat.\n\n`
+    if (GENERATED_INTERFACES['IExtensionDedicatedChatAPI']) {
+      body += `API:\n${GENERATED_INTERFACES['IExtensionDedicatedChatAPI']}\n\n`
+    }
+    if (GENERATED_INTERFACES['DedicatedChatContent']) {
+      body += `Content Shape:\n${GENERATED_INTERFACES['DedicatedChatContent']}\n\n`
+    }
+    if (GENERATED_INTERFACES['DedicatedChatMessage']) {
+      body += `Message Shape:\n${GENERATED_INTERFACES['DedicatedChatMessage']}\n`
+    }
+    return {
+      heading: 'ctx.dedicatedChat',
+      permissions: ['ui:dedicated_chat'],
+      body: body.trim()
+    }
+  }
+
   readonly permissions = ['ui:dedicated_chat']
 
   constructor(

@@ -3,8 +3,22 @@ import { ExtensionManifest } from '../../types/ExtensionManifest'
 import { IExtensionUIAPI } from '../../context/ExtensionContext'
 import { INotificationService } from '../../../services/notification/INotificationService'
 import { BrowserWindow } from 'electron'
+import { IDocSource, DocSection } from '../../docs/IDocSource'
+import { GENERATED_INTERFACES } from '../../docs/generatedDocs'
 
-export class UICapabilityProvider implements ICapabilityProvider<IExtensionUIAPI> {
+export class UICapabilityProvider implements ICapabilityProvider<IExtensionUIAPI>, IDocSource {
+  public getDocSection(): DocSection {
+    let body = `Show notifications and UI prompts.\n\n`
+    if (GENERATED_INTERFACES['IExtensionUIAPI']) {
+      body += `${GENERATED_INTERFACES['IExtensionUIAPI']}\n`
+    }
+    return {
+      heading: 'ctx.ui',
+      permissions: ['ui:notification'],
+      body: body.trim()
+    }
+  }
+
   readonly permissions = ['ui:notification']
 
   constructor(
