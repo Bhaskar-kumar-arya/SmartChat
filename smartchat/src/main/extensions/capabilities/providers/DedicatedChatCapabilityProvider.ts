@@ -17,8 +17,33 @@ export class DedicatedChatCapabilityProvider implements ICapabilityProvider<IExt
       body += `Content Shape:\n${GENERATED_INTERFACES['DedicatedChatContent']}\n\n`
     }
     if (GENERATED_INTERFACES['DedicatedChatMessage']) {
-      body += `Message Shape:\n${GENERATED_INTERFACES['DedicatedChatMessage']}\n`
+      body += `Message Shape:\n${GENERATED_INTERFACES['DedicatedChatMessage']}\n\n`
     }
+
+    body += `Handling Interactive Button Callbacks:
+------------------------------------------
+When sending cards with action buttons (using the 'buttons' array inside a card payload), clicking a button triggers a callback message sent to the extension:
+
+1. The button click event is delivered via the 'extension:chat-message' event (which requires the 'events:dedicated_chat' permission).
+2. The payload of the event will have its 'text' property set to the button's ID prefixed with '__button:' (e.g. '__button:check_status').
+3. In your extension's event listener, detect this prefix to execute the button's associated logic.
+
+Example:
+\`\`\`javascript
+ctx.events.on('extension:chat-message', async (msg) => {
+  if (msg.text.startsWith('__button:')) {
+    const buttonId = msg.text.substring('__button:'.length);
+    if (buttonId === 'check_status') {
+      await ctx.dedicatedChat.send({
+        type: 'text',
+        text: 'All systems operational!'
+      });
+    }
+  }
+});
+\`\`\`
+`
+
     return {
       heading: 'ctx.dedicatedChat',
       permissions: ['ui:dedicated_chat'],

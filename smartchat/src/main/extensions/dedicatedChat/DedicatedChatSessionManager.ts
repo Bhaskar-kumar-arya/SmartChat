@@ -11,6 +11,11 @@ export class DedicatedChatSessionManager implements IDedicatedChatSessionManager
   ) {}
 
   async routeUserMessage(extensionId: string, text: string): Promise<void> {
+    if (text.startsWith('__button:')) {
+      const buttonId = text.slice('__button:'.length)
+      return this.routeButtonPress(extensionId, buttonId)
+    }
+
     const payload = JSON.stringify({ type: 'text', text })
     await this.chatRepo.append(extensionId, 'user', payload)
     
@@ -44,9 +49,8 @@ export class DedicatedChatSessionManager implements IDedicatedChatSessionManager
       createdAt: new Date()
     })
 
-    // For now we map button presses to text as well, or we could add another event type.
-    // The plan specifies 'extension:chat-message' for incoming text.
-    this.eventBridge.emitToExtension(extensionId, 'extension:chat-message', { text: `[Button Press] ${buttonId}` })
+    // Map button presses to __button: prefixed text for the extension message event
+    this.eventBridge.emitToExtension(extensionId, 'extension:chat-message', { text: `__button:${buttonId}` })
   }
 
   async routeCommand(extensionId: string, command: string, args: string): Promise<void> {

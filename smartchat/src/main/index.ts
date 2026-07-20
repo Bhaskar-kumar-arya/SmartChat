@@ -28,8 +28,6 @@ import { ExtensionHost } from './extensions/host/ExtensionHost'
 import { ExtensionSchedulerService } from './extensions/scheduler/ExtensionSchedulerService'
 import { SchedulerCapabilityProvider } from './extensions/capabilities/providers/SchedulerCapabilityProvider'
 import { ToolCapabilityProvider } from './extensions/capabilities/providers/ToolCapabilityProvider'
-import { ContactsCapabilityProvider } from './extensions/capabilities/providers/ContactsCapabilityProvider'
-import { ChatsCapabilityProvider } from './extensions/capabilities/providers/ChatsCapabilityProvider'
 import { UICapabilityProvider } from './extensions/capabilities/providers/UICapabilityProvider'
 import { DedicatedChatRepository } from './extensions/dedicatedChat/DedicatedChatRepository'
 import { DedicatedChatSessionManager } from './extensions/dedicatedChat/DedicatedChatSessionManager'
@@ -197,16 +195,12 @@ app.whenReady().then(() => {
   const eventProvider = new EventCapabilityProvider(eventBridge)
   const schedulerProvider = new SchedulerCapabilityProvider(extensionSchedulerService)
   const toolProvider = new ToolCapabilityProvider(services.toolRegistry, (extId) => logProvider.build({} as any, extId))
-  const contactsProvider = new ContactsCapabilityProvider(services.contactService)
-  const chatsProvider = new ChatsCapabilityProvider(services.chatService)
   const uiProvider = new UICapabilityProvider(services.notificationService, () => mainWindow)
   
   extensionRegistry.register('storage', storageProvider)
   extensionRegistry.register('events', eventProvider)
   extensionRegistry.register('scheduler', schedulerProvider)
   extensionRegistry.register('tools', toolProvider)
-  extensionRegistry.register('contacts', contactsProvider)
-  extensionRegistry.register('chats', chatsProvider)
   extensionRegistry.register('ui', uiProvider)
   
   const chatRepo = new DedicatedChatRepository(prisma)
@@ -221,8 +215,6 @@ app.whenReady().then(() => {
   docRegistry.register(eventProvider)
   docRegistry.register(storageProvider)
   docRegistry.register(toolProvider)
-  docRegistry.register(contactsProvider)
-  docRegistry.register(chatsProvider)
   docRegistry.register(schedulerProvider)
   docRegistry.register(uiProvider)
   docRegistry.register(dedicatedChatProvider)

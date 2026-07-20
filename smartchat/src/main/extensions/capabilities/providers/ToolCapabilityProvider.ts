@@ -17,8 +17,22 @@ export class ToolCapabilityProvider implements ICapabilityProvider<IExtensionToo
       body += `Register API:\n${GENERATED_INTERFACES['IExtensionToolRegisterAPI']}\n\n`
     }
     if (GENERATED_INTERFACES['ExtensionTool']) {
-      body += `Shape Definitions:\n${GENERATED_INTERFACES['ExtensionTool']}\n`
+      body += `Shape Definitions:\n${GENERATED_INTERFACES['ExtensionTool']}\n\n`
     }
+    if (GENERATED_INTERFACES['ToolResult']) {
+      body += `${GENERATED_INTERFACES['ToolResult']}\n\n`
+    }
+
+    const tools = this.toolRegistry.getAllTools()
+    if (tools.length > 0) {
+      body += `Available AI Tools:\n\n`
+      for (const tool of tools) {
+        body += `### \`${tool.name}\`\n\n`
+        body += `**Description**:\n${tool.description}\n\n`
+        body += `**Parameters Schema**:\n\`\`\`json\n${JSON.stringify(tool.parametersSchema, null, 2)}\n\`\`\`\n\n`
+      }
+    }
+
     return {
       heading: 'ctx.tools',
       permissions: ['tools:read', 'tools:register'],
@@ -76,7 +90,10 @@ export class ToolCapabilityProvider implements ICapabilityProvider<IExtensionToo
           execute: async (args: Record<string, unknown>): Promise<import('../../../services/ai/IToolRegistry').ToolResult> => {
             try {
               const res = await tool.execute(args)
-              return { text: res.text }
+              const text = (res && typeof res === 'object' && 'text' in res)
+                ? String((res as any).text)
+                : (typeof res === 'string' ? res : JSON.stringify(res))
+              return { text }
             } catch (err) {
               logger.error(`Error executing tool ${tool.name}`, err)
               throw err

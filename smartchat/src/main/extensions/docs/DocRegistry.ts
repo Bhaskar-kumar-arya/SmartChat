@@ -89,8 +89,6 @@ interface ExtensionContext {
   readonly events?:        IExtensionEventAPI
   readonly scheduler?:     IExtensionSchedulerAPI
   readonly tools?:         IExtensionToolAPI
-  readonly contacts?:      IExtensionContactsAPI
-  readonly chats?:         IExtensionChatsAPI
   readonly ui?:            IExtensionUIAPI
   readonly dedicatedChat?: IExtensionDedicatedChatAPI
 }
