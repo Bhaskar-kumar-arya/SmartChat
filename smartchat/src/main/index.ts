@@ -96,6 +96,7 @@ if (!gotTheLock) {
   let mainWindow: BrowserWindow | null = null
 let services: ReturnType<typeof createServices>
 let waConnectionManager: WhatsAppConnectionManager
+let eventBridge: ExtensionEventBridge
 let trayService: TrayService | null = null
 let isQuitting = false
 
@@ -139,7 +140,9 @@ function createWindow(): void {
         console.log('[Main] Started hidden via --hidden argument')
       }
       waConnectionManager.setWindow(mainWindow)
-      waConnectionManager.connect()
+      waConnectionManager.connect().then(() => {
+        if (eventBridge) eventBridge.attach()
+      }).catch(err => console.error('[Main] Failed to connect WA manager:', err))
     }
   })
 
@@ -182,7 +185,7 @@ app.whenReady().then(() => {
   const extensionsPath = join(app.getPath('userData'), 'extensions')
   const extensionLoader = new ExtensionLoader(extensionsPath)
   const extensionRegistry = new ExtensionCapabilityRegistry()
-  const eventBridge = new ExtensionEventBridge(() => waConnectionManager?.getBus() ?? null)
+  eventBridge = new ExtensionEventBridge(() => waConnectionManager?.getBus() ?? null)
   const extensionSchedulerService = new ExtensionSchedulerService()
   const logProvider = new LogCapabilityProvider(extensionsPath)
   extensionRegistry.register('log', logProvider)

@@ -8,6 +8,10 @@ export class ExtensionEventBridge implements IExtensionEventBridge {
 
   constructor(private readonly getBus: () => IWAEventBus | null) {}
 
+  public attach(): void {
+    this.setupListeners()
+  }
+
   private setupListeners() {
     const bus = this.getBus()
     if (!bus || this.busAttached) return
