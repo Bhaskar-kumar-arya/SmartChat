@@ -33,6 +33,7 @@ import { DedicatedChatRepository } from './extensions/dedicatedChat/DedicatedCha
 import { DedicatedChatSessionManager } from './extensions/dedicatedChat/DedicatedChatSessionManager'
 import { VirtualChatProvider } from './extensions/virtualChat/VirtualChatProvider'
 import { DedicatedChatCapabilityProvider } from './extensions/capabilities/providers/DedicatedChatCapabilityProvider'
+import { LlmCapabilityProvider } from './extensions/capabilities/providers/LlmCapabilityProvider'
 import { registerExtensionIpcHandlers } from './extensions/ipc'
 import { DocRegistry } from './extensions/docs/DocRegistry'
 
@@ -197,11 +198,14 @@ app.whenReady().then(() => {
   const toolProvider = new ToolCapabilityProvider(services.toolRegistry, (extId) => logProvider.build({} as any, extId))
   const uiProvider = new UICapabilityProvider(services.notificationService, () => mainWindow)
   
+  const llmProvider = new LlmCapabilityProvider(services.aiService, services.aiChatSessionService)
+  
   extensionRegistry.register('storage', storageProvider)
   extensionRegistry.register('events', eventProvider)
   extensionRegistry.register('scheduler', schedulerProvider)
   extensionRegistry.register('tools', toolProvider)
   extensionRegistry.register('ui', uiProvider)
+  extensionRegistry.register('llm', llmProvider)
   
   const chatRepo = new DedicatedChatRepository(prisma)
   const sessionManager = new DedicatedChatSessionManager(chatRepo, eventBridge, () => mainWindow)
@@ -218,6 +222,7 @@ app.whenReady().then(() => {
   docRegistry.register(schedulerProvider)
   docRegistry.register(uiProvider)
   docRegistry.register(dedicatedChatProvider)
+  docRegistry.register(llmProvider)
   
   const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService, virtualChatProv, eventBridge)
   

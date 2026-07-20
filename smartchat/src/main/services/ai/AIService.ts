@@ -352,6 +352,70 @@ export class AIService implements IAIService {
     }
   }
 
+  async generateResponseWithTools(
+    prompt: string,
+    contextFiles?: AIChatContext[],
+    history?: AIHistoryMessage[],
+    mentions?: AIMention[],
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string, maxTurns?: number }
+  ): Promise<string> {
+    let currentPrompt = prompt
+    const currentHistory = history ? [...history] : []
+    let turns = 0
+    const maxTurns = options?.maxTurns || 1000000
+
+    while (turns < maxTurns) {
+      const response = await this.generateResponse(
+        currentPrompt,
+        contextFiles,
+        currentHistory,
+        mentions,
+        options
+      )
+
+      const toolMatch = response.match(/<tool_call>([\s\S]*?)<\/tool_call>/)
+      if (!toolMatch) {
+        return response
+      }
+
+      let resultPayload = ''
+      let toolName = 'unknown'
+      try {
+        let jsonStr = toolMatch[1].trim()
+        jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+        const toolData = JSON.parse(jsonStr)
+        toolName = toolData.tool
+        const toolArgs = toolData.arguments
+
+        const tool = this.toolRegistry.getTool(toolName)
+        if (!tool) {
+          resultPayload = JSON.stringify({ error: `Tool ${toolName} not found` })
+        } else {
+          const result = await tool.execute(toolArgs)
+          resultPayload = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+        }
+      } catch (e: any) {
+        resultPayload = JSON.stringify({ error: `Failed to parse/execute tool call: ${e.message}` })
+      }
+
+      // Push the current prompt and assistant response to history
+      currentHistory.push({
+        role: 'user',
+        content: currentPrompt
+      })
+      currentHistory.push({
+        role: 'ai',
+        content: response
+      })
+
+      // Setup next turn prompt
+      currentPrompt = `[SYSTEM] Tool Result:\n\`\`\`json\n${resultPayload}\n\`\`\`\n\nThe tool has completed.`
+      turns++
+    }
+
+    throw new Error(`LLM call exceeded maximum tool execution turns (${maxTurns})`)
+  }
+
   abortResponse(requestId: string): void {
     const controller = this.activeRequests.get(requestId);
     if (controller) {

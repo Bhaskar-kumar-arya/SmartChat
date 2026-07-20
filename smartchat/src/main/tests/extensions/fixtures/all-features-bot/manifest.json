@@ -1,0 +1,54 @@
+{
+  "id": "com.example.all-features-bot",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "name": "All Features Bot",
+  "description": "Tests all of the features of the SmartChat extension system",
+  "main": "index.js",
+  "permissions": [
+    "events:message:incoming",
+    "events:message:deleted",
+    "events:message:edited",
+    "events:message:status-updated",
+    "reaction:processed",
+    "chat:created",
+    "chat:archived",
+    "chat:pinned",
+    "contact:updated",
+    "group:participant-added",
+    "group:participant-removed",
+    "group:subject-changed",
+    "connection:open",
+    "connection:close",
+    "extension:chat-message",
+    "storage:read",
+    "storage:write",
+    "tools:read",
+    "tools:register",
+    "scheduler",
+    "ui:notification",
+    "ui:dedicated_chat",
+    "llm:chat"
+  ],
+  "dedicatedChat": {
+    "name": "All Features Bot",
+    "avatarEmoji": "🧪",
+    "commands": [
+      { "name": "status", "description": "Get status of all APIs" },
+      { "name": "test_storage", "description": "Run Storage API test" },
+      { "name": "test_tools", "description": "Run Tools API test" },
+      { "name": "test_self", "description": "Query own details using queryDatabase tool" },
+      { "name": "test_scheduler", "description": "Run Scheduler API test" },
+      { "name": "test_ui", "description": "Run UI API test (Toast/Notification)" },
+      { "name": "test_node", "description": "Run Node.js Core & Package API test" },
+      { "name": "test_llm", "description": "Run LLM API test" },
+      { "name": "test_llm_multi", "description": "Run Multi-turn LLM tool execution test" }
+    ]
+  },
+  "scheduler": {
+    "onStart": true,
+    "intervals": [
+      { "name": "heartbeat", "cron": "*/1 * * * *" }
+    ]
+  }
+}

@@ -53,6 +53,14 @@ export interface IAIService {
     options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string },
     onChunk?: (chunk: string) => void
   ): Promise<void>
+
+  generateResponseWithTools(
+    prompt: string,
+    contextFiles?: AIChatContext[],
+    history?: AIHistoryMessage[],
+    mentions?: AIMention[],
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string, maxTurns?: number }
+  ): Promise<string>
   
   abortResponse(requestId: string): void
 }

@@ -1,0 +1,8 @@
+{
+  "name": "com.example.all-features-bot",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "uuid": "^9.0.1"
+  }
+}

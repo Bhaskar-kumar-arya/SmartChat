@@ -88,6 +88,21 @@ export interface IExtensionUIAPI {
   showSettings(schema: object): Promise<Record<string, unknown>>
 }
 
+export interface LlmHistoryMessage {
+  role: 'user' | 'ai' | 'system'
+  content: string
+}
+
+export interface LlmChatOptions {
+  model?: string
+  useThinkMode?: boolean
+  history?: LlmHistoryMessage[]
+}
+
+export interface IExtensionLlmAPI {
+  chat(prompt: string, options?: LlmChatOptions): Promise<string>
+}
+
 export interface ExtensionContext {
   readonly extensionId: string
   readonly manifest: ExtensionManifest
@@ -102,4 +117,5 @@ export interface ExtensionContext {
   readonly tools?: IExtensionToolAPI
   readonly ui?: IExtensionUIAPI
   readonly dedicatedChat?: IExtensionDedicatedChatAPI
+  readonly llm?: IExtensionLlmAPI
 }
