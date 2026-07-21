@@ -1,0 +1,22 @@
+{
+  "id": "com.smartchat.unread-summarizer-bot",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "name": "Unread Messages Summarizer",
+  "description": "Uses LLM to summarize all unread WhatsApp messages across your chats.",
+  "main": "index.js",
+  "permissions": [
+    "tools:read",
+    "llm:chat",
+    "ui:dedicated_chat",
+    "events:extension:chat-message"
+  ],
+  "dedicatedChat": {
+    "name": "Unread Summarizer",
+    "avatarEmoji": "📝",
+    "commands": [
+      { "name": "summarize", "description": "Summarize all unread messages across all chats" },
+      { "name": "clear", "description": "Mark all summarized chats as read" }
+    ]
+  }
+}
