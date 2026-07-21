@@ -86,7 +86,7 @@ module.exports = async function(ctx) {
     for (const eventName of eventsToRegister) {
       try {
         const unsub = ctx.events.on(eventName, async (payload) => {
-          ctx.log.info(`Event Received [${eventName}]:`, JSON.stringify(payload));
+          ctx.log.info(`Event Received [${eventName}]:`, JSON.stringify(payload, (k, v) => typeof v === 'bigint' ? v.toString() : v));
 
           // If it is our dedicated chat message
           if (eventName === 'extension:chat-message') {

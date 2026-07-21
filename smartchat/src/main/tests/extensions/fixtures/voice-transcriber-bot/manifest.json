@@ -1,0 +1,13 @@
+{
+  "id": "com.example.voice-transcriber",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "name": "Audio & PDF Assistant Bot",
+  "description": "Automatically transcribes voice notes and extracts text/OCR from PDFs.",
+  "main": "index.js",
+  "permissions": [
+    "events:message:incoming",
+    "tools:read",
+    "ui:notification"
+  ]
+}
