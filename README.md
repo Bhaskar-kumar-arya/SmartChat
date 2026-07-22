@@ -2,19 +2,19 @@
 
 SmartChat is a modern desktop chat client that brings WhatsApp Web into an Electron application powered by an intelligent AI workspace. 
 
-Unlike traditional chat clients, SmartChat bridges WhatsApp messaging with multi-provider LLMs (Gemini, OpenAI, Groq, DeepSeek, LM Studio), on-device vector search, an extensible plugin ecosystem, local HTTP automation APIs, and conversation disentanglement capabilities.
+Unlike traditional chat clients, SmartChat bridges WhatsApp messaging with multi-provider LLMs (Gemini, OpenAI, Groq, DeepSeek, LM Studio), on-device vector search, an extensible plugin ecosystem, local HTTP automation APIs, and conversation disentanglement capabilities.Also, this is not yet another whatsapp web wrapper with injected javascript. The app has been built from scratch - the UI/UX and the business logic.
 
 ---
 
 ## Highlights
 
-- **Full WhatsApp Parity**: Real-time DMs, group chats, community channels, voice notes with interactive waveforms, stickers, reactions, media rendering, and dynamic call log tracking (`CallLog`).
+- **Full WhatsApp Parity**: Real-time DMs, group chats, community channels, voice notes with interactive waveforms, stickers, reactions, media rendering, and dynamic call log tracking.
 - **Background Worker Architecture**: Offloads network socket traffic (via Baileys), message decryption, and SQLite write transactions to dedicated Node.js background workers—keeping the UI fluid during massive syncs.
-- **Built-in AI Assistant & Tool Engine**: Chat sidebar supporting multiple AI providers (Gemini, OpenAI, Groq, DeepSeek, Mistral, LM Studio, local Llama models). Features function calling, `@mentions` of chats/contacts, starred message prompt anchors, and citation tracking.
-- **🔌 Extension & Plugin System (`.scext`)**: Modulable runtime architecture allowing custom extensions packaged as `.scext` bundles. Extensions can inject virtual bot chats into the chat list, register AI agent tools, listen to live events, trigger LLMs, schedule background cron tasks, and store private key-value data.
-- **Semantic Search & Vector Embeddings**: On-device vector embeddings powered by `@xenova/transformers`, `onnxruntime-node`, and `sqlite-vec` for searching message histories by concept rather than just exact keywords.
+- **Built-in AI Assistant & Tool Engine**: Chat sidebar supporting multiple AI providers (Gemini, OpenAI, Groq, DeepSeek, Mistral, LM Studio, local Llama models). Features function calling, `@mentions` of chats/contacts, starred message prompt anchors, and citation tracking.Tools include ReadMessagesTool, QueryDatabaseTool,messageActionTool(edit/delete/forward/reply), ChatActionTool(pin,mute,archive,delete,markasunread/read) etc. These tools are registered dynamically with the AI agent and can be used by the agent to interact with the WhatsApp data and perform actions. It also supports custom tool registration from extensions.
+- **🔌 Extension & Plugin System (`.scext`)**: Modulable runtime architecture allowing custom extensions packaged as `.scext` bundles. Extensions can inject virtual bot chats into the chat list, register AI agent tools, listen to live events, trigger LLMs, schedule background cron tasks,execute tools, and store private key-value data.
+- **Semantic Search & Vector Embeddings**: On-device vector embeddings powered by `@xenova/transformers`, `onnxruntime-node`, and `sqlite-vec` for searching message histories by concept rather than just exact keywords.(using Conversational Thread Disentanglement)
 - **Local REST API Server**: Embedded HTTP API server running locally on `127.0.0.1` with Bearer token authentication, allowing external scripts, workflows, or AI agents to programmatically query chats, read messages, and trigger actions.
-- **Conversational Thread Disentanglement**: Built-in dataset annotation tools and PyTorch fine-tuning scripts (`train/`) to untangle chaotic multi-topic group conversations into clean, coherent threads.
+- **Conversational Thread Disentanglement**: Built-in dataset annotation tools and PyTorch fine-tuning scripts (`train/`) to untangle chaotic multi-topic group conversations into clean, coherent threads. Note : the model has been trained on this architecture on real data . the data was about 90k pairs , and the model was fine-tuned on it. The fine tuned model gives AUC score of 0.98. this feature is not yet fully integrated.
 
 ---
 
@@ -30,6 +30,10 @@ SmartChat features an isolated, capability-based Extension System. Extensions ar
 - **Cron & Scheduler**: Schedule background cron jobs and recurring tasks using `node-cron`.
 - **Isolated Storage**: Access dedicated per-extension key-value storage backed by Prisma SQLite (`ExtensionKV`).
 - **LLM Access**: Prompt multi-provider LLMs directly from background extension scripts.
+- **Tool Calling**: Extensions can call tools to perform actions in the app. 
+
+### Future plans 
+The app will be transitioned to a microkernel architecture inspired by VS Code, enabling extensions to be as powerful as built-in features by exposing and dogfooding the same API surface used by the app's internal features - keeping Security and privacy in mind as well.
 
 ### Packaged Extension Scripts
 
