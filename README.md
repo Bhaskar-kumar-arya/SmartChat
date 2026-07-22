@@ -33,8 +33,9 @@ SmartChat features an isolated, capability-based Extension System. Extensions ar
 
 ### Packaged Extension Scripts
 
-The `scripts/` directory includes helper packagers for sample extensions:
+The `smartchat/scripts/` directory includes helper packagers for sample extensions:
 ```bash
+cd smartchat
 node scripts/package-unread-summarizer-bot.js
 node scripts/package-voice-transcriber-bot.js
 node scripts/package-all-features-bot.js
@@ -66,7 +67,7 @@ node scripts/package-all-features-bot.js
 ```bash
 # Clone the repository
 git clone https://github.com/Bhaskar-kumar-arya/SmartChat.git
-cd smartchat
+cd SmartChat/smartchat
 
 # Install dependencies
 npm install
@@ -75,6 +76,7 @@ npm install
 ### Running in Development
 
 ```bash
+# Inside the smartchat directory
 npm run dev
 ```
 
@@ -138,23 +140,26 @@ SmartChat launches a local REST API server on `127.0.0.1` upon startup. External
 ## 📂 Project Structure
 
 ```
-smartchat/
-├── docs/                      # Architectural Decision Records (ADRs) & system designs
-│   ├── architecture/          # ADRs, Module maps, AI context design
-│   └── future/                # Feature roadmaps and disentanglement research
-├── prisma/                    # Database schema definitions & migrations
-├── scripts/                   # Build helpers, doc generators & extension packagers
-├── src/
-│   ├── main/                  # Main process & background worker orchestration
-│   │   ├── domain/            # Core entities & domain interfaces
-│   │   ├── extensions/        # Extension host, capabilities, virtual chats & storage
-│   │   ├── ipc/               # Inter-process communication payload types
-│   │   ├── services/          # Business domain services (AI, WhatsApp, Search, Contacts)
-│   │   ├── tools/             # Native tools available to the AI agent
-│   │   └── workers/           # Background threads for WhatsApp connection & embeddings
-│   ├── preload/               # Secure contextBridge API bindings
-│   └── renderer/              # React UI frontend (Components, Hooks, Context, Styling)
-└── train/                     # Thread disentanglement dataset generator & trainer
+SmartChat/
+├── smartchat/                 # Main Electron application workspace
+│   ├── docs/                  # Architectural Decision Records (ADRs) & system designs
+│   │   ├── architecture/      # ADRs, Module maps, AI context design
+│   │   └── future/            # Feature roadmaps and disentanglement research
+│   ├── prisma/                # Database schema definitions & migrations
+│   ├── scripts/               # Build helpers, doc generators & extension packagers
+│   ├── src/
+│   │   ├── main/              # Main process & background worker orchestration
+│   │   │   ├── domain/        # Core entities & domain interfaces
+│   │   │   ├── extensions/    # Extension host, capabilities, virtual chats & storage
+│   │   │   ├── ipc/           # Inter-process communication payload types
+│   │   │   ├── services/      # Business domain services (AI, WhatsApp, Search, Contacts)
+│   │   │   ├── tools/         # Native tools available to the AI agent
+│   │   │   └── workers/       # Background threads for WhatsApp connection & embeddings
+│   │   ├── preload/           # Secure contextBridge API bindings
+│   │   └── renderer/          # React UI frontend (Components, Hooks, Context, Styling)
+│   └── train/                 # Thread disentanglement dataset generator & trainer
+├── to-dos/                    # Development guides and roadmaps
+└── whatsmeow/                 # Protocol implementation references
 ```
 
 ---
@@ -164,9 +169,9 @@ smartchat/
 SmartChat follows **SOLID** software principles, layered modular architecture, and interface segregation to isolate core business domains from transport libraries.
 
 For detailed technical designs, see:
-- [Module Boundary Map](file:///docs/architecture/modules.md)
-- [Architecture Decision Records (ADR)](file:///docs/architecture/ADR.md)
-- [Chat Disentanglement Design](file:///docs/future/chat_disentaglement.md)
+- [Module Boundary Map](file:///smartchat/docs/architecture/modules.md)
+- [Architecture Decision Records (ADR)](file:///smartchat/docs/architecture/ADR.md)
+- [Chat Disentanglement Design](file:///smartchat/docs/future/chat_disentaglement.md)
 
 ---
 
