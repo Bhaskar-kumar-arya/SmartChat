@@ -1,4 +1,4 @@
-# SmartChat 💬🤖
+# SmartChat
 
 SmartChat is a modern desktop chat client that brings WhatsApp Web into an Electron application powered by an intelligent AI workspace. 
 
@@ -6,7 +6,7 @@ Unlike traditional chat clients, SmartChat bridges WhatsApp messaging with multi
 
 ---
 
-## ⚡ Highlights
+## Highlights
 
 - **Full WhatsApp Parity**: Real-time DMs, group chats, community channels, voice notes with interactive waveforms, stickers, reactions, media rendering, and dynamic call log tracking (`CallLog`).
 - **Background Worker Architecture**: Offloads network socket traffic (via Baileys), message decryption, and SQLite write transactions to dedicated Node.js background workers—keeping the UI fluid during massive syncs.
@@ -18,7 +18,7 @@ Unlike traditional chat clients, SmartChat bridges WhatsApp messaging with multi
 
 ---
 
-## 🧩 Extension & Plugin System
+## Extension & Plugin System
 
 SmartChat features an isolated, capability-based Extension System. Extensions are packaged as `.scext` archives containing a `manifest.json`, entry script (`index.js`), and optional dependencies.
 
@@ -164,7 +164,7 @@ SmartChat/
 
 ---
 
-## 📖 Architecture & Design Decisions
+## Architecture & Design Decisions
 
 SmartChat follows **SOLID** software principles, layered modular architecture, and interface segregation to isolate core business domains from transport libraries.
 
