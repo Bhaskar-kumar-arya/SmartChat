@@ -105,6 +105,31 @@ describe('WAWorkerBridge', () => {
     expect(result).toBe('http://image.url')
   })
 
+  it('updateMediaMessage sends update_media_message command and returns result', async () => {
+    bridge.start(true, true)
+    const workerMock = (Worker as any)._getMockInstances()
+
+    const dummyMsg = { key: { id: 'msg1' }, message: { imageMessage: {} } }
+    const promise = bridge.updateMediaMessage(dummyMsg)
+
+    const postMessageCall = workerMock.postMessage.mock.calls.find((call: any) => call[0].type === 'update_media_message')
+    expect(postMessageCall).toBeDefined()
+    expect(postMessageCall[0].payload).toEqual({ msg: dummyMsg })
+
+    const correlationId = postMessageCall[0].correlationId
+
+    ;(Worker as any)._triggerMessage({
+      type: 'reply',
+      correlationId,
+      payload: {
+        result: { key: { id: 'msg1' }, message: { imageMessage: { url: 'https://new.cdn' } } }
+      }
+    })
+
+    const result = await promise
+    expect(result).toEqual({ key: { id: 'msg1' }, message: { imageMessage: { url: 'https://new.cdn' } } })
+  })
+
   it('stop should terminate worker', async () => {
     bridge.start(true, true)
     const workerMock = (Worker as any)._getMockInstances()

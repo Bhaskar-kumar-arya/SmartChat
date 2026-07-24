@@ -29,6 +29,10 @@ export interface WorkerProfilePictureUrlPayload {
   type: 'preview' | 'image';
 }
 
+export interface WorkerUpdateMediaMessagePayload {
+  msg: unknown;
+}
+
 export type WorkerCommandMessage =
   | { type: 'init'; correlationId: string; payload: WorkerInitPayload }
   | { type: 'send_message'; correlationId: string; payload: WorkerSendMessagePayload }
@@ -37,6 +41,7 @@ export type WorkerCommandMessage =
   | { type: 'group_fetch_all'; correlationId: string; payload?: undefined }
   | { type: 'get_pn_for_lid'; correlationId: string; payload: WorkerGetPnForLidPayload }
   | { type: 'profile_picture_url'; correlationId: string; payload: WorkerProfilePictureUrlPayload }
+  | { type: 'update_media_message'; correlationId: string; payload: WorkerUpdateMediaMessagePayload }
   | { type: 'group_metadata'; correlationId: string; payload: { jid: string } }
   | { type: 'logout'; correlationId: string; payload?: undefined }
   | { type: 'skip_sync'; correlationId: string; payload?: undefined };

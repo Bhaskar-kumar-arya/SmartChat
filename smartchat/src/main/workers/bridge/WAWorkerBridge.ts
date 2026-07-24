@@ -2,6 +2,7 @@ import { Worker } from 'worker_threads';
 import type { GroupMetadata } from '@whiskeysockets/baileys';
 import { IWACommandSender } from './IWACommandSender';
 import { ISocketUserContext } from '../../services/contacts/IContactService';
+import { IMediaSocket } from '../../services/messages/IMediaService';
 import { IWAEventBus } from '../../services/whatsapp/IWAEventBus';
 import { WAEventMap } from '../../services/whatsapp/WAEventTypes';
 import { WorkerCommandMessage, WorkerEventMessage } from '../whatsapp/whatsappWorker.types';
@@ -12,9 +13,9 @@ import { IWindowEventEmitter } from './IWindowEventEmitter';
  * ==============
  * Coordinates spawning, lifecycle management, and communication with the background
  * WhatsApp worker thread. Re-emits domain events from the worker process on the Main
- * process WAEventBus and implements ISocketUserContext for UI/services dependency injection.
+ * process WAEventBus and implements ISocketUserContext and IMediaSocket for UI/services dependency injection.
  */
-export class WAWorkerBridge implements IWACommandSender, ISocketUserContext {
+export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMediaSocket {
   private worker: Worker | null = null;
   private readonly pendingReplies = new Map<
     string,
@@ -213,5 +214,9 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext {
 
   public async skipSync(): Promise<void> {
     await this.sendCommand<void>('skip_sync');
+  }
+
+  public async updateMediaMessage(msg: unknown): Promise<unknown> {
+    return this.sendCommand('update_media_message', { msg });
   }
 }

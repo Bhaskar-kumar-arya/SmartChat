@@ -2,7 +2,7 @@ import { parentPort } from 'worker_threads'
 import type { WASocket, AnyMessageContent, MiscMessageGenerationOptions, ChatModification, proto } from '@whiskeysockets/baileys'
 import { WorkerCommandMessage } from '../whatsappWorker.types'
 import { WorkerConnectionManager } from '../socket/workerConnectionManager'
-import { restoreBuffers } from '../utils/workerUtils'
+import { restoreBuffers, sanitizeForPostMessage } from '../utils/workerUtils'
 import { PrismaClient } from '@prisma/client'
 
 /**
@@ -119,6 +119,22 @@ export class WorkerCommandRouter {
             type: 'reply',
             correlationId: command.correlationId,
             payload: { result: url }
+          })
+          break
+        }
+
+        case 'update_media_message': {
+          const sock = this.getSocketOrThrow()
+          const { msg } = command.payload
+          const restoredMsg = restoreBuffers(msg)
+          if (!sock.updateMediaMessage) {
+            throw new Error('[WhatsAppWorker] Socket does not support updateMediaMessage')
+          }
+          const result = await sock.updateMediaMessage(restoredMsg as any)
+          parentPort?.postMessage({
+            type: 'reply',
+            correlationId: command.correlationId,
+            payload: { result: sanitizeForPostMessage(result) }
           })
           break
         }
