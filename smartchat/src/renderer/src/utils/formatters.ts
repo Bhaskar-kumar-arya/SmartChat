@@ -1,6 +1,9 @@
 export const formatTime = (ts: string) => {
   try {
-    const date = new Date(Number(ts) * 1000)
+    const num = Number(ts)
+    if (isNaN(num)) return ''
+    const date = new Date(num * 1000)
+    if (isNaN(date.getTime())) return ''
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   } catch {
     return ''
@@ -9,7 +12,10 @@ export const formatTime = (ts: string) => {
 
 export const formatDate = (ts: string) => {
   try {
-    const date = new Date(Number(ts) * 1000)
+    const num = Number(ts)
+    if (isNaN(num)) return ''
+    const date = new Date(num * 1000)
+    if (isNaN(date.getTime())) return ''
     const now = new Date()
     if (date.toDateString() === now.toDateString()) return 'Today'
     const yesterday = new Date(now)
@@ -23,7 +29,10 @@ export const formatDate = (ts: string) => {
 
 export const formatChatTime = (ts: string) => {
   try {
-    const date = new Date(Number(ts) * 1000)
+    const num = Number(ts)
+    if (isNaN(num)) return ''
+    const date = new Date(num * 1000)
+    if (isNaN(date.getTime())) return ''
     const now = new Date()
     const isToday = date.toDateString() === now.toDateString()
     if (isToday) {

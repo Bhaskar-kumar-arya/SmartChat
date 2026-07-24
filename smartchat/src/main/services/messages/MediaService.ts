@@ -447,6 +447,10 @@ export class MediaService implements IMediaService {
         throw new Error('[MediaService] updateMediaMessage returned no downloadable media node')
       }
 
+      if (updatedMediaMsg.mediaKey) {
+        updatedMediaMsg.mediaKey = ensureBuffer(updatedMediaMsg.mediaKey)
+      }
+
       const stream = await downloadContentFromMessage(
         updatedMediaMsg as unknown as Parameters<typeof downloadContentFromMessage>[0],
         updatedMediaType as unknown as Parameters<typeof downloadContentFromMessage>[1]
