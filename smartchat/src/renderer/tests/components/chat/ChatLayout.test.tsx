@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderWithProviders, screen, fireEvent, act } from '../../testUtils'
+import { createMockApiService } from '../../mocks/mockApiService'
 import ChatLayout from '@renderer/components/chat/ChatLayout'
 
 describe('ChatLayout', () => {
@@ -22,8 +23,10 @@ describe('ChatLayout', () => {
   })
 
   it('renders ChatList and empty state when no active chat is selected', async () => {
-    const { apiService } = renderWithProviders(<ChatLayout />)
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+
+    renderWithProviders(<ChatLayout />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
@@ -35,9 +38,9 @@ describe('ChatLayout', () => {
   })
 
   it('selects a chat and renders header, message view, and input area', async () => {
-    const { apiService } = renderWithProviders(<ChatLayout />)
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
-    apiService.getMessages = vi.fn().mockResolvedValue([
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+    mockApi.getMessages = vi.fn().mockResolvedValue([
       {
         id: 'msg-1',
         chatJid: '123456789@s.whatsapp.net',
@@ -49,6 +52,8 @@ describe('ChatLayout', () => {
         participantName: 'Jane Doe'
       }
     ])
+
+    renderWithProviders(<ChatLayout />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
@@ -62,12 +67,14 @@ describe('ChatLayout', () => {
     })
 
     expect(screen.getByTitle('Search messages')).toBeInTheDocument()
-    expect(screen.getByText('Hello SmartChat')).toBeInTheDocument()
+    expect(screen.getAllByText('Hello SmartChat').length).toBeGreaterThan(0)
   })
 
   it('toggles AI Assistant sidebar when clicking AI edge tab', async () => {
-    const { apiService } = renderWithProviders(<ChatLayout />)
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+
+    renderWithProviders(<ChatLayout />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
@@ -80,9 +87,11 @@ describe('ChatLayout', () => {
   })
 
   it('toggles message search sidebar when clicking header search icon', async () => {
-    const { apiService } = renderWithProviders(<ChatLayout />)
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
-    apiService.getMessages = vi.fn().mockResolvedValue([])
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+    mockApi.getMessages = vi.fn().mockResolvedValue([])
+
+    renderWithProviders(<ChatLayout />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))

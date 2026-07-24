@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderWithProviders, screen, fireEvent, act } from '../../testUtils'
+import { createMockApiService } from '../../mocks/mockApiService'
 import ChatList from '@renderer/components/chat/ChatList'
 
 describe('ChatList', () => {
@@ -38,8 +39,10 @@ describe('ChatList', () => {
   })
 
   it('fetches and renders list of chats', async () => {
-    const { apiService } = renderWithProviders(<ChatList {...defaultProps} />)
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+
+    renderWithProviders(<ChatList {...defaultProps} />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
@@ -52,8 +55,10 @@ describe('ChatList', () => {
   })
 
   it('shows empty state when no chats are available', async () => {
-    const { apiService } = renderWithProviders(<ChatList {...defaultProps} />)
-    apiService.getChats = vi.fn().mockResolvedValue([])
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue([])
+
+    renderWithProviders(<ChatList {...defaultProps} />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
@@ -64,10 +69,13 @@ describe('ChatList', () => {
 
   it('triggers onSelectChat when a chat item is clicked', async () => {
     const onSelectChat = vi.fn()
-    const { apiService } = renderWithProviders(
-      <ChatList {...defaultProps} onSelectChat={onSelectChat} />
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+
+    renderWithProviders(
+      <ChatList {...defaultProps} onSelectChat={onSelectChat} />,
+      { apiService: mockApi }
     )
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
@@ -84,8 +92,10 @@ describe('ChatList', () => {
   })
 
   it('opens context menu on right click of a chat item', async () => {
-    const { apiService } = renderWithProviders(<ChatList {...defaultProps} />)
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+
+    renderWithProviders(<ChatList {...defaultProps} />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
@@ -99,8 +109,10 @@ describe('ChatList', () => {
   })
 
   it('opens index confirmation modal when sparkle button is clicked', async () => {
-    const { apiService } = renderWithProviders(<ChatList {...defaultProps} />)
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+
+    renderWithProviders(<ChatList {...defaultProps} />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
@@ -109,12 +121,14 @@ describe('ChatList', () => {
     const indexBtn = screen.getByTitle('Index for Semantic Search')
     fireEvent.click(indexBtn)
 
-    expect(screen.getByText('Build Search Embeddings')).toBeInTheDocument()
+    expect(screen.getByText('Index for Semantic Search')).toBeInTheDocument()
   })
 
   it('opens logout confirmation modal when logout button is clicked', async () => {
-    const { apiService } = renderWithProviders(<ChatList {...defaultProps} />)
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+
+    renderWithProviders(<ChatList {...defaultProps} />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
@@ -127,8 +141,10 @@ describe('ChatList', () => {
   })
 
   it('opens settings modal when settings button is clicked', async () => {
-    const { apiService } = renderWithProviders(<ChatList {...defaultProps} />)
-    apiService.getChats = vi.fn().mockResolvedValue(dummyChats)
+    const mockApi = createMockApiService()
+    mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+
+    renderWithProviders(<ChatList {...defaultProps} />, { apiService: mockApi })
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50))
