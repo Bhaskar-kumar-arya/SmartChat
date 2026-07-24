@@ -25,6 +25,7 @@ export const useMultiFileQueue = (maxFiles: number = 30) => {
           const name = p.split(/[\\/]/).pop() || 'File'
           const ext = name.split('.').pop()?.toLowerCase() || ''
           newFiles.push({ path: p, name, ext, caption: '' })
+          existingPaths.add(p)
         }
 
         if (newFiles.length === 0) return prev

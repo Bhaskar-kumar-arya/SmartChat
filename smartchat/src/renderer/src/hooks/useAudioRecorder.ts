@@ -25,6 +25,8 @@ export function useAudioRecorder() {
   const previewAudioRef = useRef<HTMLAudioElement | null>(null)
   const previewUrlRef = useRef<string | null>(null)
 
+  const isCancelledRef = useRef(false)
+
   const stopPreview = useCallback(() => {
     if (previewAudioRef.current) {
       previewAudioRef.current.pause()
@@ -34,6 +36,7 @@ export function useAudioRecorder() {
   }, [])
 
   const startRecording = useCallback(async () => {
+    isCancelledRef.current = false
     // Clean up any ongoing preview
     stopPreview()
     if (previewUrlRef.current) {
@@ -58,8 +61,10 @@ export function useAudioRecorder() {
       }
 
       recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mimeType })
-        setAudioBlob(blob)
+        if (!isCancelledRef.current) {
+          const blob = new Blob(chunksRef.current, { type: mimeType })
+          setAudioBlob(blob)
+        }
         stream.getTracks().forEach(track => track.stop())
       }
 
@@ -108,7 +113,10 @@ export function useAudioRecorder() {
       setIsRecording(false)
       
       if (timerRef.current) clearInterval(timerRef.current)
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+      if (animationFrameRef.current) {
+        if (typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(animationFrameRef.current)
+        else if (typeof window !== 'undefined' && window.cancelAnimationFrame) window.cancelAnimationFrame(animationFrameRef.current)
+      }
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(console.error)
       }
@@ -117,6 +125,7 @@ export function useAudioRecorder() {
   }, [isRecording])
 
   const cancelRecording = useCallback(() => {
+    isCancelledRef.current = true
     stopPreview()
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current)
@@ -133,7 +142,10 @@ export function useAudioRecorder() {
     setVisualizerData([])
     
     if (timerRef.current) clearInterval(timerRef.current)
-    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+    if (animationFrameRef.current) {
+      if (typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(animationFrameRef.current)
+      else if (typeof window !== 'undefined' && window.cancelAnimationFrame) window.cancelAnimationFrame(animationFrameRef.current)
+    }
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close().catch(console.error)
     }
@@ -169,7 +181,10 @@ export function useAudioRecorder() {
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+      if (animationFrameRef.current) {
+        if (typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(animationFrameRef.current)
+        else if (typeof window !== 'undefined' && window.cancelAnimationFrame) window.cancelAnimationFrame(animationFrameRef.current)
+      }
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(console.error)
       }

@@ -11,7 +11,11 @@ export class AudioTranscoderService {
   constructor() {
     if (ffmpegStatic) {
       const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked')
-      ffmpeg.setFfmpegPath(ffmpegPath)
+      if (fs.existsSync(ffmpegPath)) {
+        ffmpeg.setFfmpegPath(ffmpegPath)
+      } else {
+        console.warn(`[AudioTranscoder] FFmpeg path from ffmpeg-static does not exist: ${ffmpegPath}`)
+      }
     }
   }
 
