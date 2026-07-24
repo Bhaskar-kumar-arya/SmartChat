@@ -1,6 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MediaService } from '../../services/messages/MediaService'
 
+vi.mock('@whiskeysockets/baileys', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@whiskeysockets/baileys')>()
+  return {
+    ...mod,
+    downloadContentFromMessage: vi.fn().mockImplementation((_msg, _type) => {
+      const err: any = new Error('HTTP 404 Not Found')
+      err.statusCode = 404
+      err.output = { statusCode: 404 }
+      throw err
+    })
+  }
+})
+
 describe('MediaService', () => {
   let service: MediaService
   let repo: any
