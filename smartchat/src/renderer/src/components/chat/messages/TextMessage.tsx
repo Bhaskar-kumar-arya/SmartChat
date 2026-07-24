@@ -103,6 +103,7 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
   return (
     <div className="markdown-body">
       <ReactMarkdown
+        urlTransform={(url) => url}
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={{

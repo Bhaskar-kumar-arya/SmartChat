@@ -7,7 +7,7 @@ interface MessageStatusTickProps {
 }
 
 export function MessageStatusTick({ status, className = '', style }: MessageStatusTickProps) {
-  const normalized = status || 'SENT'
+  const normalized = (status || 'SENT').toUpperCase()
   const combinedStyle = {
     display: 'inline-flex',
     alignSelf: 'center',
