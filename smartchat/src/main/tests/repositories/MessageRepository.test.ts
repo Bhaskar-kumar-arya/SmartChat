@@ -131,6 +131,103 @@ describe('MessageRepository', () => {
     expect(parsed.messageContextInfo?.deviceListMetadata?.senderKeyHash).toBe('123')
   })
 
+  it('should edit a replied message and preserve quoted contextInfo', async () => {
+    await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } }).catch(() => {})
+
+    const origContent = JSON.stringify({
+      extendedTextMessage: {
+        text: 'original reply',
+        contextInfo: {
+          stanzaId: 'orig_123',
+          participant: 'alice@s.whatsapp.net',
+          quotedMessage: { conversation: 'original question' }
+        }
+      }
+    })
+
+    await prisma.message.create({
+      data: {
+        id: 'msg4',
+        chatJid: dummyChat,
+        fromMe: true,
+        timestamp: 200n,
+        messageType: 'extendedTextMessage',
+        content: origContent,
+        textContent: 'original reply'
+      }
+    })
+
+    // Protocol edit arrives with only conversation text (no contextInfo)
+    await repository.editMessage('msg4', 'edited reply text', {
+      conversation: 'edited reply text'
+    })
+
+    const edited = await prisma.message.findUnique({ where: { id: 'msg4' } })
+    expect(edited?.textContent).toBe('edited reply text')
+    expect(edited?.messageType).toBe('extendedTextMessage')
+    expect(edited?.isEdited).toBe(true)
+
+    const parsed = JSON.parse(edited?.content || '{}')
+    expect(parsed.extendedTextMessage?.contextInfo?.stanzaId).toBe('orig_123')
+    expect(parsed.extendedTextMessage?.contextInfo?.participant).toBe('alice@s.whatsapp.net')
+    expect(parsed.extendedTextMessage?.contextInfo?.quotedMessage?.conversation).toBe('original question')
+  })
+
+  it('should preserve contextInfo when upserting an existing message with content without contextInfo', async () => {
+    await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } }).catch(() => {})
+
+    const origContent = JSON.stringify({
+      extendedTextMessage: {
+        text: 'reply msg',
+        contextInfo: {
+          stanzaId: 'q_999',
+          participant: 'bob@s.whatsapp.net',
+          quotedMessage: { conversation: 'question?' }
+        }
+      }
+    })
+
+    await repository.upsertMessage({
+      id: 'msg_upsert_1',
+      chatJid: dummyChat,
+      fromMe: true,
+      senderId: null,
+      participant: null,
+      timestamp: 300n,
+      messageType: 'extendedTextMessage',
+      content: origContent,
+      textContent: 'reply msg',
+      isDeleted: false,
+      isEdited: false,
+      status: 'PENDING'
+    })
+
+    // Simulated status update / processMessage update where new content lacks contextInfo
+    await repository.upsertMessage({
+      id: 'msg_upsert_1',
+      chatJid: dummyChat,
+      fromMe: true,
+      senderId: null,
+      participant: null,
+      timestamp: 300n,
+      messageType: 'conversation',
+      content: JSON.stringify({ conversation: 'reply msg' }),
+      textContent: 'reply msg',
+      isDeleted: false,
+      isEdited: false,
+      status: 'SENT'
+    })
+
+    const updated = await prisma.message.findUnique({ where: { id: 'msg_upsert_1' } })
+    expect(updated?.messageType).toBe('extendedTextMessage')
+    expect(updated?.status).toBe('SENT')
+
+    const parsed = JSON.parse(updated?.content || '{}')
+    expect(parsed.extendedTextMessage?.contextInfo?.stanzaId).toBe('q_999')
+    expect(parsed.extendedTextMessage?.contextInfo?.participant).toBe('bob@s.whatsapp.net')
+    expect(parsed.extendedTextMessage?.contextInfo?.quotedMessage?.conversation).toBe('question?')
+  })
+
   it('should mark message as deleted', async () => {
     await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
     await prisma.message.create({

@@ -99,6 +99,10 @@ export function extractTextContent(message: proto.IMessage | Record<string, unkn
  */
 export function unwrapMessage(msg: proto.IMessage | null | undefined): proto.IMessage {
   if (!msg) return {}
+  const rawMsg = msg as Record<string, unknown>
+  const outerContextInfo = (rawMsg.contextInfo as proto.IContextInfo | undefined) ||
+    ((rawMsg.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo as proto.IContextInfo | undefined)
+
   let unwrapped: proto.IMessage = msg
   for (let i = 0; i < 5; i++) {
     const next =
@@ -113,7 +117,124 @@ export function unwrapMessage(msg: proto.IMessage | null | undefined): proto.IMe
     if (!next) break
     unwrapped = next
   }
+
+  if (outerContextInfo) {
+    const unwrappedRec = unwrapped as Record<string, unknown>
+    const innerCtx = unwrappedRec.contextInfo || (unwrappedRec.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo
+    if (!innerCtx) {
+      if (unwrappedRec.extendedTextMessage && typeof unwrappedRec.extendedTextMessage === 'object') {
+        (unwrappedRec.extendedTextMessage as Record<string, unknown>).contextInfo = outerContextInfo
+      } else if (!unwrappedRec.contextInfo) {
+        unwrappedRec.contextInfo = outerContextInfo
+      }
+    }
+  }
+
   return unwrapped
+}
+
+/**
+ * Safely extracts contextInfo (quoted message / reply context) from a raw or unwrapped message object.
+ */
+export function extractContextInfoFromContent(
+  parsed: Record<string, unknown> | null | undefined
+): Record<string, unknown> | null {
+  if (!parsed || typeof parsed !== 'object') return null
+  const unwrapped = unwrapMessage(parsed as any) as Record<string, unknown>
+  if (!unwrapped || typeof unwrapped !== 'object') return null
+
+  if (unwrapped.contextInfo && typeof unwrapped.contextInfo === 'object') {
+    return unwrapped.contextInfo as Record<string, unknown>
+  }
+  for (const key of Object.keys(unwrapped)) {
+    const inner = unwrapped[key]
+    if (inner && typeof inner === 'object' && 'contextInfo' in inner) {
+      const ci = (inner as Record<string, unknown>).contextInfo
+      if (ci && typeof ci === 'object') {
+        return ci as Record<string, unknown>
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Preserves existing contextInfo when overwriting or editing message JSON content.
+ */
+export function preserveContextInfo(existingJson: string | null | undefined, newContent: string | null | undefined): string {
+  if (!newContent) return newContent ?? ''
+  if (!existingJson) return newContent
+  try {
+    const existingParsed = JSON.parse(existingJson) as Record<string, unknown>
+    const existingContextInfo = extractContextInfoFromContent(existingParsed)
+
+    if (!existingContextInfo) return newContent
+
+    const newParsed = JSON.parse(newContent || '{}') as Record<string, unknown>
+    const newContextInfo = extractContextInfoFromContent(newParsed)
+
+    if (!newContextInfo || (!newContextInfo.quotedMessage && existingContextInfo.quotedMessage)) {
+      const mergedContextInfo = {
+        ...existingContextInfo,
+        ...(newContextInfo || {})
+      }
+      if (newParsed.extendedTextMessage && typeof newParsed.extendedTextMessage === 'object') {
+        (newParsed.extendedTextMessage as Record<string, unknown>).contextInfo = mergedContextInfo
+      } else {
+        const extText = (newParsed.extendedTextMessage as Record<string, unknown> | undefined) ?? {}
+        const text = (newParsed.conversation as string) || (extText.text as string) || ''
+        newParsed.extendedTextMessage = {
+          ...extText,
+          text,
+          contextInfo: mergedContextInfo
+        }
+        delete newParsed.conversation
+        delete newParsed.editedMessage
+      }
+      return JSON.stringify(newParsed)
+    }
+  } catch (e: unknown) {
+    console.error('[messageUtils] Failed to preserve contextInfo:', e)
+  }
+  return newContent
+}
+
+/**
+ * Preserves localURI on media messages when overwriting message JSON content.
+ */
+export function preserveLocalUri(existingJson: string | null | undefined, newContent: string | null | undefined): string {
+  if (!newContent) return newContent ?? ''
+  if (!existingJson) return newContent
+  try {
+    const existingParsed = JSON.parse(existingJson)
+    const existingUnwrapped = unwrapMessage(existingParsed)
+    const existingMedia = (
+      existingUnwrapped?.imageMessage ??
+      existingUnwrapped?.stickerMessage ??
+      existingUnwrapped?.videoMessage ??
+      existingUnwrapped?.documentMessage ??
+      existingUnwrapped?.audioMessage
+    ) as { localURI?: string } | undefined
+
+    if (existingMedia?.localURI) {
+      const currentParsed = JSON.parse(newContent)
+      const currentUnwrapped = unwrapMessage(currentParsed)
+      const currentMedia = (
+        currentUnwrapped?.imageMessage ??
+        currentUnwrapped?.stickerMessage ??
+        currentUnwrapped?.videoMessage ??
+        currentUnwrapped?.documentMessage ??
+        currentUnwrapped?.audioMessage
+      ) as { localURI?: string } | undefined
+      if (currentMedia) {
+        currentMedia.localURI = existingMedia.localURI
+        return JSON.stringify(currentParsed)
+      }
+    }
+  } catch (e: unknown) {
+    console.error('[messageUtils] Failed to preserve localURI:', e)
+  }
+  return newContent
 }
 
 /**

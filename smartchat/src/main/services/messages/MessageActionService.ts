@@ -81,10 +81,19 @@ export class MessageActionService implements IMessageActionService {
 
   private getUpdatedEditContent(contentJson: string, newText: string): string {
     const updatedContent = JSON.parse(contentJson || '{}');
-    if (updatedContent.conversation !== undefined) {
-      updatedContent.conversation = newText;
-    } else if (updatedContent.extendedTextMessage) {
+    const rootContextInfo = updatedContent.contextInfo as Record<string, unknown> | undefined;
+
+    if (updatedContent.extendedTextMessage) {
       updatedContent.extendedTextMessage.text = newText;
+    } else if (rootContextInfo) {
+      updatedContent.extendedTextMessage = {
+        text: newText,
+        contextInfo: rootContextInfo
+      };
+      delete updatedContent.conversation;
+      delete updatedContent.contextInfo;
+    } else if (updatedContent.conversation !== undefined) {
+      updatedContent.conversation = newText;
     } else if (updatedContent.imageMessage) {
       updatedContent.imageMessage.caption = newText;
     } else if (updatedContent.videoMessage) {

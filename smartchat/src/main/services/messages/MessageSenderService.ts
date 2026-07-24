@@ -68,13 +68,14 @@ export class MessageSenderService implements IMessageSenderService {
         participant = targetJid
       }
 
-      if (participant) {
-        return {
-          stanzaId: quotedMsgId,
-          participant: cleanJid(participant),
-          quotedMessage
-        }
-      }
+      // Always return contextInfo — participant may be undefined for DM replies to
+      // self-sent messages when sock.user is not yet populated, but stanzaId and
+      // quotedMessage are always valid and sufficient to render the reply context.
+      return {
+        stanzaId: quotedMsgId,
+        ...(participant ? { participant: cleanJid(participant) } : {}),
+        quotedMessage
+      } as WAContextInfo
     } catch (e) {
       console.error('[buildQuotedContextInfo] Failed to construct contextInfo:', e)
     }

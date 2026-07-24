@@ -8,6 +8,7 @@ export default defineConfig({
     setupFiles: ['./src/main/tests/setup.ts'],
     include: ['src/main/tests/**/*.test.ts'],
     testTimeout: 15000,
+    hookTimeout: 30000,
     server: {
       deps: {
         inline: ['@electron-toolkit/utils']

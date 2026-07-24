@@ -26,6 +26,7 @@ import type { IContactNameResolver } from '../../contacts/IContactService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
 import type { IMessageReadRepository } from '../../messages/IMessageQueryRepository'
 import { cleanJid } from '../../../utils/jidUtils'
+import { unwrapMessage, extractContextInfoFromContent } from '../../../utils/messageUtils'
 
 export class UIBroadcastSubscriber implements IWAEventSubscriber {
   constructor(
@@ -39,7 +40,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     bus.on('message:incoming', this.onIncoming.bind(this))
     bus.on('message:deleted',  this.onDeleted.bind(this))
     bus.on('message:edited',   this.onEdited.bind(this))
-    bus.on('message:decrypted', this.onEdited.bind(this))
+    bus.on('message:decrypted', this.onDecrypted.bind(this))
     bus.on('chat:updated',     this.onChatUpdated.bind(this))
     bus.on('presence:update',  this.onPresence.bind(this))
     bus.on('message:status-updated', this.onStatusUpdated.bind(this))
@@ -51,12 +52,14 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
   }
 
   private get window(): BrowserWindow | null {
-    const w = this.getMainWindow()
-    return w && !w.isDestroyed() ? w : null
+    return this.getMainWindow()
   }
 
-  private send(channel: string, payload: unknown): void {
-    this.window?.webContents.send(channel, payload)
+  private send(channel: string, data: unknown): void {
+    const win = this.window
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(channel, sanitizeIPCPayload(data))
+    }
   }
 
   // ── Handlers ────────────────────────────────────────────────────────────────
@@ -64,14 +67,10 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
   private async onIncoming(event: IncomingMessageEvent): Promise<void> {
     const win = this.window
     if (!win) {
-      console.warn('[UIBroadcastSubscriber] onIncoming ignored - window is null')
+      console.log('[UIBroadcastSubscriber] onIncoming ignored - window is null')
       return
     }
-    try {
-      this.send('new-message', event.enriched)
-    } catch (err) {
-      console.error('[UIBroadcastSubscriber] Error broadcasting new-message:', err)
-    }
+    this.send('new-message', event.enriched)
   }
 
   private async onDeleted(event: MessageDeletedEvent): Promise<void> {
@@ -82,7 +81,7 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
     })
   }
 
-  private async onEdited(event: MessageEditedEvent | MessageDecryptedEvent): Promise<void> {
+  private async onEdited(event: MessageEditedEvent): Promise<void> {
     const win = this.window
     if (!win) return
     try {
@@ -91,17 +90,64 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
       const dbMsg = await this.messageQueryRepository.findMessageById(event.messageId)
       if (!dbMsg) return
 
-      // Only overlay the fields that actually change during an edit or decrypt.
-      // fromMe and participant are immutable per-message identity fields — always use the DB value.
-      const isEdit = 'editedTextContent' in event
+      let existingParsed: Record<string, unknown> | null = null
+      if (dbMsg.content) {
+        try {
+          existingParsed = JSON.parse(dbMsg.content) as Record<string, unknown>
+        } catch {
+          // non-fatal
+        }
+      }
+      const existingContextInfo = extractContextInfoFromContent(existingParsed)
+      const editedContextInfo = extractContextInfoFromContent(
+        event.editedContent as Record<string, unknown> | null | undefined
+      )
+      const mergedContextInfo =
+        existingContextInfo || editedContextInfo
+          ? { ...(existingContextInfo ?? {}), ...(editedContextInfo ?? {}) }
+          : null
+
+      const existingMessageContextInfo =
+        (existingParsed?.messageContextInfo as Record<string, unknown>) ?? null
+
+      let finalContent: string
+      let messageType = dbMsg.messageType
+
+      if (mergedContextInfo) {
+        const extText =
+          ((event.editedContent as Record<string, unknown> | undefined)?.extendedTextMessage as
+            | Record<string, unknown>
+            | undefined) ?? {}
+        const finalObj: Record<string, unknown> = {
+          ...((event.editedContent as Record<string, unknown> | undefined) ?? {}),
+          extendedTextMessage: {
+            ...extText,
+            text: event.editedTextContent ?? (extText.text as string | undefined) ?? '',
+            contextInfo: mergedContextInfo
+          },
+          ...(existingMessageContextInfo ? { messageContextInfo: existingMessageContextInfo } : {})
+        }
+        delete finalObj.conversation
+        delete finalObj.editedMessage
+        finalContent = JSON.stringify(finalObj)
+        messageType = 'extendedTextMessage'
+      } else {
+        const finalObj = {
+          ...((event.editedContent as Record<string, unknown> | undefined) ?? {}),
+          ...(existingMessageContextInfo ? { messageContextInfo: existingMessageContextInfo } : {})
+        }
+        finalContent = JSON.stringify(finalObj)
+        messageType = (event.editedContent as Record<string, unknown> | undefined)?.extendedTextMessage
+          ? 'extendedTextMessage'
+          : 'conversation'
+      }
+
       const merged = {
         ...dbMsg,
-        textContent: isEdit ? event.editedTextContent : event.textContent,
-        messageType: isEdit ? dbMsg.messageType : event.messageType,
-        content:     isEdit
-          ? (event.editedContent ? JSON.stringify(event.editedContent) : dbMsg.content)
-          : JSON.stringify(event.content),
-        isEdited:    isEdit ? true : dbMsg.isEdited,
+        textContent: event.editedTextContent,
+        messageType,
+        content: finalContent,
+        isEdited: true,
       }
 
       const senderJid = cleanJid(merged.participant || merged.chatJid)
@@ -110,6 +156,65 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
       this.send('message-edited', enriched)
     } catch (err) {
       console.error('[UIBroadcastSubscriber] Error broadcasting message-edited:', err)
+    }
+  }
+
+  private async onDecrypted(event: MessageDecryptedEvent): Promise<void> {
+    const win = this.window
+    if (!win) return
+    try {
+      const dbMsg = await this.messageQueryRepository.findMessageById(event.messageId)
+      if (!dbMsg) return
+
+      let existingParsedForDecrypt: Record<string, unknown> | null = null
+      if (dbMsg.content) {
+        try {
+          existingParsedForDecrypt = JSON.parse(dbMsg.content) as Record<string, unknown>
+        } catch {
+          // non-fatal
+        }
+      }
+      const existingCtxForDecrypt = extractContextInfoFromContent(existingParsedForDecrypt)
+      const decryptedContent = event.content as Record<string, unknown> | null | undefined
+      const decryptedCtx = extractContextInfoFromContent(decryptedContent)
+
+      let finalContent: string
+      let messageType = event.messageType
+
+      if (existingCtxForDecrypt && !decryptedCtx) {
+        const unwrapped = unwrapMessage(decryptedContent as any) as Record<string, unknown>
+        const text = (unwrapped?.extendedTextMessage as Record<string, unknown> | undefined)?.text as string | undefined
+          || (unwrapped?.conversation as string | undefined)
+          || event.textContent
+          || ''
+        const existingMessageContextInfoForDecrypt = (existingParsedForDecrypt?.messageContextInfo as Record<string, unknown>) ?? null
+        const rebuiltContent: Record<string, unknown> = {
+          extendedTextMessage: {
+            text,
+            contextInfo: existingCtxForDecrypt
+          },
+          ...(existingMessageContextInfoForDecrypt ? { messageContextInfo: existingMessageContextInfoForDecrypt } : {})
+        }
+        finalContent = JSON.stringify(rebuiltContent)
+        messageType = 'extendedTextMessage'
+      } else {
+        finalContent = JSON.stringify(event.content)
+      }
+
+      const merged = {
+        ...dbMsg,
+        textContent: event.textContent,
+        messageType,
+        content: finalContent,
+        isEdited: dbMsg.isEdited,
+      }
+
+      const senderJid = cleanJid(merged.participant || merged.chatJid)
+      const nameMap = await this.contactService.batchResolveNames([senderJid], event.sock)
+      const enriched = await this.messageQueryService.enrichMessage(merged, event.sock, nameMap)
+      this.send('message-edited', enriched)
+    } catch (err) {
+      console.error('[UIBroadcastSubscriber] Error broadcasting message-edited from decrypted event:', err)
     }
   }
 

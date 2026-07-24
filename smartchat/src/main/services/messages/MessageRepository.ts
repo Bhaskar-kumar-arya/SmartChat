@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { unwrapMessage } from '../../utils/messageUtils'
-import { MediaMessageWithLocalUri } from '../whatsapp/types'
+import { preserveContextInfo, preserveLocalUri, extractContextInfoFromContent } from '../../utils/messageUtils'
 import { IMessageRepository, MessageUpsertData } from './IMessageRepository'
 import { DBMessageWithSender } from '../../domain/db.types'
 
@@ -11,43 +10,9 @@ import { DBMessageWithSender } from '../../domain/db.types'
 export class MessageRepository implements IMessageRepository {
   constructor(private readonly prisma: PrismaClient) { }
 
-  private preserveLocalUri(existingJson: string, newContent: string): string {
-    try {
-      const existingParsed = JSON.parse(existingJson)
-      const existingUnwrapped = unwrapMessage(existingParsed)
-      const existingMedia = (
-        existingUnwrapped?.imageMessage ??
-        existingUnwrapped?.stickerMessage ??
-        existingUnwrapped?.videoMessage ??
-        existingUnwrapped?.documentMessage ??
-        existingUnwrapped?.audioMessage
-      ) as MediaMessageWithLocalUri | undefined
-
-      if (existingMedia?.localURI) {
-        const currentParsed = JSON.parse(newContent)
-        const currentUnwrapped = unwrapMessage(currentParsed)
-        const currentMedia = (
-          currentUnwrapped?.imageMessage ??
-          currentUnwrapped?.stickerMessage ??
-          currentUnwrapped?.videoMessage ??
-          currentUnwrapped?.documentMessage ??
-          currentUnwrapped?.audioMessage
-        ) as MediaMessageWithLocalUri | undefined
-        if (currentMedia) {
-          currentMedia.localURI = existingMedia.localURI
-          return JSON.stringify(currentParsed)
-        }
-      }
-    } catch (e: unknown) {
-      console.error('[MessageRepository] Failed to preserve localURI:', e)
-    }
-    return newContent
-  }
-
   /**
    * Upsert a single message into the database.
-   * Preserves any `localURI` that was previously saved on media message content,
-   * so that re-sync events do not wipe cached file paths.
+   * Preserves any `localURI` and `contextInfo` previously saved on message content.
    */
   async upsertMessage(data: MessageUpsertData): Promise<{ content: string; messageType: string; textContent: string | null }> {
     let contentToStore = data.content
@@ -76,7 +41,16 @@ export class MessageRepository implements IMessageRepository {
     }
 
     if (existing?.content && contentToStore) {
-      contentToStore = this.preserveLocalUri(existing.content, contentToStore)
+      contentToStore = preserveContextInfo(existing.content, contentToStore)
+      contentToStore = preserveLocalUri(existing.content, contentToStore)
+      try {
+        const parsed = JSON.parse(contentToStore) as Record<string, unknown>
+        if (parsed.extendedTextMessage) {
+          messageType = 'extendedTextMessage'
+        }
+      } catch {
+        // non-fatal
+      }
     }
 
     const { id, ...rest } = data
@@ -147,14 +121,15 @@ export class MessageRepository implements IMessageRepository {
   /**
    * Updates a message's content and marks it as edited.
    *
-   * Preserves the original `messageContextInfo` (which contains the message secret)
-   * so that subsequent edits or encrypted actions can still be decrypted.
+   * Preserves both the original `messageContextInfo` (E2EE device secret)
+   * and `contextInfo` (quoted message / reply context) so that reply metadata is retained.
    */
   async editMessage(
     messageId: string,
     textContent: string | null,
     editedContent: Record<string, unknown> | null
   ): Promise<void> {
+    let originalMessageContextInfo: Record<string, unknown> | null = null
     let originalContextInfo: Record<string, unknown> | null = null
     try {
       const existing = await this.prisma.message.findUnique({
@@ -163,20 +138,43 @@ export class MessageRepository implements IMessageRepository {
       })
       if (existing?.content) {
         const parsed = JSON.parse(existing.content) as Record<string, unknown>
-        originalContextInfo = (parsed.messageContextInfo as Record<string, unknown>) ?? null
+        originalMessageContextInfo = (parsed.messageContextInfo as Record<string, unknown>) ?? null
+        originalContextInfo = extractContextInfoFromContent(parsed)
       }
     } catch {
-      // Non-fatal — proceed without preserving the secret
+      // Non-fatal — proceed without preserving context
     }
 
-    const contentToStore = {
-      ...(editedContent ?? {}),
-      ...(originalContextInfo ? { messageContextInfo: originalContextInfo } : {})
-    }
+    const editedContextInfo = extractContextInfoFromContent(editedContent)
+    const mergedContextInfo =
+      originalContextInfo || editedContextInfo
+        ? { ...(originalContextInfo ?? {}), ...(editedContextInfo ?? {}) }
+        : null
 
-    // Derive messageType from the edited content so the DB column stays in sync
-    const newMessageType =
-      editedContent?.extendedTextMessage ? 'extendedTextMessage' : 'conversation'
+    let contentToStore: Record<string, unknown>
+    let newMessageType: string
+
+    if (mergedContextInfo) {
+      const extText = (editedContent?.extendedTextMessage as Record<string, unknown> | undefined) ?? {}
+      contentToStore = {
+        ...(editedContent ?? {}),
+        extendedTextMessage: {
+          ...extText,
+          text: textContent ?? (extText.text as string | undefined) ?? (editedContent?.conversation as string | undefined) ?? '',
+          contextInfo: mergedContextInfo
+        },
+        ...(originalMessageContextInfo ? { messageContextInfo: originalMessageContextInfo } : {})
+      }
+      delete contentToStore.conversation
+      delete contentToStore.editedMessage
+      newMessageType = 'extendedTextMessage'
+    } else {
+      contentToStore = {
+        ...(editedContent ?? {}),
+        ...(originalMessageContextInfo ? { messageContextInfo: originalMessageContextInfo } : {})
+      }
+      newMessageType = editedContent?.extendedTextMessage ? 'extendedTextMessage' : 'conversation'
+    }
 
     await this.prisma.message
       .updateMany({
@@ -202,11 +200,21 @@ export class MessageRepository implements IMessageRepository {
     textContent: string | null,
     content: Record<string, unknown>
   ): Promise<void> {
+    // Preserve existing contextInfo when the decrypted payload is an editedMessage
+    // wrapper that strips it (e.g. secretEncryptedMessage edit echo from Baileys).
+    const existing = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { content: true }
+    })
+    let contentToStore = JSON.stringify(content)
+    if (existing?.content) {
+      contentToStore = preserveContextInfo(existing.content, contentToStore)
+    }
     await this.prisma.message
       .updateMany({
         where: { id: messageId },
         data: {
-          content: JSON.stringify(content),
+          content: contentToStore,
           textContent,
           messageType
         }
@@ -259,7 +267,16 @@ export class MessageRepository implements IMessageRepository {
       let finalContent = msg.content
       const existingJson = existingContentMap.get(msg.id)
       if (existingJson) {
-        finalContent = this.preserveLocalUri(existingJson, msg.content)
+        finalContent = preserveContextInfo(existingJson, msg.content)
+        finalContent = preserveLocalUri(existingJson, finalContent)
+        try {
+          const parsed = JSON.parse(finalContent) as Record<string, unknown>
+          if (parsed.extendedTextMessage) {
+            update.messageType = 'extendedTextMessage'
+          }
+        } catch {
+          // non-fatal
+        }
       }
       update.content = finalContent
       if (msg.textContent !== null) update.textContent = msg.textContent
@@ -324,9 +341,18 @@ export class MessageRepository implements IMessageRepository {
     textContent: string,
     content: string
   ): Promise<DBMessageWithSender | null> {
+    const existing = await this.prisma.message.findUnique({
+      where: { id },
+      select: { content: true }
+    })
+    let finalContent = content
+    if (existing?.content) {
+      finalContent = preserveContextInfo(existing.content, content)
+      finalContent = preserveLocalUri(existing.content, finalContent)
+    }
     return this.prisma.message.update({
       where: { id },
-      data: { textContent, content, isEdited: true },
+      data: { textContent, content: finalContent, isEdited: true },
       include: { sender: true }
     }) as Promise<DBMessageWithSender | null>
   }
@@ -339,9 +365,18 @@ export class MessageRepository implements IMessageRepository {
     id: string,
     content: string
   ): Promise<DBMessageWithSender | null> {
+    const existing = await this.prisma.message.findUnique({
+      where: { id },
+      select: { content: true }
+    })
+    let finalContent = content
+    if (existing?.content) {
+      finalContent = preserveContextInfo(existing.content, content)
+      finalContent = preserveLocalUri(existing.content, finalContent)
+    }
     return this.prisma.message.update({
       where: { id },
-      data: { content },
+      data: { content: finalContent },
       include: { sender: true }
     }) as Promise<DBMessageWithSender | null>
   }

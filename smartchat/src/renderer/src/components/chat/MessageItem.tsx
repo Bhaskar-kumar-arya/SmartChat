@@ -22,6 +22,8 @@ import { EmojiText } from '../common/EmojiText'
  */
 function unwrapMessage(msg: any): RawMessageContent {
   if (!msg) return {}
+  const outerContextInfo = msg.contextInfo || msg.extendedTextMessage?.contextInfo
+
   let unwrapped = msg
   for (let i = 0; i < 5; i++) {
     const next =
@@ -36,6 +38,18 @@ function unwrapMessage(msg: any): RawMessageContent {
     if (!next) break
     unwrapped = next
   }
+
+  if (outerContextInfo) {
+    const innerCtx = unwrapped.contextInfo || unwrapped.extendedTextMessage?.contextInfo
+    if (!innerCtx) {
+      if (unwrapped.extendedTextMessage && typeof unwrapped.extendedTextMessage === 'object') {
+        unwrapped.extendedTextMessage.contextInfo = outerContextInfo
+      } else if (!unwrapped.contextInfo) {
+        unwrapped.contextInfo = outerContextInfo
+      }
+    }
+  }
+
   return unwrapped
 }
 
