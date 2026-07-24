@@ -362,14 +362,18 @@ const MessageItem = memo(function MessageItem({
     quotedText = q.conversation || q.extendedTextMessage?.text || 'Media'
     quotedMentions = q.extendedTextMessage?.contextInfo?.mentions || q.contextInfo?.mentions || {}
   }
-  const isQuotedMe = !!(ctx?.participant && (
-    (myJid && (ctx.participant.split('@')[0].split(':')[0] === myJid.split('@')[0].split(':')[0])) ||
-    ctx.participantName === 'You' ||
-    ctx.participantName === 'Me'
-  ))
+  const isQuotedMe = !!(
+    // Case 1: participant JID is present and matches my JID
+    (ctx?.participant && myJid &&
+      ctx.participant.split('@')[0].split(':')[0] === myJid.split('@')[0].split(':')[0]) ||
+    // Case 2: backend already resolved the name (covers DMs where participant JID is omitted)
+    ctx?.participantName === 'You' ||
+    ctx?.participantName === 'Me'
+  )
   const quotedSender = isQuotedMe
     ? 'You'
     : (ctx?.participantName || (ctx?.participant ? ctx.participant.split('@')[0] : 'Someone'))
+
 
   const quoteColor = isQuotedMe
     ? 'var(--wa-primary)'

@@ -134,7 +134,11 @@ export class MessageEnricher implements IMessageEnricher {
     const ctx = this._extractContextInfo(unwrapped)
 
     if (ctx) {
-      await this._enrichContextInfo(ctx, sock, nameMap)
+      // In a 1-on-1 DM, Baileys omits ctx.participant when the quoted message
+      // was sent by you. Pass msg.fromMe as a hint so the enricher can still
+      // resolve the sender name to 'You' without a participant JID.
+      const quotedIsMe = !!msg.fromMe && !ctx.participant
+      await this._enrichContextInfo(ctx, sock, nameMap, quotedIsMe)
     }
 
     if (msg.messageType === 'call' || msg.messageType === 'callLogMesssage' || msg.messageType === 'scheduledCallCreationMessage') {
@@ -257,7 +261,8 @@ export class MessageEnricher implements IMessageEnricher {
   private async _enrichContextInfo(
     ctx: Record<string, unknown>,
     sock: ISocketUserContext | null,
-    nameMap: Map<string, string>
+    nameMap: Map<string, string>,
+    quotedIsMe: boolean = false
   ): Promise<void> {
     if (ctx.participant && typeof ctx.participant === 'string') {
       const meJids = await this.contactService.getMeJids(sock)
@@ -265,6 +270,10 @@ export class MessageEnricher implements IMessageEnricher {
       ctx.participantName = meJids.includes(cleanParticipant)
         ? 'You'
         : nameMap.get(ctx.participant) ?? ctx.participant.replace(/@.*$/, '')
+    } else if (quotedIsMe) {
+      // Fallback for DM self-replies: Baileys omits ctx.participant when the
+      // quoted message was sent by the current user in a 1-on-1 chat.
+      ctx.participantName = 'You'
     }
 
     if (ctx.mentionedJid && Array.isArray(ctx.mentionedJid)) {

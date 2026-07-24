@@ -60,4 +60,36 @@ describe('MessageEnricher', () => {
     expect(res[0].senderId).toBe('user@s.whatsapp.net')
     expect(res[0].timestamp).toBe('1000')
   })
+
+  it('enriches DM self-reply contextInfo participantName as "You" when ctx.participant is omitted', async () => {
+    const rawMsg: DBMessageWithSender = {
+      id: 'reply1',
+      chatJid: 'user2@s.whatsapp.net',
+      fromMe: true,
+      participant: null,
+      timestamp: 2000n,
+      messageType: 'extendedTextMessage',
+      textContent: 'Replying to myself',
+      content: JSON.stringify({
+        extendedTextMessage: {
+          text: 'Replying to myself',
+          contextInfo: {
+            stanzaId: 'original_self_msg_1',
+            quotedMessage: { conversation: 'Original message I sent' }
+            // Note: participant is omitted here by Baileys in 1-on-1 DM self-replies
+          }
+        }
+      }),
+      isDeleted: false,
+      isEdited: false,
+      status: 'SENT'
+    } as any
+
+    const nameMap = new Map()
+    const res = await enricher.enrichMessage(rawMsg, null, nameMap)
+    const parsedContent = JSON.parse(res.content)
+    
+    expect(parsedContent.extendedTextMessage.contextInfo.participantName).toBe('You')
+  })
 })
+
