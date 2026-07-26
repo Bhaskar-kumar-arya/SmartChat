@@ -215,7 +215,7 @@ Phase 02 completed: `IPluginChannel`, `DirectPluginChannel`, `WorkerPluginChanne
 
 ---
 
-## Phase 3 — Plugin Host & Loader ⏳ TODO
+## Phase 3 — Plugin Host & Loader ✅ DONE
 
 ### Goal
 Build the plugin lifecycle system: `PluginHost` manages loaded plugins, `PluginLoader` handles
@@ -276,11 +276,11 @@ Test file location:
 - `listInstalled()` skips directories with invalid manifests (no throw)
 
 ### Acceptance Criteria
-- [ ] `PluginHost` test: all cases pass
-- [ ] `PluginLoader` test: all cases pass
-- [ ] All pre-existing tests still pass
-- [ ] Zero TypeScript errors
-- [ ] `PluginHost` depends only on interfaces (no concrete service imports)
+- [x] `PluginHost` test: all cases pass
+- [x] `PluginLoader` test: all cases pass
+- [x] All pre-existing tests still pass
+- [x] Zero TypeScript errors
+- [x] `PluginHost` depends only on interfaces (no concrete service imports)
 
 ### Phase Completion Gate
 ```bash
@@ -290,7 +290,7 @@ npm run typecheck
 > After testing, run `npm run test:rebuild:electron` before `npm run dev`.
 
 ### Notes
-_Fill in during execution._
+Phase 03 plugin lifecycle system implemented: `PluginManifest`, `PluginContext`, `IBuiltinPlugin`, `IPluginHost`, `PluginRegistry`, `PluginLoader`, and `PluginHost` with complete TDD test coverage in `PluginLoader.test.ts` and `PluginHost.test.ts`. All 707 project tests pass and full typecheck succeeds with zero errors.
 
 ---
 
