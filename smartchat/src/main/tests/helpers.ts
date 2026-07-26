@@ -12,9 +12,8 @@ import { ReceiptSubscriber } from '../services/whatsapp/subscribers/ReceiptSubsc
 import { FavoriteStickerSubscriber } from '../services/whatsapp/subscribers/FavoriteStickerSubscriber'
 import { CallEventSubscriber } from '../services/whatsapp/subscribers/CallEventSubscriber'
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
-export const dbPath = join(__dirname, '../../../prisma/test.db')
+const workerId = process.env.VITEST_WORKER_ID || process.pid.toString()
+export const dbPath = join(__dirname, `../../../prisma/test-worker-${workerId}.db`)
 export const databaseUrl = `file:${dbPath}`
 
 // ── Database Helpers ─────────────────────────────────────────────────────────

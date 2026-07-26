@@ -1,18 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { PrismaClient } from '@prisma/client'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-import { join } from 'path'
 import { MessageRepository } from '../../services/messages/MessageRepository'
 import { MessageUpsertData } from '../../services/messages/IMessageRepository'
+import { getPrismaClient } from '../helpers'
 
 describe('MessageRepository', () => {
   let prisma: PrismaClient
   let repository: MessageRepository
 
   beforeAll(() => {
-    const dbPath = join(__dirname, '../../../../prisma/test.db')
-    const adapter = new (PrismaBetterSqlite3 as any)({ url: `file:${dbPath}` })
-    prisma = new PrismaClient({ adapter })
+    prisma = getPrismaClient()
     repository = new MessageRepository(prisma)
   })
 

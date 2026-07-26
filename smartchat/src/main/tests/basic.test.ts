@@ -1,17 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { PrismaClient } from '@prisma/client'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-import { join } from 'path'
+import { getPrismaClient } from './helpers'
 
 describe('Database Connectivity and Schema Validation', () => {
   let prisma: PrismaClient
 
   beforeAll(() => {
-    const dbPath = join(__dirname, '../../../prisma/test.db')
-    const adapter = new PrismaBetterSqlite3({
-      url: `file:${dbPath}`
-    })
-    prisma = new PrismaClient({ adapter })
+    prisma = getPrismaClient()
   })
 
   afterAll(async () => {

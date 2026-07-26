@@ -30,7 +30,8 @@ vi.mock('../services/search/VectorSyncService', () => {
   }
 })
 
-const dbPath = join(__dirname, '../../../prisma/test.db')
+const workerId = process.env.VITEST_WORKER_ID || process.pid.toString()
+const dbPath = join(__dirname, `../../../prisma/test-worker-${workerId}.db`)
 const databaseUrl = `file:${dbPath}`
 process.env.DATABASE_URL = databaseUrl
 
@@ -74,7 +75,7 @@ afterAll(async () => {
   }
   
   // Clean up user data directory
-  const userDataDir = join(__dirname, '../../../../prisma/test-user-data')
+  const userDataDir = join(__dirname, `../../../../prisma/test-user-data-${workerId}`)
   if (existsSync(userDataDir)) {
     try {
       const fs = require('fs')
