@@ -294,7 +294,7 @@ Phase 03 plugin lifecycle system implemented: `PluginManifest`, `PluginContext`,
 
 ---
 
-## Phase 4 — Kernel API Modules ⏳ TODO
+## Phase 4 — Kernel API Modules ✅ DONE
 
 ### Goal
 Build the kernel API modules that wrap the existing service layer and expose it to plugins through
@@ -355,12 +355,12 @@ Use `vi.fn()` mocks for the service interfaces — never use a real DB in these 
 Use `getPrismaClient()` and real services only if testing end-to-end serialization matters.
 
 ### Acceptance Criteria
-- [ ] Every module has at least one test file with permission-denied + permission-granted cases
-- [ ] All module tests pass
-- [ ] All pre-existing tests still pass
-- [ ] Zero TypeScript errors
-- [ ] No module imports a concrete service class (interfaces only — enforced by §10 rule 1)
-- [ ] All module `handle()` return values pass `JSON.parse(JSON.stringify(x))` without data loss
+- [x] Every module has at least one test file with permission-denied + permission-granted cases
+- [x] All module tests pass
+- [x] All pre-existing tests still pass
+- [x] Zero TypeScript errors
+- [x] No module imports a concrete service class (interfaces only — enforced by §10 rule 1)
+- [x] All module `handle()` return values pass `JSON.parse(JSON.stringify(x))` without data loss
 
 ### Phase Completion Gate
 ```bash
@@ -370,7 +370,7 @@ npm run typecheck
 > After testing, run `npm run test:rebuild:electron` before `npm run dev`.
 
 ### Notes
-_Fill in during execution._
+Phase 04 kernel API modules implemented: `KernelChatsModule`, `KernelMessagesModule`, `KernelContactsModule`, `KernelAIModule`, `KernelEventsModule`, `KernelStorageModule`, and `KernelUIModule` with individual unit test suites for each module under `src/main/tests/kernel/api-modules/`. All 42 module tests and all 749 project-wide Vitest tests pass cleanly. `npm run typecheck` completes with zero TypeScript errors.
 
 ---
 
