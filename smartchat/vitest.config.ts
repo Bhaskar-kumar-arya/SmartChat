@@ -43,6 +43,15 @@ export default defineConfig({
             'electron': resolve(__dirname, './src/main/tests/electron-mock.ts')
           }
         }
+      },
+      {
+        test: {
+          name: 'sdk',
+          globals: true,
+          environment: 'node',
+          include: ['packages/sdk/tests/**/*.test.ts'],
+          testTimeout: 15000
+        }
       }
     ]
   }

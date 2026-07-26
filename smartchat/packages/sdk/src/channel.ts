@@ -1,0 +1,413 @@
+import { MessagePort } from 'node:worker_threads'
+import { PluginManifest } from './manifest'
+import {
+  PluginContext,
+  IPluginLogAPI,
+  IPluginChatsAPI,
+  IPluginMessagesAPI,
+  IPluginContactsAPI,
+  IPluginAIAPI,
+  IPluginEventsAPI,
+  IPluginStorageAPI,
+  IPluginUIAPI,
+  IPluginSchedulerAPI,
+  IPluginContributionsAPI,
+  ChatActionContext,
+  MessageActionContext,
+  CommandContext,
+  BadgeDescriptor,
+  CompletionContext,
+  CompletionItem,
+  OutgoingMessagePayload,
+  SendResult,
+  SendMessageOptions,
+  AICallOptions
+} from './context'
+
+export interface KernelRequest {
+  id: string
+  type: string
+  payload: unknown
+}
+
+export interface KernelResponse {
+  id: string
+  ok: boolean
+  payload?: unknown
+  error?: {
+    code: string
+    message: string
+    permission?: string
+  }
+}
+
+interface PendingRequest {
+  resolve: (value: any) => void
+  reject: (error: Error) => void
+  timer?: NodeJS.Timeout
+}
+
+export interface WorkerPluginRuntimeOptions {
+  requestTimeoutMs?: number
+}
+
+function isKernelResponse(msg: unknown): msg is KernelResponse {
+  return (
+    typeof msg === 'object' &&
+    msg !== null &&
+    'id' in msg &&
+    'ok' in msg &&
+    typeof (msg as KernelResponse).id === 'string' &&
+    typeof (msg as KernelResponse).ok === 'boolean'
+  )
+}
+
+function isKernelRequest(msg: unknown): msg is KernelRequest {
+  return (
+    typeof msg === 'object' &&
+    msg !== null &&
+    'id' in msg &&
+    'type' in msg &&
+    typeof (msg as KernelRequest).id === 'string' &&
+    typeof (msg as KernelRequest).type === 'string'
+  )
+}
+
+export class WorkerPluginRuntime {
+  private pendingRequests = new Map<string, PendingRequest>()
+  private activateCallbacks: Array<() => Promise<void>> = []
+  private deactivateCallbacks: Array<() => Promise<void>> = []
+
+  private chatActionHandlers = new Map<string, (ctx: ChatActionContext) => Promise<void>>()
+  private messageActionHandlers = new Map<string, (ctx: MessageActionContext) => Promise<void>>()
+  private chatBadgeComputers = new Map<string, (chatJid: string) => Promise<BadgeDescriptor | null>>()
+  private slashCommandHandlers = new Map<string, (args: string, context: CommandContext) => Promise<void>>()
+  private aiToolExecutors = new Map<string, (args: Record<string, unknown>) => Promise<{ text: string }>>()
+  private completionProviders = new Map<string, (ctx: CompletionContext) => Promise<CompletionItem[]>>()
+  private sendInterceptors = new Map<string, (payload: OutgoingMessagePayload, next: (p: OutgoingMessagePayload) => Promise<SendResult>) => Promise<SendResult>>()
+  private eventHandlers = new Map<string, Array<(payload: any) => void | Promise<void>>>()
+  private exposedAPIs = new Map<string, Record<string, unknown>>()
+
+  private requestTimeoutMs: number
+
+  constructor(
+    private readonly port: MessagePort,
+    private readonly manifest: PluginManifest,
+    options?: WorkerPluginRuntimeOptions
+  ) {
+    this.requestTimeoutMs = options?.requestTimeoutMs ?? 10000
+    this.port.on('message', (msg: unknown) => this.handlePortMessage(msg))
+  }
+
+  private handlePortMessage(msg: unknown): void {
+    if (isKernelResponse(msg)) {
+      const pending = this.pendingRequests.get(msg.id)
+      if (pending) {
+        if (pending.timer) clearTimeout(pending.timer)
+        this.pendingRequests.delete(msg.id)
+
+        if (msg.ok) {
+          pending.resolve(msg.payload)
+        } else {
+          const err = new Error(msg.error?.message || 'Kernel request failed')
+          if (msg.error?.permission) {
+            ;(err as any).permission = msg.error.permission
+          }
+          if (msg.error?.code) {
+            ;(err as any).code = msg.error.code
+          }
+          pending.reject(err)
+        }
+      }
+    } else if (isKernelRequest(msg)) {
+      void this.handleIncomingKernelRequest(msg)
+    }
+  }
+
+  private async handleIncomingKernelRequest(req: KernelRequest): Promise<void> {
+    try {
+      if (req.type === 'plugin:activate') {
+        for (const fn of this.activateCallbacks) {
+          await fn()
+        }
+        this.respondSuccess(req.id)
+        return
+      }
+
+      if (req.type === 'plugin:deactivate') {
+        for (const fn of this.deactivateCallbacks) {
+          await fn()
+        }
+        this.respondSuccess(req.id)
+        return
+      }
+
+      if (req.type === 'kernel:events:emit') {
+        const { event, payload } = req.payload as { event: string; payload: unknown }
+        const handlers = this.eventHandlers.get(event)
+        if (handlers) {
+          for (const h of handlers) {
+            await h(payload)
+          }
+        }
+        this.respondSuccess(req.id)
+        return
+      }
+
+      if (req.type.startsWith('contribution:execute:chat-action')) {
+        const { id, context } = (req.payload as any) || {}
+        const actionId = id || req.type.split(':')[3]
+        const handler = this.chatActionHandlers.get(actionId)
+        if (handler) {
+          await handler(context)
+          this.respondSuccess(req.id)
+        } else {
+          this.respondError(req.id, 'NOT_FOUND', `Chat action '${actionId}' not found`)
+        }
+        return
+      }
+
+      if (req.type.startsWith('contribution:execute:message-action')) {
+        const { id, context } = (req.payload as any) || {}
+        const actionId = id || req.type.split(':')[3]
+        const handler = this.messageActionHandlers.get(actionId)
+        if (handler) {
+          await handler(context)
+          this.respondSuccess(req.id)
+        } else {
+          this.respondError(req.id, 'NOT_FOUND', `Message action '${actionId}' not found`)
+        }
+        return
+      }
+
+      if (req.type.startsWith('contribution:execute:slash-command')) {
+        const { name, args, context } = (req.payload as any) || {}
+        const handler = this.slashCommandHandlers.get(name)
+        if (handler) {
+          await handler(args, context)
+          this.respondSuccess(req.id)
+        } else {
+          this.respondError(req.id, 'NOT_FOUND', `Slash command '${name}' not found`)
+        }
+        return
+      }
+
+      if (req.type.startsWith('contribution:execute:ai-tool')) {
+        const { name, args } = (req.payload as any) || {}
+        const executor = this.aiToolExecutors.get(name)
+        if (executor) {
+          const res = await executor(args)
+          this.respondSuccess(req.id, res)
+        } else {
+          this.respondError(req.id, 'NOT_FOUND', `AI tool '${name}' not found`)
+        }
+        return
+      }
+
+      if (req.type.startsWith('contribution:compute:chat-badge')) {
+        const { id, chatJid } = (req.payload as any) || {}
+        const computer = this.chatBadgeComputers.get(id)
+        if (computer) {
+          const res = await computer(chatJid)
+          this.respondSuccess(req.id, res)
+        } else {
+          this.respondError(req.id, 'NOT_FOUND', `Chat badge computer '${id}' not found`)
+        }
+        return
+      }
+
+      this.respondError(req.id, 'NOT_FOUND', `Unhandled incoming type '${req.type}'`)
+    } catch (err: any) {
+      this.respondError(req.id, 'INTERNAL_ERROR', err?.message || 'Error processing kernel request')
+    }
+  }
+
+  private respondSuccess(id: string, payload?: unknown): void {
+    const res: KernelResponse = { id, ok: true, payload }
+    this.port.postMessage(res)
+  }
+
+  private respondError(id: string, code: string, message: string): void {
+    const res: KernelResponse = { id, ok: false, error: { code, message } }
+    this.port.postMessage(res)
+  }
+
+  public request<T = unknown>(type: string, payload?: unknown): Promise<T> {
+    const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+    return new Promise<T>((resolve, reject) => {
+      let timer: NodeJS.Timeout | undefined
+      if (this.requestTimeoutMs > 0) {
+        timer = setTimeout(() => {
+          this.pendingRequests.delete(id)
+          reject(new Error(`Request '${type}' timed out after ${this.requestTimeoutMs}ms`))
+        }, this.requestTimeoutMs)
+      }
+
+      this.pendingRequests.set(id, { resolve, reject, timer })
+      const req: KernelRequest = { id, type, payload }
+      this.port.postMessage(req)
+    })
+  }
+
+  public getContext(): PluginContext {
+    const self = this
+
+    const logAPI: IPluginLogAPI = {
+      info(msg: string, ...data: unknown[]) {
+        self.port.postMessage({
+          type: 'kernel:log',
+          payload: { level: 'info', message: msg, data }
+        })
+      },
+      warn(msg: string, ...data: unknown[]) {
+        self.port.postMessage({
+          type: 'kernel:log',
+          payload: { level: 'warn', message: msg, data }
+        })
+      },
+      error(msg: string, ...data: unknown[]) {
+        self.port.postMessage({
+          type: 'kernel:log',
+          payload: { level: 'error', message: msg, data }
+        })
+      }
+    }
+
+    const chatsAPI: IPluginChatsAPI = {
+      getList: (page = 1, limit = 20) => self.request('kernel:chats:getList', { page, limit }),
+      getById: (jid: string) => self.request('kernel:chats:getById', { jid }),
+      pin: (jid: string) => self.request('kernel:chats:pin', { jid }),
+      unpin: (jid: string) => self.request('kernel:chats:unpin', { jid }),
+      archive: (jid: string) => self.request('kernel:chats:archive', { jid }),
+      unarchive: (jid: string) => self.request('kernel:chats:unarchive', { jid }),
+      mute: (jid: string, durationMs: number) => self.request('kernel:chats:mute', { jid, durationMs }),
+      unmute: (jid: string) => self.request('kernel:chats:unmute', { jid }),
+      markRead: (jid: string) => self.request('kernel:chats:markRead', { jid })
+    }
+
+    const messagesAPI: IPluginMessagesAPI = {
+      getMessages: (jid: string, page = 1, limit = 50) => self.request('kernel:messages:getMessages', { jid, page, limit }),
+      send: (jid: string, text: string, options?: SendMessageOptions) => self.request('kernel:messages:send', { jid, text, options }),
+      delete: (jid: string, messageId: string) => self.request('kernel:messages:delete', { jid, messageId }),
+      react: (jid: string, messageId: string, emoji: string) => self.request('kernel:messages:react', { jid, messageId, emoji })
+    }
+
+    const contactsAPI: IPluginContactsAPI = {
+      getByJid: (jid: string) => self.request('kernel:contacts:getByJid', { jid })
+    }
+
+    const aiAPI: IPluginAIAPI = {
+      chat: (prompt: string, options?: AICallOptions) => self.request('kernel:ai:chat', { prompt, options }),
+      callTool: (toolName: string, args: Record<string, unknown>) => self.request('kernel:ai:callTool', { toolName, args })
+    }
+
+    const eventsAPI: IPluginEventsAPI = {
+      on: <K extends import('./events').PluginEventName>(event: K, handler: (payload: import('./events').PluginEventMap[K]) => void | Promise<void>) => {
+        const evt = String(event)
+        if (!self.eventHandlers.has(evt)) {
+          self.eventHandlers.set(evt, [])
+          void self.request('kernel:events:subscribe', { event: evt })
+        }
+        self.eventHandlers.get(evt)!.push(handler as any)
+
+        return () => {
+          const list = self.eventHandlers.get(evt)
+          if (list) {
+            const idx = list.indexOf(handler as any)
+            if (idx >= 0) list.splice(idx, 1)
+            if (list.length === 0) {
+              self.eventHandlers.delete(evt)
+              void self.request('kernel:events:unsubscribe', { event: evt })
+            }
+          }
+        }
+      }
+    }
+
+    const storageAPI: IPluginStorageAPI = {
+      get: <T = unknown>(key: string) => self.request<T>('kernel:storage:get', { key }),
+      set: (key: string, value: unknown) => self.request('kernel:storage:set', { key, value }),
+      delete: (key: string) => self.request('kernel:storage:delete', { key }),
+      clear: () => self.request('kernel:storage:clear', {}),
+      keys: () => self.request<string[]>('kernel:storage:keys', {})
+    }
+
+    const uiAPI: IPluginUIAPI = {
+      notify: (opts) => self.request('kernel:ui:notify', opts),
+      toast: (msg, level = 'info') => void self.request('kernel:ui:toast', { message: msg, level })
+    }
+
+    const schedulerAPI: IPluginSchedulerAPI = {
+      setInterval: (ms, fn) => {
+        const id = setInterval(fn, ms)
+        return () => clearInterval(id)
+      },
+      setTimeout: (ms, fn) => {
+        const id = setTimeout(fn, ms)
+        return () => clearTimeout(id)
+      },
+      onCron: (name, fn) => {
+        self.eventHandlers.set(`cron:${name}`, [fn])
+      }
+    }
+
+    const contributionsAPI: IPluginContributionsAPI = {
+      registerChatAction: (id, handler) => {
+        self.chatActionHandlers.set(id, handler)
+        void self.request('kernel:contributions:register', { slot: 'chat-action', id })
+      },
+      registerMessageAction: (id, handler) => {
+        self.messageActionHandlers.set(id, handler)
+        void self.request('kernel:contributions:register', { slot: 'message-action', id })
+      },
+      registerChatBadge: (id, compute) => {
+        self.chatBadgeComputers.set(id, compute)
+        void self.request('kernel:contributions:register', { slot: 'chat-badge', id })
+      },
+      registerSlashCommand: (name, handler) => {
+        self.slashCommandHandlers.set(name, handler)
+        void self.request('kernel:contributions:register', { slot: 'slash-command', name })
+      },
+      registerAITool: (name, execute) => {
+        self.aiToolExecutors.set(name, execute)
+        void self.request('kernel:contributions:register', { slot: 'ai-tool', name })
+      },
+      registerCompletionProvider: (id, provide) => {
+        self.completionProviders.set(id, provide)
+        void self.request('kernel:contributions:register', { slot: 'completion-provider', id })
+      },
+      registerMessageSendInterceptor: (id, intercept) => {
+        self.sendInterceptors.set(id, intercept)
+        void self.request('kernel:contributions:register', { slot: 'message-send-pipeline', id })
+      },
+      exposeAPI: (exportName, api) => {
+        self.exposedAPIs.set(exportName, api)
+        void self.request('kernel:contributions:register', { slot: 'plugin-api-export', exportName })
+      },
+      importAPI: (pluginId, exportName) => {
+        return self.request<Record<string, unknown>>('kernel:plugins:importAPI', { pluginId, exportName })
+      }
+    }
+
+    return {
+      id: this.manifest.id,
+      manifest: this.manifest,
+      onActivate: (fn) => {
+        this.activateCallbacks.push(fn)
+      },
+      onDeactivate: (fn) => {
+        this.deactivateCallbacks.push(fn)
+      },
+      log: logAPI,
+      chats: chatsAPI,
+      messages: messagesAPI,
+      contacts: contactsAPI,
+      ai: aiAPI,
+      events: eventsAPI,
+      storage: storageAPI,
+      ui: uiAPI,
+      scheduler: schedulerAPI,
+      contributions: contributionsAPI
+    }
+  }
+}
