@@ -32,8 +32,25 @@ SmartChat features an isolated, capability-based Extension System. Extensions ar
 - **LLM Access**: Prompt multi-provider LLMs directly from background extension scripts.
 - **Tool Calling**: Extensions can call tools to perform actions in the app. 
 
-### Future plans 
-The app will be transitioned to a microkernel architecture inspired by VS Code, enabling extensions to be as powerful as built-in features by exposing and dogfooding the same API surface used by the app's internal features - keeping Security and privacy in mind as well.
+### 🔮 Future Architecture Roadmap (Microkernel Transition)
+
+SmartChat is transitioning toward a **VS Code-inspired Microkernel Architecture**. Under this model, the core kernel provides a minimal API surface, and both internal features and external plugins consume the **exact same Kernel APIs** and register into typed contribution slots:
+
+- **Rich UI Contribution Points**: Plugins can inject custom badges onto chat list rows, add context menu actions on chats and individual messages, render custom sidebar panels, add settings pages, status bar items, and keyboard shortcuts.
+- **Chatbar Autocomplete & Suggestion Providers**: IntelliSense-style popup modals inside the chatbar triggered by typing (`@` mentions, `/` slash commands, `:` emojis, `#` tags, or custom triggers).
+- **Message Pipeline Interceptors**: Preprocessing middleware for outgoing messages (e.g., auto-translation, markdown formatting, profanity filtering, or intercepting commands before network transmission).
+- **Custom Sandboxed Rendering**: Dedicated plugin panels can render full custom React/HTML interfaces inside sandboxed frames with access to host CSS theme tokens.
+- **Inter-Plugin Service Exchange**: Plugins can export custom APIs and consume services exposed by other plugins.
+- **Granular User-Controlled Permission Engine**: A strict security layer allowing users to review and toggle permissions (e.g., `messages:send`, `chats:read`), alongside resource-level whitelist/blacklist policies for specific contacts, chats, read receipts, and AI tools.
+
+#### 💡 Real-World Use Cases Enabled by This Architecture:
+
+- **🌐 Live Translator Plugin**: Translates messages automatically, on-demand via right-click context menu ("Translate to..."), or on-the-fly when sending outgoing messages using slash commands (e.g. `/tr-kn This message will be translated and sent to user in kannada`).
+- **🏷️ Smart Chat Organizer & Badges**: Adds custom visual tags (*Work*, *Family*, *VIP*) to chat rows, lets you filter your chat list with one click, and snoozes work notifications during weekends.
+- **📅 AI Task & Calendar Integration**: Type `#task` or right-click any message to instantly turn it into a Google Calendar event, Todoist task, or Jira ticket without leaving the chat.
+- **🛡️ Privacy & DLP Security Shield**: Automatically warns or blocks messages containing sensitive info (API keys, passwords, credit card numbers) before they are transmitted.
+- **📊 Smart Chat Analytics & Activity Hub**: Opens a custom sidebar panel alongside any chat displaying conversation stats, sentiment trends, peak chatting hours, and shared media summaries.
+- **✉️ Cross-App File Sharing**: Right-click any media or document attachment in a chat to send or forward it directly to external services (e.g. Gmail draft, Slack channel, Google Drive, or Dropbox).
 
 ### Packaged Extension Scripts
 
