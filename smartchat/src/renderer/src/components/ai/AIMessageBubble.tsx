@@ -4,6 +4,11 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
+import AIToolCard from './AIToolCard'
+import AISmartInput from './AISmartInput'
+import { AIChatMessage, ToolDefinition } from '../../types/aiTypes'
+import { SelectedContext, ChatItem } from '../../types/chatTypes'
+import { useCitationMarkdownComponents } from './CitationMarkdownRenderer'
 
 // ── Mention highlighter for rendered bubbles ──────────────────────────────────
 function escapeRe(s: string) {
@@ -33,11 +38,6 @@ function renderWithMentions(content: string, mentions: SelectedContext[]): React
     </span>
   )
 }
-import AIToolCard from './AIToolCard'
-import AISmartInput from './AISmartInput'
-import { AIChatMessage, ToolDefinition } from '../../types/aiTypes'
-import { SelectedContext, ChatItem } from '../../types/chatTypes'
-import { useCitationMarkdownComponents } from './CitationMarkdownRenderer'
 
 interface AIMessageBubbleProps {
   message: AIChatMessage
