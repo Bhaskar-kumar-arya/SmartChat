@@ -275,4 +275,10 @@ export const api: IAPIService = {
   onExtensionChatPush: (cb) => window.api.onExtensionChatPush(cb as any),
 
   onExtensionFocus: (cb) => window.api.onExtensionFocus(cb),
+
+  // ── Contribution System (Phase 7) ───────────────────────────────────
+  getContributions: () => window.api.getContributions(),
+  executeContribution: (opts) => window.api.executeContribution(opts),
+  onContributionsUpdated: (cb) => window.api.onContributionsUpdated(cb),
 }
+

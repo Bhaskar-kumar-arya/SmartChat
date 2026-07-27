@@ -333,6 +333,16 @@ const api = {
     return () => ipcRenderer.removeListener('extension:focus', l)
   },
 
+  // ── Contribution System (Phase 7) ───────────────────────────────────
+  getContributions: () => ipcRenderer.invoke('kernel:contributions:snapshot'),
+  executeContribution: (opts: { slot: string; pluginId: string; id: string; context?: Record<string, unknown> }) =>
+    ipcRenderer.invoke('kernel:contribution:execute', opts),
+  onContributionsUpdated: (cb: (snapshot: any) => void) => {
+    const listener = (_event: IpcRendererEvent, snapshot: any) => cb(snapshot)
+    ipcRenderer.on('kernel:contributions:updated', listener)
+    return () => { ipcRenderer.removeListener('kernel:contributions:updated', listener) }
+  },
+
   // ── File Utilities ──────────────────────────────────────────────────
   // webUtils.getPathForFile is the modern Electron API to get the real
   // filesystem path of a File object dropped into the renderer.

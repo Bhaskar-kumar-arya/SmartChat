@@ -145,4 +145,10 @@ export interface IAPIService {
   extensionChatHistory(extensionId: string, limit?: number): Promise<ExtensionChatMessage[]>
   onExtensionChatPush(cb: (payload: { extensionId: string; message: ExtensionChatMessage }) => void): () => void
   onExtensionFocus(cb: (id: string) => void): () => void
+
+  // ── Contribution System (Phase 7) ───────────────────────────────────
+  getContributions(): Promise<import('../types/contribution.types').ContributionRegistrySnapshot>
+  executeContribution(opts: import('../types/contribution.types').ExecuteContributionOpts): Promise<void>
+  onContributionsUpdated(cb: (snapshot: import('../types/contribution.types').ContributionRegistrySnapshot) => void): () => void
 }
+

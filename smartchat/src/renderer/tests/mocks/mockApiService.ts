@@ -135,7 +135,13 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
     extensionChatHistory: vi.fn().mockResolvedValue([]),
     onExtensionChatPush: vi.fn().mockReturnValue(() => {}),
     onExtensionFocus: vi.fn().mockReturnValue(() => {}),
+
+    // Contribution System
+    getContributions: vi.fn().mockResolvedValue({}),
+    executeContribution: vi.fn().mockResolvedValue(undefined),
+    onContributionsUpdated: vi.fn().mockReturnValue(() => {}),
   }
+
 
   return {
     ...defaultMock,

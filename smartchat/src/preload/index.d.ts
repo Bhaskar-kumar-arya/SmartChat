@@ -137,6 +137,12 @@ declare global {
       extensionChatHistory: (extensionId: string, limit?: number) => Promise<import('../renderer/src/types/extension.types').ExtensionChatMessage[]>
       onExtensionChatPush: (cb: (payload: { extensionId: string; message: import('../renderer/src/types/extension.types').ExtensionChatMessage }) => void) => () => void
       onExtensionFocus: (cb: (id: string) => void) => () => void
+
+      // ── Contribution System (Phase 7) ───────────────────────────────────
+      getContributions: () => Promise<import('../renderer/src/types/contribution.types').ContributionRegistrySnapshot>
+      executeContribution: (opts: import('../renderer/src/types/contribution.types').ExecuteContributionOpts) => Promise<void>
+      onContributionsUpdated: (cb: (snapshot: import('../renderer/src/types/contribution.types').ContributionRegistrySnapshot) => void) => () => void
     }
   }
 }
+

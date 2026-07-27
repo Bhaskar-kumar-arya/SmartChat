@@ -526,7 +526,7 @@ Phase 06 built-in plugins implemented: `WhatsappCorePlugin`, `AIAssistantPlugin`
 
 ---
 
-## Phase 7 — Renderer: ContributionContext ⏳ TODO
+## Phase 7 — Renderer: ContributionContext ✅ DONE
 
 ### Goal
 Make the React renderer contribution-aware. Build the context that holds the registry snapshot,
@@ -580,11 +580,11 @@ Tests must cover:
 Use the renderer's existing test setup (jsdom, `@testing-library/react`).
 
 ### Acceptance Criteria
-- [ ] `ContributionContext` test: all cases pass
-- [ ] `useContributions` returns typed contributions correctly
-- [ ] `executeContribution` IPC handler reaches the correct plugin channel in main process
-- [ ] All pre-existing tests still pass (both `--project main` and `--project renderer`)
-- [ ] Zero TypeScript errors
+- [x] `ContributionContext` test: all cases pass
+- [x] `useContributions` returns typed contributions correctly
+- [x] `executeContribution` IPC handler reaches the correct plugin channel in main process
+- [x] All pre-existing tests still pass (both `--project main` and `--project renderer`)
+- [x] Zero TypeScript errors
 
 ### Phase Completion Gate
 ```bash
@@ -594,9 +594,10 @@ npm run typecheck
 > After testing, run `npm run test:rebuild:electron` before `npm run dev`.
 
 ### Notes
-_Fill in during execution._
+Phase 07 renderer contribution system implemented: `registerContributionIpcHandlers` created in main kernel (`src/main/kernel/ipc/contributionIpc.ts`), preload bridge & `IAPIService` updated with `getContributions`, `executeContribution`, and `onContributionsUpdated`, `ContributionProvider` built in `src/renderer/src/context/ContributionContext.tsx`, and typed `useContributions` hook built in `src/renderer/src/hooks/useContributions.ts`. Unit tests created in `src/renderer/tests/context/ContributionContext.test.tsx` and `src/main/tests/kernel/ipc/contributionIpc.test.ts`. All unit tests, full test suite, and typecheck pass with zero errors.
 
 ---
+
 
 ## Phase 8 — Bootstrap Wiring ⏳ TODO
 
