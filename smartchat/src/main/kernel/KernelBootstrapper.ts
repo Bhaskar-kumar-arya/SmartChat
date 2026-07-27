@@ -72,9 +72,16 @@ export class KernelBootstrapper {
       getSock,
       services.mediaService
     )
+    const loader = new PluginLoader(extensionsPath)
+    const pluginRegistry = new PluginRegistry()
+
     const contactsModule = new KernelContactsModule(permissions, services.contactService)
     const aiModule = new KernelAIModule(permissions, services.aiService, services.toolRegistry)
-    const eventsModule = new KernelEventsModule(permissions, () => getBus?.() ?? null)
+    const eventsModule = new KernelEventsModule(
+      permissions,
+      () => getBus?.() ?? null,
+      (pluginId) => pluginRegistry.get(pluginId)?.channel
+    )
     const storageModule = new KernelStorageModule(permissions, storageRepo)
     const uiModule = new KernelUIModule(permissions, services.notificationService, getMainWindow)
 
@@ -86,8 +93,6 @@ export class KernelBootstrapper {
     router.registerModule(storageModule)
     router.registerModule(uiModule)
 
-    const loader = new PluginLoader(extensionsPath)
-    const pluginRegistry = new PluginRegistry()
     const host = new PluginHost(loader, pluginRegistry, router, registry)
 
     const builtins = [

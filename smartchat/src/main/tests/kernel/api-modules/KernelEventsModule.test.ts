@@ -72,4 +72,88 @@ describe('KernelEventsModule', () => {
       message: "Unknown action 'kernel:events:unknown' in module 'kernel:events'"
     })
   })
+
+  it('forwards bus events to subscribing plugin channel', async () => {
+    const mockChannel = {
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    }
+    const getChannel = vi.fn().mockImplementation((pluginId: string) => {
+      return pluginId === 'plugin-a' ? mockChannel : undefined
+    })
+
+    const eventsModule = new KernelEventsModule(mockPermissions, () => mockBus, getChannel)
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    let busHandler: ((data: any) => Promise<void>) | null = null
+    vi.mocked(mockBus.on).mockImplementation((evt, fn) => {
+      if (evt === 'message:incoming') {
+        busHandler = fn as any
+      }
+      return mockBus
+    })
+
+    await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+    expect(busHandler).not.toBeNull()
+
+    const eventPayload = { id: 'msg-1', text: 'Hello World' }
+    await busHandler!(eventPayload)
+
+    expect(getChannel).toHaveBeenCalledWith('plugin-a')
+    expect(mockChannel.sendToPlugin).toHaveBeenCalledWith({
+      id: expect.stringMatching(/^evt:message:incoming:/),
+      type: 'kernel:events:emit',
+      payload: {
+        event: 'message:incoming',
+        payload: eventPayload
+      }
+    })
+  })
+
+  it('sanitizes event payloads containing sock objects, functions, and bigints', async () => {
+    const mockChannel = {
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    }
+    const getChannel = vi.fn().mockReturnValue(mockChannel)
+    const eventsModule = new KernelEventsModule(mockPermissions, () => mockBus, getChannel)
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    let busHandler: ((data: any) => Promise<void>) | null = null
+    vi.mocked(mockBus.on).mockImplementation((evt, fn) => {
+      if (evt === 'message:incoming') {
+        busHandler = fn as any
+      }
+      return mockBus
+    })
+
+    await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+
+    const rawPayload = {
+      chatJid: '123@s.whatsapp.net',
+      timestamp: BigInt(1753634000),
+      sock: { worker: { _events: { newListener: () => {} } } },
+      fnProp: () => {},
+      processed: { id: 'msg-1', textContent: 'hello' }
+    }
+
+    await busHandler!(rawPayload)
+
+    expect(mockChannel.sendToPlugin).toHaveBeenCalledWith({
+      id: expect.stringMatching(/^evt:message:incoming:/),
+      type: 'kernel:events:emit',
+      payload: {
+        event: 'message:incoming',
+        payload: {
+          chatJid: '123@s.whatsapp.net',
+          timestamp: '1753634000',
+          processed: { id: 'msg-1', textContent: 'hello' }
+        }
+      }
+    })
+  })
 })
