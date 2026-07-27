@@ -276,9 +276,10 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic, on
             id: pinContrib.id,
             context: { jid: contextMenu.jid }
           }).catch(console.error)
+        } else {
+          if (contextMenu.pinned) handleUnpin(contextMenu.jid)
+          else handlePin(contextMenu.jid)
         }
-        if (contextMenu.pinned) handleUnpin(contextMenu.jid)
-        else handlePin(contextMenu.jid)
       },
       icon: (
         <svg className="indicator-icon pin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -315,8 +316,9 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic, on
               id: muteContrib.id,
               context: { jid: contextMenu.jid }
             }).catch(console.error)
+          } else {
+            handleUnmute(contextMenu.jid)
           }
-          handleUnmute(contextMenu.jid)
         },
         icon: (
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -334,8 +336,9 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic, on
             id: muteContrib.id,
             context: { jid: contextMenu.jid, durationMs }
           }).catch(console.error)
+        } else {
+          handleMute(contextMenu.jid, durationMs)
         }
-        handleMute(contextMenu.jid, durationMs)
       }
       items.push({
         label: muteContrib?.label || 'Mute Chat',

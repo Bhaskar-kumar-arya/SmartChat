@@ -102,4 +102,41 @@ describe('PluginHost', () => {
 
     expect(host.listLoaded().length).toBe(initialLoadedCount)
   })
+
+  it('dispatches kernel requests to registered built-in handlers via DirectPluginChannel', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const builtin: IBuiltinPlugin = {
+      id: 'com.builtin.action-test',
+      manifest: {
+        id: 'com.builtin.action-test',
+        name: 'Builtin Action Test',
+        version: '1.0.0',
+        apiVersion: '2',
+        main: 'index.ts',
+        permissions: [],
+        contributions: {
+          chatActions: [{ id: 'test-action', label: 'Test Action' }]
+        }
+      },
+      activate: async (ctx) => {
+        ctx.contributions?.registerChatAction?.('test-action', handler)
+      },
+      deactivate: vi.fn().mockResolvedValue(undefined)
+    }
+
+    await host.registerBuiltin(builtin)
+    const pluginMeta = host.getPlugin('com.builtin.action-test')
+    expect(pluginMeta).toBeDefined()
+
+    pluginMeta!.channel.sendToPlugin({
+      id: 'req-1',
+      type: 'contribution:execute:chat-action',
+      payload: { id: 'test-action', context: { jid: '123@s.whatsapp.net' } }
+    })
+
+    expect(handler).toHaveBeenCalledWith({
+      id: 'test-action',
+      context: { jid: '123@s.whatsapp.net' }
+    })
+  })
 })

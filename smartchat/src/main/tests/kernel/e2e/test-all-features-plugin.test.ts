@@ -252,7 +252,7 @@ describe('External Plugin E2E Test (All Features)', () => {
     expect(host.listLoaded()).toContain(pluginId)
 
     // Give worker thread a moment to run activate hook and process messages
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await new Promise((resolve) => setTimeout(resolve, 500))
 
     // 3. Verify all 11 contribution slots are populated
     expect(contribRegistry.getAll('chat-action').some((x) => x.id === 'test-chat-action')).toBe(true)
