@@ -83,7 +83,7 @@ describe('WorkerPluginRuntime', () => {
     const ctx = runtime.getContext()
 
     const actionSpy = vi.fn().mockResolvedValue(undefined)
-    ctx.contributions.registerChatAction('archive-chat', actionSpy)
+    ctx.contributions.registerChatAction?.('archive-chat', actionSpy)
 
     // Simulate kernel sending contribution execution request to plugin
     const executionReq = {
@@ -142,5 +142,70 @@ describe('WorkerPluginRuntime', () => {
     const requestPromise = ctx.ai!.chat('Hello AI')
 
     await expect(requestPromise).rejects.toThrow(/timed out/i)
+  })
+
+  it('should allow registering custom incoming handlers and dispatching requests through the handler registry map', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest)
+
+    runtime.registerIncomingHandler('custom:ping', async (req) => {
+      return { pong: true, echoes: req.payload }
+    })
+
+    const customReq = {
+      id: 'req-custom-1',
+      type: 'custom:ping',
+      payload: { hello: 'world' }
+    }
+
+    const responsePromise = new Promise<any>((resolve) => {
+      const listener = (res: any) => {
+        if (res.id === 'req-custom-1') {
+          port2.off('message', listener)
+          resolve(res)
+        }
+      }
+      port2.on('message', listener)
+    })
+
+    port2.postMessage(customReq)
+
+    const res = await responsePromise
+    expect(res).toEqual({
+      id: 'req-custom-1',
+      ok: true,
+      payload: { pong: true, echoes: { hello: 'world' } }
+    })
+  })
+
+  it('should respond with NOT_FOUND error for unknown incoming request types', async () => {
+    void new WorkerPluginRuntime(port1, manifest)
+
+    const unknownReq = {
+      id: 'req-unknown-1',
+      type: 'unknown:request:type',
+      payload: {}
+    }
+
+    const responsePromise = new Promise<any>((resolve) => {
+      const listener = (res: any) => {
+        if (res.id === 'req-unknown-1') {
+          port2.off('message', listener)
+          resolve(res)
+        }
+      }
+      port2.on('message', listener)
+    })
+
+    port2.postMessage(unknownReq)
+
+    const res = await responsePromise
+    expect(res).toMatchObject({
+      id: 'req-unknown-1',
+      ok: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: "Unhandled incoming type 'unknown:request:type'"
+      }
+    })
   })
 })
