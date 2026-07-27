@@ -1,6 +1,6 @@
-import { IPluginChannel, KernelRequest, KernelResponse } from './IPluginChannel'
+import { IBidirectionalPluginChannel, KernelRequest, KernelResponse } from './IPluginChannel'
 
-export class DirectPluginChannel implements IPluginChannel {
+export class DirectPluginChannel implements IBidirectionalPluginChannel {
   private pluginRequestHandler: ((msg: KernelRequest) => Promise<void>) | null = null
   private kernelRequestHandler: ((msg: KernelRequest) => Promise<void>) | null = null
   private kernelResponseHandler: ((msg: KernelResponse) => void) | null = null
@@ -24,6 +24,28 @@ export class DirectPluginChannel implements IPluginChannel {
     if (this.kernelResponseHandler) {
       this.kernelResponseHandler(msg)
     }
+  }
+
+  async sendRequestToPlugin(msg: KernelRequest): Promise<KernelResponse> {
+    if (this.isDestroyed) {
+      return { id: msg.id, ok: false, error: { code: 'INTERNAL_ERROR', message: 'Channel destroyed' } }
+    }
+    return new Promise<KernelResponse>((resolve, reject) => {
+      this.pendingRequests.set(msg.id, { resolve, reject })
+      if (this.kernelRequestHandler) {
+        this.kernelRequestHandler(msg).catch((err) => {
+          this.pendingRequests.delete(msg.id)
+          reject(err)
+        })
+      } else {
+        this.pendingRequests.delete(msg.id)
+        resolve({
+          id: msg.id,
+          ok: false,
+          error: { code: 'INTERNAL_ERROR', message: 'No kernel request handler attached' }
+        })
+      }
+    })
   }
 
   onPluginRequest(handler: (msg: KernelRequest) => Promise<void>): void {

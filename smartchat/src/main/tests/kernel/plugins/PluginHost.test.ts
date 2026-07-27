@@ -197,4 +197,41 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
       context: { jid: '123@s.whatsapp.net' }
     })
   })
+
+  it('wires events and scheduler into PluginContext for built-in plugins', async () => {
+    const eventHandler = vi.fn()
+    let capturedCtx: any
+    const builtin: IBuiltinPlugin = {
+      id: 'com.builtin.event-test',
+      manifest: {
+        id: 'com.builtin.event-test',
+        name: 'Event Test',
+        version: '1.0.0',
+        apiVersion: '2',
+        main: 'index.ts',
+        permissions: ['events:messages:upsert'],
+        contributions: {}
+      },
+      activate: async (ctx) => {
+        capturedCtx = ctx
+        ctx.events?.on('messages:upsert' as any, eventHandler)
+      },
+      deactivate: vi.fn().mockResolvedValue(undefined)
+    }
+
+    await host.registerBuiltin(builtin)
+    expect(capturedCtx.events).toBeDefined()
+    expect(capturedCtx.scheduler).toBeDefined()
+
+    const pluginMeta = host.getPlugin('com.builtin.event-test')
+    expect(pluginMeta).toBeDefined()
+
+    pluginMeta!.channel.sendToPlugin({
+      id: 'evt-1',
+      type: 'kernel:events:emit',
+      payload: { event: 'messages:upsert', payload: { id: 'msg-123', text: 'Hello' } }
+    })
+
+    expect(eventHandler).toHaveBeenCalledWith({ id: 'msg-123', text: 'Hello' })
+  })
 })

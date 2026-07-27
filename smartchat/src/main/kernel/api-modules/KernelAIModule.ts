@@ -2,6 +2,7 @@ import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IAIService, AIChatContext, AIHistoryMessage, AIMention } from '../../services/ai/IAIService'
 import { IToolRegistry, AITool } from '../../services/ai/IToolRegistry'
+import { IPluginChannel, isBidirectionalPluginChannel } from '../channels/IPluginChannel'
 import { KernelNotFoundError } from './KernelErrors'
 
 export class KernelAIModule extends BaseKernelModule {
@@ -10,7 +11,8 @@ export class KernelAIModule extends BaseKernelModule {
   constructor(
     permissions: IPermissionStore,
     private readonly aiService: IAIService,
-    private readonly toolRegistry: IToolRegistry
+    private readonly toolRegistry: IToolRegistry,
+    private readonly getChannel?: (pluginId: string) => IPluginChannel | undefined
   ) {
     super(permissions)
   }
@@ -57,7 +59,37 @@ export class KernelAIModule extends BaseKernelModule {
           parametersSchema: schema,
           requiresPermission: false,
           execute: async (args: Record<string, unknown>) => {
-            return { text: `Tool ${name} executed with args ${JSON.stringify(args)}` }
+            const channel = this.getChannel?.(pluginId)
+            if (!channel) {
+              return { text: `Error: Plugin '${pluginId}' channel is not available` }
+            }
+            if (!isBidirectionalPluginChannel(channel)) {
+              return { text: `Error: Plugin '${pluginId}' channel does not support bidirectional requests` }
+            }
+            const reqId = `ai-tool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+            const res = await channel.sendRequestToPlugin({
+              id: reqId,
+              type: 'contribution:execute:ai-tool',
+              payload: { name, args }
+            })
+            if (res.ok) {
+              let outText: string
+              if (typeof res.payload === 'string') {
+                outText = res.payload
+              } else if (
+                res.payload &&
+                typeof res.payload === 'object' &&
+                'text' in res.payload &&
+                typeof (res.payload as { text: unknown }).text === 'string'
+              ) {
+                outText = (res.payload as { text: string }).text
+              } else {
+                outText = JSON.stringify(res.payload)
+              }
+              return { text: outText }
+            } else {
+              return { text: `Error: ${res.error?.message || 'Tool execution failed'}` }
+            }
           }
         }
         this.toolRegistry.registerTool(tool)

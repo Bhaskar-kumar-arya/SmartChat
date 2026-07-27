@@ -116,16 +116,34 @@ export class PluginHost implements IPluginHost {
     const channel = new DirectPluginChannel()
     this.router.attachChannel(plugin.id, channel)
 
+    const eventHandlers = new Map<string, Set<(payload: unknown) => void | Promise<void>>>()
+
     channel.onKernelRequest(async (req) => {
+      if (req.type === 'kernel:events:emit') {
+        const { event, payload } = (req.payload as { event: string; payload: unknown }) || {}
+        const handlers = eventHandlers.get(event)
+        if (handlers) {
+          for (const h of handlers) {
+            await h(payload)
+          }
+        }
+        channel.sendResponseToPlugin({ id: req.id, ok: true, payload: null })
+        return
+      }
+
       const parts = req.type.split(':')
       const slot = parts.slice(2).join(':') as ContributionSlot
-      const payload = req.payload as { id?: string; name?: string; context?: Record<string, unknown> } | undefined
+      const payload = req.payload as { id?: string; name?: string; context?: Record<string, unknown>; args?: Record<string, unknown> } | undefined
       const targetId = payload?.id || payload?.name || ''
       const key = `${plugin.id}:${slot}:${targetId}`
       const handler = this.handlers.get(key)
       let result: unknown
       if (handler) {
-        result = await (handler as (payload: unknown) => Promise<unknown>)(payload)
+        if (slot === 'ai-tool' && payload?.args) {
+          result = await (handler as (args: Record<string, unknown>) => Promise<unknown>)(payload.args)
+        } else {
+          result = await (handler as (payload: unknown) => Promise<unknown>)(payload)
+        }
       }
       channel.sendResponseToPlugin({ id: req.id, ok: true, payload: result })
     })
@@ -172,6 +190,31 @@ export class PluginHost implements IPluginHost {
         chat: (prompt: string, options?: any) => request('kernel:ai:chat', { prompt, options }) as Promise<string>,
         callTool: (toolName: string, args: Record<string, unknown>) => request('kernel:ai:callTool', { toolName, args }) as Promise<{ text: string }>
       },
+      events: {
+        on: (event: any, handler: (payload: any) => void | Promise<void>) => {
+          const evt = String(event)
+          if (!eventHandlers.has(evt)) {
+            eventHandlers.set(evt, new Set())
+            void request('kernel:events:subscribe', { event: evt }).catch((err) => {
+              console.warn(`[Plugin:${plugin.id}] Failed to subscribe to event ${evt}:`, err)
+            })
+          }
+          eventHandlers.get(evt)!.add(handler)
+
+          return () => {
+            const handlers = eventHandlers.get(evt)
+            if (handlers) {
+              handlers.delete(handler)
+              if (handlers.size === 0) {
+                eventHandlers.delete(evt)
+                void request('kernel:events:unsubscribe', { event: evt }).catch((err) => {
+                  console.warn(`[Plugin:${plugin.id}] Failed to unsubscribe from event ${evt}:`, err)
+                })
+              }
+            }
+          }
+        }
+      },
       ui: {
         notify: (opts: { title: string; body: string }) => request('kernel:ui:notify', opts) as Promise<void>,
         toast: (msg: string, level?: string) => request('kernel:ui:toast', { msg, level }) as any
@@ -182,6 +225,23 @@ export class PluginHost implements IPluginHost {
         delete: (key: string) => request('kernel:storage:delete', { key }) as Promise<void>,
         clear: () => request('kernel:storage:clear', {}) as Promise<void>,
         keys: () => request('kernel:storage:keys', {}) as Promise<string[]>
+      },
+      scheduler: {
+        setInterval: (ms: number, fn: () => void | Promise<void>) => {
+          const id = setInterval(fn, ms)
+          return () => clearInterval(id)
+        },
+        setTimeout: (ms: number, fn: () => void | Promise<void>) => {
+          const id = setTimeout(fn, ms)
+          return () => clearInterval(id)
+        },
+        onCron: (name: string, fn: () => void | Promise<void>) => {
+          const key = `cron:${name}`
+          if (!eventHandlers.has(key)) {
+            eventHandlers.set(key, new Set())
+          }
+          eventHandlers.get(key)!.add(fn)
+        }
       },
       contributions: {
         registerChatAction: (id, handler) => {

@@ -117,6 +117,69 @@ describe('KernelAIModule', () => {
     expect(result).toEqual({ success: true, toolName: 'plugin_tool' })
   })
 
+  it('routes registered tool execution back to the registering plugin via channel', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    const mockChannel = {
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      sendRequestToPlugin: vi.fn().mockResolvedValue({ ok: true, payload: { text: 'London is sunny' } }),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    }
+    const moduleWithChannel = new KernelAIModule(
+      mockPermissions,
+      mockAIService,
+      mockToolRegistry,
+      (pluginId) => (pluginId === 'plugin-a' ? mockChannel : undefined)
+    )
+
+    let registeredTool: any
+    vi.mocked(mockToolRegistry.registerTool).mockImplementation((tool) => {
+      registeredTool = tool
+    })
+
+    await moduleWithChannel.handle('plugin-a', 'kernel:ai:registerTool', {
+      name: 'weather_tool',
+      description: 'Get weather',
+      schema: {}
+    })
+
+    expect(registeredTool).toBeDefined()
+    const execResult = await registeredTool.execute({ city: 'London' })
+
+    expect(mockChannel.sendRequestToPlugin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'contribution:execute:ai-tool',
+        payload: { name: 'weather_tool', args: { city: 'London' } }
+      })
+    )
+    expect(execResult).toEqual({ text: 'London is sunny' })
+  })
+
+  it('returns error string if plugin channel does not exist during tool execution', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    const moduleWithoutChannel = new KernelAIModule(
+      mockPermissions,
+      mockAIService,
+      mockToolRegistry,
+      () => undefined
+    )
+
+    let registeredTool: any
+    vi.mocked(mockToolRegistry.registerTool).mockImplementation((tool) => {
+      registeredTool = tool
+    })
+
+    await moduleWithoutChannel.handle('plugin-a', 'kernel:ai:registerTool', {
+      name: 'weather_tool',
+      description: 'Get weather',
+      schema: {}
+    })
+
+    const execResult = await registeredTool.execute({ city: 'London' })
+    expect(execResult.text).toContain("Plugin 'plugin-a' channel is not available")
+  })
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:ai:unknown', {})

@@ -81,7 +81,12 @@ export class KernelBootstrapper {
     const pluginRegistry = new PluginRegistry()
 
     const contactsModule = new KernelContactsModule(permissions, services.contactService)
-    const aiModule = new KernelAIModule(permissions, services.aiService, services.toolRegistry)
+    const aiModule = new KernelAIModule(
+      permissions,
+      services.aiService,
+      services.toolRegistry,
+      (pluginId) => pluginRegistry.get(pluginId)?.channel
+    )
     const eventsModule = new KernelEventsModule(
       permissions,
       getBus?.() ?? null,
