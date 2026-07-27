@@ -22,6 +22,7 @@ export type KernelErrorCode = string
 export interface IPluginChannel {
   sendToPlugin(msg: KernelRequest): void
   sendResponseToPlugin(msg: KernelResponse): void
+  sendRequestToPlugin?(msg: KernelRequest): Promise<KernelResponse>
   onPluginRequest(handler: (msg: KernelRequest) => Promise<void>): void
   destroy(): void
 }

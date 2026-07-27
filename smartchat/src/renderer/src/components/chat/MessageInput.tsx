@@ -16,6 +16,8 @@ import {
   setCaretPosition
 } from '../../utils/editorUtils'
 
+import { useContributions } from '../../hooks/useContributions'
+
 interface MessageInputProps {
   activeJid: string
   onSend: (text: string, mentions?: string[]) => void | Promise<void>
@@ -202,12 +204,41 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     }
   }
 
+  const slashCommands = useContributions('slash-command')
+
   const handleSend = async () => {
     const trimmed = text.trim()
     if (!trimmed || sending) return
 
     setSending(true)
     const mentions = Array.from(mentionedJids)
+
+    if (trimmed.startsWith('/')) {
+      const cmdName = trimmed.slice(1).split(' ')[0]
+      const matchingCmd = slashCommands.find((c) => c.name === cmdName)
+      if (matchingCmd) {
+        try {
+          await api.executeContribution({
+            slot: 'slash-command',
+            pluginId: matchingCmd.pluginId,
+            id: matchingCmd.name,
+            context: { jid: activeJid, text: trimmed }
+          })
+          setText('')
+          if (editorRef.current) {
+            editorRef.current.innerHTML = ''
+          }
+          lastCaretOffsetRef.current = 0
+          clearMentions()
+        } catch (err) {
+          console.error('[MessageInput] Failed to execute slash command:', err)
+        } finally {
+          setSending(false)
+          editorRef.current?.focus()
+        }
+        return
+      }
+    }
     
     try {
       await onSend(trimmed, mentions)

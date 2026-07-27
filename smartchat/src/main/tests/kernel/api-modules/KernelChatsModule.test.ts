@@ -16,7 +16,8 @@ describe('KernelChatsModule', () => {
       isResourceAllowed: vi.fn(),
       setCapability: vi.fn(),
       setScope: vi.fn(),
-      getPluginPermissions: vi.fn()
+      getPluginPermissions: vi.fn(),
+      registerPluginManifest: vi.fn()
     }
 
     mockChatService = {

@@ -179,7 +179,7 @@ app.whenReady().then(() => {
   })
 
   bootstrapper.boot().then((bootResult) => {
-    registerContributionIpcHandlers(bootResult.registry, bootResult.host, () => mainWindow?.webContents, bootResult.loader)
+    registerContributionIpcHandlers(bootResult.registry, bootResult.host, () => mainWindow?.webContents, bootResult.loader, bootResult.permissions, services.toolRegistry)
   }).catch((err) => logMain('[Main] Failed to boot microkernel', err))
 
   // Initialize Tray Service

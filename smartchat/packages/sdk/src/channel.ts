@@ -289,7 +289,8 @@ export class WorkerPluginRuntime {
       getMessages: (jid: string, page = 1, limit = 50) => self.request('kernel:messages:getMessages', { jid, page, limit }),
       send: (jid: string, text: string, options?: SendMessageOptions) => self.request('kernel:messages:send', { jid, text, options }),
       delete: (jid: string, messageId: string) => self.request('kernel:messages:delete', { jid, messageId }),
-      react: (jid: string, messageId: string, emoji: string) => self.request('kernel:messages:react', { jid, messageId, emoji })
+      react: (jid: string, messageId: string, emoji: string) => self.request('kernel:messages:react', { jid, messageId, emoji }),
+      downloadMedia: (messageId: string) => self.request('kernel:messages:downloadMedia', { messageId })
     }
 
     const contactsAPI: IPluginContactsAPI = {

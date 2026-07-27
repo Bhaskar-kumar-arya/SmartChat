@@ -29,14 +29,55 @@ export function getContributionSnapshot(registry: IContributionRegistry): Record
   return snapshot
 }
 
+import { IPermissionStore } from '../permissions/IPermissionStore'
 import { PluginLoader } from '../plugins/PluginLoader'
+
+import { IToolRegistry } from '../../services/ai/IToolRegistry'
 
 export function registerContributionIpcHandlers(
   registry: IContributionRegistry,
   host: IPluginHost,
   getWebContents?: () => WebContents | undefined,
-  loader?: PluginLoader
+  loader?: PluginLoader,
+  permissions?: IPermissionStore,
+  toolRegistry?: IToolRegistry
 ): () => void {
+  const syncAiTools = () => {
+    if (!toolRegistry) return
+    const aiTools = registry.getAll('ai-tool')
+    for (const contrib of aiTools) {
+      toolRegistry.registerTool({
+        name: contrib.name,
+        description: contrib.description,
+        parametersSchema: contrib.schema || { type: 'object', properties: {} },
+        requiresPermission: false,
+        execute: async (args: Record<string, unknown>) => {
+          const plugin = host.getPlugin(contrib.pluginId)
+          if (!plugin) {
+            return { text: `Plugin ${contrib.pluginId} is not loaded` }
+          }
+          if (typeof plugin.channel.sendRequestToPlugin !== 'function') {
+            return { text: `Plugin ${contrib.pluginId} channel does not support bidirectional requests` }
+          }
+          const reqId = `ai-tool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+          const res = await plugin.channel.sendRequestToPlugin({
+            id: reqId,
+            type: 'contribution:execute:ai-tool',
+            payload: { name: contrib.name, args }
+          })
+          if (res.ok) {
+            const out = typeof res.payload === 'string' ? res.payload : JSON.stringify(res.payload)
+            return { text: out }
+          } else {
+            return { text: `Error: ${res.error?.message || 'Tool execution failed'}` }
+          }
+        }
+      })
+    }
+  }
+
+  // Initial sync
+  syncAiTools()
   const snapshotHandler = async () => {
     return getContributionSnapshot(registry)
   }
@@ -75,6 +116,9 @@ export function registerContributionIpcHandlers(
   const extensionInstallHandler = async (_event: unknown, scextPath: string) => {
     if (!loader) throw new Error('Loader not available')
     const manifest = await loader.install(scextPath)
+    if (permissions) {
+      permissions.registerPluginManifest(manifest.id, manifest.permissions)
+    }
     await host.load(manifest.id)
     return { success: true, manifest }
   }
@@ -106,9 +150,10 @@ export function registerContributionIpcHandlers(
   ipcMain.handle('extension:unload', extensionUnloadHandler)
   ipcMain.handle('extension:reload', extensionReloadHandler)
   ipcMain.handle('extension:uninstall', extensionUninstallHandler)
-  ipcMain.handle('extension:getLog', extensionGetLogHandler)
+  ipcMain.handle('extension:get-log', extensionGetLogHandler)
 
   const unsubscribeRegistry = registry.onChange(() => {
+    syncAiTools()
     const wc = getWebContents ? getWebContents() : undefined
     if (wc) {
       const snapshot = getContributionSnapshot(registry)

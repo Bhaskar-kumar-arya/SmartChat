@@ -98,6 +98,7 @@ export interface IPluginMessagesAPI {
   send(jid: string, text: string, options?: SendMessageOptions): Promise<PluginMessageItem>
   delete(jid: string, messageId: string): Promise<void>
   react(jid: string, messageId: string, emoji: string): Promise<void>
+  downloadMedia(messageId: string): Promise<{ success: boolean; localURI?: string; filePath?: string; message?: any }>
 }
 
 export interface IPluginContactsAPI {

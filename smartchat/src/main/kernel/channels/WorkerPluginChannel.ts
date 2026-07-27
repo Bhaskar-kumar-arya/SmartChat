@@ -55,7 +55,9 @@ export class WorkerPluginChannel implements IPluginChannel {
   }
 
   private handlePortMessage = (msg: unknown): void => {
-    if (this.isDestroyed) return
+    if (this.isDestroyed) {
+      return
+    }
 
     if (isKernelResponse(msg)) {
       const pending = this.pendingRequests.get(msg.id)

@@ -772,7 +772,77 @@ Select-String -Path "src\main\**\*.ts" -Pattern "from.*extensions/" -Recurse  # 
 > After testing, run `npm run test:rebuild:electron` before `npm run dev`.
 
 ### Notes
-_Fill in during execution._
+Phase 10 cleanup & E2E completed: Moved plugin storage persistence to `PrismaPluginStorageRepository` under `src/main/kernel/storage/`. Retired and deleted old `src/main/extensions/` directory and old extension test suite with zero remaining imports. Implemented end-to-end external plugin lifecycle test in `src/main/tests/kernel/e2e/external-plugin.test.ts`. Retired old doc generation script and removed doc copy buttons. Wired plugin lifecycle IPC handlers (`extension:list`, `extension:install`, `extension:unload`, `extension:reload`, `extension:uninstall`) to `PluginHost` and `PluginLoader`. All 177 test files (749 tests) pass cleanly and `npm run typecheck` succeeds with zero errors.
+
+---
+
+## Post Phase 10 — Production Hardening & Integration Polish ✅ DONE
+
+### Goal
+Harden the microkernel architecture for end-to-end production use in the application, ensuring external `.scext` plugins loaded dynamically at runtime have full declarative contribution registration, dynamic capability registration, UI rendering, slash-command chatbar interception, and LLM tool bridging.
+
+### What Was Built & Fixed
+
+1. **Declarative Contribution Parsing in `PluginHost.load()`**
+   - Added automatic parsing of `manifest.contributions` during `PluginHost.load()` for external non-builtin plugins.
+   - Automatically registers all manifest contributions (`chatActions`, `messageActions`, `chatBadges`, `slashCommands`, `keyboardShortcuts`, `statusBarItems`, `chatFilters`, `chatSortStrategies`, `sidebarPanels`, `settingsPages`, `aiTools`) directly into `IContributionRegistry`.
+
+2. **Dynamic Permission Registration on Package Install**
+   - Added `registerPluginManifest(pluginId, capabilities)` to `IPermissionStore` and `PermissionStore`.
+   - Updated dynamic `.scext` package installation handler in `contributionIpc.ts` (`extensionInstallHandler`) to automatically register manifest permissions in `PermissionStore` prior to worker thread activation.
+
+3. **Renderer React Context Wiring**
+   - Wrapped `<App />` with `<ContributionProvider>` in `src/renderer/src/main.tsx` so the entire React tree receives live snapshot updates from `kernel:contributions:updated` via `useContributions()`.
+
+4. **Chatbar Slash Command Interception**
+   - Connected `useContributions('slash-command')` inside `src/renderer/src/components/chat/MessageInput.tsx`.
+   - Automatically intercepts inputs starting with `/` (e.g. `/test-cmd`), clears the chat bar, and dispatches execution to `kernel:contribution:execute` for the matching plugin.
+
+5. **LLM AI Tools Bridge**
+   - Implemented dynamic bridging in `src/main/kernel/ipc/contributionIpc.ts` syncing `IContributionRegistry` `'ai-tool'` contributions directly into `services.toolRegistry`.
+   - Enables Gemini / LLM multi-provider AI chat service (`AIService`) to automatically discover, document, and execute plugin-provided AI tools (e.g., `test_plugin_tool`).
+
+6. **All-Features External Plugin Upgrades & E2E Validation**
+   - Enhanced `plugins/test-all-features-plugin/index.js` to inspect real contact names via `kernel:contacts:getByJid`, query up to 50 recent messages dynamically, trigger native OS desktop notifications via `kernel:ui:notify`, send automated WhatsApp replies (`"test working"`) via `kernel:messages:send`, and apply `✨` reactions via `kernel:messages:react`.
+
+### Acceptance Criteria
+- [x] External `.scext` plugins installed dynamically register contributions and permissions without errors
+- [x] Renderer React components dynamically update when contributions change
+- [x] Slash commands typed in the main chatbar execute plugin code instead of sending raw text
+- [x] Plugin AI tools are visible and executable by Gemini / LLMs
+- [x] All 177 test files pass and zero TypeScript errors (`npm run typecheck`)
+
+---
+
+## External Plugin — Voice Transcriber (`messageAction: transcribe`) ✅ DONE
+
+### Goal
+Implement a standalone external microkernel plugin (`com.smartchat.voice-transcriber`) packaged as a dynamic `.scext` file that contributes a `messageAction` (`transcribe`, "Transcribe Audio"). When executed on an audio voice message, it automatically downloads and resolves the audio media via the microkernel, decodes the audio via FFmpeg, transcribes English speech using `@xenova/transformers` (Whisper model), and replies to the chat JID with the transcription text.
+
+### What Was Built & Fixed
+
+1. **Standalone Voice Transcriber External Plugin (`com.smartchat.voice-transcriber`)**
+   - Created `plugins/voice-transcriber-plugin/manifest.json` registering `messageActions` contribution `id: transcribe` ("Transcribe Audio", `icon: mic`) with required capabilities (`messages:read`, `messages:send`, `ai:chat`, `ui:notification`, `ui:toast`, `events:*`).
+   - Implemented `plugins/voice-transcriber-plugin/index.js` handling `contribution:execute:message-action` for `transcribe`.
+   - Preinstalled `@xenova/transformers` dependencies in `plugins/voice-transcriber-plugin/node_modules/` and bundled them into `plugins/voice-transcriber.scext`.
+
+2. **First-Class Microkernel Media Downloading (`kernel:messages:downloadMedia`)**
+   - Enhanced `KernelMessagesModule` (`src/main/kernel/api-modules/KernelMessagesModule.ts`) to handle `downloadMedia({ messageId })`.
+   - Connected `services.mediaService` in `KernelBootstrapper.ts`. If an audio message has not been fetched locally yet, the microkernel automatically downloads and caches the media file from WhatsApp CDN, returning the exact local filesystem path (`filePath`) to worker plugins.
+   - Updated Plugin SDK interfaces in `packages/sdk/src/context.ts` and `packages/sdk/src/channel.ts` with `downloadMedia(messageId: string)`.
+
+3. **FFmpeg Audio Decoding & `@xenova/transformers` Whisper Engine**
+   - Integrated FFmpeg binary path resolution (`getFFmpegBinaryPath`) locating `ffmpeg.exe` via `ffmpeg-static`.
+   - Decodes audio files (Ogg Opus/WebM) to 16kHz mono PCM Float32Array buffers.
+   - Runs `@xenova/transformers` `pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en')` on the Float32 PCM buffer.
+   - Dispatches formatted transcription replies (`🎤 Audio Transcription (English): "..."`) to the chat JID via `kernel:messages:send` with `quotedMsgId`.
+
+### Acceptance Criteria
+- [x] Standalone external plugin `.scext` contains manifest, index, package, and preinstalled `node_modules`
+- [x] Microkernel provides first-class `kernel:messages:downloadMedia` API to download uncached WhatsApp audio media on demand
+- [x] Audio decoding via FFmpeg converts Ogg Opus to 16kHz Float32 PCM
+- [x] `@xenova/transformers` Whisper model transcribes English audio and replies directly to the chat
+- [x] Zero TypeScript errors (`npm run typecheck`)
 
 ---
 
@@ -787,3 +857,4 @@ Add detailed phase specs here when ready to execute:
 - **Phase 14 — Inter-plugin API** (plugin exposes and another imports an API)
 - **Phase 15 — Permission UI** (Settings → Extensions → Permissions page)
 - **Phase 16 — Chat Badge Computation** (live badge updates from plugins on chat list)
+

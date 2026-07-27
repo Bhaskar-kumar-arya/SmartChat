@@ -135,6 +135,21 @@ export class PluginHost implements IPluginHost {
 
     this.registry.register(metadata)
 
+    const contribs = manifest.contributions
+    if (contribs) {
+      if (contribs.chatActions) contribs.chatActions.forEach(c => this.contributionRegistry.register('chat-action', { pluginId: id, id: c.id, label: c.label, icon: c.icon, when: c.when }))
+      if (contribs.messageActions) contribs.messageActions.forEach(c => this.contributionRegistry.register('message-action', { pluginId: id, id: c.id, label: c.label, icon: c.icon, when: c.when }))
+      if (contribs.chatBadges) contribs.chatBadges.forEach(c => this.contributionRegistry.register('chat-badge', { pluginId: id, id: c.id, label: c.label }))
+      if (contribs.slashCommands) contribs.slashCommands.forEach(c => this.contributionRegistry.register('slash-command', { pluginId: id, name: c.name, description: c.description }))
+      if (contribs.keyboardShortcuts) contribs.keyboardShortcuts.forEach(c => this.contributionRegistry.register('keyboard-shortcut', { pluginId: id, id: c.id, defaultBinding: c.defaultBinding, description: c.description }))
+      if (contribs.statusBarItems) contribs.statusBarItems.forEach(c => this.contributionRegistry.register('status-bar-item', { pluginId: id, id: c.id, alignment: c.alignment }))
+      if (contribs.chatFilters) contribs.chatFilters.forEach(c => this.contributionRegistry.register('chat-filter', { pluginId: id, id: c.id, label: c.label, icon: c.icon }))
+      if (contribs.chatSortStrategies) contribs.chatSortStrategies.forEach(c => this.contributionRegistry.register('chat-sort-strategy', { pluginId: id, id: c.id, label: c.label }))
+      if (contribs.sidebarPanels) contribs.sidebarPanels.forEach(c => this.contributionRegistry.register('sidebar-panel', { pluginId: id, id: c.id, title: c.title, icon: c.icon, panel: c.panel }))
+      if (contribs.settingsPages) contribs.settingsPages.forEach(c => this.contributionRegistry.register('settings-page', { pluginId: id, id: c.id, title: c.title, panel: c.panel }))
+      if (contribs.aiTools) contribs.aiTools.forEach(c => this.contributionRegistry.register('ai-tool', { pluginId: id, name: c.name, description: c.description, schema: c.schema }))
+    }
+
     channel.sendToPlugin({
       id: `activate-${Date.now()}`,
       type: 'plugin:activate',

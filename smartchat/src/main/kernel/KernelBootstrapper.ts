@@ -69,7 +69,8 @@ export class KernelBootstrapper {
       permissions,
       services.messageQueryService,
       services.messageActionService,
-      getSock
+      getSock,
+      services.mediaService
     )
     const contactsModule = new KernelContactsModule(permissions, services.contactService)
     const aiModule = new KernelAIModule(permissions, services.aiService, services.toolRegistry)

@@ -2,6 +2,7 @@ import { IKernelModule } from './IKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IMessageQueryService } from '../../services/messages/IMessageQueryService'
 import { IMessageActionService, IMessageActionSocket } from '../../services/messages/IMessageActionService'
+import { IMediaService } from '../../services/messages/IMediaService'
 
 export class KernelMessagesModule implements IKernelModule {
   readonly namespace = 'kernel:messages'
@@ -10,7 +11,8 @@ export class KernelMessagesModule implements IKernelModule {
     private readonly permissions: IPermissionStore,
     private readonly messageQueryService: IMessageQueryService,
     private readonly messageActionService: IMessageActionService,
-    private readonly getSock?: () => IMessageActionSocket | null
+    private readonly getSock?: () => IMessageActionSocket | null,
+    private readonly mediaService?: IMediaService
   ) {}
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
@@ -62,6 +64,44 @@ export class KernelMessagesModule implements IKernelModule {
         const sock = this.getSocketOrThrow()
         const targetReaction = emoji || reaction || ''
         return await this.messageActionService.reactToMessage(sock, messageId, targetReaction, jid)
+      }
+
+      case 'downloadMedia': {
+        const { messageId } = payload as { messageId: string }
+        this.requireCapability(pluginId, 'messages:read')
+        const sock = this.getSocketOrThrow()
+        if (!this.mediaService) {
+          throw {
+            code: 'INTERNAL_ERROR',
+            message: 'MediaService is not available in KernelMessagesModule'
+          }
+        }
+        const enriched = await this.mediaService.downloadAndCacheMedia(messageId, sock)
+        let rawMsg: Record<string, any> = {}
+        try {
+          rawMsg = typeof enriched.content === 'string' ? JSON.parse(enriched.content) : (enriched.content || {})
+        } catch (e) {}
+
+        const localURI = rawMsg?.audioMessage?.localURI ||
+          rawMsg?.imageMessage?.localURI ||
+          rawMsg?.videoMessage?.localURI ||
+          rawMsg?.documentMessage?.localURI ||
+          rawMsg?.ptvMessage?.localURI ||
+          rawMsg?.stickerMessage?.localURI
+
+        let filePath: string | null = null
+        if (localURI && typeof localURI === 'string') {
+          const fileName = localURI.replace(/^app:\/\/media\//, '').replace(/^app:\/\//, '')
+          try {
+            const { app } = require('electron')
+            const { join } = require('path')
+            if (app) {
+              filePath = join(app.getPath('userData'), 'media', fileName)
+            }
+          } catch (e) {}
+        }
+
+        return this.serialize({ success: true, localURI, filePath, message: enriched })
       }
 
       default:

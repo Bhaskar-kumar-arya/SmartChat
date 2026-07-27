@@ -11,6 +11,8 @@ export interface PluginPermissionState {
 }
 
 export interface IPermissionStore {
+  /** Register capabilities declared by a plugin manifest */
+  registerPluginManifest(pluginId: string, capabilities: string[]): void
   /** Coarse check: does this plugin have this capability at all? */
   hasCapability(pluginId: string, capability: string): boolean
   /**
