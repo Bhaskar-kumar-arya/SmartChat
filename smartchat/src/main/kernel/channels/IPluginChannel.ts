@@ -22,7 +22,14 @@ export type KernelErrorCode = string
 export interface IPluginChannel {
   sendToPlugin(msg: KernelRequest): void
   sendResponseToPlugin(msg: KernelResponse): void
-  sendRequestToPlugin?(msg: KernelRequest): Promise<KernelResponse>
   onPluginRequest(handler: (msg: KernelRequest) => Promise<void>): void
   destroy(): void
+}
+
+export interface IBidirectionalPluginChannel extends IPluginChannel {
+  sendRequestToPlugin(msg: KernelRequest): Promise<KernelResponse>
+}
+
+export function isBidirectionalPluginChannel(channel: IPluginChannel): channel is IBidirectionalPluginChannel {
+  return 'sendRequestToPlugin' in channel && typeof (channel as IBidirectionalPluginChannel).sendRequestToPlugin === 'function'
 }

@@ -1,5 +1,5 @@
 import { MessagePort, Worker } from 'node:worker_threads'
-import { IPluginChannel, KernelRequest, KernelResponse } from './IPluginChannel'
+import { IBidirectionalPluginChannel, KernelRequest, KernelResponse } from './IPluginChannel'
 
 interface PendingRequest {
   resolve: (res: KernelResponse) => void
@@ -41,7 +41,7 @@ function assertSerializable(val: unknown, path = 'payload'): void {
   }
 }
 
-export class WorkerPluginChannel implements IPluginChannel {
+export class WorkerPluginChannel implements IBidirectionalPluginChannel {
   private pluginRequestHandler: ((msg: KernelRequest) => Promise<void>) | null = null
   private pendingRequests = new Map<string, PendingRequest>()
   private isDestroyed = false

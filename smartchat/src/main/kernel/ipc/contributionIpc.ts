@@ -5,6 +5,7 @@ import { IPluginHost } from '../plugins/IPluginHost'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IPluginLoader } from '../plugins/IPluginLoader'
 import { IToolRegistry } from '../../services/ai/IToolRegistry'
+import { isBidirectionalPluginChannel } from '../channels/IPluginChannel'
 
 export function getContributionSnapshot(registry: IContributionRegistry): Record<string, unknown[]> {
   const snapshot: Record<string, unknown[]> = {}
@@ -39,7 +40,7 @@ export function registerContributionIpcHandlers(
           if (!plugin) {
             return { text: `Plugin ${contrib.pluginId} is not loaded` }
           }
-          if (typeof plugin.channel.sendRequestToPlugin !== 'function') {
+          if (!isBidirectionalPluginChannel(plugin.channel)) {
             return { text: `Plugin ${contrib.pluginId} channel does not support bidirectional requests` }
           }
           const reqId = `ai-tool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
