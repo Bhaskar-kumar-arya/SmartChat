@@ -56,4 +56,19 @@ describe('KernelBootstrapper', () => {
 
     await result.dispose()
   })
+
+  it('accepts custom getUserDataPath option without throwing', async () => {
+    const bootstrapper = new KernelBootstrapper({
+      services: mockServices,
+      getMainWindow: () => null,
+      getBus: () => null,
+      getSock: () => null,
+      extensionsPath: '/tmp/fake-extensions-path-' + Date.now(),
+      getUserDataPath: () => '/custom/user/data/path'
+    })
+
+    const result = await bootstrapper.boot()
+    expect(result.host).toBeDefined()
+    await result.dispose()
+  })
 })

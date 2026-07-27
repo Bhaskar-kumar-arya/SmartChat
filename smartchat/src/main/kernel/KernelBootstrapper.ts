@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { ServiceContainer } from '../ServiceContainer'
 import { PermissionStore } from './permissions/PermissionStore'
 import { ContributionRegistry } from './contributions/ContributionRegistry'
@@ -32,6 +32,7 @@ export interface BootstrapperOptions {
   extensionsPath?: string
   permissionsFilePath?: string
   storageRepo?: IKernelStorageRepository
+  getUserDataPath?: () => string
 }
 
 export interface BootResult {
@@ -54,7 +55,8 @@ export class KernelBootstrapper {
       getSock,
       extensionsPath = 'userData/extensions',
       permissionsFilePath,
-      storageRepo
+      storageRepo,
+      getUserDataPath = () => (app ? app.getPath('userData') : '')
     } = this.options
 
     const permissions = new PermissionStore(permissionsFilePath)
@@ -72,7 +74,8 @@ export class KernelBootstrapper {
       services.messageQueryService,
       services.messageActionService,
       getSock,
-      services.mediaService
+      services.mediaService,
+      getUserDataPath
     )
     const loader = new PluginLoader(extensionsPath)
     const pluginRegistry = new PluginRegistry()

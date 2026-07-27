@@ -1,3 +1,4 @@
+import { join } from 'path'
 import { IKernelModule } from './IKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IMessageQueryService } from '../../services/messages/IMessageQueryService'
@@ -12,7 +13,8 @@ export class KernelMessagesModule implements IKernelModule {
     private readonly messageQueryService: IMessageQueryService,
     private readonly messageActionService: IMessageActionService,
     private readonly getSock?: () => IMessageActionSocket | null,
-    private readonly mediaService?: IMediaService
+    private readonly mediaService?: IMediaService,
+    private readonly getUserDataPath?: () => string
   ) {}
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
@@ -92,13 +94,10 @@ export class KernelMessagesModule implements IKernelModule {
         let filePath: string | null = null
         if (localURI && typeof localURI === 'string') {
           const fileName = localURI.replace(/^app:\/\/media\//, '').replace(/^app:\/\//, '')
-          try {
-            const { app } = require('electron')
-            const { join } = require('path')
-            if (app) {
-              filePath = join(app.getPath('userData'), 'media', fileName)
-            }
-          } catch (e) {}
+          const userDataPath = this.getUserDataPath?.()
+          if (userDataPath) {
+            filePath = join(userDataPath, 'media', fileName)
+          }
         }
 
         return this.serialize({ success: true, localURI, filePath, message: enriched })

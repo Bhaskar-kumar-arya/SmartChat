@@ -123,6 +123,103 @@ describe('KernelMessagesModule', () => {
     expect(result).toEqual({ success: true, detail: 'reacted', messageId: 'msg-1', reaction: '👍' })
   })
 
+  it('allows downloadMedia and constructs filePath via injected getUserDataPath', async () => {
+    const mockMediaService = {
+      downloadAndCacheMedia: vi.fn().mockResolvedValue({
+        id: 'msg-media-1',
+        content: JSON.stringify({ audioMessage: { localURI: 'app://media/sample.ogg' } })
+      })
+    }
+
+    const customModule = new KernelMessagesModule(
+      mockPermissions,
+      mockMessageQueryService,
+      mockMessageActionService,
+      () => ({ sendMessage: vi.fn() } as any),
+      mockMediaService as any,
+      () => '/mock/user/data'
+    )
+
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    const result = (await customModule.handle('plugin-a', 'kernel:messages:downloadMedia', {
+      messageId: 'msg-media-1'
+    })) as any
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'messages:read')
+    expect(mockMediaService.downloadAndCacheMedia).toHaveBeenCalledWith('msg-media-1', expect.anything())
+    expect(result.success).toBe(true)
+    expect(result.localURI).toBe('app://media/sample.ogg')
+    expect(result.filePath).toContain('sample.ogg')
+    expect(result.filePath).toContain('user')
+  })
+
+  it('returns null filePath when getUserDataPath is omitted in downloadMedia', async () => {
+    const mockMediaService = {
+      downloadAndCacheMedia: vi.fn().mockResolvedValue({
+        id: 'msg-media-2',
+        content: JSON.stringify({ imageMessage: { localURI: 'app://media/photo.jpg' } })
+      })
+    }
+
+    const customModule = new KernelMessagesModule(
+      mockPermissions,
+      mockMessageQueryService,
+      mockMessageActionService,
+      () => ({ sendMessage: vi.fn() } as any),
+      mockMediaService as any
+    )
+
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    const result = (await customModule.handle('plugin-a', 'kernel:messages:downloadMedia', {
+      messageId: 'msg-media-2'
+    })) as any
+
+    expect(result.success).toBe(true)
+    expect(result.localURI).toBe('app://media/photo.jpg')
+    expect(result.filePath).toBeNull()
+  })
+
+  it('handles messages without localURI in downloadMedia', async () => {
+    const mockMediaService = {
+      downloadAndCacheMedia: vi.fn().mockResolvedValue({
+        id: 'msg-media-3',
+        content: JSON.stringify({ conversation: 'just text' })
+      })
+    }
+
+    const customModule = new KernelMessagesModule(
+      mockPermissions,
+      mockMessageQueryService,
+      mockMessageActionService,
+      () => ({ sendMessage: vi.fn() } as any),
+      mockMediaService as any,
+      () => '/mock/user/data'
+    )
+
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    const result = (await customModule.handle('plugin-a', 'kernel:messages:downloadMedia', {
+      messageId: 'msg-media-3'
+    })) as any
+
+    expect(result.success).toBe(true)
+    expect(result.localURI).toBeUndefined()
+    expect(result.filePath).toBeNull()
+  })
+
+  it('throws INTERNAL_ERROR when mediaService is missing in downloadMedia', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    await expect(
+      module.handle('plugin-a', 'kernel:messages:downloadMedia', { messageId: 'msg-1' })
+    ).rejects.toEqual({
+      code: 'INTERNAL_ERROR',
+      message: 'MediaService is not available in KernelMessagesModule'
+    })
+  })
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:messages:unknownAction', {})
