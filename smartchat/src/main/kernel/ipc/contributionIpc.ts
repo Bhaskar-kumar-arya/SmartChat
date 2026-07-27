@@ -2,37 +2,17 @@ import { ipcMain, WebContents } from 'electron'
 import { IContributionRegistry } from '../contributions/IContributionRegistry'
 import { ContributionSlot } from '../contributions/ContributionPoints'
 import { IPluginHost } from '../plugins/IPluginHost'
+import { IPermissionStore } from '../permissions/IPermissionStore'
+import { IPluginLoader } from '../plugins/IPluginLoader'
+import { IToolRegistry } from '../../services/ai/IToolRegistry'
 
 export function getContributionSnapshot(registry: IContributionRegistry): Record<string, unknown[]> {
-  const slots: ContributionSlot[] = [
-    'chat-action',
-    'message-action',
-    'chat-badge',
-    'slash-command',
-    'keyboard-shortcut',
-    'status-bar-item',
-    'chat-filter',
-    'chat-sort-strategy',
-    'completion-provider',
-    'sidebar-panel',
-    'settings-page',
-    'ai-tool',
-    'message-renderer',
-    'message-send-pipeline',
-    'plugin-api-export'
-  ]
-
   const snapshot: Record<string, unknown[]> = {}
-  for (const slot of slots) {
+  for (const slot of registry.getAllSlots()) {
     snapshot[slot] = registry.getAll(slot)
   }
   return snapshot
 }
-
-import { IPermissionStore } from '../permissions/IPermissionStore'
-import { IPluginLoader } from '../plugins/IPluginLoader'
-
-import { IToolRegistry } from '../../services/ai/IToolRegistry'
 
 export function registerContributionIpcHandlers(
   registry: IContributionRegistry,

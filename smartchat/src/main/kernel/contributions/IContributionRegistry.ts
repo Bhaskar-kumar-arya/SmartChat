@@ -10,6 +10,8 @@ export interface IContributionRegistry {
   unregisterAll(pluginId: string): void
   /** Get all contributions for a slot. Used by the renderer and kernel. */
   getAll<K extends ContributionSlot>(slot: K): ContributionMap[K][]
+  /** Get all contribution slots currently registered in the registry. */
+  getAllSlots(): ContributionSlot[]
   /**
    * Subscribe to changes. Fires whenever any plugin registers or unregisters.
    * The kernel pushes snapshots to the renderer over IPC whenever this fires.

@@ -29,6 +29,13 @@ describe('ContributionRegistry', () => {
     expect(commands).toEqual([])
   })
 
+  it('getAllSlots() returns all slots that have registered contributions', () => {
+    expect(registry.getAllSlots()).toEqual([])
+    registry.register('chat-action', { pluginId: 'p1', id: 'a1', label: 'A1' })
+    registry.register('slash-command', { pluginId: 'p1', name: 'cmd', description: 'desc' })
+    expect(registry.getAllSlots()).toEqual(['chat-action', 'slash-command'])
+  })
+
   it('getAll() returns only contributions for the requested slot', () => {
     const action: ChatActionContribution = {
       pluginId: 'com.test.plugin',

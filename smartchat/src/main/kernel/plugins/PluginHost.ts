@@ -7,6 +7,93 @@ import { IContributionRegistry } from '../contributions/IContributionRegistry'
 import { ContributionSlot } from '../contributions/ContributionPoints'
 import { DirectPluginChannel } from '../channels/DirectPluginChannel'
 import { PluginContext } from './PluginContext'
+import { ContributionsDeclaration } from './PluginManifest'
+
+type ManifestContributionMapper = {
+  [K in keyof ContributionsDeclaration]-?: {
+    key: K
+    slot: ContributionSlot
+    toContrib: (item: any, pluginId: string) => any
+  }
+}[keyof ContributionsDeclaration]
+
+const MANIFEST_TO_SLOT_MAPPINGS: ManifestContributionMapper[] = [
+  {
+    key: 'chatActions',
+    slot: 'chat-action',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, label: c.label, icon: c.icon, when: c.when })
+  },
+  {
+    key: 'messageActions',
+    slot: 'message-action',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, label: c.label, icon: c.icon, when: c.when })
+  },
+  {
+    key: 'chatBadges',
+    slot: 'chat-badge',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, label: c.label })
+  },
+  {
+    key: 'messageRenderers',
+    slot: 'message-renderer',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, messageType: c.messageType })
+  },
+  {
+    key: 'slashCommands',
+    slot: 'slash-command',
+    toContrib: (c, pluginId) => ({ pluginId, name: c.name, description: c.description })
+  },
+  {
+    key: 'sidebarPanels',
+    slot: 'sidebar-panel',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, title: c.title, icon: c.icon, panel: c.panel })
+  },
+  {
+    key: 'settingsPages',
+    slot: 'settings-page',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, title: c.title, panel: c.panel })
+  },
+  {
+    key: 'aiTools',
+    slot: 'ai-tool',
+    toContrib: (c, pluginId) => ({ pluginId, name: c.name, description: c.description, schema: c.schema })
+  },
+  {
+    key: 'keyboardShortcuts',
+    slot: 'keyboard-shortcut',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, defaultBinding: c.defaultBinding, description: c.description })
+  },
+  {
+    key: 'statusBarItems',
+    slot: 'status-bar-item',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, alignment: c.alignment })
+  },
+  {
+    key: 'chatFilters',
+    slot: 'chat-filter',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, label: c.label, icon: c.icon })
+  },
+  {
+    key: 'chatSortStrategies',
+    slot: 'chat-sort-strategy',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, label: c.label })
+  },
+  {
+    key: 'completionProviders',
+    slot: 'completion-provider',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, trigger: c.trigger, context: c.context })
+  },
+  {
+    key: 'messageSendPipeline',
+    slot: 'message-send-pipeline',
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, priority: c.priority })
+  },
+  {
+    key: 'pluginApiExports',
+    slot: 'plugin-api-export',
+    toContrib: (c, pluginId) => ({ pluginId, exportName: c })
+  }
+]
 
 export class PluginHost implements IPluginHost {
   private builtinPlugins = new Map<string, IBuiltinPlugin>()
@@ -196,17 +283,17 @@ export class PluginHost implements IPluginHost {
 
     const contribs = manifest.contributions
     if (contribs) {
-      if (contribs.chatActions) contribs.chatActions.forEach(c => this.contributionRegistry.register('chat-action', { pluginId: id, id: c.id, label: c.label, icon: c.icon, when: c.when }))
-      if (contribs.messageActions) contribs.messageActions.forEach(c => this.contributionRegistry.register('message-action', { pluginId: id, id: c.id, label: c.label, icon: c.icon, when: c.when }))
-      if (contribs.chatBadges) contribs.chatBadges.forEach(c => this.contributionRegistry.register('chat-badge', { pluginId: id, id: c.id, label: c.label }))
-      if (contribs.slashCommands) contribs.slashCommands.forEach(c => this.contributionRegistry.register('slash-command', { pluginId: id, name: c.name, description: c.description }))
-      if (contribs.keyboardShortcuts) contribs.keyboardShortcuts.forEach(c => this.contributionRegistry.register('keyboard-shortcut', { pluginId: id, id: c.id, defaultBinding: c.defaultBinding, description: c.description }))
-      if (contribs.statusBarItems) contribs.statusBarItems.forEach(c => this.contributionRegistry.register('status-bar-item', { pluginId: id, id: c.id, alignment: c.alignment }))
-      if (contribs.chatFilters) contribs.chatFilters.forEach(c => this.contributionRegistry.register('chat-filter', { pluginId: id, id: c.id, label: c.label, icon: c.icon }))
-      if (contribs.chatSortStrategies) contribs.chatSortStrategies.forEach(c => this.contributionRegistry.register('chat-sort-strategy', { pluginId: id, id: c.id, label: c.label }))
-      if (contribs.sidebarPanels) contribs.sidebarPanels.forEach(c => this.contributionRegistry.register('sidebar-panel', { pluginId: id, id: c.id, title: c.title, icon: c.icon, panel: c.panel }))
-      if (contribs.settingsPages) contribs.settingsPages.forEach(c => this.contributionRegistry.register('settings-page', { pluginId: id, id: c.id, title: c.title, panel: c.panel }))
-      if (contribs.aiTools) contribs.aiTools.forEach(c => this.contributionRegistry.register('ai-tool', { pluginId: id, name: c.name, description: c.description, schema: c.schema }))
+      for (const mapping of MANIFEST_TO_SLOT_MAPPINGS) {
+        const list = contribs[mapping.key]
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            this.contributionRegistry.register(
+              mapping.slot,
+              mapping.toContrib(item, id)
+            )
+          }
+        }
+      }
     }
 
     channel.sendToPlugin({

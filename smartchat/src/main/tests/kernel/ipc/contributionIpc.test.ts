@@ -35,12 +35,12 @@ describe('contributionIpc', () => {
     }
   })
 
-  it('getContributionSnapshot returns snapshot of all slots', () => {
+  it('getContributionSnapshot returns snapshot of registered slots', () => {
     registry.register('chat-action', { pluginId: 'plugin-1', id: 'pin', label: 'Pin' })
     const snapshot = getContributionSnapshot(registry)
 
     expect(snapshot['chat-action']).toHaveLength(1)
-    expect(snapshot['sidebar-panel']).toEqual([])
+    expect(snapshot['sidebar-panel']).toBeUndefined()
   })
 
   it('registers IPC handlers and returns snapshot on kernel:contributions:snapshot', async () => {

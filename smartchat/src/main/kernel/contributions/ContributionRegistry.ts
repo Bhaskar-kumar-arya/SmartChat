@@ -38,6 +38,10 @@ export class ContributionRegistry implements IContributionRegistry {
     return list.slice() as ContributionMap[K][]
   }
 
+  public getAllSlots(): ContributionSlot[] {
+    return Array.from(this.storage.keys())
+  }
+
   public onChange(handler: () => void): () => void {
     this.listeners.add(handler)
     return () => {

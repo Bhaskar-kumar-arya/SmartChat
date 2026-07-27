@@ -43,6 +43,7 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
       register: vi.fn(),
       unregisterAll: vi.fn(),
       getAll: vi.fn().mockReturnValue([]),
+      getAllSlots: vi.fn().mockReturnValue([]),
       onChange: vi.fn().mockReturnValue(() => {})
     }
     host = new PluginHost(loader, registry, router, contributionRegistry)
