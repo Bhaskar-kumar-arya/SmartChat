@@ -55,10 +55,11 @@ SmartChat is transitioning toward a **VS Code-inspired Microkernel Architecture*
 Note : the feature has been partially implemented and is almost complete.
 
 #### 🎥 CustomMessageActions and Notifications integrated with the App UI using contributions system
-<video src="https://github.com/Bhaskar-kumar-arya/SmartChat/raw/main/smartchat/Extensions-demo-videos/customeMessageActionAndNotifications.mp4" controls width="100%"></video>
+https://github.com/Bhaskar-kumar-arya/SmartChat/raw/main/smartchat/Extensions-demo-videos/customeMessageActionAndNotifications.mp4
 
 #### 🎥 Custom Slash Commands integrated with the Chatbar
-<video src="https://github.com/Bhaskar-kumar-arya/SmartChat/raw/main/smartchat/Extensions-demo-videos/customSlashCommands.mp4" controls width="100%"></video>
+https://github.com/Bhaskar-kumar-arya/SmartChat/raw/main/smartchat/Extensions-demo-videos/customSlashCommands.mp4
+
 
 
 ### Packaged Extension Scripts
