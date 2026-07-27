@@ -1,5 +1,6 @@
 import { IKernelModule } from './api-modules/IKernelModule'
 import { IPluginChannel, KernelRequest, KernelResponse, KernelErrorPayload } from './channels/IPluginChannel'
+import { IKernelAPIRouter } from './IKernelAPIRouter'
 
 interface PermissionErrorLike {
   code: string
@@ -18,7 +19,7 @@ function isPermissionError(err: unknown): err is PermissionErrorLike {
   )
 }
 
-export class KernelAPIRouter {
+export class KernelAPIRouter implements IKernelAPIRouter {
   private modules = new Map<string, IKernelModule>()
 
   registerModule(module: IKernelModule): void {

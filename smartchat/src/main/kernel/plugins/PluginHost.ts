@@ -1,8 +1,8 @@
 import { IPluginHost, PluginMetadata } from './IPluginHost'
 import { IBuiltinPlugin } from './IBuiltinPlugin'
-import { PluginRegistry } from './PluginRegistry'
-import { PluginLoader } from './PluginLoader'
-import { KernelAPIRouter } from '../KernelAPIRouter'
+import { IPluginRegistry } from './IPluginRegistry'
+import { IPluginLoader } from './IPluginLoader'
+import { IKernelAPIRouter } from '../IKernelAPIRouter'
 import { IContributionRegistry } from '../contributions/IContributionRegistry'
 import { ContributionSlot } from '../contributions/ContributionPoints'
 import { DirectPluginChannel } from '../channels/DirectPluginChannel'
@@ -13,9 +13,9 @@ export class PluginHost implements IPluginHost {
   private handlers = new Map<string, Function>()
 
   constructor(
-    private readonly loader: PluginLoader,
-    private readonly registry: PluginRegistry,
-    private readonly router: KernelAPIRouter,
+    private readonly loader: IPluginLoader,
+    private readonly registry: IPluginRegistry,
+    private readonly router: IKernelAPIRouter,
     private readonly contributionRegistry: IContributionRegistry
   ) {}
 

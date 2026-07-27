@@ -5,8 +5,9 @@ import AdmZip from 'adm-zip'
 import { PluginManifest, validateManifest, ManifestValidationError } from './PluginManifest'
 import { IPluginChannel } from '../channels/IPluginChannel'
 import { WorkerPluginChannel } from '../channels/WorkerPluginChannel'
+import { IPluginLoader } from './IPluginLoader'
 
-export class PluginLoader {
+export class PluginLoader implements IPluginLoader {
   constructor(private readonly baseDir: string) {
     if (!fs.existsSync(this.baseDir)) {
       fs.mkdirSync(this.baseDir, { recursive: true })

@@ -30,7 +30,7 @@ export function getContributionSnapshot(registry: IContributionRegistry): Record
 }
 
 import { IPermissionStore } from '../permissions/IPermissionStore'
-import { PluginLoader } from '../plugins/PluginLoader'
+import { IPluginLoader } from '../plugins/IPluginLoader'
 
 import { IToolRegistry } from '../../services/ai/IToolRegistry'
 
@@ -38,7 +38,7 @@ export function registerContributionIpcHandlers(
   registry: IContributionRegistry,
   host: IPluginHost,
   getWebContents?: () => WebContents | undefined,
-  loader?: PluginLoader,
+  loader?: IPluginLoader,
   permissions?: IPermissionStore,
   toolRegistry?: IToolRegistry
 ): () => void {

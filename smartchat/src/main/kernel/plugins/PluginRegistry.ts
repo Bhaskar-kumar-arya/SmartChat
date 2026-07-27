@@ -1,6 +1,7 @@
 import { PluginMetadata } from './IPluginHost'
+import { IPluginRegistry } from './IPluginRegistry'
 
-export class PluginRegistry {
+export class PluginRegistry implements IPluginRegistry {
   private plugins = new Map<string, PluginMetadata>()
 
   register(metadata: PluginMetadata): void {

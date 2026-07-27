@@ -1,22 +1,44 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PluginHost } from '../../../kernel/plugins/PluginHost'
-import { PluginRegistry } from '../../../kernel/plugins/PluginRegistry'
-import { PluginLoader } from '../../../kernel/plugins/PluginLoader'
-import { KernelAPIRouter } from '../../../kernel/KernelAPIRouter'
+import { IPluginRegistry } from '../../../kernel/plugins/IPluginRegistry'
+import { IPluginLoader } from '../../../kernel/plugins/IPluginLoader'
+import { IKernelAPIRouter } from '../../../kernel/IKernelAPIRouter'
 import { IContributionRegistry } from '../../../kernel/contributions/IContributionRegistry'
 import { IBuiltinPlugin } from '../../../kernel/plugins/IBuiltinPlugin'
+import { IPluginChannel } from '../../../kernel/channels/IPluginChannel'
+import { PluginMetadata } from '../../../kernel/plugins/IPluginHost'
+import { PluginManifest } from '../../../kernel/plugins/PluginManifest'
 
-describe('PluginHost', () => {
-  let registry: PluginRegistry
-  let loader: PluginLoader
-  let router: KernelAPIRouter
+describe('PluginHost (Decoupled Unit Tests)', () => {
+  let registry: IPluginRegistry
+  let loader: IPluginLoader
+  let router: IKernelAPIRouter
   let contributionRegistry: IContributionRegistry
   let host: PluginHost
+  let registeredPlugins: Map<string, PluginMetadata>
 
   beforeEach(() => {
-    registry = new PluginRegistry()
-    loader = new PluginLoader('/tmp/fake-plugins')
-    router = new KernelAPIRouter()
+    registeredPlugins = new Map()
+    registry = {
+      register: vi.fn((meta) => registeredPlugins.set(meta.id, meta)),
+      unregister: vi.fn((id) => registeredPlugins.delete(id)),
+      get: vi.fn((id) => registeredPlugins.get(id)),
+      listLoaded: vi.fn(() => Array.from(registeredPlugins.keys()))
+    }
+    loader = {
+      install: vi.fn(),
+      uninstall: vi.fn(),
+      load: vi.fn(),
+      reload: vi.fn(),
+      listInstalled: vi.fn().mockResolvedValue([])
+    }
+    router = {
+      registerModule: vi.fn(),
+      unregisterModule: vi.fn(),
+      getModule: vi.fn(),
+      attachChannel: vi.fn().mockReturnValue(() => {}),
+      handleRequest: vi.fn()
+    }
     contributionRegistry = {
       register: vi.fn(),
       unregisterAll: vi.fn(),
@@ -26,7 +48,7 @@ describe('PluginHost', () => {
     host = new PluginHost(loader, registry, router, contributionRegistry)
   })
 
-  it('registerBuiltin() calls activate() with PluginContext and adds plugin to listLoaded()', async () => {
+  it('registerBuiltin() calls activate() with PluginContext and registers plugin metadata', async () => {
     const activateFn = vi.fn().mockResolvedValue(undefined)
     const builtin: IBuiltinPlugin = {
       id: 'com.builtin.test',
@@ -46,12 +68,14 @@ describe('PluginHost', () => {
     await host.registerBuiltin(builtin)
 
     expect(activateFn).toHaveBeenCalledTimes(1)
-    const ctx = activateFn.mock.calls[0][0]
-    expect(ctx.id).toBe('com.builtin.test')
+    expect(registry.register).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'com.builtin.test', isBuiltin: true })
+    )
+    expect(router.attachChannel).toHaveBeenCalledWith('com.builtin.test', expect.anything())
     expect(host.listLoaded()).toContain('com.builtin.test')
   })
 
-  it('unload() removes the plugin from listLoaded() and calls unregisterAll()', async () => {
+  it('unload() removes plugin, deactivates built-in, unregisters contributions, and destroys channel', async () => {
     const deactivateFn = vi.fn().mockResolvedValue(undefined)
     const builtin: IBuiltinPlugin = {
       id: 'com.builtin.test',
@@ -74,33 +98,66 @@ describe('PluginHost', () => {
     await host.unload('com.builtin.test')
 
     expect(deactivateFn).toHaveBeenCalledTimes(1)
-    expect(host.listLoaded()).not.toContain('com.builtin.test')
+    expect(registry.unregister).toHaveBeenCalledWith('com.builtin.test')
     expect(contributionRegistry.unregisterAll).toHaveBeenCalledWith('com.builtin.test')
+    expect(host.listLoaded()).not.toContain('com.builtin.test')
   })
 
-  it('load() is idempotent (calling twice on loaded plugin does not load twice)', async () => {
-    const builtin: IBuiltinPlugin = {
-      id: 'com.builtin.test',
-      manifest: {
-        id: 'com.builtin.test',
-        name: 'Builtin Test',
-        version: '1.0.0',
-        apiVersion: '2',
-        main: 'index.ts',
-        permissions: [],
-        contributions: {}
-      },
-      activate: vi.fn().mockResolvedValue(undefined),
-      deactivate: vi.fn().mockResolvedValue(undefined)
+  it('load() uses IPluginLoader mock without touching filesystem or worker threads', async () => {
+    const mockChannel: IPluginChannel = {
+      sendToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      destroy: vi.fn()
+    }
+    const mockManifest: PluginManifest = {
+      id: 'com.external.mock',
+      name: 'Mock External Plugin',
+      version: '1.0.0',
+      apiVersion: '2',
+      main: 'dist/index.js',
+      permissions: [],
+      contributions: {
+        chatActions: [{ id: 'action-1', label: 'Action 1' }],
+        slashCommands: [{ name: 'cmd-1', description: 'Command 1' }]
+      }
     }
 
-    await host.registerBuiltin(builtin)
-    const initialLoadedCount = host.listLoaded().length
+    vi.mocked(loader.load).mockResolvedValue({ manifest: mockManifest, channel: mockChannel })
 
-    // Calling load on an already loaded plugin should be idempotent
-    await host.load('com.builtin.test')
+    await host.load('com.external.mock')
 
-    expect(host.listLoaded().length).toBe(initialLoadedCount)
+    expect(loader.load).toHaveBeenCalledWith('com.external.mock')
+    expect(router.attachChannel).toHaveBeenCalledWith('com.external.mock', mockChannel)
+    expect(registry.register).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'com.external.mock', isBuiltin: false, manifest: mockManifest })
+    )
+    expect(contributionRegistry.register).toHaveBeenCalledWith('chat-action', expect.objectContaining({ id: 'action-1' }))
+    expect(contributionRegistry.register).toHaveBeenCalledWith('slash-command', expect.objectContaining({ name: 'cmd-1' }))
+    expect(mockChannel.sendToPlugin).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'plugin:activate' })
+    )
+  })
+
+  it('loadAll() lists installed plugins via IPluginLoader and loads each', async () => {
+    const mockChannel1: IPluginChannel = { sendToPlugin: vi.fn(), onPluginRequest: vi.fn(), sendResponseToPlugin: vi.fn(), destroy: vi.fn() }
+    const mockChannel2: IPluginChannel = { sendToPlugin: vi.fn(), onPluginRequest: vi.fn(), sendResponseToPlugin: vi.fn(), destroy: vi.fn() }
+
+    const manifest1: PluginManifest = { id: 'ext.p1', name: 'P1', version: '1.0.0', apiVersion: '2', main: 'main.js', permissions: [], contributions: {} }
+    const manifest2: PluginManifest = { id: 'ext.p2', name: 'P2', version: '1.0.0', apiVersion: '2', main: 'main.js', permissions: [], contributions: {} }
+
+    vi.mocked(loader.listInstalled).mockResolvedValue([manifest1, manifest2])
+    vi.mocked(loader.load).mockImplementation(async (id) => {
+      if (id === 'ext.p1') return { manifest: manifest1, channel: mockChannel1 }
+      return { manifest: manifest2, channel: mockChannel2 }
+    })
+
+    await host.loadAll()
+
+    expect(loader.listInstalled).toHaveBeenCalledTimes(1)
+    expect(loader.load).toHaveBeenCalledWith('ext.p1')
+    expect(loader.load).toHaveBeenCalledWith('ext.p2')
+    expect(host.listLoaded()).toEqual(['ext.p1', 'ext.p2'])
   })
 
   it('dispatches kernel requests to registered built-in handlers via DirectPluginChannel', async () => {

@@ -4,7 +4,9 @@ import { PermissionStore } from './permissions/PermissionStore'
 import { ContributionRegistry } from './contributions/ContributionRegistry'
 import { IContributionRegistry } from './contributions/IContributionRegistry'
 import { KernelAPIRouter } from './KernelAPIRouter'
+import { IKernelAPIRouter } from './IKernelAPIRouter'
 import { PluginLoader } from './plugins/PluginLoader'
+import { IPluginLoader } from './plugins/IPluginLoader'
 import { PluginRegistry } from './plugins/PluginRegistry'
 import { PluginHost } from './plugins/PluginHost'
 import { IPluginHost } from './plugins/IPluginHost'
@@ -34,9 +36,9 @@ export interface BootstrapperOptions {
 
 export interface BootResult {
   host: IPluginHost
-  loader: PluginLoader
+  loader: IPluginLoader
   registry: IContributionRegistry
-  router: KernelAPIRouter
+  router: IKernelAPIRouter
   permissions: PermissionStore
   dispose: () => Promise<void>
 }
