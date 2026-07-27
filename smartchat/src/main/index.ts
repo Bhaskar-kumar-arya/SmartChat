@@ -17,8 +17,7 @@ import { createServices } from './ServiceContainer'
 import { TrayService } from './services/notification/TrayService'
 import { SecureFileRegistry } from './services/protocol/SecureFileRegistry'
 import { AppProtocolHandler } from './services/protocol/AppProtocolHandler'
-import { ExtensionStorageRepository } from './extensions/storage/ExtensionStorageRepository'
-import { ExtensionEventBridge } from './extensions/events/ExtensionEventBridge'
+import { PrismaPluginStorageRepository } from './kernel/storage/PrismaPluginStorageRepository'
 import { KernelBootstrapper } from './kernel/KernelBootstrapper'
 import { registerContributionIpcHandlers } from './kernel/ipc/contributionIpc'
 
@@ -82,7 +81,6 @@ if (!gotTheLock) {
   let mainWindow: BrowserWindow | null = null
 let services: ReturnType<typeof createServices>
 let waConnectionManager: WhatsAppConnectionManager
-let eventBridge: ExtensionEventBridge
 let trayService: TrayService | null = null
 let isQuitting = false
 
@@ -126,9 +124,7 @@ function createWindow(): void {
         console.log('[Main] Started hidden via --hidden argument')
       }
       waConnectionManager.setWindow(mainWindow)
-      waConnectionManager.connect().then(() => {
-        if (eventBridge) eventBridge.attach()
-      }).catch(err => console.error('[Main] Failed to connect WA manager:', err))
+      waConnectionManager.connect().catch(err => console.error('[Main] Failed to connect WA manager:', err))
     }
   })
 
@@ -168,8 +164,7 @@ app.whenReady().then(() => {
   services = createServices(prisma, () => mainWindow, () => waConnectionManager?.getBus() ?? null, getSock)
 
   // Microkernel System Bootstrap
-  eventBridge = new ExtensionEventBridge(() => waConnectionManager?.getBus() ?? null)
-  const storageRepo = new ExtensionStorageRepository(prisma)
+  const storageRepo = new PrismaPluginStorageRepository(prisma)
   const extensionsPath = join(app.getPath('userData'), 'extensions')
   const permissionsFilePath = join(app.getPath('userData'), 'plugin-permissions.json')
 

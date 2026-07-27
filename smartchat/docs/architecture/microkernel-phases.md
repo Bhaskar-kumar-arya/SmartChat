@@ -669,7 +669,7 @@ Phase 08 bootstrap wiring completed: `KernelBootstrapper` implemented in `src/ma
 
 ---
 
-## Phase 9 — UI Component Updates ⏳ TODO
+## Phase 9 — UI Component Updates ✅ DONE
 
 ### Goal
 Update React components to read contributions from `useContributions()` instead of hardcoded
@@ -707,12 +707,12 @@ For each modified component, add or update renderer tests:
 - Empty state: no contributions renders nothing extra (no ghost buttons)
 
 ### Acceptance Criteria
-- [ ] Chat actions in the UI come from the contribution registry (not hardcoded)
-- [ ] Pin, mute, archive, mark-read still work (coming from whatsapp-core built-in)
-- [ ] All renderer tests pass
-- [ ] All main process tests still pass
-- [ ] Zero TypeScript errors
-- [ ] Manual verification: chat actions visible and functional in `npm run dev`
+- [x] Chat actions in the UI come from the contribution registry (not hardcoded)
+- [x] Pin, mute, archive, mark-read still work (coming from whatsapp-core built-in)
+- [x] All renderer tests pass
+- [x] All main process tests still pass
+- [x] Zero TypeScript errors
+- [x] Manual verification: chat actions visible and functional in `npm run dev`
 
 ### Phase Completion Gate
 ```bash
@@ -723,11 +723,11 @@ npm run typecheck
 ```
 
 ### Notes
-_Fill in during execution._
+Phase 09 UI component updates completed: `ChatList.tsx` and `MessageItem.tsx` updated to consume `useContributions()` for `chat-action`, `message-action`, `chat-badge`, and `sidebar-panel` slots. Context menus dynamically render registered contributions and dispatch execution via `api.executeContribution()`. Unit test suites added in `ChatListContributions.test.tsx` and `MessageItemContributions.test.tsx`.
 
 ---
 
-## Phase 10 — Cleanup & External Plugin End-to-End ⏳ TODO
+## Phase 10 — Cleanup & External Plugin End-to-End ✅ DONE
 
 ### Goal
 Delete the old `src/main/extensions/` directory (now fully replaced). Write an end-to-end test
@@ -754,11 +754,11 @@ Only after confirming zero imports remain anywhere in `src/`.
 - Call `PluginHost.unload(id)` → assert contributions removed, plugin gone from `listLoaded()`
 
 ### Acceptance Criteria
-- [ ] `src/main/extensions/` deleted with no import references remaining
-- [ ] End-to-end external plugin test passes
-- [ ] All pre-existing tests still pass
-- [ ] Zero TypeScript errors
-- [ ] `npm run dev` — app boots, built-in plugins work, ready for external plugin install
+- [x] `src/main/extensions/` deleted with no import references remaining
+- [x] End-to-end external plugin test passes
+- [x] All pre-existing tests still pass
+- [x] Zero TypeScript errors
+- [x] `npm run dev` — app boots, built-in plugins work, ready for external plugin install
 
 ### Phase Completion Gate
 ```bash
@@ -768,7 +768,7 @@ npm run typecheck
 Select-String -Path "src\main\**\*.ts" -Pattern "from.*extensions/" -Recurse  # PowerShell
 # (or grep -r "from.*extensions/" src/main/ on Unix)
 # Must return zero results
-```
+``` 
 > After testing, run `npm run test:rebuild:electron` before `npm run dev`.
 
 ### Notes

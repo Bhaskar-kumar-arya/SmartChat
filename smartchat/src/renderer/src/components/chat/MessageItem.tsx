@@ -16,6 +16,7 @@ import ConfirmModal from '../common/ConfirmModal'
 import { MessageStatusTick } from '../common/MessageStatusTick'
 import { emojiToUnified } from '../../utils/emojiUtils'
 import { EmojiText } from '../common/EmojiText'
+import { useContributions } from '../../hooks/useContributions'
 
 /**
  * Utility to unwrap metadata from Baileys messages.
@@ -181,10 +182,12 @@ const MessageItem = memo(function MessageItem({
   onScrollToMessage,
   onSelectChat
 }: MessageItemProps) {
+  const api = useAPI()
+  const messageActions = useContributions('message-action')
+
   if (msg.messageType === 'system' || msg.messageType === 'call' || msg.messageType === 'callLogMesssage' || msg.messageType === 'scheduledCallCreationMessage') {
     return <SystemMessageBubble msg={msg} onSelectChat={onSelectChat} />
   }
-  const api = useAPI()
 
   let rawMsg: RawMessageContent = {}
   try {
@@ -619,6 +622,23 @@ const MessageItem = memo(function MessageItem({
                   Delete
                 </button>
               )}
+              {messageActions.map((action) => (
+                <button
+                  key={`${action.pluginId}-${action.id}`}
+                  className="dropdown-item"
+                  onClick={() => {
+                    setShowDropdown(false)
+                    api.executeContribution({
+                      slot: 'message-action',
+                      pluginId: action.pluginId,
+                      id: action.id,
+                      context: { chatJid: msg.chatJid, messageId: msg.id }
+                    }).catch(console.error)
+                  }}
+                >
+                  {action.label}
+                </button>
+              ))}
             </div>
           )}
         </div>

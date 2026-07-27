@@ -17,6 +17,7 @@ import { ContextMenu } from '../common/ContextMenu'
 import { EmojiText } from '../common/EmojiText'
 import { ExtensionChatListItem } from './ExtensionChatListItem'
 import ExtensionManager from '../extensions/ExtensionManager'
+import { useContributions } from '../../hooks/useContributions'
 
 interface ChatListProps {
   activeJid: string | null
@@ -246,9 +247,134 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic, on
     return <>{senderPrefix}<EmojiText text={chat.lastMessage || 'No messages'} /></>
   }
 
+  const chatActions = useContributions('chat-action')
+  useContributions('chat-badge')
+  useContributions('sidebar-panel')
 
-  // Hierarchy state is managed by useChatHierarchy hook
-  // ──────────────────────────────────────────────────────────────────
+  const buildContextMenuItems = () => {
+    if (!contextMenu) return []
+
+    const items: Array<{
+      label: string
+      onClick?: () => void
+      icon?: React.ReactNode
+      subMenu?: Array<{ label: string; onClick?: () => void }>
+    }> = []
+
+    const findAction = (actionId: string) => chatActions.find((a) => a.id === actionId)
+
+    // Pin / Unpin
+    const targetPinId = contextMenu.pinned ? 'unpin' : 'pin'
+    const pinContrib = findAction(targetPinId)
+    items.push({
+      label: pinContrib?.label || (contextMenu.pinned ? 'Unpin Chat' : 'Pin Chat'),
+      onClick: () => {
+        if (pinContrib) {
+          api.executeContribution({
+            slot: 'chat-action',
+            pluginId: pinContrib.pluginId,
+            id: pinContrib.id,
+            context: { jid: contextMenu.jid }
+          }).catch(console.error)
+        }
+        if (contextMenu.pinned) handleUnpin(contextMenu.jid)
+        else handlePin(contextMenu.jid)
+      },
+      icon: (
+        <svg className="indicator-icon pin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {contextMenu.pinned ? (
+            <>
+              <line x1="2" x2="22" y1="2" y2="22"/>
+              <line x1="12" x2="12" y1="17" y2="22"/>
+              <path d="M9 9v1.17a2 2 0 0 1-.78 1.22L5.44 15a2 2 0 0 0-.44 1.24V17h12.5"/>
+              <path d="M10 4H9.17"/>
+              <path d="M15 9.17V4a1 1 0 0 0-1-1h-4"/>
+              <path d="M19 15.76a2 2 0 0 0-.44-1.24l-2.78-3.61A2 2 0 0 1 15 9.17"/>
+            </>
+          ) : (
+            <>
+              <line x1="12" y1="17" x2="12" y2="22"/>
+              <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.68V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v4.68a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+            </>
+          )}
+        </svg>
+      )
+    })
+
+    // Mute / Unmute
+    const targetMuteId = contextMenu.muted ? 'unmute' : 'mute'
+    const muteContrib = findAction(targetMuteId)
+    if (contextMenu.muted) {
+      items.push({
+        label: muteContrib?.label || 'Unmute Chat',
+        onClick: () => {
+          if (muteContrib) {
+            api.executeContribution({
+              slot: 'chat-action',
+              pluginId: muteContrib.pluginId,
+              id: muteContrib.id,
+              context: { jid: contextMenu.jid }
+            }).catch(console.error)
+          }
+          handleUnmute(contextMenu.jid)
+        },
+        icon: (
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        )
+      })
+    } else {
+      const executeMute = (durationMs: number) => {
+        if (muteContrib) {
+          api.executeContribution({
+            slot: 'chat-action',
+            pluginId: muteContrib.pluginId,
+            id: muteContrib.id,
+            context: { jid: contextMenu.jid, durationMs }
+          }).catch(console.error)
+        }
+        handleMute(contextMenu.jid, durationMs)
+      }
+      items.push({
+        label: muteContrib?.label || 'Mute Chat',
+        icon: (
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            <path d="M18.63 13A17.89 17.89 0 0 1 18 8"/>
+            <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/>
+            <path d="M18 8a6 6 0 0 0-9.33-5"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+          </svg>
+        ),
+        subMenu: [
+          { label: '8 Hours', onClick: () => executeMute(Date.now() + 8 * 60 * 60 * 1000) },
+          { label: '1 Week', onClick: () => executeMute(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+          { label: 'Always', onClick: () => executeMute(-1) }
+        ]
+      })
+    }
+
+    // Additional external plugin actions
+    const builtInIds = ['pin', 'unpin', 'mute', 'unmute', 'archive', 'unarchive', 'mark-read']
+    const externalActions = chatActions.filter((a) => !builtInIds.includes(a.id))
+    for (const action of externalActions) {
+      items.push({
+        label: action.label,
+        onClick: () => {
+          api.executeContribution({
+            slot: 'chat-action',
+            pluginId: action.pluginId,
+            id: action.id,
+            context: { jid: contextMenu.jid }
+          }).catch(console.error)
+        }
+      })
+    }
+
+    return items
+  }
 
   return (
     <div className="chat-sidebar">
@@ -580,66 +706,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic, on
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          items={[
-            contextMenu.pinned ? {
-              label: 'Unpin Chat',
-              onClick: () => handleUnpin(contextMenu.jid),
-              icon: (
-                <svg className="indicator-icon pin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="2" x2="22" y1="2" y2="22"/>
-                  <line x1="12" x2="12" y1="17" y2="22"/>
-                  <path d="M9 9v1.17a2 2 0 0 1-.78 1.22L5.44 15a2 2 0 0 0-.44 1.24V17h12.5"/>
-                  <path d="M10 4H9.17"/>
-                  <path d="M15 9.17V4a1 1 0 0 0-1-1h-4"/>
-                  <path d="M19 15.76a2 2 0 0 0-.44-1.24l-2.78-3.61A2 2 0 0 1 15 9.17"/>
-                </svg>
-              )
-            } : {
-              label: 'Pin Chat',
-              onClick: () => handlePin(contextMenu.jid),
-              icon: (
-                <svg className="indicator-icon pin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="17" x2="12" y2="22"/>
-                  <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.68V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v4.68a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
-                </svg>
-              )
-            },
-            contextMenu.muted ? {
-              label: 'Unmute Chat',
-              onClick: () => handleUnmute(contextMenu.jid),
-              icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                </svg>
-              )
-            } : {
-              label: 'Mute Chat',
-              icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                  <path d="M18.63 13A17.89 17.89 0 0 1 18 8"/>
-                  <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/>
-                  <path d="M18 8a6 6 0 0 0-9.33-5"/>
-                  <line x1="1" y1="1" x2="23" y2="23"/>
-                </svg>
-              ),
-              subMenu: [
-                {
-                  label: '8 Hours',
-                  onClick: () => handleMute(contextMenu.jid, Date.now() + 8 * 60 * 60 * 1000)
-                },
-                {
-                  label: '1 Week',
-                  onClick: () => handleMute(contextMenu.jid, Date.now() + 7 * 24 * 60 * 60 * 1000)
-                },
-                {
-                  label: 'Always',
-                  onClick: () => handleMute(contextMenu.jid, -1)
-                }
-              ]
-            }
-          ]}
+          items={buildContextMenuItems()}
           onClose={() => setContextMenu(null)}
         />
       )}

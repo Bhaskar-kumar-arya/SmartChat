@@ -13,7 +13,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "start": "electron-vite preview",
-    "dev": "node scripts/generate-docs.js && electron-vite dev",
+    "dev": "electron-vite dev",
     "test": "vitest",
     "test:rebuild:node": "npm rebuild better-sqlite3",
     "test:rebuild:electron": "npx @electron/rebuild --force -v 39.8.2",
