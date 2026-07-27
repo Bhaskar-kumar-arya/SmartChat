@@ -34,6 +34,7 @@ export interface BootstrapperOptions {
 
 export interface BootResult {
   host: IPluginHost
+  loader: PluginLoader
   registry: IContributionRegistry
   router: KernelAPIRouter
   permissions: PermissionStore
@@ -115,6 +116,7 @@ export class KernelBootstrapper {
 
     return {
       host,
+      loader,
       registry,
       router,
       permissions,

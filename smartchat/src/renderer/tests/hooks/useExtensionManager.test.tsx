@@ -70,17 +70,4 @@ describe('useExtensionManager', () => {
     })
     expect(mockApi.extensionUninstall).toHaveBeenCalledWith('ext-1')
   })
-
-  it('should copy docs to clipboard', async () => {
-    const { result } = renderHook(() => useExtensionManager(), {
-      wrapper: createWrapper(),
-    })
-
-    await act(async () => {
-      await result.current.copyDocs()
-    })
-
-    expect(mockApi.extensionGetDocs).toHaveBeenCalled()
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('API Docs')
-  })
 })

@@ -61,10 +61,5 @@ export function useExtensionManager() {
     [api, refresh]
   )
 
-  const copyDocs = useCallback(async () => {
-    const docs = await api.extensionGetDocs()
-    await navigator.clipboard.writeText(docs)
-  }, [api])
-
-  return { extensions, loading, error, install, unload, reload, uninstall, refresh, copyDocs }
+  return { extensions, loading, error, install, unload, reload, uninstall, refresh }
 }
