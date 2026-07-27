@@ -37,6 +37,8 @@ process.env.DATABASE_URL = databaseUrl
 
 let prismaTestClient: PrismaClient
 
+const templateDbPath = join(__dirname, '../../../prisma/template-test.db')
+
 beforeAll(async () => {
   // 1. Clean up old test db if present
   if (existsSync(dbPath)) {
@@ -47,13 +49,20 @@ beforeAll(async () => {
     }
   }
 
-  console.log('[Test Setup] Initializing clean SQLite test database at', dbPath)
-  
-  // 2. Run Prisma push to create tables in the test db (excludes vector search table)
-  execSync('npx prisma db push --accept-data-loss', {
-    stdio: 'inherit',
-    cwd: join(__dirname, '../../..')
-  })
+  // 2. Ensure template DB exists once
+  if (!existsSync(templateDbPath)) {
+    console.log('[Test Setup] Creating template SQLite database at', templateDbPath)
+    process.env.DATABASE_URL = `file:${templateDbPath}`
+    execSync('npx prisma db push --accept-data-loss', {
+      stdio: 'inherit',
+      cwd: join(__dirname, '../../..')
+    })
+    process.env.DATABASE_URL = databaseUrl
+  }
+
+  // 3. Fast copy from template DB
+  const { copyFileSync } = require('fs')
+  copyFileSync(templateDbPath, dbPath)
 
   const adapter = new PrismaBetterSqlite3({
     url: databaseUrl
