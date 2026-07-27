@@ -95,9 +95,11 @@ const MANIFEST_TO_SLOT_MAPPINGS: ManifestContributionMapper[] = [
   }
 ]
 
+export type ContributionHandler = (...args: any[]) => Promise<unknown> | unknown
+
 export class PluginHost implements IPluginHost {
   private builtinPlugins = new Map<string, IBuiltinPlugin>()
-  private handlers = new Map<string, Function>()
+  private handlers = new Map<string, ContributionHandler>()
 
   constructor(
     private readonly loader: IPluginLoader,
@@ -123,7 +125,7 @@ export class PluginHost implements IPluginHost {
       const handler = this.handlers.get(key)
       let result: unknown
       if (handler) {
-        result = await (handler as Function)(payload)
+        result = await (handler as (payload: unknown) => Promise<unknown>)(payload)
       }
       channel.sendResponseToPlugin({ id: req.id, ok: true, payload: result })
     })
