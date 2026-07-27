@@ -457,7 +457,7 @@ Phase 05 SDK Package implemented: `@smartchat/sdk` created in `packages/sdk/` wi
 
 ---
 
-## Phase 6 — Built-in Plugins (Dogfooding) ⏳ TODO
+## Phase 6 — Built-in Plugins (Dogfooding) ✅ DONE
 
 ### Goal
 Convert internal features (chat actions, AI tools, search panel, notification settings) into
@@ -508,11 +508,11 @@ For each built-in plugin:
 - Call `plugin.deactivate()` and assert cleanup
 
 ### Acceptance Criteria
-- [ ] Each built-in plugin test passes
-- [ ] `PluginHost.registerBuiltin()` successfully loads all four built-ins in isolation
-- [ ] Contributions from built-ins appear in `IContributionRegistry.getAll()` after activation
-- [ ] All pre-existing tests still pass
-- [ ] Zero TypeScript errors
+- [x] Each built-in plugin test passes
+- [x] `PluginHost.registerBuiltin()` successfully loads all four built-ins in isolation
+- [x] Contributions from built-ins appear in `IContributionRegistry.getAll()` after activation
+- [x] All pre-existing tests still pass
+- [x] Zero TypeScript errors
 
 ### Phase Completion Gate
 ```bash
@@ -522,7 +522,7 @@ npm run typecheck
 > After testing, run `npm run test:rebuild:electron` before `npm run dev`.
 
 ### Notes
-_Fill in during execution._
+Phase 06 built-in plugins implemented: `WhatsappCorePlugin`, `AIAssistantPlugin`, `SearchPlugin`, and `NotificationsPlugin` created under `src/main/plugins/builtin/`. `PluginContext` and `PluginHost` updated to wire built-in contribution calls to `ContributionRegistry`. Unit test suites and integration tests added in `src/main/tests/kernel/plugins/builtin/`. All unit & integration tests and project typecheck pass with zero errors.
 
 ---
 

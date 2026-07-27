@@ -1,0 +1,146 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { MessageChannel, MessagePort } from 'node:worker_threads'
+import { WorkerPluginRuntime } from '../src/channel'
+import { PluginManifest } from '../src/manifest'
+
+describe('WorkerPluginRuntime', () => {
+  let port1: MessagePort
+  let port2: MessagePort
+  let manifest: PluginManifest
+
+  beforeEach(() => {
+    const channel = new MessageChannel()
+    port1 = channel.port1
+    port2 = channel.port2
+
+    manifest = {
+      id: 'com.example.test',
+      name: 'Test Plugin',
+      version: '1.0.0',
+      apiVersion: '2',
+      main: 'index.js',
+      permissions: ['chats:read', 'messages:send', 'ai:chat'],
+      contributions: {}
+    }
+  })
+
+  afterEach(() => {
+    port1.close()
+    port2.close()
+  })
+
+  it('should format and send kernel request over port when calling API method', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest)
+    const ctx = runtime.getContext()
+
+    const requestPromise = ctx.chats!.getList(1, 20)
+
+    await new Promise<void>((resolve) => {
+      port2.once('message', (msg) => {
+        expect(msg).toMatchObject({
+          type: 'kernel:chats:getList',
+          payload: { page: 1, limit: 20 }
+        })
+        expect(typeof msg.id).toBe('string')
+
+        // Respond back as kernel
+        port2.postMessage({
+          id: msg.id,
+          ok: true,
+          payload: [{ jid: '123@s.whatsapp.net', name: 'Alice' }]
+        })
+        resolve()
+      })
+    })
+
+    const chats = await requestPromise
+    expect(chats).toEqual([{ jid: '123@s.whatsapp.net', name: 'Alice' }])
+  })
+
+  it('should reject API call promise when KernelResponse ok is false', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest)
+    const ctx = runtime.getContext()
+
+    const requestPromise = ctx.messages!.send('123@s.whatsapp.net', 'Hello')
+
+    port2.once('message', (msg) => {
+      port2.postMessage({
+        id: msg.id,
+        ok: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: 'Permission denied for messages:send',
+          permission: 'messages:send'
+        }
+      })
+    })
+
+    await expect(requestPromise).rejects.toThrow('Permission denied for messages:send')
+  })
+
+  it('should register chat action handler and execute when kernel sends execution message', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest)
+    const ctx = runtime.getContext()
+
+    const actionSpy = vi.fn().mockResolvedValue(undefined)
+    ctx.contributions.registerChatAction('archive-chat', actionSpy)
+
+    // Simulate kernel sending contribution execution request to plugin
+    const executionReq = {
+      id: 'req-1',
+      type: 'contribution:execute:chat-action',
+      payload: { id: 'archive-chat', context: { chatJid: '123@s.whatsapp.net' } }
+    }
+
+    const responsePromise = new Promise<any>((resolve) => {
+      const listener = (res: any) => {
+        if (res.id === 'req-1') {
+          port2.off('message', listener)
+          resolve(res)
+        }
+      }
+      port2.on('message', listener)
+    })
+
+    port2.postMessage(executionReq)
+
+    const res = await responsePromise
+    expect(res).toMatchObject({
+      id: 'req-1',
+      ok: true
+    })
+    expect(actionSpy).toHaveBeenCalledWith({ chatJid: '123@s.whatsapp.net' })
+  })
+
+  it('should post log messages over port via ctx.log', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest)
+    const ctx = runtime.getContext()
+
+    const logPromise = new Promise<any>((resolve) => {
+      port2.once('message', (msg) => {
+        resolve(msg)
+      })
+    })
+
+    ctx.log.info('System operational', { status: 'ok' })
+
+    const logMsg = await logPromise
+    expect(logMsg).toMatchObject({
+      type: 'kernel:log',
+      payload: {
+        level: 'info',
+        message: 'System operational',
+        data: [{ status: 'ok' }]
+      }
+    })
+  })
+
+  it('should reject requests that time out after specified deadline', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest, { requestTimeoutMs: 100 })
+    const ctx = runtime.getContext()
+
+    const requestPromise = ctx.ai!.chat('Hello AI')
+
+    await expect(requestPromise).rejects.toThrow(/timed out/i)
+  })
+})

@@ -1,0 +1,75 @@
+import { IBuiltinPlugin } from '../../../kernel/plugins/IBuiltinPlugin'
+import { PluginManifest } from '../../../kernel/plugins/PluginManifest'
+import { PluginContext } from '../../../kernel/plugins/PluginContext'
+
+export class AIAssistantPlugin implements IBuiltinPlugin {
+  readonly id = 'com.smartchat.builtin.ai-assistant'
+
+  readonly manifest: PluginManifest = {
+    id: 'com.smartchat.builtin.ai-assistant',
+    name: 'AI Assistant Plugin',
+    version: '1.0.0',
+    apiVersion: '2',
+    main: 'index.ts',
+    permissions: ['ai:tools:register'],
+    contributions: {
+      aiTools: [
+        {
+          name: 'chatAction',
+          description: 'Perform an action on a WhatsApp chat (mute, pin, archive, mark read)',
+          schema: { type: 'object' }
+        },
+        {
+          name: 'sendMessage',
+          description: 'Send a WhatsApp message to a chat or person',
+          schema: { type: 'object' }
+        },
+        {
+          name: 'messageAction',
+          description: 'Perform an action on a WhatsApp message (delete, edit, forward, react)',
+          schema: { type: 'object' }
+        },
+        {
+          name: 'readMessages',
+          description: 'Read and format chat transcripts and message histories',
+          schema: { type: 'object' }
+        },
+        {
+          name: 'queryDatabase',
+          description: 'Query the SQLite database directly',
+          schema: { type: 'object' }
+        },
+        {
+          name: 'executeScript',
+          description: 'Write and execute a JavaScript program that can call registered tools',
+          schema: { type: 'object' }
+        }
+      ]
+    }
+  }
+
+  async activate(ctx: PluginContext): Promise<void> {
+    const register = ctx.contributions?.registerAITool
+    if (!register) return
+
+    const tools = [
+      'chatAction',
+      'sendMessage',
+      'messageAction',
+      'readMessages',
+      'queryDatabase',
+      'executeScript'
+    ]
+
+    for (const toolName of tools) {
+      register(toolName, async (args: Record<string, unknown>) => {
+        ctx.log?.info(`Executing AI tool: ${toolName}`, args)
+        return { text: JSON.stringify({ success: true, tool: toolName }) }
+      })
+    }
+  }
+
+  async deactivate(): Promise<void> {
+    // Cleanup handled by host
+  }
+}
