@@ -17,25 +17,10 @@ import { createServices } from './ServiceContainer'
 import { TrayService } from './services/notification/TrayService'
 import { SecureFileRegistry } from './services/protocol/SecureFileRegistry'
 import { AppProtocolHandler } from './services/protocol/AppProtocolHandler'
-import { ExtensionLoader } from './extensions/host/ExtensionLoader'
-import { ExtensionCapabilityRegistry } from './extensions/capabilities/ExtensionCapabilityRegistry'
-import { LogCapabilityProvider } from './extensions/capabilities/providers/LogCapabilityProvider'
-import { StorageCapabilityProvider } from './extensions/capabilities/providers/StorageCapabilityProvider'
-import { EventCapabilityProvider } from './extensions/capabilities/providers/EventCapabilityProvider'
 import { ExtensionStorageRepository } from './extensions/storage/ExtensionStorageRepository'
 import { ExtensionEventBridge } from './extensions/events/ExtensionEventBridge'
-import { ExtensionHost } from './extensions/host/ExtensionHost'
-import { ExtensionSchedulerService } from './extensions/scheduler/ExtensionSchedulerService'
-import { SchedulerCapabilityProvider } from './extensions/capabilities/providers/SchedulerCapabilityProvider'
-import { ToolCapabilityProvider } from './extensions/capabilities/providers/ToolCapabilityProvider'
-import { UICapabilityProvider } from './extensions/capabilities/providers/UICapabilityProvider'
-import { DedicatedChatRepository } from './extensions/dedicatedChat/DedicatedChatRepository'
-import { DedicatedChatSessionManager } from './extensions/dedicatedChat/DedicatedChatSessionManager'
-import { VirtualChatProvider } from './extensions/virtualChat/VirtualChatProvider'
-import { DedicatedChatCapabilityProvider } from './extensions/capabilities/providers/DedicatedChatCapabilityProvider'
-import { LlmCapabilityProvider } from './extensions/capabilities/providers/LlmCapabilityProvider'
-import { registerExtensionIpcHandlers } from './extensions/ipc'
-import { DocRegistry } from './extensions/docs/DocRegistry'
+import { KernelBootstrapper } from './kernel/KernelBootstrapper'
+import { registerContributionIpcHandlers } from './kernel/ipc/contributionIpc'
 
 function getLogFile(): string {
   try {
@@ -182,53 +167,25 @@ app.whenReady().then(() => {
 
   services = createServices(prisma, () => mainWindow, () => waConnectionManager?.getBus() ?? null, getSock)
 
-  // Extension System Bootstrap
-  const extensionsPath = join(app.getPath('userData'), 'extensions')
-  const extensionLoader = new ExtensionLoader(extensionsPath)
-  const extensionRegistry = new ExtensionCapabilityRegistry()
+  // Microkernel System Bootstrap
   eventBridge = new ExtensionEventBridge(() => waConnectionManager?.getBus() ?? null)
-  const extensionSchedulerService = new ExtensionSchedulerService()
-  const logProvider = new LogCapabilityProvider(extensionsPath)
-  extensionRegistry.register('log', logProvider)
   const storageRepo = new ExtensionStorageRepository(prisma)
-  
-  const storageProvider = new StorageCapabilityProvider(storageRepo)
-  const eventProvider = new EventCapabilityProvider(eventBridge)
-  const schedulerProvider = new SchedulerCapabilityProvider(extensionSchedulerService)
-  const toolProvider = new ToolCapabilityProvider(services.toolRegistry, (extId) => logProvider.build({} as any, extId))
-  const uiProvider = new UICapabilityProvider(services.notificationService, () => mainWindow)
-  
-  const llmProvider = new LlmCapabilityProvider(services.aiService, services.aiChatSessionService)
-  
-  extensionRegistry.register('storage', storageProvider)
-  extensionRegistry.register('events', eventProvider)
-  extensionRegistry.register('scheduler', schedulerProvider)
-  extensionRegistry.register('tools', toolProvider)
-  extensionRegistry.register('ui', uiProvider)
-  extensionRegistry.register('llm', llmProvider)
-  
-  const chatRepo = new DedicatedChatRepository(prisma)
-  const sessionManager = new DedicatedChatSessionManager(chatRepo, eventBridge, () => mainWindow)
-  const virtualChatProv = new VirtualChatProvider(services.chatRepository)
-  
-  const dedicatedChatProvider = new DedicatedChatCapabilityProvider(chatRepo, () => mainWindow)
-  extensionRegistry.register('dedicatedChat', dedicatedChatProvider)
-  
-  const docRegistry = new DocRegistry()
-  docRegistry.register(logProvider)
-  docRegistry.register(eventProvider)
-  docRegistry.register(storageProvider)
-  docRegistry.register(toolProvider)
-  docRegistry.register(schedulerProvider)
-  docRegistry.register(uiProvider)
-  docRegistry.register(dedicatedChatProvider)
-  docRegistry.register(llmProvider)
-  
-  const extensionHost = new ExtensionHost(extensionLoader, extensionRegistry, extensionSchedulerService, virtualChatProv, eventBridge)
-  
-  registerExtensionIpcHandlers(extensionHost, sessionManager, chatRepo, extensionLoader, extensionsPath, storageRepo, docRegistry)
+  const extensionsPath = join(app.getPath('userData'), 'extensions')
+  const permissionsFilePath = join(app.getPath('userData'), 'plugin-permissions.json')
 
-  extensionHost.loadAll().catch(err => logMain('[Main] Failed to load extensions', err))
+  const bootstrapper = new KernelBootstrapper({
+    services,
+    getMainWindow: () => mainWindow,
+    getBus: () => waConnectionManager?.getBus() ?? null,
+    getSock,
+    extensionsPath,
+    permissionsFilePath,
+    storageRepo
+  })
+
+  bootstrapper.boot().then((bootResult) => {
+    registerContributionIpcHandlers(bootResult.registry, bootResult.host, () => mainWindow?.webContents)
+  }).catch((err) => logMain('[Main] Failed to boot microkernel', err))
 
   // Initialize Tray Service
   trayService = new TrayService(

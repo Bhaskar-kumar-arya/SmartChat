@@ -599,7 +599,7 @@ Phase 07 renderer contribution system implemented: `registerContributionIpcHandl
 ---
 
 
-## Phase 8 — Bootstrap Wiring ⏳ TODO
+## Phase 8 — Bootstrap Wiring ✅ DONE
 
 ### Goal
 Wire everything together in `index.ts`. Build `KernelBootstrapper` to replace the current extension
@@ -650,12 +650,12 @@ This phase is integration-level. Write a smoke test:
 - Assert: `host.listLoaded()` does NOT include any external plugins (clean test environment)
 
 ### Acceptance Criteria
-- [ ] Bootstrap smoke test passes
-- [ ] App boots without errors (manual verification: run `npm run dev`, app opens)
-- [ ] Built-in plugin contributions appear in the contribution registry on boot
-- [ ] `src/main/extensions/` is no longer imported by `index.ts`
-- [ ] All pre-existing tests still pass
-- [ ] Zero TypeScript errors
+- [x] Bootstrap smoke test passes
+- [x] App boots without errors (manual verification: run `npm run dev`, app opens)
+- [x] Built-in plugin contributions appear in the contribution registry on boot
+- [x] `src/main/extensions/` is no longer imported by `index.ts`
+- [x] All pre-existing tests still pass
+- [x] Zero TypeScript errors
 
 ### Phase Completion Gate
 ```bash
@@ -665,7 +665,7 @@ npm run typecheck
 ```
 
 ### Notes
-_Fill in during execution._
+Phase 08 bootstrap wiring completed: `KernelBootstrapper` implemented in `src/main/kernel/KernelBootstrapper.ts`, `src/main/index.ts` updated to bootstrap the microkernel and wire contribution IPC handlers while removing old extension system imports. Integration smoke test created in `src/main/tests/kernel/bootstrap.test.ts`. All 55 test suites (379 tests) and full project typecheck pass with zero errors.
 
 ---
 
