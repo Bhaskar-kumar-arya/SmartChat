@@ -53,8 +53,13 @@ SmartChat is transitioning toward a **VS Code-inspired Microkernel Architecture*
 - **✉️ Cross-App File Sharing**: Right-click any media or document attachment in a chat to send or forward it directly to external services (e.g. Gmail draft, Slack channel, Google Drive, or Dropbox).
 
 Note : the feature has been partially implemented and is almost complete.
-- [CustomMessageActions and Notifications integrated with the App UI using contributions system](./smartchat/Extensions-demo-videos/customeMessageActionAndNotifications.mp4)
-- [Custom Slash Commands integrated with the Chatbar](./smartchat/Extensions-demo-videos/customSlashCommands.mp4)
+
+#### 🎥 CustomMessageActions and Notifications integrated with the App UI using contributions system
+<video src="https://github.com/Bhaskar-kumar-arya/SmartChat/raw/main/smartchat/Extensions-demo-videos/customeMessageActionAndNotifications.mp4" controls width="100%"></video>
+
+#### 🎥 Custom Slash Commands integrated with the Chatbar
+<video src="https://github.com/Bhaskar-kumar-arya/SmartChat/raw/main/smartchat/Extensions-demo-videos/customSlashCommands.mp4" controls width="100%"></video>
+
 
 ### Packaged Extension Scripts
 
