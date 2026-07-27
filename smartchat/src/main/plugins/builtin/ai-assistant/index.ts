@@ -52,9 +52,6 @@ export class AIAssistantPlugin implements IBuiltinPlugin {
   constructor(private readonly toolRegistry?: IToolRegistry | Map<string, AITool>) {}
 
   async activate(ctx: PluginContext): Promise<void> {
-    const register = ctx.contributions?.registerAITool
-    if (!register) return
-
     const tools = [
       'chatAction',
       'sendMessage',
@@ -65,8 +62,8 @@ export class AIAssistantPlugin implements IBuiltinPlugin {
     ]
 
     for (const toolName of tools) {
-      register(toolName, async (rawArgs: Record<string, unknown>) => {
-        ctx.log?.info(`Executing AI tool: ${toolName}`, rawArgs)
+      ctx.contributions.registerAITool?.(toolName, async (rawArgs: Record<string, unknown>) => {
+        ctx.log.info(`Executing AI tool: ${toolName}`, rawArgs)
         const args = (rawArgs && typeof rawArgs === 'object' && 'args' in rawArgs ? rawArgs.args : rawArgs) as Record<string, unknown>
 
         if (this.toolRegistry) {
@@ -79,9 +76,8 @@ export class AIAssistantPlugin implements IBuiltinPlugin {
           }
         }
 
-        const aiApi = (ctx as any).ai
-        if (aiApi?.callTool) {
-          return await aiApi.callTool(toolName, args || {})
+        if (ctx.ai?.callTool) {
+          return await ctx.ai.callTool(toolName, args || {})
         }
 
         return { text: JSON.stringify({ success: true, tool: toolName }) }

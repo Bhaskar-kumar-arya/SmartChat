@@ -26,64 +26,61 @@ export class WhatsappCorePlugin implements IBuiltinPlugin {
   }
 
   async activate(ctx: PluginContext): Promise<void> {
-    const register = ctx.contributions?.registerChatAction
-    if (!register) return
+    const chats = ctx.chats
 
-    const chats = (ctx as any).chats
-
-    register('pin', async (actionCtx: any) => {
-      const jid = actionCtx?.context?.jid || actionCtx?.context?.chatJid
-      ctx.log?.info(`Executing chat action 'pin' for ${jid}`)
-      if (jid && chats?.pin) {
+    ctx.contributions.registerChatAction?.('pin', async (actionCtx) => {
+      const jid = actionCtx?.chatJid
+      ctx.log.info(`Executing chat action 'pin' for ${jid}`)
+      if (jid && chats) {
         await chats.pin(jid)
       }
     })
 
-    register('unpin', async (actionCtx: any) => {
-      const jid = actionCtx?.context?.jid || actionCtx?.context?.chatJid
-      ctx.log?.info(`Executing chat action 'unpin' for ${jid}`)
-      if (jid && chats?.unpin) {
+    ctx.contributions.registerChatAction?.('unpin', async (actionCtx) => {
+      const jid = actionCtx?.chatJid
+      ctx.log.info(`Executing chat action 'unpin' for ${jid}`)
+      if (jid && chats) {
         await chats.unpin(jid)
       }
     })
 
-    register('archive', async (actionCtx: any) => {
-      const jid = actionCtx?.context?.jid || actionCtx?.context?.chatJid
-      ctx.log?.info(`Executing chat action 'archive' for ${jid}`)
-      if (jid && chats?.archive) {
+    ctx.contributions.registerChatAction?.('archive', async (actionCtx) => {
+      const jid = actionCtx?.chatJid
+      ctx.log.info(`Executing chat action 'archive' for ${jid}`)
+      if (jid && chats) {
         await chats.archive(jid)
       }
     })
 
-    register('unarchive', async (actionCtx: any) => {
-      const jid = actionCtx?.context?.jid || actionCtx?.context?.chatJid
-      ctx.log?.info(`Executing chat action 'unarchive' for ${jid}`)
-      if (jid && chats?.unarchive) {
+    ctx.contributions.registerChatAction?.('unarchive', async (actionCtx) => {
+      const jid = actionCtx?.chatJid
+      ctx.log.info(`Executing chat action 'unarchive' for ${jid}`)
+      if (jid && chats) {
         await chats.unarchive(jid)
       }
     })
 
-    register('mute', async (actionCtx: any) => {
-      const jid = actionCtx?.context?.jid || actionCtx?.context?.chatJid
-      const durationMs = actionCtx?.context?.durationMs ?? -1
-      ctx.log?.info(`Executing chat action 'mute' for ${jid}`)
-      if (jid && chats?.mute) {
+    ctx.contributions.registerChatAction?.('mute', async (actionCtx) => {
+      const jid = actionCtx?.chatJid
+      const durationMs = (actionCtx as { durationMs?: number })?.durationMs ?? -1
+      ctx.log.info(`Executing chat action 'mute' for ${jid}`)
+      if (jid && chats) {
         await chats.mute(jid, durationMs)
       }
     })
 
-    register('unmute', async (actionCtx: any) => {
-      const jid = actionCtx?.context?.jid || actionCtx?.context?.chatJid
-      ctx.log?.info(`Executing chat action 'unmute' for ${jid}`)
-      if (jid && chats?.unmute) {
+    ctx.contributions.registerChatAction?.('unmute', async (actionCtx) => {
+      const jid = actionCtx?.chatJid
+      ctx.log.info(`Executing chat action 'unmute' for ${jid}`)
+      if (jid && chats) {
         await chats.unmute(jid)
       }
     })
 
-    register('mark-read', async (actionCtx: any) => {
-      const jid = actionCtx?.context?.jid || actionCtx?.context?.chatJid
-      ctx.log?.info(`Executing chat action 'mark-read' for ${jid}`)
-      if (jid && chats?.markRead) {
+    ctx.contributions.registerChatAction?.('mark-read', async (actionCtx) => {
+      const jid = actionCtx?.chatJid
+      ctx.log.info(`Executing chat action 'mark-read' for ${jid}`)
+      if (jid && chats) {
         await chats.markRead(jid)
       }
     })

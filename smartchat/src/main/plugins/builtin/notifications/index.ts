@@ -20,10 +20,7 @@ export class NotificationsPlugin implements IBuiltinPlugin {
   }
 
   async activate(ctx: PluginContext): Promise<void> {
-    const register = ctx.contributions?.registerSettingsPage
-    if (!register) return
-
-    register('notifications', {
+    ctx.contributions.registerSettingsPage?.('notifications', {
       title: 'Notifications'
     })
   }

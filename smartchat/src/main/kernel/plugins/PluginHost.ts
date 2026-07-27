@@ -160,7 +160,8 @@ export class PluginHost implements IPluginHost {
         getMessages: (jid: string, page = 1, limit = 50) => request('kernel:messages:getMessages', { jid, page, limit }) as Promise<any>,
         send: (jid: string, text: string, options?: any) => request('kernel:messages:send', { jid, text, options }) as Promise<any>,
         delete: (jid: string, messageId: string) => request('kernel:messages:delete', { jid, messageId }) as Promise<void>,
-        react: (jid: string, messageId: string, emoji: string) => request('kernel:messages:react', { jid, messageId, emoji }) as Promise<void>
+        react: (jid: string, messageId: string, emoji: string) => request('kernel:messages:react', { jid, messageId, emoji }) as Promise<void>,
+        downloadMedia: (messageId: string) => request('kernel:messages:downloadMedia', { messageId }) as Promise<any>
       },
       contacts: {
         getByJid: (jid: string) => request('kernel:contacts:getByJid', { jid }) as Promise<any>

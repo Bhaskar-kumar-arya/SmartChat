@@ -17,7 +17,7 @@ describe('WhatsappCorePlugin', () => {
       },
       contributions: {
         registerChatAction
-      }
+      } as unknown as PluginContext['contributions']
     }
 
     await plugin.activate(mockCtx)

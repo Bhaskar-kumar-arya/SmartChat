@@ -17,7 +17,7 @@ describe('SearchPlugin', () => {
       },
       contributions: {
         registerSidebarPanel
-      }
+      } as unknown as PluginContext['contributions']
     }
 
     await plugin.activate(mockCtx)

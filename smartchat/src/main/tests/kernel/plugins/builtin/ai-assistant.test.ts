@@ -18,7 +18,7 @@ describe('AIAssistantPlugin', () => {
       },
       contributions: {
         registerAITool
-      }
+      } as unknown as PluginContext['contributions']
     }
 
     await plugin.activate(mockCtx)
@@ -62,7 +62,7 @@ describe('AIAssistantPlugin', () => {
         registerAITool: (name, handler) => {
           registeredHandlers.set(name, handler)
         }
-      }
+      } as unknown as PluginContext['contributions']
     }
 
     await plugin.activate(mockCtx)
@@ -86,13 +86,14 @@ describe('AIAssistantPlugin', () => {
       manifest: plugin.manifest,
       log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       ai: {
+        chat: vi.fn(),
         callTool: mockCallTool
-      } as any,
+      },
       contributions: {
         registerAITool: (name, handler) => {
           registeredHandlers.set(name, handler)
         }
-      }
+      } as unknown as PluginContext['contributions']
     }
 
     await plugin.activate(mockCtx)

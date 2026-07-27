@@ -137,39 +137,42 @@ export interface IPluginAIAPI {
 }
 
 export interface IPluginContributionsAPI {
-  registerChatAction(
+  registerChatAction?(
     id: string,
     handler: (ctx: ChatActionContext) => Promise<void>
   ): void
-  registerMessageAction(
+  registerMessageAction?(
     id: string,
     handler: (ctx: MessageActionContext) => Promise<void>
   ): void
-  registerChatBadge(
+  registerChatBadge?(
     id: string,
     compute: (chatJid: string) => Promise<BadgeDescriptor | null>
   ): void
-  registerSlashCommand(
+  registerSlashCommand?(
     name: string,
     handler: (args: string, context: CommandContext) => Promise<void>
   ): void
-  registerAITool(
+  registerAITool?(
     name: string,
     execute: (args: Record<string, unknown>) => Promise<{ text: string }>
   ): void
-  registerCompletionProvider(
+  registerCompletionProvider?(
     id: string,
     provide: (ctx: CompletionContext) => Promise<CompletionItem[]>
   ): void
-  registerMessageSendInterceptor(
+  registerMessageSendInterceptor?(
     id: string,
     intercept: (
       payload: OutgoingMessagePayload,
       next: (payload: OutgoingMessagePayload) => Promise<SendResult>
     ) => Promise<SendResult>
   ): void
-  exposeAPI(exportName: string, api: Record<string, unknown>): void
-  importAPI(pluginId: string, exportName: string): Promise<Record<string, unknown>>
+  registerSidebarPanel?(id: string, opts: { title: string; icon?: string; panel?: string }): void
+  registerSettingsPage?(id: string, opts: { title: string; panel?: string }): void
+  registerMessageRenderer?(id: string, opts: { messageType: string; panel?: string }): void
+  exposeAPI?(exportName: string, api: Record<string, unknown>): void
+  importAPI?(pluginId: string, exportName: string): Promise<Record<string, unknown>>
 }
 
 export interface PluginContext {

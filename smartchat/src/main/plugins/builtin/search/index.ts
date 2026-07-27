@@ -20,10 +20,7 @@ export class SearchPlugin implements IBuiltinPlugin {
   }
 
   async activate(ctx: PluginContext): Promise<void> {
-    const register = ctx.contributions?.registerSidebarPanel
-    if (!register) return
-
-    register('search', {
+    ctx.contributions.registerSidebarPanel?.('search', {
       title: 'Search',
       icon: 'search'
     })
