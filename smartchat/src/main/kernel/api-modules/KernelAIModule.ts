@@ -1,16 +1,18 @@
-import { IKernelModule } from './IKernelModule'
+import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IAIService, AIChatContext, AIHistoryMessage, AIMention } from '../../services/ai/IAIService'
 import { IToolRegistry, AITool } from '../../services/ai/IToolRegistry'
 
-export class KernelAIModule implements IKernelModule {
+export class KernelAIModule extends BaseKernelModule {
   readonly namespace = 'kernel:ai'
 
   constructor(
-    private readonly permissions: IPermissionStore,
+    permissions: IPermissionStore,
     private readonly aiService: IAIService,
     private readonly toolRegistry: IToolRegistry
-  ) {}
+  ) {
+    super(permissions)
+  }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
     const action = this.extractAction(type)
@@ -31,7 +33,7 @@ export class KernelAIModule implements IKernelModule {
       case 'callTool': {
         const { toolName, args } = payload as { toolName: string; args: Record<string, unknown> }
         this.requireCapability(pluginId, 'ai:tools:call')
-        this.requireResourceScope(pluginId, 'ai:tools:call', toolName)
+        this.requireResourceScope(pluginId, 'ai:tools:call', toolName, 'tool')
 
         const tool = this.toolRegistry.getTool(toolName)
         if (!tool) {
@@ -69,31 +71,6 @@ export class KernelAIModule implements IKernelModule {
           code: 'NOT_FOUND',
           message: `Unknown action '${type}' in module '${this.namespace}'`
         }
-    }
-  }
-
-  private extractAction(type: string): string {
-    const parts = type.split(':')
-    return parts.length > 2 ? parts.slice(2).join(':') : parts[1] || type
-  }
-
-  private requireCapability(pluginId: string, capability: string): void {
-    if (!this.permissions.hasCapability(pluginId, capability)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' lacks capability '${capability}'`,
-        permission: capability
-      }
-    }
-  }
-
-  private requireResourceScope(pluginId: string, capability: string, resourceId: string): void {
-    if (!this.permissions.isResourceAllowed(pluginId, capability, resourceId)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' is denied access to tool '${resourceId}' for capability '${capability}'`,
-        permission: capability
-      }
     }
   }
 }

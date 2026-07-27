@@ -1,21 +1,23 @@
 import { join } from 'path'
-import { IKernelModule } from './IKernelModule'
+import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IMessageQueryService } from '../../services/messages/IMessageQueryService'
 import { IMessageActionService, IMessageActionSocket } from '../../services/messages/IMessageActionService'
 import { IMediaService } from '../../services/messages/IMediaService'
 
-export class KernelMessagesModule implements IKernelModule {
+export class KernelMessagesModule extends BaseKernelModule {
   readonly namespace = 'kernel:messages'
 
   constructor(
-    private readonly permissions: IPermissionStore,
+    permissions: IPermissionStore,
     private readonly messageQueryService: IMessageQueryService,
     private readonly messageActionService: IMessageActionService,
     private readonly getSock?: () => IMessageActionSocket | null,
     private readonly mediaService?: IMediaService,
     private readonly getUserDataPath?: () => string
-  ) {}
+  ) {
+    super(permissions)
+  }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
     const action = this.extractAction(type)
@@ -111,31 +113,6 @@ export class KernelMessagesModule implements IKernelModule {
     }
   }
 
-  private extractAction(type: string): string {
-    const parts = type.split(':')
-    return parts.length > 2 ? parts.slice(2).join(':') : parts[1] || type
-  }
-
-  private requireCapability(pluginId: string, capability: string): void {
-    if (!this.permissions.hasCapability(pluginId, capability)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' lacks capability '${capability}'`,
-        permission: capability
-      }
-    }
-  }
-
-  private requireResourceScope(pluginId: string, capability: string, resourceId: string): void {
-    if (!this.permissions.isResourceAllowed(pluginId, capability, resourceId)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' is denied access to resource '${resourceId}' for capability '${capability}'`,
-        permission: capability
-      }
-    }
-  }
-
   private getSocketOrThrow(): IMessageActionSocket {
     const sock = this.getSock?.()
     if (!sock) {
@@ -145,14 +122,5 @@ export class KernelMessagesModule implements IKernelModule {
       }
     }
     return sock
-  }
-
-  private serialize<T>(data: T): T {
-    if (data === undefined || data === null) return data
-    return JSON.parse(
-      JSON.stringify(data, (_key, value) =>
-        typeof value === 'bigint' ? value.toString() : value
-      )
-    )
   }
 }

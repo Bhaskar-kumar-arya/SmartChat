@@ -1,4 +1,4 @@
-import { IKernelModule } from './IKernelModule'
+import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 
 export interface IKernelStorageRepository {
@@ -9,13 +9,15 @@ export interface IKernelStorageRepository {
   keys(pluginId: string): Promise<string[]>
 }
 
-export class KernelStorageModule implements IKernelModule {
+export class KernelStorageModule extends BaseKernelModule {
   readonly namespace = 'kernel:storage'
 
   constructor(
-    private readonly permissions: IPermissionStore,
+    permissions: IPermissionStore,
     private readonly storageRepo?: IKernelStorageRepository
-  ) {}
+  ) {
+    super(permissions)
+  }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
     const action = this.extractAction(type)
@@ -64,21 +66,6 @@ export class KernelStorageModule implements IKernelModule {
           code: 'NOT_FOUND',
           message: `Unknown action '${type}' in module '${this.namespace}'`
         }
-    }
-  }
-
-  private extractAction(type: string): string {
-    const parts = type.split(':')
-    return parts.length > 2 ? parts.slice(2).join(':') : parts[1] || type
-  }
-
-  private requireCapability(pluginId: string, capability: string): void {
-    if (!this.permissions.hasCapability(pluginId, capability)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' lacks capability '${capability}'`,
-        permission: capability
-      }
     }
   }
 }

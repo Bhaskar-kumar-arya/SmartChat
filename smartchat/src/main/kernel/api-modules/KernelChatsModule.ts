@@ -1,17 +1,19 @@
-import { IKernelModule } from './IKernelModule'
+import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IChatService } from '../../services/chats/IChatService'
 import { IChatActionService, IChatActionSocket } from '../../services/chats/IChatActionService'
 
-export class KernelChatsModule implements IKernelModule {
+export class KernelChatsModule extends BaseKernelModule {
   readonly namespace = 'kernel:chats'
 
   constructor(
-    private readonly permissions: IPermissionStore,
+    permissions: IPermissionStore,
     private readonly chatService: IChatService,
     private readonly chatActionService?: IChatActionService,
     private readonly getSock?: () => IChatActionSocket | null
-  ) {}
+  ) {
+    super(permissions)
+  }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
     const action = this.extractAction(type)
@@ -95,31 +97,6 @@ export class KernelChatsModule implements IKernelModule {
     }
   }
 
-  private extractAction(type: string): string {
-    const parts = type.split(':')
-    return parts.length > 2 ? parts.slice(2).join(':') : parts[1] || type
-  }
-
-  private requireCapability(pluginId: string, capability: string): void {
-    if (!this.permissions.hasCapability(pluginId, capability)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' lacks capability '${capability}'`,
-        permission: capability
-      }
-    }
-  }
-
-  private requireResourceScope(pluginId: string, capability: string, resourceId: string): void {
-    if (!this.permissions.isResourceAllowed(pluginId, capability, resourceId)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' is denied access to resource '${resourceId}' for capability '${capability}'`,
-        permission: capability
-      }
-    }
-  }
-
   private getSocketOrThrow(): IChatActionSocket {
     const sock = this.getSock?.()
     if (!sock || !this.chatActionService) {
@@ -129,14 +106,5 @@ export class KernelChatsModule implements IKernelModule {
       }
     }
     return sock
-  }
-
-  private serialize<T>(data: T): T {
-    if (data === undefined || data === null) return data
-    return JSON.parse(
-      JSON.stringify(data, (_key, value) =>
-        typeof value === 'bigint' ? value.toString() : value
-      )
-    )
   }
 }

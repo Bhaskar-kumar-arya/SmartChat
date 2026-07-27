@@ -1,18 +1,20 @@
-import { IKernelModule } from './IKernelModule'
+import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IWAEventBus, AsyncHandler } from '../../services/whatsapp/IWAEventBus'
 import { WAEventMap } from '../../services/whatsapp/WAEventTypes'
 import { IPluginChannel } from '../channels/IPluginChannel'
 
-export class KernelEventsModule implements IKernelModule {
+export class KernelEventsModule extends BaseKernelModule {
   readonly namespace = 'kernel:events'
   private pluginSubscriptions = new Map<string, Map<string, AsyncHandler<any>>>()
 
   constructor(
-    private readonly permissions: IPermissionStore,
+    permissions: IPermissionStore,
     private readonly getBus: () => IWAEventBus | null,
     private readonly getChannel?: (pluginId: string) => IPluginChannel | undefined
-  ) {}
+  ) {
+    super(permissions)
+  }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
     const action = this.extractAction(type)
@@ -81,11 +83,6 @@ export class KernelEventsModule implements IKernelModule {
           message: `Unknown action '${type}' in module '${this.namespace}'`
         }
     }
-  }
-
-  private extractAction(type: string): string {
-    const parts = type.split(':')
-    return parts.length > 2 ? parts.slice(2).join(':') : parts[1] || type
   }
 }
 

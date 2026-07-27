@@ -1,16 +1,18 @@
 import { BrowserWindow } from 'electron'
-import { IKernelModule } from './IKernelModule'
+import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { INotificationService } from '../../services/notification/INotificationService'
 
-export class KernelUIModule implements IKernelModule {
+export class KernelUIModule extends BaseKernelModule {
   readonly namespace = 'kernel:ui'
 
   constructor(
-    private readonly permissions: IPermissionStore,
+    permissions: IPermissionStore,
     private readonly notificationService: INotificationService,
     private readonly getMainWindow?: () => BrowserWindow | null
-  ) {}
+  ) {
+    super(permissions)
+  }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
     const action = this.extractAction(type)
@@ -42,21 +44,6 @@ export class KernelUIModule implements IKernelModule {
           code: 'NOT_FOUND',
           message: `Unknown action '${type}' in module '${this.namespace}'`
         }
-    }
-  }
-
-  private extractAction(type: string): string {
-    const parts = type.split(':')
-    return parts.length > 2 ? parts.slice(2).join(':') : parts[1] || type
-  }
-
-  private requireCapability(pluginId: string, capability: string): void {
-    if (!this.permissions.hasCapability(pluginId, capability)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' lacks capability '${capability}'`,
-        permission: capability
-      }
     }
   }
 }
