@@ -25,7 +25,7 @@ describe('KernelEventsModule', () => {
       removeAllListeners: vi.fn()
     }
 
-    module = new KernelEventsModule(mockPermissions, () => mockBus)
+    module = new KernelEventsModule(mockPermissions, mockBus)
   })
 
   it('has correct namespace', () => {
@@ -37,7 +37,7 @@ describe('KernelEventsModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks permission for event 'message:incoming'",
       permission: 'events:message:incoming'
@@ -67,7 +67,7 @@ describe('KernelEventsModule', () => {
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:events:unknown', {})
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: "Unknown action 'kernel:events:unknown' in module 'kernel:events'"
     })
@@ -84,7 +84,7 @@ describe('KernelEventsModule', () => {
       return pluginId === 'plugin-a' ? mockChannel : undefined
     })
 
-    const eventsModule = new KernelEventsModule(mockPermissions, () => mockBus, getChannel)
+    const eventsModule = new KernelEventsModule(mockPermissions, mockBus, getChannel)
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
 
     let busHandler: ((data: any) => Promise<void>) | null = null
@@ -120,7 +120,7 @@ describe('KernelEventsModule', () => {
       destroy: vi.fn()
     }
     const getChannel = vi.fn().mockReturnValue(mockChannel)
-    const eventsModule = new KernelEventsModule(mockPermissions, () => mockBus, getChannel)
+    const eventsModule = new KernelEventsModule(mockPermissions, mockBus, getChannel)
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
 
     let busHandler: ((data: any) => Promise<void>) | null = null

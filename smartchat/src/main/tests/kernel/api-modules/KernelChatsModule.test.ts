@@ -55,7 +55,7 @@ describe('KernelChatsModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:chats:getList', { page: 1, limit: 10 })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks capability 'chats:read'",
       permission: 'chats:read'
@@ -82,7 +82,7 @@ describe('KernelChatsModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:chats:getById', { jid: 'blocked@s.whatsapp.net' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' is denied access to resource 'blocked@s.whatsapp.net' for capability 'chats:read'",
       permission: 'chats:read'
@@ -118,7 +118,7 @@ describe('KernelChatsModule', () => {
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:chats:unknownAction', {})
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: "Unknown action 'kernel:chats:unknownAction' in module 'kernel:chats'"
     })

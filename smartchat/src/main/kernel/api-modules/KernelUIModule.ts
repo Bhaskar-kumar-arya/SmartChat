@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { INotificationService } from '../../services/notification/INotificationService'
+import { KernelNotFoundError } from './KernelErrors'
 
 export class KernelUIModule extends BaseKernelModule {
   readonly namespace = 'kernel:ui'
@@ -40,10 +41,7 @@ export class KernelUIModule extends BaseKernelModule {
       }
 
       default:
-        throw {
-          code: 'NOT_FOUND',
-          message: `Unknown action '${type}' in module '${this.namespace}'`
-        }
+        throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
 }

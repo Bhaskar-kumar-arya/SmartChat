@@ -84,7 +84,7 @@ export class KernelBootstrapper {
     const aiModule = new KernelAIModule(permissions, services.aiService, services.toolRegistry)
     const eventsModule = new KernelEventsModule(
       permissions,
-      () => getBus?.() ?? null,
+      getBus?.() ?? null,
       (pluginId) => pluginRegistry.get(pluginId)?.channel
     )
     const storageModule = new KernelStorageModule(permissions, storageRepo)

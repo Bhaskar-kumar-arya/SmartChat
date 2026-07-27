@@ -53,7 +53,7 @@ describe('KernelMessagesModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:messages:getMessages', { jid: '123@s.whatsapp.net', page: 1, limit: 20 })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks capability 'messages:read'",
       permission: 'messages:read'
@@ -90,7 +90,7 @@ describe('KernelMessagesModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:messages:delete', { jid: '123@s.whatsapp.net', messageId: 'msg-1' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks capability 'messages:delete'",
       permission: 'messages:delete'
@@ -214,7 +214,7 @@ describe('KernelMessagesModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:messages:downloadMedia', { messageId: 'msg-1' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'INTERNAL_ERROR',
       message: 'MediaService is not available in KernelMessagesModule'
     })
@@ -223,7 +223,7 @@ describe('KernelMessagesModule', () => {
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:messages:unknownAction', {})
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: "Unknown action 'kernel:messages:unknownAction' in module 'kernel:messages'"
     })

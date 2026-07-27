@@ -1,5 +1,6 @@
 import { IKernelModule } from './IKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
+import { KernelPermissionError } from './KernelErrors'
 
 export abstract class BaseKernelModule implements IKernelModule {
   abstract readonly namespace: string
@@ -15,11 +16,10 @@ export abstract class BaseKernelModule implements IKernelModule {
 
   protected requireCapability(pluginId: string, capability: string): void {
     if (!this.permissions.hasCapability(pluginId, capability)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' lacks capability '${capability}'`,
-        permission: capability
-      }
+      throw new KernelPermissionError(
+        `Plugin '${pluginId}' lacks capability '${capability}'`,
+        capability
+      )
     }
   }
 
@@ -30,11 +30,10 @@ export abstract class BaseKernelModule implements IKernelModule {
     resourceType: string = 'resource'
   ): void {
     if (!this.permissions.isResourceAllowed(pluginId, capability, resourceId)) {
-      throw {
-        code: 'PERMISSION_DENIED',
-        message: `Plugin '${pluginId}' is denied access to ${resourceType} '${resourceId}' for capability '${capability}'`,
-        permission: capability
-      }
+      throw new KernelPermissionError(
+        `Plugin '${pluginId}' is denied access to ${resourceType} '${resourceId}' for capability '${capability}'`,
+        capability
+      )
     }
   }
 

@@ -46,7 +46,7 @@ describe('KernelUIModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:ui:notify', { title: 'Alert', body: 'Message' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks capability 'ui:notification'",
       permission: 'ui:notification'
@@ -72,7 +72,7 @@ describe('KernelUIModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:ui:toast', { message: 'Hello Toast', level: 'info' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks capability 'ui:toast'",
       permission: 'ui:toast'
@@ -98,7 +98,7 @@ describe('KernelUIModule', () => {
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:ui:unknown', {})
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: "Unknown action 'kernel:ui:unknown' in module 'kernel:ui'"
     })

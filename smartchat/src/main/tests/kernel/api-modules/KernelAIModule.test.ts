@@ -51,7 +51,7 @@ describe('KernelAIModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:ai:chat', { prompt: 'Hello AI' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks capability 'ai:chat'",
       permission: 'ai:chat'
@@ -74,7 +74,7 @@ describe('KernelAIModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:ai:callTool', { toolName: 'restricted_tool', args: {} })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' is denied access to tool 'restricted_tool' for capability 'ai:tools:call'",
       permission: 'ai:tools:call'
@@ -120,7 +120,7 @@ describe('KernelAIModule', () => {
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:ai:unknown', {})
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: "Unknown action 'kernel:ai:unknown' in module 'kernel:ai'"
     })

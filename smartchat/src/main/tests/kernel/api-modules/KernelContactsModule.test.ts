@@ -47,7 +47,7 @@ describe('KernelContactsModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:contacts:getByJid', { jid: '123@s.whatsapp.net' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks capability 'contacts:read'",
       permission: 'contacts:read'
@@ -68,7 +68,7 @@ describe('KernelContactsModule', () => {
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:contacts:unknown', {})
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: "Unknown action 'kernel:contacts:unknown' in module 'kernel:contacts'"
     })

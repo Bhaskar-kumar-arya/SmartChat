@@ -3,6 +3,7 @@ import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IWAEventBus, AsyncHandler } from '../../services/whatsapp/IWAEventBus'
 import { WAEventMap } from '../../services/whatsapp/WAEventTypes'
 import { IPluginChannel } from '../channels/IPluginChannel'
+import { KernelPermissionError, KernelNotFoundError } from './KernelErrors'
 
 export class KernelEventsModule extends BaseKernelModule {
   readonly namespace = 'kernel:events'
@@ -10,7 +11,7 @@ export class KernelEventsModule extends BaseKernelModule {
 
   constructor(
     permissions: IPermissionStore,
-    private readonly getBus: () => IWAEventBus | null,
+    private readonly bus: IWAEventBus | null = null,
     private readonly getChannel?: (pluginId: string) => IPluginChannel | undefined
   ) {
     super(permissions)
@@ -24,14 +25,13 @@ export class KernelEventsModule extends BaseKernelModule {
         const { event } = payload as { event: keyof WAEventMap }
         const perm = `events:${String(event)}`
         if (!this.permissions.hasCapability(pluginId, perm) && !this.permissions.hasCapability(pluginId, 'events:*')) {
-          throw {
-            code: 'PERMISSION_DENIED',
-            message: `Plugin '${pluginId}' lacks permission for event '${String(event)}'`,
-            permission: perm
-          }
+          throw new KernelPermissionError(
+            `Plugin '${pluginId}' lacks permission for event '${String(event)}'`,
+            perm
+          )
         }
 
-        const bus = this.getBus()
+        const bus = this.bus
         if (bus) {
           const handler: AsyncHandler<any> = async (_data: any) => {
             const channel = this.getChannel?.(pluginId)
@@ -65,7 +65,7 @@ export class KernelEventsModule extends BaseKernelModule {
 
       case 'unsubscribe': {
         const { event } = payload as { event: keyof WAEventMap }
-        const bus = this.getBus()
+        const bus = this.bus
         const pluginMap = this.pluginSubscriptions.get(pluginId)
         if (bus && pluginMap) {
           const handler = pluginMap.get(String(event))
@@ -78,10 +78,7 @@ export class KernelEventsModule extends BaseKernelModule {
       }
 
       default:
-        throw {
-          code: 'NOT_FOUND',
-          message: `Unknown action '${type}' in module '${this.namespace}'`
-        }
+        throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
 }

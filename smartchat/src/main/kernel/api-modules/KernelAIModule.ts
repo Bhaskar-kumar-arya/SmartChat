@@ -2,6 +2,7 @@ import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IAIService, AIChatContext, AIHistoryMessage, AIMention } from '../../services/ai/IAIService'
 import { IToolRegistry, AITool } from '../../services/ai/IToolRegistry'
+import { KernelNotFoundError } from './KernelErrors'
 
 export class KernelAIModule extends BaseKernelModule {
   readonly namespace = 'kernel:ai'
@@ -37,10 +38,7 @@ export class KernelAIModule extends BaseKernelModule {
 
         const tool = this.toolRegistry.getTool(toolName)
         if (!tool) {
-          throw {
-            code: 'NOT_FOUND',
-            message: `AI Tool '${toolName}' not found in ToolRegistry`
-          }
+          throw new KernelNotFoundError(`AI Tool '${toolName}' not found in ToolRegistry`)
         }
         return await tool.execute(args || {})
       }
@@ -67,10 +65,7 @@ export class KernelAIModule extends BaseKernelModule {
       }
 
       default:
-        throw {
-          code: 'NOT_FOUND',
-          message: `Unknown action '${type}' in module '${this.namespace}'`
-        }
+        throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
 }

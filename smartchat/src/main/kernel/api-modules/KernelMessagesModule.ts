@@ -4,6 +4,7 @@ import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IMessageQueryService } from '../../services/messages/IMessageQueryService'
 import { IMessageActionService, IMessageActionSocket } from '../../services/messages/IMessageActionService'
 import { IMediaService } from '../../services/messages/IMediaService'
+import { KernelError, KernelNotFoundError } from './KernelErrors'
 
 export class KernelMessagesModule extends BaseKernelModule {
   readonly namespace = 'kernel:messages'
@@ -75,10 +76,7 @@ export class KernelMessagesModule extends BaseKernelModule {
         this.requireCapability(pluginId, 'messages:read')
         const sock = this.getSocketOrThrow()
         if (!this.mediaService) {
-          throw {
-            code: 'INTERNAL_ERROR',
-            message: 'MediaService is not available in KernelMessagesModule'
-          }
+          throw new KernelError('INTERNAL_ERROR', 'MediaService is not available in KernelMessagesModule')
         }
         const enriched = await this.mediaService.downloadAndCacheMedia(messageId, sock)
         let rawMsg: Record<string, any> = {}
@@ -106,20 +104,14 @@ export class KernelMessagesModule extends BaseKernelModule {
       }
 
       default:
-        throw {
-          code: 'NOT_FOUND',
-          message: `Unknown action '${type}' in module '${this.namespace}'`
-        }
+        throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
 
   private getSocketOrThrow(): IMessageActionSocket {
     const sock = this.getSock?.()
     if (!sock) {
-      throw {
-        code: 'INTERNAL_ERROR',
-        message: 'WhatsApp connection socket is not available'
-      }
+      throw new KernelError('INTERNAL_ERROR', 'WhatsApp connection socket is not available')
     }
     return sock
   }

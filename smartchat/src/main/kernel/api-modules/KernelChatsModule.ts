@@ -2,6 +2,7 @@ import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IChatService } from '../../services/chats/IChatService'
 import { IChatActionService, IChatActionSocket } from '../../services/chats/IChatActionService'
+import { KernelError, KernelNotFoundError } from './KernelErrors'
 
 export class KernelChatsModule extends BaseKernelModule {
   readonly namespace = 'kernel:chats'
@@ -90,20 +91,14 @@ export class KernelChatsModule extends BaseKernelModule {
       }
 
       default:
-        throw {
-          code: 'NOT_FOUND',
-          message: `Unknown action '${type}' in module '${this.namespace}'`
-        }
+        throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
 
   private getSocketOrThrow(): IChatActionSocket {
     const sock = this.getSock?.()
     if (!sock || !this.chatActionService) {
-      throw {
-        code: 'INTERNAL_ERROR',
-        message: 'WhatsApp connection socket is not available'
-      }
+      throw new KernelError('INTERNAL_ERROR', 'WhatsApp connection socket is not available')
     }
     return sock
   }

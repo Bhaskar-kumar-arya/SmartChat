@@ -1,6 +1,7 @@
 import { IKernelModule } from './api-modules/IKernelModule'
 import { IPluginChannel, KernelRequest, KernelResponse, KernelErrorPayload } from './channels/IPluginChannel'
 import { IKernelAPIRouter } from './IKernelAPIRouter'
+import { KernelError } from './api-modules/KernelErrors'
 
 interface PermissionErrorLike {
   code: string
@@ -10,12 +11,13 @@ interface PermissionErrorLike {
 
 function isPermissionError(err: unknown): err is PermissionErrorLike {
   return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    typeof (err as PermissionErrorLike).code === 'string' &&
-    'message' in err &&
-    typeof (err as PermissionErrorLike).message === 'string'
+    err instanceof KernelError ||
+    (typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      typeof (err as PermissionErrorLike).code === 'string' &&
+      'message' in err &&
+      typeof (err as PermissionErrorLike).message === 'string')
   )
 }
 

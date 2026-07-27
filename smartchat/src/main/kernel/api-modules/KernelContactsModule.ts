@@ -1,6 +1,7 @@
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IContactService } from '../../services/contacts/IContactService'
+import { KernelNotFoundError } from './KernelErrors'
 
 export class KernelContactsModule extends BaseKernelModule {
   readonly namespace = 'kernel:contacts'
@@ -28,10 +29,7 @@ export class KernelContactsModule extends BaseKernelModule {
       }
 
       default:
-        throw {
-          code: 'NOT_FOUND',
-          message: `Unknown action '${type}' in module '${this.namespace}'`
-        }
+        throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
 }

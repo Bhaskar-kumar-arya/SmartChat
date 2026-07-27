@@ -1,5 +1,6 @@
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
+import { KernelNotFoundError } from './KernelErrors'
 
 export interface IKernelStorageRepository {
   get(pluginId: string, key: string): Promise<string | undefined>
@@ -62,10 +63,7 @@ export class KernelStorageModule extends BaseKernelModule {
       }
 
       default:
-        throw {
-          code: 'NOT_FOUND',
-          message: `Unknown action '${type}' in module '${this.namespace}'`
-        }
+        throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
 }

@@ -37,7 +37,7 @@ describe('KernelStorageModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:storage:get', { key: 'my-key' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks capability 'storage:read'",
       permission: 'storage:read'
@@ -59,7 +59,7 @@ describe('KernelStorageModule', () => {
 
     await expect(
       module.handle('plugin-a', 'kernel:storage:set', { key: 'my-key', value: 'data' })
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
       message: "Plugin 'plugin-a' lacks capability 'storage:write'",
       permission: 'storage:write'
@@ -88,7 +88,7 @@ describe('KernelStorageModule', () => {
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:storage:unknown', {})
-    ).rejects.toEqual({
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: "Unknown action 'kernel:storage:unknown' in module 'kernel:storage'"
     })

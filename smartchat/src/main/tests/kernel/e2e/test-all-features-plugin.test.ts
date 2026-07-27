@@ -147,7 +147,7 @@ describe('External Plugin E2E Test (All Features)', () => {
     const aiModule = new KernelAIModule(permissions, mockAIService, mockToolRegistry)
     const storageModule = new KernelStorageModule(permissions, mockStorageRepo)
     const uiModule = new KernelUIModule(permissions, mockNotificationService, () => mockWin as any)
-    const eventsModule = new KernelEventsModule(permissions, () => null)
+    const eventsModule = new KernelEventsModule(permissions, null)
 
     router = new KernelAPIRouter()
     router.registerModule(chatsModule)
