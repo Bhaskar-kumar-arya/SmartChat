@@ -97,7 +97,7 @@ export class KernelBootstrapper {
 
     const builtins = [
       new WhatsappCorePlugin(),
-      new AIAssistantPlugin(),
+      new AIAssistantPlugin(services.toolRegistry),
       new SearchPlugin(),
       new NotificationsPlugin()
     ]

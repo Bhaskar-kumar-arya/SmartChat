@@ -1,6 +1,7 @@
 import { IBuiltinPlugin } from '../../../kernel/plugins/IBuiltinPlugin'
 import { PluginManifest } from '../../../kernel/plugins/PluginManifest'
 import { PluginContext } from '../../../kernel/plugins/PluginContext'
+import { IToolRegistry, AITool } from '../../../services/ai/IToolRegistry'
 
 export class AIAssistantPlugin implements IBuiltinPlugin {
   readonly id = 'com.smartchat.builtin.ai-assistant'
@@ -11,7 +12,7 @@ export class AIAssistantPlugin implements IBuiltinPlugin {
     version: '1.0.0',
     apiVersion: '2',
     main: 'index.ts',
-    permissions: ['ai:tools:register'],
+    permissions: ['ai:tools:register', 'ai:tools:call'],
     contributions: {
       aiTools: [
         {
@@ -48,6 +49,8 @@ export class AIAssistantPlugin implements IBuiltinPlugin {
     }
   }
 
+  constructor(private readonly toolRegistry?: IToolRegistry | Map<string, AITool>) {}
+
   async activate(ctx: PluginContext): Promise<void> {
     const register = ctx.contributions?.registerAITool
     if (!register) return
@@ -62,8 +65,25 @@ export class AIAssistantPlugin implements IBuiltinPlugin {
     ]
 
     for (const toolName of tools) {
-      register(toolName, async (args: Record<string, unknown>) => {
-        ctx.log?.info(`Executing AI tool: ${toolName}`, args)
+      register(toolName, async (rawArgs: Record<string, unknown>) => {
+        ctx.log?.info(`Executing AI tool: ${toolName}`, rawArgs)
+        const args = (rawArgs && typeof rawArgs === 'object' && 'args' in rawArgs ? rawArgs.args : rawArgs) as Record<string, unknown>
+
+        if (this.toolRegistry) {
+          const tool = 'getTool' in this.toolRegistry
+            ? this.toolRegistry.getTool(toolName)
+            : this.toolRegistry.get(toolName)
+          if (tool) {
+            const res = await tool.execute(args || {})
+            return { text: res.text }
+          }
+        }
+
+        const aiApi = (ctx as any).ai
+        if (aiApi?.callTool) {
+          return await aiApi.callTool(toolName, args || {})
+        }
+
         return { text: JSON.stringify({ success: true, tool: toolName }) }
       })
     }

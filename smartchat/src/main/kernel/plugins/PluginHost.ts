@@ -34,10 +34,11 @@ export class PluginHost implements IPluginHost {
       const targetId = payload?.id || payload?.name || ''
       const key = `${plugin.id}:${slot}:${targetId}`
       const handler = this.handlers.get(key)
+      let result: unknown
       if (handler) {
-        await (handler as Function)(payload)
+        result = await (handler as Function)(payload)
       }
-      channel.sendResponseToPlugin({ id: req.id, ok: true })
+      channel.sendResponseToPlugin({ id: req.id, ok: true, payload: result })
     })
 
     const request = async (type: string, payload?: unknown) => {

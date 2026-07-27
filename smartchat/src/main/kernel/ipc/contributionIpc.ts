@@ -46,6 +46,9 @@ export function registerContributionIpcHandlers(
     if (!toolRegistry) return
     const aiTools = registry.getAll('ai-tool')
     for (const contrib of aiTools) {
+      if (toolRegistry.getTool(contrib.name)) {
+        continue
+      }
       toolRegistry.registerTool({
         name: contrib.name,
         description: contrib.description,
