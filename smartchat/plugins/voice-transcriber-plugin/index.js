@@ -1,4 +1,5 @@
 const { parentPort } = require('node:worker_threads');
+const { WorkerPluginRuntime } = require('@smartchat/sdk');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -8,24 +9,15 @@ if (!parentPort) {
   throw new Error('This plugin must be run inside a Node.js Worker thread.');
 }
 
-const pendingRequests = new Map();
+const manifest = require('./manifest.json');
+const runtime = new WorkerPluginRuntime(parentPort, manifest);
+const ctx = runtime.getContext();
+
 let transcriberPipeline = null;
 
-function sendRequest(type, payload) {
-  const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  return new Promise((resolve, reject) => {
-    pendingRequests.set(id, { resolve, reject });
-    parentPort.postMessage({ id, type, payload });
-  });
-}
-
-function respondSuccess(id, payload) {
-  parentPort.postMessage({ id, ok: true, payload });
-}
-
-function respondError(id, code, message) {
-  parentPort.postMessage({ id, ok: false, error: { code, message } });
-}
+ctx.onActivate(async () => {
+  ctx.log.info('Voice Transcriber plugin activated');
+});
 
 /**
  * Resolves local app://media/ URIs or raw filenames to the actual absolute filesystem path on disk.
@@ -160,174 +152,96 @@ async function transcribeAudioFile(filePath) {
   return '';
 }
 
-parentPort.on('message', async (msg) => {
-  if (!msg || typeof msg !== 'object') return;
+ctx.contributions.registerMessageAction('transcribe', async (actionCtx) => {
+  const chatJid = (actionCtx && actionCtx.chatJid) || 'test@s.whatsapp.net';
+  const msgId = actionCtx && actionCtx.messageId;
 
-  // Handle kernel responses to plugin requests
-  if (msg.id && typeof msg.ok === 'boolean') {
-    const pending = pendingRequests.get(msg.id);
-    if (pending) {
-      pendingRequests.delete(msg.id);
-      if (msg.ok) {
-        pending.resolve(msg.payload);
-      } else {
-        pending.reject(new Error(msg.error ? msg.error.message : 'Request failed'));
-      }
-    }
-    return;
+  if (!msgId) {
+    await ctx.ui?.toast('[Transcribe] No message specified', 'warning');
+    throw new Error('Message ID is required');
   }
 
-  // Handle incoming requests sent to plugin from kernel
-  if (msg.id && typeof msg.type === 'string') {
-    const { id, type, payload } = msg;
+  let messages = [];
+  try {
+    messages = await ctx.messages?.getMessages(chatJid, 1, 50);
+  } catch (e) {
+    console.error('[VoiceTranscriber] Failed to fetch chat messages:', e);
+  }
 
-    try {
-      if (type === 'plugin:activate') {
-        parentPort.postMessage({
-          id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          type: 'kernel:log',
-          payload: { level: 'info', message: 'Voice Transcriber plugin activated' }
-        });
-        respondSuccess(id);
-        return;
-      }
+  const msgList = Array.isArray(messages) ? messages : [];
+  const targetMsg = msgList.find((m) => m.id === msgId);
 
-      if (type === 'plugin:deactivate') {
-        respondSuccess(id);
-        return;
-      }
-
-      if (type.startsWith('contribution:execute:message-action')) {
-        const actionId = (payload && payload.id) || type.split(':')[3];
-        if (actionId === 'transcribe') {
-          const chatJid = (payload && payload.context && payload.context.chatJid) || 'test@s.whatsapp.net';
-          const msgId = payload && payload.context && payload.context.messageId;
-
-          if (!msgId) {
-            await sendRequest('kernel:ui:toast', { message: '[Transcribe] No message specified', level: 'warning' });
-            respondError(id, 'INVALID_ARGUMENT', 'Message ID is required');
-            return;
-          }
-
-          // Fetch messages for this chat to find the target message
-          let messages = [];
-          try {
-            messages = await sendRequest('kernel:messages:getMessages', { jid: chatJid, page: 1, limit: 50 });
-          } catch (e) {
-            console.error('[VoiceTranscriber] Failed to fetch chat messages:', e);
-          }
-
-          const msgList = Array.isArray(messages) ? messages : [];
-          const targetMsg = msgList.find((m) => m.id === msgId);
-
-          let isAudio = false;
-          let rawContent = {};
-          if (targetMsg) {
-            const mType = targetMsg.messageType || '';
-            if (mType === 'audioMessage' || mType === 'audio' || mType === 'ptvMessage') {
-              isAudio = true;
-            }
-            if (targetMsg.content) {
-              try {
-                rawContent = typeof targetMsg.content === 'string' ? JSON.parse(targetMsg.content) : targetMsg.content;
-                if (rawContent.audioMessage || rawContent.ptvMessage) {
-                  isAudio = true;
-                }
-              } catch (e) {}
-            }
-          }
-
-          if (!isAudio) {
-            await sendRequest('kernel:ui:toast', {
-              message: '⚠️ Target message is not an audio message.',
-              level: 'warning'
-            });
-            respondSuccess(id, { success: false, reason: 'NOT_AUDIO' });
-            return;
-          }
-
-          // Call microkernel downloadMedia API to automatically download media if needed
-          let resolvedPath = null;
-          try {
-            const downloadRes = await sendRequest('kernel:messages:downloadMedia', { messageId: msgId });
-            if (downloadRes && downloadRes.filePath && fs.existsSync(downloadRes.filePath)) {
-              resolvedPath = downloadRes.filePath;
-            } else if (downloadRes && downloadRes.localURI) {
-              resolvedPath = resolveLocalMediaPath(downloadRes.localURI);
-            }
-          } catch (err) {
-            console.warn('[VoiceTranscriber] kernel:messages:downloadMedia fallback:', err);
-          }
-
-          if (!resolvedPath) {
-            const localURI = rawContent.audioMessage?.localURI || targetMsg?.localURI;
-            resolvedPath = resolveLocalMediaPath(localURI);
-          }
-
-          if (!resolvedPath || !fs.existsSync(resolvedPath)) {
-            await sendRequest('kernel:ui:toast', {
-              message: '⚠️ Unable to download or locate audio file for transcription.',
-              level: 'warning'
-            });
-            respondSuccess(id, { success: false, reason: 'MEDIA_NOT_DOWNLOADED' });
-            return;
-          }
-
-          // Notify user that transcription is starting
-          await sendRequest('kernel:ui:toast', {
-            message: '⏳ Transcribing English audio message...',
-            level: 'info'
-          });
-
-          let transcribedText = '';
-          try {
-            transcribedText = await transcribeAudioFile(resolvedPath);
-          } catch (err) {
-            console.error('[VoiceTranscriber] Speech recognition error:', err);
-            await sendRequest('kernel:ui:toast', {
-              message: `❌ Audio transcription failed: ${err.message}`,
-              level: 'error'
-            });
-            respondError(id, 'TRANSCRIPTION_FAILED', err.message);
-            return;
-          }
-
-          if (!transcribedText) {
-            transcribedText = '(No audible English speech detected)';
-          }
-
-          const formattedMessage = `🎤 Audio Transcription (English):\n"${transcribedText}"`;
-
-          // Send transcription to the same chat JID
-          await sendRequest('kernel:messages:send', {
-            jid: chatJid,
-            text: formattedMessage,
-            quotedMsgId: msgId
-          });
-
-          // Show notifications
-          try {
-            await sendRequest('kernel:ui:notify', {
-              title: 'Audio Transcribed',
-              body: `Transcription sent to chat: "${transcribedText.slice(0, 40)}..."`
-            });
-          } catch (e) {}
-
-          await sendRequest('kernel:ui:toast', {
-            message: '✨ Audio transcribed and sent to chat!',
-            level: 'success'
-          });
-
-          respondSuccess(id, { success: true, transcription: transcribedText });
-        } else {
-          respondError(id, 'NOT_FOUND', `Message action '${actionId}' not found`);
+  let isAudio = false;
+  let rawContent = {};
+  if (targetMsg) {
+    const mType = targetMsg.messageType || '';
+    if (mType === 'audioMessage' || mType === 'audio' || mType === 'ptvMessage') {
+      isAudio = true;
+    }
+    if (targetMsg.content) {
+      try {
+        rawContent = typeof targetMsg.content === 'string' ? JSON.parse(targetMsg.content) : targetMsg.content;
+        if (rawContent.audioMessage || rawContent.ptvMessage) {
+          isAudio = true;
         }
-        return;
-      }
-
-      respondError(id, 'NOT_FOUND', `Unhandled type '${type}'`);
-    } catch (err) {
-      respondError(id, 'INTERNAL_ERROR', err ? err.message : 'Unknown worker error');
+      } catch (e) {}
     }
   }
+
+  if (!isAudio) {
+    await ctx.ui?.toast('⚠️ Target message is not an audio message.', 'warning');
+    return { success: false, reason: 'NOT_AUDIO' };
+  }
+
+  let resolvedPath = null;
+  try {
+    const downloadRes = await ctx.messages?.downloadMedia(msgId);
+    if (downloadRes && downloadRes.filePath && fs.existsSync(downloadRes.filePath)) {
+      resolvedPath = downloadRes.filePath;
+    } else if (downloadRes && downloadRes.localURI) {
+      resolvedPath = resolveLocalMediaPath(downloadRes.localURI);
+    }
+  } catch (err) {
+    console.warn('[VoiceTranscriber] downloadMedia fallback:', err);
+  }
+
+  if (!resolvedPath) {
+    const localURI = rawContent.audioMessage?.localURI || targetMsg?.localURI;
+    resolvedPath = resolveLocalMediaPath(localURI);
+  }
+
+  if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+    await ctx.ui?.toast('⚠️ Unable to download or locate audio file for transcription.', 'warning');
+    return { success: false, reason: 'MEDIA_NOT_DOWNLOADED' };
+  }
+
+  await ctx.ui?.toast('⏳ Transcribing English audio message...', 'info');
+
+  let transcribedText = '';
+  try {
+    transcribedText = await transcribeAudioFile(resolvedPath);
+  } catch (err) {
+    console.error('[VoiceTranscriber] Speech recognition error:', err);
+    await ctx.ui?.toast(`❌ Audio transcription failed: ${err.message}`, 'error');
+    throw err;
+  }
+
+  if (!transcribedText) {
+    transcribedText = '(No audible English speech detected)';
+  }
+
+  const formattedMessage = `🎤 Audio Transcription (English):\n"${transcribedText}"`;
+
+  await ctx.messages?.send(chatJid, formattedMessage, { quotedMessageId: msgId });
+
+  try {
+    await ctx.ui?.notify({
+      title: 'Audio Transcribed',
+      body: `Transcription sent to chat: "${transcribedText.slice(0, 40)}..."`
+    });
+  } catch (e) {}
+
+  await ctx.ui?.toast('✨ Audio transcribed and sent to chat!', 'success');
+
+  return { success: true, transcription: transcribedText };
 });

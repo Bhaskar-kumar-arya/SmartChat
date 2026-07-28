@@ -402,35 +402,27 @@ export class WorkerPluginRuntime {
     const contributionsAPI: IPluginContributionsAPI = {
       registerChatAction: (id, handler) => {
         self.chatActionHandlers.set(id, handler)
-        void self.request('kernel:contributions:register', { slot: 'chat-action', id })
       },
       registerMessageAction: (id, handler) => {
         self.messageActionHandlers.set(id, handler)
-        void self.request('kernel:contributions:register', { slot: 'message-action', id })
       },
       registerChatBadge: (id, compute) => {
         self.chatBadgeComputers.set(id, compute)
-        void self.request('kernel:contributions:register', { slot: 'chat-badge', id })
       },
       registerSlashCommand: (name, handler) => {
         self.slashCommandHandlers.set(name, handler)
-        void self.request('kernel:contributions:register', { slot: 'slash-command', name })
       },
       registerAITool: (name, execute) => {
         self.aiToolExecutors.set(name, execute)
-        void self.request('kernel:contributions:register', { slot: 'ai-tool', name })
       },
       registerCompletionProvider: (id, provide) => {
         self.completionProviders.set(id, provide)
-        void self.request('kernel:contributions:register', { slot: 'completion-provider', id })
       },
       registerMessageSendInterceptor: (id, intercept) => {
         self.sendInterceptors.set(id, intercept)
-        void self.request('kernel:contributions:register', { slot: 'message-send-pipeline', id })
       },
       exposeAPI: (exportName, api) => {
         self.exposedAPIs.set(exportName, api)
-        void self.request('kernel:contributions:register', { slot: 'plugin-api-export', exportName })
       },
       importAPI: (pluginId, exportName) => {
         return self.request<Record<string, unknown>>('kernel:plugins:importAPI', { pluginId, exportName })

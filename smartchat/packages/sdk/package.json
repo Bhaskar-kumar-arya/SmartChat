@@ -2,10 +2,17 @@
   "name": "@smartchat/sdk",
   "version": "1.0.0",
   "description": "SmartChat Plugin SDK for external plugins",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "smartchat-sdk": "dist/cli/package.js"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
   "license": "AGPL-3.0-only",
   "dependencies": {
+    "adm-zip": "^0.6.0",
     "zod": "^4.3.6"
   }
 }
