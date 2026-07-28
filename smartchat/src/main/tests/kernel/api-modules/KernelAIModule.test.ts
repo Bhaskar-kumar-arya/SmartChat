@@ -180,6 +180,65 @@ describe('KernelAIModule', () => {
     expect(execResult.text).toContain("Plugin 'plugin-a' channel is not available")
   })
 
+  it('allows getAvailableModels when ai:chat capability is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockAIService.getAvailableModels).mockResolvedValue([
+      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'google' } as any
+    ])
+
+    const result = await module.handle('plugin-a', 'kernel:ai:getAvailableModels', {})
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'ai:chat')
+    expect(mockAIService.getAvailableModels).toHaveBeenCalled()
+    expect(result).toEqual([{ id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'google' }])
+  })
+
+  it('allows createSession, listSessions, getSession, renameSession, and deleteSession when session service is provided', async () => {
+    const mockSessionService = {
+      createSession: vi.fn().mockResolvedValue({ id: 'sess-1', title: 'New Chat' }),
+      listSessions: vi.fn().mockResolvedValue([{ id: 'sess-1', title: 'New Chat' }]),
+      getSession: vi.fn().mockResolvedValue({ id: 'sess-1', title: 'New Chat', messages: [] }),
+      renameSession: vi.fn().mockResolvedValue({ id: 'sess-1', title: 'Renamed Chat' }),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      cloneSession: vi.fn(),
+      saveMessages: vi.fn(),
+      getAIOptions: vi.fn(),
+      setAIOptions: vi.fn(),
+      getAutoSavePreference: vi.fn(),
+      setAutoSavePreference: vi.fn()
+    }
+
+    const customModule = new KernelAIModule(
+      mockPermissions,
+      mockAIService,
+      mockToolRegistry,
+      undefined,
+      mockSessionService as any
+    )
+
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    const createRes = await customModule.handle('plugin-a', 'kernel:ai:createSession', { title: 'New Chat' })
+    expect(mockSessionService.createSession).toHaveBeenCalledWith('New Chat', undefined)
+    expect(createRes).toEqual({ id: 'sess-1', title: 'New Chat' })
+
+    const listRes = await customModule.handle('plugin-a', 'kernel:ai:listSessions', { page: 1, pageSize: 10 })
+    expect(mockSessionService.listSessions).toHaveBeenCalledWith(1, 10)
+    expect(listRes).toEqual([{ id: 'sess-1', title: 'New Chat' }])
+
+    const getRes = await customModule.handle('plugin-a', 'kernel:ai:getSession', { id: 'sess-1' })
+    expect(mockSessionService.getSession).toHaveBeenCalledWith('sess-1')
+    expect(getRes).toEqual({ id: 'sess-1', title: 'New Chat', messages: [] })
+
+    const renameRes = await customModule.handle('plugin-a', 'kernel:ai:renameSession', { id: 'sess-1', title: 'Renamed Chat' })
+    expect(mockSessionService.renameSession).toHaveBeenCalledWith('sess-1', 'Renamed Chat')
+    expect(renameRes).toEqual({ id: 'sess-1', title: 'Renamed Chat' })
+
+    const delRes = await customModule.handle('plugin-a', 'kernel:ai:deleteSession', { id: 'sess-1' })
+    expect(mockSessionService.deleteSession).toHaveBeenCalledWith('sess-1')
+    expect(delRes).toEqual({ success: true })
+  })
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:ai:unknown', {})

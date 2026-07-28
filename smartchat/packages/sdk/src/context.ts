@@ -188,9 +188,31 @@ export interface IPluginUIAPI {
   toast(msg: string, level?: 'info' | 'success' | 'warning' | 'error'): void
 }
 
+export interface PluginAIModelInfo {
+  id: string
+  name: string
+  provider: string
+  description?: string
+}
+
+export interface PluginAISession {
+  id: string
+  title: string
+  modelId?: string | null
+  createdAt?: number | string
+  updatedAt?: number | string
+  messages?: unknown[]
+}
+
 export interface IPluginAIAPI {
   chat(prompt: string, options?: AICallOptions): Promise<string>
   callTool(toolName: string, args: Record<string, unknown>): Promise<{ text: string }>
+  getAvailableModels(): Promise<PluginAIModelInfo[]>
+  createSession(title: string, modelId?: string): Promise<PluginAISession>
+  listSessions(page?: number, pageSize?: number): Promise<PluginAISession[]>
+  getSession(id: string): Promise<PluginAISession | null>
+  renameSession(id: string, title: string): Promise<PluginAISession>
+  deleteSession(id: string): Promise<void>
 }
 
 export interface IPluginContributionsAPI {

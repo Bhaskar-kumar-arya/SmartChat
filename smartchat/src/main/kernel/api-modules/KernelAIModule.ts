@@ -1,9 +1,10 @@
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IAIService, AIChatContext, AIHistoryMessage, AIMention } from '../../services/ai/IAIService'
+import { IAIChatSessionService } from '../../services/ai/IAIChatSessionService'
 import { IToolRegistry, AITool } from '../../services/ai/IToolRegistry'
 import { IPluginChannel, isBidirectionalPluginChannel } from '../channels/IPluginChannel'
-import { KernelNotFoundError } from './KernelErrors'
+import { KernelError, KernelNotFoundError } from './KernelErrors'
 
 export class KernelAIModule extends BaseKernelModule {
   readonly namespace = 'kernel:ai'
@@ -12,7 +13,8 @@ export class KernelAIModule extends BaseKernelModule {
     permissions: IPermissionStore,
     private readonly aiService: IAIService,
     private readonly toolRegistry: IToolRegistry,
-    private readonly getChannel?: (pluginId: string) => IPluginChannel | undefined
+    private readonly getChannel?: (pluginId: string) => IPluginChannel | undefined,
+    private readonly aiChatSessionService?: IAIChatSessionService
   ) {
     super(permissions)
   }
@@ -31,6 +33,62 @@ export class KernelAIModule extends BaseKernelModule {
         }
         this.requireCapability(pluginId, 'ai:chat')
         return await this.aiService.generateResponse(prompt, contextFiles, history, mentions, options)
+      }
+
+      case 'getAvailableModels': {
+        this.requireCapability(pluginId, 'ai:chat')
+        const models = await this.aiService.getAvailableModels()
+        return this.serialize(models)
+      }
+
+      case 'createSession': {
+        const { title, modelId } = payload as { title: string; modelId?: string | null }
+        this.requireCapability(pluginId, 'ai:chat')
+        if (!this.aiChatSessionService) {
+          throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
+        }
+        const session = await this.aiChatSessionService.createSession(title, modelId)
+        return this.serialize(session)
+      }
+
+      case 'listSessions': {
+        const { page = 1, pageSize = 20 } = (payload as { page?: number; pageSize?: number }) || {}
+        this.requireCapability(pluginId, 'ai:chat')
+        if (!this.aiChatSessionService) {
+          throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
+        }
+        const sessions = await this.aiChatSessionService.listSessions(page, pageSize)
+        return this.serialize(sessions)
+      }
+
+      case 'getSession': {
+        const { id } = payload as { id: string }
+        this.requireCapability(pluginId, 'ai:chat')
+        if (!this.aiChatSessionService) {
+          throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
+        }
+        const session = await this.aiChatSessionService.getSession(id)
+        return this.serialize(session)
+      }
+
+      case 'renameSession': {
+        const { id, title } = payload as { id: string; title: string }
+        this.requireCapability(pluginId, 'ai:chat')
+        if (!this.aiChatSessionService) {
+          throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
+        }
+        const updated = await this.aiChatSessionService.renameSession(id, title)
+        return this.serialize(updated)
+      }
+
+      case 'deleteSession': {
+        const { id } = payload as { id: string }
+        this.requireCapability(pluginId, 'ai:chat')
+        if (!this.aiChatSessionService) {
+          throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
+        }
+        await this.aiChatSessionService.deleteSession(id)
+        return { success: true }
       }
 
       case 'callTool': {

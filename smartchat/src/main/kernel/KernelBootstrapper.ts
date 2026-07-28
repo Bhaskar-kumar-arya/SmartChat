@@ -87,7 +87,8 @@ export class KernelBootstrapper {
       permissions,
       services.aiService,
       services.toolRegistry,
-      (pluginId) => pluginRegistry.get(pluginId)?.channel
+      (pluginId) => pluginRegistry.get(pluginId)?.channel,
+      services.aiChatSessionService
     )
     const eventsModule = new KernelEventsModule(
       permissions,

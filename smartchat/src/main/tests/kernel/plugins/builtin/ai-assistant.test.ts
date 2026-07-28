@@ -88,7 +88,7 @@ describe('AIAssistantPlugin', () => {
       ai: {
         chat: vi.fn(),
         callTool: mockCallTool
-      },
+      } as unknown as PluginContext['ai'],
       contributions: {
         registerAITool: (name, handler) => {
           registeredHandlers.set(name, handler)

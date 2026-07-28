@@ -19,7 +19,9 @@ import {
   PluginMeInfo,
   PluginContactInput,
   PluginAliasItem,
-  AICallOptions
+  AICallOptions,
+  PluginAIModelInfo,
+  PluginAISession
 } from '../../../../packages/sdk/src/context'
 
 type ManifestContributionMapper = {
@@ -214,7 +216,13 @@ export class PluginHost implements IPluginHost {
       },
       ai: {
         chat: (prompt: string, options?: AICallOptions) => request<string>('kernel:ai:chat', { prompt, options }),
-        callTool: (toolName: string, args: Record<string, unknown>) => request<{ text: string }>('kernel:ai:callTool', { toolName, args })
+        callTool: (toolName: string, args: Record<string, unknown>) => request<{ text: string }>('kernel:ai:callTool', { toolName, args }),
+        getAvailableModels: () => request<PluginAIModelInfo[]>('kernel:ai:getAvailableModels', {}),
+        createSession: (title: string, modelId?: string) => request<PluginAISession>('kernel:ai:createSession', { title, modelId }),
+        listSessions: (page = 1, pageSize = 20) => request<PluginAISession[]>('kernel:ai:listSessions', { page, pageSize }),
+        getSession: (id: string) => request<PluginAISession | null>('kernel:ai:getSession', { id }),
+        renameSession: (id: string, title: string) => request<PluginAISession>('kernel:ai:renameSession', { id, title }),
+        deleteSession: (id: string) => request<void>('kernel:ai:deleteSession', { id })
       },
       events: {
         on: (event: any, handler: (payload: any) => void | Promise<void>) => {

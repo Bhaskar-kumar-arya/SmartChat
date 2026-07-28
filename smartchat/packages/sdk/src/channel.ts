@@ -359,7 +359,13 @@ export class WorkerPluginRuntime {
 
     const aiAPI: IPluginAIAPI = {
       chat: (prompt: string, options?: AICallOptions) => self.request('kernel:ai:chat', { prompt, options }),
-      callTool: (toolName: string, args: Record<string, unknown>) => self.request('kernel:ai:callTool', { toolName, args })
+      callTool: (toolName: string, args: Record<string, unknown>) => self.request('kernel:ai:callTool', { toolName, args }),
+      getAvailableModels: () => self.request('kernel:ai:getAvailableModels', {}),
+      createSession: (title: string, modelId?: string) => self.request('kernel:ai:createSession', { title, modelId }),
+      listSessions: (page = 1, pageSize = 20) => self.request('kernel:ai:listSessions', { page, pageSize }),
+      getSession: (id: string) => self.request('kernel:ai:getSession', { id }),
+      renameSession: (id: string, title: string) => self.request('kernel:ai:renameSession', { id, title }),
+      deleteSession: (id: string) => self.request('kernel:ai:deleteSession', { id })
     }
 
     const eventsAPI: IPluginEventsAPI = {
