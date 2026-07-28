@@ -912,7 +912,44 @@ Close two critical capability gaps discovered post-audit: built-in plugins had n
 
 ---
 
+## Microkernel API Surface Expansion & Strict Typing Enforcement ✅ DONE
 
+### Goal
+Expand missing high-value domain capabilities across `kernel:messages`, `kernel:chats`, `kernel:contacts`, and `kernel:ai` modules to achieve feature parity with main process services, and enforce strict zero-`any` DTO typing across `@smartchat/sdk` context definitions and `PluginHost` context builders.
+
+### What Was Built & Fixed
+
+1. **`KernelMessagesModule` Surface Expansion**
+   - Implemented 8 missing actions: `edit`, `forward`, `sendMedia`, `getMessagesAroundId`, `getReceipts`, `addFavoriteSticker`, `getFavoriteStickers`, and `downloadMedia`.
+   - Injected `services.receiptService` and `services.favoriteStickerService` into `KernelBootstrapper.ts`.
+   - Created `PluginReceiptItem` and `PluginFavoriteStickerItem` DTO interfaces in `@smartchat/sdk`.
+
+2. **`KernelChatsModule` Group Participants Capability**
+   - Implemented `getGroupParticipants(jid)` requiring `chats:read` capability and target group JID resource scope checking.
+   - Created `PluginGroupParticipant` (`{ jid, name, isAdmin, isMe }`) DTO interface in `@smartchat/sdk`.
+
+3. **`KernelContactsModule` Identity & Alias Management**
+   - Implemented 5 missing actions: `batchGetByJids`, `getMe`, `upsertContact`, `resolveLid`, and `getAlias`.
+   - Injected `services.aliasRepository` into `KernelBootstrapper.ts`.
+   - Created `PluginMeInfo`, `PluginContactInput`, and `PluginAliasItem` DTO interfaces in `@smartchat/sdk`.
+
+4. **`KernelAIModule` Models & Chat Session Management**
+   - Implemented 6 missing actions: `getAvailableModels`, `createSession`, `listSessions`, `getSession`, `renameSession`, and `deleteSession`.
+   - Injected `services.aiChatSessionService` into `KernelBootstrapper.ts`.
+   - Created `PluginAIModelInfo` and `PluginAISession` DTO interfaces in `@smartchat/sdk`.
+
+5. **Strict DTO Typing & Zero-`any` Elimination**
+   - Refactored `PluginHost.ts` internal request dispatcher to be generic (`request<T>`), completely removing `as Promise<any>` type assertions across all domain context wrappers (`chats`, `messages`, `contacts`, `ai`).
+   - Strongly typed all SDK interfaces in `packages/sdk/src/context.ts` and `packages/sdk/src/channel.ts` (`WorkerPluginRuntime`).
+
+### Acceptance Criteria
+- [x] All 20 new kernel API module actions implemented with capability and resource scope enforcement
+- [x] All required underlying services (`receiptService`, `favoriteStickerService`, `aliasRepository`, `aiChatSessionService`) injected via `KernelBootstrapper.ts`
+- [x] Zero `any` types in `@smartchat/sdk` context interfaces or `PluginHost.ts` context wrappers
+- [x] Unit test suites updated across all modified modules (`KernelMessagesModule.test.ts`, `KernelChatsModule.test.ts`, `KernelContactsModule.test.ts`, `KernelAIModule.test.ts`) with 100% pass rate
+- [x] Zero TypeScript errors across Node and Web projects (`npm run typecheck`)
+
+---
 
 ## Future Phases (Not Scoped Yet)
 
