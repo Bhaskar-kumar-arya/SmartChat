@@ -81,9 +81,17 @@ export interface IPluginLogAPI {
   error(msg: string, ...data: unknown[]): void
 }
 
+export interface PluginGroupParticipant {
+  jid: string
+  name: string
+  isAdmin: boolean
+  isMe: boolean
+}
+
 export interface IPluginChatsAPI {
   getList(page?: number, limit?: number): Promise<PluginChatItem[]>
   getById(jid: string): Promise<PluginChatItem | null>
+  getGroupParticipants(jid: string): Promise<PluginGroupParticipant[]>
   pin(jid: string): Promise<void>
   unpin(jid: string): Promise<void>
   archive(jid: string): Promise<void>

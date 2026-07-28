@@ -10,6 +10,7 @@ import { PluginContext } from './PluginContext'
 import { ContributionsDeclaration } from './PluginManifest'
 import {
   PluginChatItem,
+  PluginGroupParticipant,
   PluginMessageItem,
   SendMessageOptions,
   PluginReceiptItem,
@@ -177,6 +178,7 @@ export class PluginHost implements IPluginHost {
       chats: {
         getList: (page = 1, limit = 50) => request<PluginChatItem[]>('kernel:chats:getList', { page, limit }),
         getById: (jid: string) => request<PluginChatItem | null>('kernel:chats:getById', { jid }),
+        getGroupParticipants: (jid: string) => request<PluginGroupParticipant[]>('kernel:chats:getGroupParticipants', { jid }),
         pin: (jid: string) => request<void>('kernel:chats:pin', { jid }),
         unpin: (jid: string) => request<void>('kernel:chats:unpin', { jid }),
         archive: (jid: string) => request<void>('kernel:chats:archive', { jid }),

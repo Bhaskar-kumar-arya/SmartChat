@@ -323,6 +323,7 @@ export class WorkerPluginRuntime {
     const chatsAPI: IPluginChatsAPI = {
       getList: (page = 1, limit = 20) => self.request('kernel:chats:getList', { page, limit }),
       getById: (jid: string) => self.request('kernel:chats:getById', { jid }),
+      getGroupParticipants: (jid: string) => self.request('kernel:chats:getGroupParticipants', { jid }),
       pin: (jid: string) => self.request('kernel:chats:pin', { jid }),
       unpin: (jid: string) => self.request('kernel:chats:unpin', { jid }),
       archive: (jid: string) => self.request('kernel:chats:archive', { jid }),

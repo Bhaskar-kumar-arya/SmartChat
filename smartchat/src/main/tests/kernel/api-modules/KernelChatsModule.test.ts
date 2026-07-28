@@ -115,6 +115,23 @@ describe('KernelChatsModule', () => {
     expect(result).toEqual({ success: true, detail: 'pinned' })
   })
 
+  it('allows getGroupParticipants when chats:read capability and scope are granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    vi.mocked(mockChatService.getGroupParticipants).mockResolvedValue([
+      { jid: '123@s.whatsapp.net', name: 'Alice', isAdmin: true, isMe: false }
+    ])
+
+    const result = await module.handle('plugin-a', 'kernel:chats:getGroupParticipants', {
+      jid: 'group123@g.us'
+    })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'chats:read')
+    expect(mockPermissions.isResourceAllowed).toHaveBeenCalledWith('plugin-a', 'chats:read', 'group123@g.us')
+    expect(mockChatService.getGroupParticipants).toHaveBeenCalledWith('group123@g.us')
+    expect(result).toEqual([{ jid: '123@s.whatsapp.net', name: 'Alice', isAdmin: true, isMe: false }])
+  })
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:chats:unknownAction', {})

@@ -35,6 +35,14 @@ export class KernelChatsModule extends BaseKernelModule {
         return this.serialize(chat)
       }
 
+      case 'getGroupParticipants': {
+        const { jid } = payload as { jid: string }
+        this.requireCapability(pluginId, 'chats:read')
+        this.requireResourceScope(pluginId, 'chats:read', jid)
+        const participants = await this.chatService.getGroupParticipants(jid)
+        return this.serialize(participants)
+      }
+
       case 'pin': {
         const { jid } = payload as { jid: string }
         this.requireCapability(pluginId, 'chats:write')
