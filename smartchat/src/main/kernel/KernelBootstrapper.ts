@@ -82,7 +82,7 @@ export class KernelBootstrapper {
     const loader = new PluginLoader(extensionsPath)
     const pluginRegistry = new PluginRegistry()
 
-    const contactsModule = new KernelContactsModule(permissions, services.contactService)
+    const contactsModule = new KernelContactsModule(permissions, services.contactService, services.aliasRepository)
     const aiModule = new KernelAIModule(
       permissions,
       services.aiService,

@@ -65,6 +65,81 @@ describe('KernelContactsModule', () => {
     expect(result).toEqual({ jid: '123@s.whatsapp.net', name: 'Alice Smith' })
   })
 
+  it('allows batchGetByJids when contacts:read is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    const map = new Map<string, string>([['123@s.whatsapp.net', 'Alice']])
+    vi.mocked(mockContactService.batchResolveNames).mockResolvedValue(map)
+
+    const result = await module.handle('plugin-a', 'kernel:contacts:batchGetByJids', {
+      jids: ['123@s.whatsapp.net']
+    })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'contacts:read')
+    expect(mockContactService.batchResolveNames).toHaveBeenCalledWith(['123@s.whatsapp.net'])
+    expect(result).toEqual([{ jid: '123@s.whatsapp.net', name: 'Alice' }])
+  })
+
+  it('allows getMe when contacts:read is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockContactService.getMeJids).mockResolvedValue(['me@s.whatsapp.net'])
+    vi.mocked(mockContactService.getMePhoneNumberJid).mockResolvedValue('15551234567@s.whatsapp.net')
+
+    const result = await module.handle('plugin-a', 'kernel:contacts:getMe', {})
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'contacts:read')
+    expect(result).toEqual({
+      jids: ['me@s.whatsapp.net'],
+      phoneNumberJid: '15551234567@s.whatsapp.net'
+    })
+  })
+
+  it('allows upsertContact when contacts:write is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    vi.mocked(mockContactService.upsertContact).mockResolvedValue(undefined)
+
+    const result = await module.handle('plugin-a', 'kernel:contacts:upsertContact', {
+      contact: { id: '123@s.whatsapp.net', name: 'Alice' }
+    })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'contacts:write')
+    expect(mockContactService.upsertContact).toHaveBeenCalledWith({ id: '123@s.whatsapp.net', name: 'Alice' })
+    expect(result).toEqual({ success: true })
+  })
+
+  it('allows resolveLid when contacts:read is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    vi.mocked(mockContactService.resolveLidFromJid).mockResolvedValue('123456@lid')
+
+    const result = await module.handle('plugin-a', 'kernel:contacts:resolveLid', { jid: '123@s.whatsapp.net' })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'contacts:read')
+    expect(mockContactService.resolveLidFromJid).toHaveBeenCalledWith('123@s.whatsapp.net')
+    expect(result).toEqual({ jid: '123@s.whatsapp.net', lid: '123456@lid' })
+  })
+
+  it('allows getAlias when aliasRepository is provided', async () => {
+    const mockAliasRepo = {
+      findIdentityAlias: vi.fn().mockResolvedValue({ id: 1, jid: '123@s.whatsapp.net', type: 'pn', identityId: 42 }),
+      findLidAliasByIdentityId: vi.fn(),
+      findAllAliases: vi.fn(),
+      findIdentityAliases: vi.fn(),
+      findIdentityAliasesMinimal: vi.fn(),
+      upsertIdentityAlias: vi.fn()
+    }
+
+    const customModule = new KernelContactsModule(mockPermissions, mockContactService, mockAliasRepo as any)
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+
+    const result = await customModule.handle('plugin-a', 'kernel:contacts:getAlias', { jid: '123@s.whatsapp.net' })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'contacts:read')
+    expect(mockAliasRepo.findIdentityAlias).toHaveBeenCalledWith('123@s.whatsapp.net')
+    expect(result).toEqual({ id: 1, jid: '123@s.whatsapp.net', type: 'pn', identityId: 42 })
+  })
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:contacts:unknown', {})

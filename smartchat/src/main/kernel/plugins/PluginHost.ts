@@ -16,6 +16,9 @@ import {
   PluginReceiptItem,
   PluginFavoriteStickerItem,
   PluginContactItem,
+  PluginMeInfo,
+  PluginContactInput,
+  PluginAliasItem,
   AICallOptions
 } from '../../../../packages/sdk/src/context'
 
@@ -202,7 +205,12 @@ export class PluginHost implements IPluginHost {
         getFavoriteStickers: () => request<PluginFavoriteStickerItem[]>('kernel:messages:getFavoriteStickers', {})
       },
       contacts: {
-        getByJid: (jid: string) => request<PluginContactItem | null>('kernel:contacts:getByJid', { jid })
+        getByJid: (jid: string) => request<PluginContactItem | null>('kernel:contacts:getByJid', { jid }),
+        batchGetByJids: (jids: string[]) => request<PluginContactItem[]>('kernel:contacts:batchGetByJids', { jids }),
+        getMe: () => request<PluginMeInfo>('kernel:contacts:getMe', {}),
+        upsertContact: (contact: PluginContactInput) => request<{ success: boolean }>('kernel:contacts:upsertContact', { contact }),
+        resolveLid: (jid: string) => request<{ jid: string; lid: string }>('kernel:contacts:resolveLid', { jid }),
+        getAlias: (jid: string) => request<PluginAliasItem | null>('kernel:contacts:getAlias', { jid })
       },
       ai: {
         chat: (prompt: string, options?: AICallOptions) => request<string>('kernel:ai:chat', { prompt, options }),

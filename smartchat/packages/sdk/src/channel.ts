@@ -349,7 +349,12 @@ export class WorkerPluginRuntime {
     }
 
     const contactsAPI: IPluginContactsAPI = {
-      getByJid: (jid: string) => self.request('kernel:contacts:getByJid', { jid })
+      getByJid: (jid: string) => self.request('kernel:contacts:getByJid', { jid }),
+      batchGetByJids: (jids: string[]) => self.request('kernel:contacts:batchGetByJids', { jids }),
+      getMe: () => self.request('kernel:contacts:getMe', {}),
+      upsertContact: (contact: import('./context').PluginContactInput) => self.request('kernel:contacts:upsertContact', { contact }),
+      resolveLid: (jid: string) => self.request('kernel:contacts:resolveLid', { jid }),
+      getAlias: (jid: string) => self.request('kernel:contacts:getAlias', { jid })
     }
 
     const aiAPI: IPluginAIAPI = {

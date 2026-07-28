@@ -132,8 +132,34 @@ export interface IPluginMessagesAPI {
   getFavoriteStickers(): Promise<PluginFavoriteStickerItem[]>
 }
 
+export interface PluginMeInfo {
+  jids: string[]
+  phoneNumberJid: string | null
+}
+
+export interface PluginContactInput {
+  id: string
+  lid?: string | null
+  phoneNumber?: string | null
+  name?: string | null
+  notify?: string | null
+  pushName?: string | null
+}
+
+export interface PluginAliasItem {
+  id?: number
+  jid: string
+  type: string
+  identityId: number
+}
+
 export interface IPluginContactsAPI {
   getByJid(jid: string): Promise<PluginContactItem | null>
+  batchGetByJids(jids: string[]): Promise<PluginContactItem[]>
+  getMe(): Promise<PluginMeInfo>
+  upsertContact(contact: PluginContactInput): Promise<{ success: boolean }>
+  resolveLid(jid: string): Promise<{ jid: string; lid: string }>
+  getAlias(jid: string): Promise<PluginAliasItem | null>
 }
 
 export interface IPluginEventsAPI {
