@@ -8,6 +8,15 @@ import { ContributionSlot } from '../contributions/ContributionPoints'
 import { DirectPluginChannel } from '../channels/DirectPluginChannel'
 import { PluginContext } from './PluginContext'
 import { ContributionsDeclaration } from './PluginManifest'
+import {
+  PluginChatItem,
+  PluginMessageItem,
+  SendMessageOptions,
+  PluginReceiptItem,
+  PluginFavoriteStickerItem,
+  PluginContactItem,
+  AICallOptions
+} from '../../../../packages/sdk/src/context'
 
 type ManifestContributionMapper = {
   [K in keyof ContributionsDeclaration]-?: {
@@ -148,13 +157,13 @@ export class PluginHost implements IPluginHost {
       channel.sendResponseToPlugin({ id: req.id, ok: true, payload: result })
     })
 
-    const request = async (type: string, payload?: unknown) => {
+    const request = async <T = unknown>(type: string, payload?: unknown): Promise<T> => {
       const reqId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       const res = await channel.requestFromPlugin({ id: reqId, type, payload })
       if (!res.ok) {
         throw new Error(res.error?.message || `Kernel request failed: ${type}`)
       }
-      return res.payload
+      return res.payload as T
     }
 
     const ctx: PluginContext = {
@@ -166,29 +175,36 @@ export class PluginHost implements IPluginHost {
         error: (msg: string, ...data: unknown[]) => console.error(`[Plugin:${plugin.id}] ${msg}`, ...data)
       },
       chats: {
-        getList: (page = 1, limit = 50) => request('kernel:chats:getList', { page, limit }) as Promise<any>,
-        getById: (jid: string) => request('kernel:chats:getById', { jid }) as Promise<any>,
-        pin: (jid: string) => request('kernel:chats:pin', { jid }) as Promise<void>,
-        unpin: (jid: string) => request('kernel:chats:unpin', { jid }) as Promise<void>,
-        archive: (jid: string) => request('kernel:chats:archive', { jid }) as Promise<void>,
-        unarchive: (jid: string) => request('kernel:chats:unarchive', { jid }) as Promise<void>,
-        mute: (jid: string, durationMs: number) => request('kernel:chats:mute', { jid, durationMs }) as Promise<void>,
-        unmute: (jid: string) => request('kernel:chats:unmute', { jid }) as Promise<void>,
-        markRead: (jid: string) => request('kernel:chats:markRead', { jid }) as Promise<void>
+        getList: (page = 1, limit = 50) => request<PluginChatItem[]>('kernel:chats:getList', { page, limit }),
+        getById: (jid: string) => request<PluginChatItem | null>('kernel:chats:getById', { jid }),
+        pin: (jid: string) => request<void>('kernel:chats:pin', { jid }),
+        unpin: (jid: string) => request<void>('kernel:chats:unpin', { jid }),
+        archive: (jid: string) => request<void>('kernel:chats:archive', { jid }),
+        unarchive: (jid: string) => request<void>('kernel:chats:unarchive', { jid }),
+        mute: (jid: string, durationMs: number) => request<void>('kernel:chats:mute', { jid, durationMs }),
+        unmute: (jid: string) => request<void>('kernel:chats:unmute', { jid }),
+        markRead: (jid: string) => request<void>('kernel:chats:markRead', { jid })
       },
       messages: {
-        getMessages: (jid: string, page = 1, limit = 50) => request('kernel:messages:getMessages', { jid, page, limit }) as Promise<any>,
-        send: (jid: string, text: string, options?: any) => request('kernel:messages:send', { jid, text, options }) as Promise<any>,
-        delete: (jid: string, messageId: string) => request('kernel:messages:delete', { jid, messageId }) as Promise<void>,
-        react: (jid: string, messageId: string, emoji: string) => request('kernel:messages:react', { jid, messageId, emoji }) as Promise<void>,
-        downloadMedia: (messageId: string) => request('kernel:messages:downloadMedia', { messageId }) as Promise<any>
+        getMessages: (jid: string, page = 1, limit = 50) => request<PluginMessageItem[]>('kernel:messages:getMessages', { jid, page, limit }),
+        getMessagesAroundId: (jid: string, messageId: string, lookBehind = 20) => request<PluginMessageItem[]>('kernel:messages:getMessagesAroundId', { jid, messageId, lookBehind }),
+        send: (jid: string, text: string, options?: SendMessageOptions) => request<PluginMessageItem>('kernel:messages:send', { jid, text, options }),
+        sendMedia: (jid: string, filePath: string, caption?: string, options?: SendMessageOptions) => request<PluginMessageItem>('kernel:messages:sendMedia', { jid, filePath, caption, options }),
+        edit: (messageId: string, newText: string, jid?: string) => request<PluginMessageItem>('kernel:messages:edit', { messageId, newText, jid }),
+        forward: (messageId: string, targetJids: string[], jid?: string) => request<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }>('kernel:messages:forward', { messageId, targetJids, jid }),
+        delete: (jid: string, messageId: string) => request<void>('kernel:messages:delete', { jid, messageId }),
+        react: (jid: string, messageId: string, emoji: string) => request<void>('kernel:messages:react', { jid, messageId, emoji }),
+        downloadMedia: (messageId: string) => request<{ success: boolean; localURI?: string; filePath?: string; message?: unknown }>('kernel:messages:downloadMedia', { messageId }),
+        getReceipts: (messageId: string) => request<PluginReceiptItem[]>('kernel:messages:getReceipts', { messageId }),
+        addFavoriteSticker: (messageId: string) => request<{ success: boolean }>('kernel:messages:addFavoriteSticker', { messageId }),
+        getFavoriteStickers: () => request<PluginFavoriteStickerItem[]>('kernel:messages:getFavoriteStickers', {})
       },
       contacts: {
-        getByJid: (jid: string) => request('kernel:contacts:getByJid', { jid }) as Promise<any>
+        getByJid: (jid: string) => request<PluginContactItem | null>('kernel:contacts:getByJid', { jid })
       },
       ai: {
-        chat: (prompt: string, options?: any) => request('kernel:ai:chat', { prompt, options }) as Promise<string>,
-        callTool: (toolName: string, args: Record<string, unknown>) => request('kernel:ai:callTool', { toolName, args }) as Promise<{ text: string }>
+        chat: (prompt: string, options?: AICallOptions) => request<string>('kernel:ai:chat', { prompt, options }),
+        callTool: (toolName: string, args: Record<string, unknown>) => request<{ text: string }>('kernel:ai:callTool', { toolName, args })
       },
       events: {
         on: (event: any, handler: (payload: any) => void | Promise<void>) => {

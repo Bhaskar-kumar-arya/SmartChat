@@ -4,6 +4,8 @@ import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IMessageQueryService } from '../../services/messages/IMessageQueryService'
 import { IMessageActionService, IMessageActionSocket } from '../../services/messages/IMessageActionService'
 import { IMediaService } from '../../services/messages/IMediaService'
+import { IReceiptService } from '../../services/whatsapp/IReceiptService'
+import { IFavoriteStickerService } from '../../services/messages/IFavoriteStickerService'
 import { KernelError, KernelNotFoundError } from './KernelErrors'
 
 export class KernelMessagesModule extends BaseKernelModule {
@@ -15,7 +17,9 @@ export class KernelMessagesModule extends BaseKernelModule {
     private readonly messageActionService: IMessageActionService,
     private readonly getSock?: () => IMessageActionSocket | null,
     private readonly mediaService?: IMediaService,
-    private readonly getUserDataPath?: () => string
+    private readonly getUserDataPath?: () => string,
+    private readonly receiptService?: IReceiptService,
+    private readonly favoriteStickerService?: IFavoriteStickerService
   ) {
     super(permissions)
   }
@@ -29,6 +33,14 @@ export class KernelMessagesModule extends BaseKernelModule {
         this.requireCapability(pluginId, 'messages:read')
         this.requireResourceScope(pluginId, 'messages:read', jid)
         const messages = await this.messageQueryService.getChatMessages(jid, page, limit)
+        return this.serialize(messages)
+      }
+
+      case 'getMessagesAroundId': {
+        const { jid, messageId, lookBehind = 20 } = payload as { jid: string; messageId: string; lookBehind?: number }
+        this.requireCapability(pluginId, 'messages:read')
+        this.requireResourceScope(pluginId, 'messages:read', jid)
+        const messages = await this.messageQueryService.getMessagesAroundId(jid, messageId, lookBehind)
         return this.serialize(messages)
       }
 
@@ -47,6 +59,52 @@ export class KernelMessagesModule extends BaseKernelModule {
         const mList = options?.mentions || mentions
         const msg = await this.messageActionService.sendMessageWorkflow(sock, jid, text, qMsgId, mList)
         return this.serialize(msg)
+      }
+
+      case 'sendMedia': {
+        const { jid, filePath, caption, options, quotedMsgId, mentions } = payload as {
+          jid: string
+          filePath: string
+          caption?: string
+          options?: { quotedMsgId?: string; mentions?: string[] }
+          quotedMsgId?: string
+          mentions?: string[]
+        }
+        this.requireCapability(pluginId, 'messages:send')
+        this.requireResourceScope(pluginId, 'messages:send', jid)
+        const sock = this.getSocketOrThrow()
+        const qMsgId = options?.quotedMsgId || quotedMsgId
+        const mList = options?.mentions || mentions
+        const msg = await this.messageActionService.sendMediaMessageWorkflow(
+          sock,
+          jid,
+          filePath,
+          caption,
+          qMsgId,
+          mList
+        )
+        return this.serialize(msg)
+      }
+
+      case 'edit': {
+        const { messageId, newText, jid } = payload as { messageId: string; newText: string; jid?: string }
+        this.requireCapability(pluginId, 'messages:send')
+        if (jid) {
+          this.requireResourceScope(pluginId, 'messages:send', jid)
+        }
+        const sock = this.getSocketOrThrow()
+        const msg = await this.messageActionService.editMessage(sock, messageId, newText, jid)
+        return this.serialize(msg)
+      }
+
+      case 'forward': {
+        const { messageId, targetJids, jid } = payload as { messageId: string; targetJids: string[]; jid?: string }
+        this.requireCapability(pluginId, 'messages:send')
+        if (jid) {
+          this.requireResourceScope(pluginId, 'messages:send', jid)
+        }
+        const sock = this.getSocketOrThrow()
+        return await this.messageActionService.forwardMessage(sock, messageId, targetJids, jid)
       }
 
       case 'delete': {
@@ -103,6 +161,35 @@ export class KernelMessagesModule extends BaseKernelModule {
         return this.serialize({ success: true, localURI, filePath, message: enriched })
       }
 
+      case 'getReceipts': {
+        const { messageId } = payload as { messageId: string }
+        this.requireCapability(pluginId, 'messages:read')
+        if (!this.receiptService) {
+          throw new KernelError('INTERNAL_ERROR', 'ReceiptService is not available in KernelMessagesModule')
+        }
+        const receipts = await this.receiptService.getMessageReceipts(messageId, null)
+        return this.serialize(receipts)
+      }
+
+      case 'addFavoriteSticker': {
+        const { messageId } = payload as { messageId: string }
+        this.requireCapability(pluginId, 'messages:write')
+        if (!this.favoriteStickerService) {
+          throw new KernelError('INTERNAL_ERROR', 'FavoriteStickerService is not available in KernelMessagesModule')
+        }
+        const success = await this.favoriteStickerService.addStickerToFavorites(messageId)
+        return { success }
+      }
+
+      case 'getFavoriteStickers': {
+        this.requireCapability(pluginId, 'messages:read')
+        if (!this.favoriteStickerService) {
+          throw new KernelError('INTERNAL_ERROR', 'FavoriteStickerService is not available in KernelMessagesModule')
+        }
+        const stickers = await this.favoriteStickerService.getFavoriteStickers()
+        return this.serialize(stickers)
+      }
+
       default:
         throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
@@ -116,3 +203,4 @@ export class KernelMessagesModule extends BaseKernelModule {
     return sock
   }
 }
+

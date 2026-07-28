@@ -334,10 +334,17 @@ export class WorkerPluginRuntime {
 
     const messagesAPI: IPluginMessagesAPI = {
       getMessages: (jid: string, page = 1, limit = 50) => self.request('kernel:messages:getMessages', { jid, page, limit }),
+      getMessagesAroundId: (jid: string, messageId: string, lookBehind = 20) => self.request('kernel:messages:getMessagesAroundId', { jid, messageId, lookBehind }),
       send: (jid: string, text: string, options?: SendMessageOptions) => self.request('kernel:messages:send', { jid, text, options }),
+      sendMedia: (jid: string, filePath: string, caption?: string, options?: SendMessageOptions) => self.request('kernel:messages:sendMedia', { jid, filePath, caption, options }),
+      edit: (messageId: string, newText: string, jid?: string) => self.request('kernel:messages:edit', { messageId, newText, jid }),
+      forward: (messageId: string, targetJids: string[], jid?: string) => self.request('kernel:messages:forward', { messageId, targetJids, jid }),
       delete: (jid: string, messageId: string) => self.request('kernel:messages:delete', { jid, messageId }),
       react: (jid: string, messageId: string, emoji: string) => self.request('kernel:messages:react', { jid, messageId, emoji }),
-      downloadMedia: (messageId: string) => self.request('kernel:messages:downloadMedia', { messageId })
+      downloadMedia: (messageId: string) => self.request('kernel:messages:downloadMedia', { messageId }),
+      getReceipts: (messageId: string) => self.request('kernel:messages:getReceipts', { messageId }),
+      addFavoriteSticker: (messageId: string) => self.request('kernel:messages:addFavoriteSticker', { messageId }),
+      getFavoriteStickers: () => self.request('kernel:messages:getFavoriteStickers', {})
     }
 
     const contactsAPI: IPluginContactsAPI = {

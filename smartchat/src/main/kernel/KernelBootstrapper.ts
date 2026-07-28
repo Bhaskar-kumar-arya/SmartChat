@@ -75,7 +75,9 @@ export class KernelBootstrapper {
       services.messageActionService,
       getSock,
       services.mediaService,
-      getUserDataPath
+      getUserDataPath,
+      services.receiptService,
+      services.favoriteStickerService
     )
     const loader = new PluginLoader(extensionsPath)
     const pluginRegistry = new PluginRegistry()

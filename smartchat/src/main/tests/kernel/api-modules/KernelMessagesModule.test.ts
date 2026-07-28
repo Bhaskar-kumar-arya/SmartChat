@@ -228,4 +228,157 @@ describe('KernelMessagesModule', () => {
       message: "Unknown action 'kernel:messages:unknownAction' in module 'kernel:messages'"
     })
   })
+
+  it('allows getMessagesAroundId when messages:read capability is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    vi.mocked(mockMessageQueryService.getMessagesAroundId).mockResolvedValue([
+      { id: 'msg-10', chatJid: '123@s.whatsapp.net', textContent: 'Context message' } as any
+    ])
+
+    const result = await module.handle('plugin-a', 'kernel:messages:getMessagesAroundId', {
+      jid: '123@s.whatsapp.net',
+      messageId: 'msg-10',
+      lookBehind: 10
+    })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'messages:read')
+    expect(mockMessageQueryService.getMessagesAroundId).toHaveBeenCalledWith('123@s.whatsapp.net', 'msg-10', 10)
+    expect(result).toEqual([{ id: 'msg-10', chatJid: '123@s.whatsapp.net', textContent: 'Context message' }])
+  })
+
+  it('allows sendMedia when messages:send capability and scope are granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    vi.mocked(mockMessageActionService.sendMediaMessageWorkflow).mockResolvedValue({
+      id: 'msg-media-1',
+      chatJid: '123@s.whatsapp.net',
+      textContent: 'Caption'
+    } as any)
+
+    const result = await module.handle('plugin-a', 'kernel:messages:sendMedia', {
+      jid: '123@s.whatsapp.net',
+      filePath: '/tmp/test.png',
+      caption: 'Caption'
+    })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'messages:send')
+    expect(mockMessageActionService.sendMediaMessageWorkflow).toHaveBeenCalledWith(
+      expect.anything(),
+      '123@s.whatsapp.net',
+      '/tmp/test.png',
+      'Caption',
+      undefined,
+      undefined
+    )
+    expect(result).toEqual({ id: 'msg-media-1', chatJid: '123@s.whatsapp.net', textContent: 'Caption' })
+  })
+
+  it('allows edit when messages:send capability is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    vi.mocked(mockMessageActionService.editMessage).mockResolvedValue({
+      id: 'msg-1',
+      textContent: 'Edited text'
+    } as any)
+
+    const result = await module.handle('plugin-a', 'kernel:messages:edit', {
+      messageId: 'msg-1',
+      newText: 'Edited text',
+      jid: '123@s.whatsapp.net'
+    })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'messages:send')
+    expect(mockMessageActionService.editMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      'msg-1',
+      'Edited text',
+      '123@s.whatsapp.net'
+    )
+    expect(result).toEqual({ id: 'msg-1', textContent: 'Edited text' })
+  })
+
+  it('allows forward when messages:send capability is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    vi.mocked(mockMessageActionService.forwardMessage).mockResolvedValue({
+      success: true,
+      detail: 'Forwarded',
+      results: [{ jid: '456@s.whatsapp.net', messageId: 'msg-fwd-1' }]
+    })
+
+    const result = await module.handle('plugin-a', 'kernel:messages:forward', {
+      messageId: 'msg-1',
+      targetJids: ['456@s.whatsapp.net']
+    })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'messages:send')
+    expect(mockMessageActionService.forwardMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      'msg-1',
+      ['456@s.whatsapp.net'],
+      undefined
+    )
+    expect(result).toEqual({
+      success: true,
+      detail: 'Forwarded',
+      results: [{ jid: '456@s.whatsapp.net', messageId: 'msg-fwd-1' }]
+    })
+  })
+
+  it('allows getReceipts when receiptService is provided', async () => {
+    const mockReceiptService = {
+      processMessageStatusUpdate: vi.fn(),
+      processMessageReceipt: vi.fn(),
+      getMessageReceipts: vi.fn().mockResolvedValue([{ userJid: 'user1', readTimestamp: 100 }])
+    }
+
+    const customModule = new KernelMessagesModule(
+      mockPermissions,
+      mockMessageQueryService,
+      mockMessageActionService,
+      () => ({ sendMessage: vi.fn() } as any),
+      undefined,
+      undefined,
+      mockReceiptService as any
+    )
+
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    const result = await customModule.handle('plugin-a', 'kernel:messages:getReceipts', { messageId: 'msg-1' })
+
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'messages:read')
+    expect(mockReceiptService.getMessageReceipts).toHaveBeenCalledWith('msg-1', null)
+    expect(result).toEqual([{ userJid: 'user1', readTimestamp: 100 }])
+  })
+
+  it('allows addFavoriteSticker and getFavoriteStickers', async () => {
+    const mockFavoriteStickerService = {
+      addStickerToFavorites: vi.fn().mockResolvedValue(true),
+      getFavoriteStickers: vi.fn().mockResolvedValue([{ id: 'st-1', fileName: 'cat.webp' }])
+    }
+
+    const customModule = new KernelMessagesModule(
+      mockPermissions,
+      mockMessageQueryService,
+      mockMessageActionService,
+      () => ({ sendMessage: vi.fn() } as any),
+      undefined,
+      undefined,
+      undefined,
+      mockFavoriteStickerService as any
+    )
+
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    const addRes = await customModule.handle('plugin-a', 'kernel:messages:addFavoriteSticker', { messageId: 'msg-1' })
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'messages:write')
+    expect(mockFavoriteStickerService.addStickerToFavorites).toHaveBeenCalledWith('msg-1')
+    expect(addRes).toEqual({ success: true })
+
+    const listRes = await customModule.handle('plugin-a', 'kernel:messages:getFavoriteStickers', {})
+    expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'messages:read')
+    expect(mockFavoriteStickerService.getFavoriteStickers).toHaveBeenCalled()
+    expect(listRes).toEqual([{ id: 'st-1', fileName: 'cat.webp' }])
+  })
 })

@@ -93,12 +93,35 @@ export interface IPluginChatsAPI {
   markRead(jid: string): Promise<void>
 }
 
+export interface PluginReceiptItem {
+  userJid: string
+  status?: string | number
+  timestamp?: number | string
+  readTimestamp?: number
+  deliveredTimestamp?: number
+}
+
+export interface PluginFavoriteStickerItem {
+  id: string
+  fileSha256: string
+  fileName: string
+  localURI: string
+  createdAt: number
+}
+
 export interface IPluginMessagesAPI {
   getMessages(jid: string, page?: number, limit?: number): Promise<PluginMessageItem[]>
+  getMessagesAroundId(jid: string, messageId: string, lookBehind?: number): Promise<PluginMessageItem[]>
   send(jid: string, text: string, options?: SendMessageOptions): Promise<PluginMessageItem>
+  sendMedia(jid: string, filePath: string, caption?: string, options?: SendMessageOptions): Promise<PluginMessageItem>
+  edit(messageId: string, newText: string, jid?: string): Promise<PluginMessageItem>
+  forward(messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }>
   delete(jid: string, messageId: string): Promise<void>
   react(jid: string, messageId: string, emoji: string): Promise<void>
-  downloadMedia(messageId: string): Promise<{ success: boolean; localURI?: string; filePath?: string; message?: any }>
+  downloadMedia(messageId: string): Promise<{ success: boolean; localURI?: string; filePath?: string; message?: unknown }>
+  getReceipts(messageId: string): Promise<PluginReceiptItem[]>
+  addFavoriteSticker(messageId: string): Promise<{ success: boolean }>
+  getFavoriteStickers(): Promise<PluginFavoriteStickerItem[]>
 }
 
 export interface IPluginContactsAPI {
