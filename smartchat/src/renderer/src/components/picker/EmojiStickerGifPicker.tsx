@@ -219,7 +219,7 @@ export default function EmojiStickerGifPicker({
         {activeTab === 'gif' && (
           <div className="gif-tab-container">
             {giphyError ? (
-              <div className="picker-empty-state" style={{ color: '#ef5350', padding: '32px 16px' }}>
+              <div className="picker-empty-state" style={{ color: 'var(--wa-danger)', padding: '32px 16px' }}>
                 <Compass size={32} />
                 <p style={{ marginTop: '8px', fontWeight: 'bold' }}>{giphyError}</p>
                 <p style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: '6px' }}>
@@ -264,7 +264,7 @@ export default function EmojiStickerGifPicker({
                 }}
                 title="Starred Stickers"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill={selectedPackIndex === -2 ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: selectedPackIndex === -2 ? '#e9c46a' : 'currentColor' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill={selectedPackIndex === -2 ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: selectedPackIndex === -2 ? 'var(--wa-star)' : 'currentColor' }}>
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                 </svg>
               </button>
@@ -361,7 +361,7 @@ export default function EmojiStickerGifPicker({
                 // Giphy Sticker search
                 <>
                   {giphyError ? (
-                    <div className="picker-empty-state" style={{ color: '#ef5350', padding: '32px 16px' }}>
+                    <div className="picker-empty-state" style={{ color: 'var(--wa-danger)', padding: '32px 16px' }}>
                       <Sparkles size={32} />
                       <p style={{ marginTop: '8px', fontWeight: 'bold' }}>{giphyError}</p>
                       <p style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: '6px' }}>

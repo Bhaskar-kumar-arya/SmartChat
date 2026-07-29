@@ -47,7 +47,7 @@ export function SystemMessageBubble({
         className="system-message-bubble"
         style={{
           background: 'rgba(0, 0, 0, 0.05)',
-          color: '#666',
+          color: 'var(--wa-text-tertiary)',
           padding: '6px 14px',
           borderRadius: '8px',
           fontSize: '0.8rem',

@@ -34,7 +34,7 @@ export default function MessageInfoModal({ receipts, onClose }: MessageInfoModal
                   <div className="receipt-item-status">
                     {receipt.status === 'READ' ? (
                       <div className="status-badge read">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="#53bdeb" className="status-read">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 11" width="16" height="11" fill="var(--wa-status-read)" className="status-read">
                           <path d="M11.053 1.053a.75.75 0 0 0-1.06 0L4.437 6.61 2.227 4.4a.75.75 0 1 0-1.06 1.06l2.742 2.742a.75.75 0 0 0 1.06 0l6.084-6.085a.75.75 0 0 0 0-1.064zm4.242 0a.75.75 0 0 0-1.06 0L8.15 7.138l-1.47-1.47a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l6.615-6.615a.75.75 0 0 0 0-1.06z" />
                         </svg>
                         <span>Read • {formatReceiptTime(receipt.timestamp)} <span className="receipt-date">{formatReceiptDate(receipt.timestamp)}</span></span>

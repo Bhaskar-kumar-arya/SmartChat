@@ -41,7 +41,7 @@ export default function ConfirmModal({
               style={{
                 padding: '8px 16px',
                 borderRadius: '6px',
-                border: '1px solid var(--wa-border, #e4e6eb)',
+                border: '1px solid var(--wa-border)',
                 backgroundColor: 'transparent',
                 color: 'var(--wa-text-secondary)',
                 cursor: 'pointer',
@@ -58,8 +58,8 @@ export default function ConfirmModal({
                 padding: '8px 16px',
                 borderRadius: '6px',
                 border: 'none',
-                backgroundColor: isDanger ? '#ef4444' : 'var(--wa-primary, #008069)',
-                color: '#ffffff',
+                backgroundColor: isDanger ? 'var(--wa-danger)' : 'var(--wa-primary)',
+                color: 'var(--wa-text-on-accent)',
                 cursor: 'pointer',
                 fontSize: '13px',
                 fontWeight: '500'

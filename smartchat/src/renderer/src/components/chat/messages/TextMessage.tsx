@@ -110,7 +110,7 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
           a: ({ href, children }: any) => {
             if (href && href.startsWith('mention:')) {
               return (
-                <span className="message-mention" style={{ color: 'var(--primary, #00a884)', fontWeight: 600 }}>
+                <span className="message-mention" style={{ color: 'var(--wa-primary)', fontWeight: 600 }}>
                   {children}
                 </span>
               )

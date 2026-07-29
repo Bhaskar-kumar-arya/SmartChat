@@ -47,11 +47,11 @@ export const ProfilePicOverlay: React.FC<ProfilePicOverlayProps> = ({
         </div>
 
         {/* Content */}
-        <div className="bg-zinc-900 rounded-lg overflow-hidden shadow-2xl min-h-[300px] min-w-[300px] flex items-center justify-center">
+        <div style={{ background: 'var(--wa-bg-secondary)', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 25px 50px rgba(0,0,0,0.5)', minHeight: '300px', minWidth: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {loading ? (
             <div className="flex flex-col items-center space-y-4">
-              <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-              <span className="text-zinc-400 text-sm">Loading full image...</span>
+              <div style={{ width: '48px', height: '48px', border: '4px solid var(--wa-border)', borderTopColor: 'var(--wa-primary)', borderRadius: '9999px', animation: 'spin 1s linear infinite' }} />
+              <span style={{ color: 'var(--wa-text-secondary)', fontSize: '0.875rem' }}>Loading full image...</span>
             </div>
           ) : imageUrl ? (
             <img 
@@ -60,7 +60,7 @@ export const ProfilePicOverlay: React.FC<ProfilePicOverlayProps> = ({
               className="max-h-[80vh] w-auto object-contain animate-in zoom-in-95 duration-300" 
             />
           ) : (
-            <div className="text-zinc-500 flex flex-col items-center p-8">
+            <div style={{ color: 'var(--wa-text-tertiary)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px' }}>
               <span className="text-lg">No profile picture available</span>
             </div>
           )}

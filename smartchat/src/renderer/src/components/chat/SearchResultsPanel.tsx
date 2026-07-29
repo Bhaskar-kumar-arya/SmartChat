@@ -83,9 +83,9 @@ export function SearchResultsPanel({
   const renderScore = (score?: number) => {
     if (mode !== 'deep' || score === undefined) return null
     const pct = Math.round(score * 100)
-    let color = '#a0a0a0'
-    if (pct > 80) color = '#25D366'
-    else if (pct > 60) color = '#34B7F1'
+    let color = 'var(--wa-text-tertiary)'
+    if (pct > 80) color = 'var(--wa-primary-light)'
+    else if (pct > 60) color = 'var(--wa-status-read)'
     
     return (
       <div className="result-score" style={{ color }}>

@@ -30,7 +30,7 @@ export function NameChip({ jid, name, onSelectChat }: NameChipProps) {
         cursor: isClickable ? 'pointer' : 'default',
         fontWeight: 600,
         textDecoration: isClickable ? 'underline' : 'none',
-        color: isClickable ? 'var(--primary-color, #25D366)' : 'inherit',
+        color: isClickable ? 'var(--wa-primary)' : 'inherit',
         margin: '0 2px'
       }}
       onClick={() => {

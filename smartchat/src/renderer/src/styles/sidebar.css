@@ -40,7 +40,7 @@
 
 .logout-button:hover {
   background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  color: var(--wa-danger);
 }
 
 .settings-button {
@@ -816,7 +816,7 @@
 
 .ai-message-bubble.user {
   background-color: var(--wa-bubble-sent);
-  color: #e9edef;
+  color: var(--wa-text-primary);
   align-self: flex-end;
   border-bottom-right-radius: 4px;
 }
@@ -898,7 +898,7 @@
 .retry-button {
   margin-top: 12px;
   background-color: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  color: var(--wa-danger);
   border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: 6px;
   padding: 6px 12px;
@@ -986,7 +986,7 @@
 }
 
 .ai-message-edit-textarea:focus {
-  border-color: #00a884;
+  border-color: var(--wa-icon-active);
 }
 
 .ai-edit-actions {
@@ -1003,7 +1003,7 @@
 }
 
 .ai-save-btn {
-  background-color: #00a884;
+  background-color: var(--wa-icon-active);
   color: white;
   border: none;
   border-radius: 6px;
@@ -1108,7 +1108,7 @@
 
 /* Links */
 .markdown-body a {
-  color: #53bdeb;
+  color: var(--wa-status-read);
   text-decoration: none;
 }
 .markdown-body a:hover {
@@ -1200,7 +1200,7 @@
      color, background-color, border-radius, box-shadow are all safe.
      DO NOT add: padding, margin, font-weight, letter-spacing, font-size —
      any of these widens the span relative to the textarea, shifting the cursor. */
-  color: #4ade91;
+  color: var(--wa-ai-success);
   background-color: rgba(34, 192, 94, 0.18);
   border-radius: 4px;
   box-shadow: 0 0 0 2px rgba(34, 192, 94, 0.18);
@@ -1371,7 +1371,7 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #00a884, #008069);
+  background: linear-gradient(135deg, var(--wa-icon-active), var(--wa-primary-dark));
   color: white;
   display: flex;
   align-items: center;
@@ -1433,13 +1433,13 @@
 
 .ai-context-chip.history {
   background-color: rgba(0, 168, 132, 0.15);
-  color: #00a884;
+  color: var(--wa-icon-active);
   border: 1px solid rgba(0, 168, 132, 0.3);
 }
 
 .ai-context-chip.mention {
   background-color: rgba(83, 189, 235, 0.15);
-  color: #53bdeb;
+  color: var(--wa-status-read);
   border: 1px solid rgba(83, 189, 235, 0.3);
 }
 
@@ -1464,7 +1464,7 @@
 
 /* ─── @mention highlight inside sent message bubbles ─── */
 .ai-bubble-mention {
-  color: #2dd4bf;
+  color: var(--wa-ai-success);
   font-weight: 700;
 }
 
@@ -1483,7 +1483,7 @@
 }
 
 .ai-toggle-btn.active, .ai-toggle-btn:hover {
-  color: #00a884;
+  color: var(--wa-icon-active);
 }
 
 .ai-message-bubble.ai.loading {

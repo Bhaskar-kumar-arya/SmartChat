@@ -259,12 +259,12 @@ body {
 }
 
 .range-chip.clear {
-  color: #ef4444;
+  color: var(--wa-danger);
 }
 
 .range-chip.clear:hover {
   background: rgba(239, 68, 68, 0.1);
-  border-color: #ef4444;
+  border-color: var(--wa-danger);
 }
 
 /* ─── Deep Search Loading ────────────────────────────────────────── */

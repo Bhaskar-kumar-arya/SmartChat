@@ -142,7 +142,7 @@ export default function AIChatExportButton({
           onClick={handleDelete}
           disabled={deleting || !activeSessionId}
           title="Remove from JSON"
-          style={{ color: '#ef4444', padding: '4px' }}
+          style={{ color: 'var(--wa-danger)', padding: '4px' }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="3 6 5 6 21 6"></polyline>
