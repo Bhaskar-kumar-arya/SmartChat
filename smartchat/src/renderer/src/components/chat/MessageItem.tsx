@@ -17,6 +17,19 @@ import { MessageStatusTick } from '../common/MessageStatusTick'
 import { emojiToUnified } from '../../utils/emojiUtils'
 import { EmojiText } from '../common/EmojiText'
 import { useContributions } from '../../hooks/useContributions'
+import { evaluateWhen } from '../../utils/whenCondition'
+import { PluginIcon } from '../common/PluginIcon'
+
+const MEDIA_TYPES = new Set([
+  'imageMessage',
+  'videoMessage',
+  'ptvMessage',
+  'audioMessage',
+  'documentMessage',
+  'stickerMessage',
+  'lottieStickerMessage'
+])
+const TEXT_TYPES = new Set(['conversation', 'extendedTextMessage'])
 
 /**
  * Utility to unwrap metadata from Baileys messages.
@@ -622,23 +635,36 @@ const MessageItem = memo(function MessageItem({
                   Delete
                 </button>
               )}
-              {messageActions.map((action) => (
-                <button
-                  key={`${action.pluginId}-${action.id}`}
-                  className="dropdown-item"
-                  onClick={() => {
-                    setShowDropdown(false)
-                    api.executeContribution({
-                      slot: 'message-action',
-                      pluginId: action.pluginId,
-                      id: action.id,
-                      context: { chatJid: msg.chatJid, messageId: msg.id }
-                    }).catch(console.error)
-                  }}
-                >
-                  {action.label}
-                </button>
-              ))}
+              {messageActions
+                .filter((action) =>
+                  evaluateWhen(action.when, {
+                    'message.messageType': msg.messageType,
+                    'message.fromMe': msg.fromMe,
+                    'message.isDeleted': msg.isDeleted ?? false,
+                    'message.isEdited': msg.isEdited ?? false,
+                    'message.isMedia': MEDIA_TYPES.has(msg.messageType),
+                    'message.isText': TEXT_TYPES.has(msg.messageType),
+                    'message.hasReactions': (msg.reactions?.length ?? 0) > 0
+                  })
+                )
+                .map((action) => (
+                  <button
+                    key={`${action.pluginId}-${action.id}`}
+                    className="dropdown-item"
+                    onClick={() => {
+                      setShowDropdown(false)
+                      api.executeContribution({
+                        slot: 'message-action',
+                        pluginId: action.pluginId,
+                        id: action.id,
+                        context: { chatJid: msg.chatJid, messageId: msg.id }
+                      }).catch(console.error)
+                    }}
+                  >
+                    {action.icon && <PluginIcon icon={action.icon} />}
+                    {action.label}
+                  </button>
+                ))}
             </div>
           )}
         </div>

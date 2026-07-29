@@ -137,7 +137,27 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
     onExtensionFocus: vi.fn().mockReturnValue(() => {}),
 
     // Contribution System
-    getContributions: vi.fn().mockResolvedValue({}),
+    getContributions: vi.fn().mockResolvedValue({
+      'chat-action': [
+        { pluginId: 'com.smartchat.builtin.whatsapp-core', id: 'pin', label: 'Pin Chat', when: { field: 'chat.isPinned', op: 'eq', value: false } },
+        { pluginId: 'com.smartchat.builtin.whatsapp-core', id: 'unpin', label: 'Unpin Chat', when: { field: 'chat.isPinned', op: 'eq', value: true } },
+        { pluginId: 'com.smartchat.builtin.whatsapp-core', id: 'archive', label: 'Archive Chat' },
+        { pluginId: 'com.smartchat.builtin.whatsapp-core', id: 'unarchive', label: 'Unarchive Chat' },
+        {
+          pluginId: 'com.smartchat.builtin.whatsapp-core',
+          id: 'mute',
+          label: 'Mute Chat',
+          when: { field: 'chat.isMuted', op: 'eq', value: false },
+          subMenu: [
+            { id: '8h', label: '8 Hours', args: { relativeMs: 28800000 } },
+            { id: '1w', label: '1 Week', args: { relativeMs: 604800000 } },
+            { id: 'always', label: 'Always', args: { durationMs: -1 } }
+          ]
+        },
+        { pluginId: 'com.smartchat.builtin.whatsapp-core', id: 'unmute', label: 'Unmute Chat', when: { field: 'chat.isMuted', op: 'eq', value: true } },
+        { pluginId: 'com.smartchat.builtin.whatsapp-core', id: 'mark-read', label: 'Mark as Read' }
+      ]
+    }),
     executeContribution: vi.fn().mockResolvedValue(undefined),
     onContributionsUpdated: vi.fn().mockReturnValue(() => {}),
   }

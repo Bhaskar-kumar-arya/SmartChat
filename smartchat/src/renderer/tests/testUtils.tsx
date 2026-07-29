@@ -1,6 +1,7 @@
 import React, { ReactElement } from 'react'
 import { render, RenderOptions } from '@testing-library/react'
 import { APIProvider } from '@renderer/context/APIContext'
+import { ContributionProvider } from '@renderer/context/ContributionContext'
 import { IAPIService } from '@renderer/services/IAPIService'
 import { createMockApiService } from './mocks/mockApiService'
 
@@ -16,7 +17,11 @@ export function renderWithProviders(
   }: ExtendedRenderOptions = {}
 ) {
   function Wrapper({ children }: { children: React.ReactNode }) {
-    return <APIProvider service={apiService}>{children}</APIProvider>
+    return (
+      <APIProvider service={apiService}>
+        <ContributionProvider>{children}</ContributionProvider>
+      </APIProvider>
+    )
   }
 
   return {

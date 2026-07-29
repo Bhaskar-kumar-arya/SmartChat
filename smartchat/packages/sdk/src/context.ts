@@ -48,6 +48,33 @@ export interface CommandContext {
   chatJid?: string
 }
 
+/**
+ * Flat context object passed to evaluateWhen for chat-action contributions.
+ * All keys match WhenLeaf.field values used in `when` conditions.
+ */
+export interface ChatWhenContext {
+  'chat.type': 'DM' | 'GROUP' | 'COMMUNITY' | 'ANNOUNCE' | 'SUBGROUP'
+  'chat.unreadCount': number
+  'chat.isPinned': boolean
+  'chat.isMuted': boolean
+  'chat.isAnnounce': boolean
+  'chat.isCommunity': boolean
+}
+
+/**
+ * Flat context object passed to evaluateWhen for message-action contributions.
+ * All keys match WhenLeaf.field values used in `when` conditions.
+ */
+export interface MessageWhenContext {
+  'message.messageType': string
+  'message.fromMe': boolean
+  'message.isDeleted': boolean
+  'message.isEdited': boolean
+  'message.isMedia': boolean
+  'message.isText': boolean
+  'message.hasReactions': boolean
+}
+
 export interface BadgeDescriptor {
   text?: string
   count?: number

@@ -36,12 +36,12 @@ const MANIFEST_TO_SLOT_MAPPINGS: ManifestContributionMapper[] = [
   {
     key: 'chatActions',
     slot: 'chat-action',
-    toContrib: (c, pluginId) => ({ pluginId, id: c.id, label: c.label, icon: c.icon, when: c.when })
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, label: c.label, icon: c.icon, when: c.when, subMenu: c.subMenu })
   },
   {
     key: 'messageActions',
     slot: 'message-action',
-    toContrib: (c, pluginId) => ({ pluginId, id: c.id, label: c.label, icon: c.icon, when: c.when })
+    toContrib: (c, pluginId) => ({ pluginId, id: c.id, label: c.label, icon: c.icon, when: c.when, subMenu: c.subMenu })
   },
   {
     key: 'chatBadges',
@@ -285,7 +285,8 @@ export class PluginHost implements IPluginHost {
             id,
             label: decl?.label ?? id,
             icon: decl?.icon,
-            when: decl?.when
+            when: decl?.when,
+            subMenu: decl?.subMenu
           })
           this.handlers.set(`${plugin.id}:chat-action:${id}`, handler)
         },
@@ -296,7 +297,8 @@ export class PluginHost implements IPluginHost {
             id,
             label: decl?.label ?? id,
             icon: decl?.icon,
-            when: decl?.when
+            when: decl?.when,
+            subMenu: decl?.subMenu
           })
           this.handlers.set(`${plugin.id}:message-action:${id}`, handler)
         },

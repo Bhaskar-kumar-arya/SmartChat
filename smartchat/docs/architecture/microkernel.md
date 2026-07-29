@@ -340,9 +340,42 @@ export type PermissionCapability = string
 // New kernel modules define additional capability strings alongside their IKernelModule
 // implementation. No change to this file is needed.
 
+export type WhenOperator = 'eq' | 'neq' | 'in' | 'nin'
+
+export interface WhenLeaf {
+  field: string
+  op: WhenOperator
+  value: unknown
+}
+
+export type WhenCondition =
+  | WhenLeaf
+  | { and: WhenCondition[] }
+  | { or: WhenCondition[] }
+
+export interface SubMenuItemDeclaration {
+  id: string
+  label: string
+  icon?: string
+  args?: Record<string, unknown>
+  subMenu?: SubMenuItemDeclaration[]
+}
+
 export interface ContributionsDeclaration {
-  chatActions?: Array<{ id: string; label: string; icon?: string; when?: string }>
-  messageActions?: Array<{ id: string; label: string; icon?: string; when?: string }>
+  chatActions?: Array<{
+    id: string
+    label: string
+    icon?: string
+    when?: WhenCondition
+    subMenu?: SubMenuItemDeclaration[]
+  }>
+  messageActions?: Array<{
+    id: string
+    label: string
+    icon?: string
+    when?: WhenCondition
+    subMenu?: SubMenuItemDeclaration[]
+  }>
   chatBadges?: Array<{ id: string; label?: string }>
   messageRenderers?: Array<{ id: string; messageType: string }>
   slashCommands?: SlashCommand[]
@@ -386,16 +419,18 @@ export interface ChatActionContribution {
   pluginId: string
   id: string
   label: string
-  icon?: string
-  when?: string  // optional condition expression e.g. "chat.isGroup"
+  icon?: string                       // Inline SVG string, Image URL/data URI, or Lucide icon name ("pin", "bell-off", "sparkles")
+  when?: WhenCondition                // Declarative JSON Condition Tree evaluated against ChatWhenContext
+  subMenu?: SubMenuItemDeclaration[] // Recursive submenus of arbitrary nesting depth
 }
 
 export interface MessageActionContribution {
   pluginId: string
   id: string
   label: string
-  icon?: string
-  when?: string
+  icon?: string                       // Inline SVG string, Image URL/data URI, or Lucide icon name
+  when?: WhenCondition                // Declarative JSON Condition Tree evaluated against MessageWhenContext
+  subMenu?: SubMenuItemDeclaration[]
 }
 
 export interface ChatBadgeContribution {

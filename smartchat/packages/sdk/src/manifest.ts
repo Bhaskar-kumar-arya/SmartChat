@@ -1,5 +1,17 @@
 import { z } from 'zod'
 
+export interface WhenLeaf {
+  field: string
+  op: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'nin'
+  value: string | number | boolean | string[]
+}
+
+export type WhenCondition =
+  | { all: WhenCondition[] }
+  | { any: WhenCondition[] }
+  | { not: WhenCondition }
+  | WhenLeaf
+
 export interface SlashCommand {
   name: string
   description: string
@@ -12,9 +24,17 @@ export interface CronEntry {
 
 export type PermissionCapability = string
 
+export interface SubMenuItemDeclaration {
+  id: string
+  label: string
+  icon?: string
+  args?: Record<string, unknown>
+  subMenu?: SubMenuItemDeclaration[]
+}
+
 export interface ContributionsDeclaration {
-  chatActions?: Array<{ id: string; label: string; icon?: string; when?: string }>
-  messageActions?: Array<{ id: string; label: string; icon?: string; when?: string }>
+  chatActions?: Array<{ id: string; label: string; icon?: string; when?: WhenCondition; subMenu?: SubMenuItemDeclaration[] }>
+  messageActions?: Array<{ id: string; label: string; icon?: string; when?: WhenCondition; subMenu?: SubMenuItemDeclaration[] }>
   chatBadges?: Array<{ id: string; label?: string }>
   messageRenderers?: Array<{ id: string; messageType: string }>
   slashCommands?: SlashCommand[]
@@ -64,18 +84,45 @@ const CronEntrySchema = z.object({
   cron: z.string()
 })
 
+const WhenLeafSchema = z.object({
+  field: z.string(),
+  op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'nin']),
+  value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])
+})
+
+const WhenConditionSchema: z.ZodType<WhenCondition> = z.lazy(() =>
+  z.union([
+    z.object({ all: z.array(WhenConditionSchema) }),
+    z.object({ any: z.array(WhenConditionSchema) }),
+    z.object({ not: WhenConditionSchema }),
+    WhenLeafSchema
+  ])
+)
+
+const SubMenuItemSchema: z.ZodType<SubMenuItemDeclaration> = z.lazy(() =>
+  z.object({
+    id: z.string(),
+    label: z.string(),
+    icon: z.string().optional(),
+    args: z.record(z.string(), z.unknown()).optional(),
+    subMenu: z.array(SubMenuItemSchema).optional()
+  })
+)
+
 const ContributionsDeclarationSchema = z.object({
   chatActions: z.array(z.object({
     id: z.string(),
     label: z.string(),
     icon: z.string().optional(),
-    when: z.string().optional()
+    when: WhenConditionSchema.optional(),
+    subMenu: z.array(SubMenuItemSchema).optional()
   })).optional(),
   messageActions: z.array(z.object({
     id: z.string(),
     label: z.string(),
     icon: z.string().optional(),
-    when: z.string().optional()
+    when: WhenConditionSchema.optional(),
+    subMenu: z.array(SubMenuItemSchema).optional()
   })).optional(),
   chatBadges: z.array(z.object({
     id: z.string(),

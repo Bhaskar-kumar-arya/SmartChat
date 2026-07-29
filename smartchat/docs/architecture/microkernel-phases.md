@@ -308,6 +308,32 @@ Implement a standalone external plugin (`com.smartchat.voice-transcriber`) contr
 - `kernel:messages:downloadMedia`: Microkernel API method downloading and caching WhatsApp voice note media on demand.
 - `voice-transcriber.scext`: Packaged external plugin decoding Ogg Opus audio to 16kHz Float32 PCM and generating speech transcriptions.
 
+---
+
+## Declarative Condition Trees & Recursive Submenus ✅ DONE
+
+### Goal
+Replace hardcoded context menu action visibility logic with declarative Zod-validated `when` condition trees and support arbitrary recursive submenus with plugin-provided custom SVG & Lucide icons.
+
+### Architecture & Implementation
+- `WhenCondition`: Implemented structured JSON Condition Tree schema (`WhenLeaf`, `WhenCondition`) supporting `eq`, `neq`, `in`, `nin` operators combined with `and` / `or` logical blocks. Evaluated in renderer via `evaluateWhen()`.
+- `SubMenuItemDeclaration`: Dedicated module `src/main/kernel/contributions/SubMenuItemDeclaration.ts` and Zod schema `SubMenuItemSchema` using `z.lazy()` supporting recursive submenus (`subMenu?: SubMenuItemDeclaration[]`).
+- Manifest-Driven Icons & Lucide Support: `WhatsappCorePlugin` supplies SVG string constants directly in its manifest via `svgIcons.ts`. `PluginIcon.tsx` dynamically renders raw SVG strings, image URLs, or Lucide icon names (`"pin"`, `"bell-off"`, `"mic"`, `"zap"`, `"flask"`).
+- Shared Submenu Transformer: Extracted `mapSubMenuItems` into `src/renderer/src/utils/contributionUtils.tsx` shared between `ChatList.tsx` and `MessageItem.tsx`.
+
+### Key Files & Artifacts
+- [WhenCondition.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/kernel/contributions/WhenCondition.ts)
+- [SubMenuItemDeclaration.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/kernel/contributions/SubMenuItemDeclaration.ts)
+- [PluginIcon.tsx](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/renderer/src/components/common/PluginIcon.tsx)
+- [contributionUtils.tsx](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/renderer/src/utils/contributionUtils.tsx)
+- [whenCondition.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/renderer/src/utils/whenCondition.ts)
+
+### Acceptance Criteria & Verification
+- [x] Context menus render declarative `when` condition filters
+- [x] Submenus recursively nest to arbitrary depths
+- [x] Raw SVG markup, image URLs, and Lucide icons render dynamically with zero hardcoded switch cases in components
+- [x] All 97 test files (460 tests) pass with zero TypeScript errors
+
 ### Key Files & Artifacts
 - `plugins/voice-transcriber-plugin/manifest.json`
 - [KernelMessagesModule.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/kernel/api-modules/KernelMessagesModule.ts)

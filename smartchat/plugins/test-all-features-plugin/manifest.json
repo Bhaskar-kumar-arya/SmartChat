@@ -1,0 +1,104 @@
+{
+  "id": "com.smartchat.test-all-features",
+  "name": "Microkernel All-Features Test Plugin",
+  "version": "1.0.0",
+  "apiVersion": "2",
+  "main": "index.js",
+  "description": "External test plugin validating all contribution slots and kernel API modules.",
+  "permissions": [
+    "chats:read",
+    "chats:write",
+    "messages:read",
+    "messages:send",
+    "messages:delete",
+    "contacts:read",
+    "ai:chat",
+    "ai:tools:call",
+    "ai:tools:register",
+    "storage:read",
+    "storage:write",
+    "ui:notification",
+    "ui:toast",
+    "events:*",
+    "scheduler"
+  ],
+  "contributions": {
+    "chatActions": [
+      {
+        "id": "test-chat-action",
+        "label": "Test Chat Action",
+        "icon": "flask"
+      }
+    ],
+    "messageActions": [
+      {
+        "id": "test-message-action",
+        "label": "Test Message Action",
+        "icon": "zap"
+      }
+    ],
+    "chatBadges": [
+      {
+        "id": "test-badge",
+        "label": "Test Badge"
+      }
+    ],
+    "slashCommands": [
+      {
+        "name": "test-cmd",
+        "description": "Executes test slash command"
+      }
+    ],
+    "sidebarPanels": [
+      {
+        "id": "test-sidebar",
+        "title": "Test Sidebar Panel"
+      }
+    ],
+    "settingsPages": [
+      {
+        "id": "test-settings",
+        "title": "Test Settings Page"
+      }
+    ],
+    "aiTools": [
+      {
+        "name": "test_plugin_tool",
+        "description": "AI tool provided by test plugin",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" }
+          },
+          "required": ["query"]
+        }
+      }
+    ],
+    "keyboardShortcuts": [
+      {
+        "id": "test-shortcut",
+        "defaultBinding": "Ctrl+Alt+T",
+        "description": "Test plugin hotkey"
+      }
+    ],
+    "statusBarItems": [
+      {
+        "id": "test-status",
+        "alignment": "right"
+      }
+    ],
+    "chatFilters": [
+      {
+        "id": "test-filter",
+        "label": "Test Filter",
+        "icon": "filter"
+      }
+    ],
+    "chatSortStrategies": [
+      {
+        "id": "test-sort",
+        "label": "Test Sort Strategy"
+      }
+    ]
+  }
+}

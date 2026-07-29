@@ -1,9 +1,13 @@
+import { WhenCondition } from './WhenCondition'
+import { SubMenuItemDeclaration } from './SubMenuItemDeclaration'
+
 export interface ChatActionContribution {
   pluginId: string
   id: string
   label: string
   icon?: string
-  when?: string
+  when?: WhenCondition
+  subMenu?: SubMenuItemDeclaration[]
 }
 
 export interface MessageActionContribution {
@@ -11,7 +15,8 @@ export interface MessageActionContribution {
   id: string
   label: string
   icon?: string
-  when?: string
+  when?: WhenCondition
+  subMenu?: SubMenuItemDeclaration[]
 }
 
 export interface ChatBadgeContribution {

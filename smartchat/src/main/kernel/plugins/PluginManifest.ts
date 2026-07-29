@@ -1,3 +1,6 @@
+import { WhenCondition } from '../contributions/WhenCondition'
+import { SubMenuItemDeclaration } from '../contributions/SubMenuItemDeclaration'
+
 export interface SlashCommand {
   name: string
   description: string
@@ -11,8 +14,8 @@ export interface CronEntry {
 export type PermissionCapability = string
 
 export interface ContributionsDeclaration {
-  chatActions?: Array<{ id: string; label: string; icon?: string; when?: string }>
-  messageActions?: Array<{ id: string; label: string; icon?: string; when?: string }>
+  chatActions?: Array<{ id: string; label: string; icon?: string; when?: WhenCondition; subMenu?: SubMenuItemDeclaration[] }>
+  messageActions?: Array<{ id: string; label: string; icon?: string; when?: WhenCondition; subMenu?: SubMenuItemDeclaration[] }>
   chatBadges?: Array<{ id: string; label?: string }>
   messageRenderers?: Array<{ id: string; messageType: string }>
   slashCommands?: SlashCommand[]

@@ -18,6 +18,11 @@ import { EmojiText } from '../common/EmojiText'
 import { ExtensionChatListItem } from './ExtensionChatListItem'
 import ExtensionManager from '../extensions/ExtensionManager'
 import { useContributions } from '../../hooks/useContributions'
+import { evaluateWhen } from '../../utils/whenCondition'
+import type { ChatWhenContext } from '../../../../main/kernel/contributions/WhenCondition'
+import { ExtendedChatItem } from '../../types/chatTypes'
+import { PluginIcon } from '../common/PluginIcon'
+import { mapSubMenuItems } from '../../utils/contributionUtils'
 
 interface ChatListProps {
   activeJid: string | null
@@ -60,39 +65,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic, on
   const [showSettings, setShowSettings] = useState(false)
   const [showExtensionManager, setShowExtensionManager] = useState(false)
   const [clearIndexFirst, setClearIndexFirst] = useState(false)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; jid: string; muted: boolean; pinned: boolean } | null>(null)
-
-  const handleMute = async (jid: string, muteExpirationMs: number) => {
-    try {
-      await api.muteChat(jid, muteExpirationMs)
-    } catch (err) {
-      console.error('Failed to mute chat:', err)
-    }
-  }
-
-  const handleUnmute = async (jid: string) => {
-    try {
-      await api.unmuteChat(jid)
-    } catch (err) {
-      console.error('Failed to unmute chat:', err)
-    }
-  }
-
-  const handlePin = async (jid: string) => {
-    try {
-      await api.pinChat(jid)
-    } catch (err) {
-      console.error('Failed to pin chat:', err)
-    }
-  }
-
-  const handleUnpin = async (jid: string) => {
-    try {
-      await api.unpinChat(jid)
-    } catch (err) {
-      console.error('Failed to unpin chat:', err)
-    }
-  }
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chat: ExtendedChatItem } | null>(null)
 
   const {
     groupedChats,
@@ -254,129 +227,46 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic, on
   const buildContextMenuItems = () => {
     if (!contextMenu) return []
 
-    const items: Array<{
-      label: string
-      onClick?: () => void
-      icon?: React.ReactNode
-      subMenu?: Array<{ label: string; onClick?: () => void }>
-    }> = []
+    const { chat } = contextMenu
+    const muted = isMuted(chat.muteExpiration)
+    const pinned = !!(chat.pinned && chat.pinned > 0)
 
-    const findAction = (actionId: string) => chatActions.find((a) => a.id === actionId)
+    const chatWhenCtx: ChatWhenContext = {
+      'chat.type': chat.jid.endsWith('@g.us')
+        ? 'GROUP'
+        : chat.isCommunity
+        ? 'COMMUNITY'
+        : chat.isAnnounce
+        ? 'ANNOUNCE'
+        : chat.linkedParentJid
+        ? 'SUBGROUP'
+        : 'DM',
+      'chat.unreadCount': chat.unreadCount || 0,
+      'chat.isPinned': pinned,
+      'chat.isMuted': muted,
+      'chat.isAnnounce': !!chat.isAnnounce,
+      'chat.isCommunity': !!chat.isCommunity
+    }
 
-    // Pin / Unpin
-    const targetPinId = contextMenu.pinned ? 'unpin' : 'pin'
-    const pinContrib = findAction(targetPinId)
-    items.push({
-      label: pinContrib?.label || (contextMenu.pinned ? 'Unpin Chat' : 'Pin Chat'),
-      onClick: () => {
-        if (pinContrib) {
-          api.executeContribution({
-            slot: 'chat-action',
-            pluginId: pinContrib.pluginId,
-            id: pinContrib.id,
-            context: { jid: contextMenu.jid }
-          }).catch(console.error)
-        } else {
-          if (contextMenu.pinned) handleUnpin(contextMenu.jid)
-          else handlePin(contextMenu.jid)
-        }
-      },
-      icon: (
-        <svg className="indicator-icon pin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          {contextMenu.pinned ? (
-            <>
-              <line x1="2" x2="22" y1="2" y2="22"/>
-              <line x1="12" x2="12" y1="17" y2="22"/>
-              <path d="M9 9v1.17a2 2 0 0 1-.78 1.22L5.44 15a2 2 0 0 0-.44 1.24V17h12.5"/>
-              <path d="M10 4H9.17"/>
-              <path d="M15 9.17V4a1 1 0 0 0-1-1h-4"/>
-              <path d="M19 15.76a2 2 0 0 0-.44-1.24l-2.78-3.61A2 2 0 0 1 15 9.17"/>
-            </>
-          ) : (
-            <>
-              <line x1="12" y1="17" x2="12" y2="22"/>
-              <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.68V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v4.68a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
-            </>
-          )}
-        </svg>
-      )
-    })
+    const visibleActions = chatActions.filter((a) => evaluateWhen(a.when, chatWhenCtx))
 
-    // Mute / Unmute
-    const targetMuteId = contextMenu.muted ? 'unmute' : 'mute'
-    const muteContrib = findAction(targetMuteId)
-    if (contextMenu.muted) {
-      items.push({
-        label: muteContrib?.label || 'Unmute Chat',
-        onClick: () => {
-          if (muteContrib) {
+    return visibleActions.map((action) => ({
+      label: action.label,
+      icon: action.icon ? <PluginIcon icon={action.icon} /> : undefined,
+      subMenu: action.subMenu
+        ? mapSubMenuItems(action.subMenu, action, 'chat-action', { chatJid: chat.jid }, api.executeContribution)
+        : undefined,
+      onClick: action.subMenu
+        ? undefined
+        : () => {
             api.executeContribution({
               slot: 'chat-action',
-              pluginId: muteContrib.pluginId,
-              id: muteContrib.id,
-              context: { jid: contextMenu.jid }
+              pluginId: action.pluginId,
+              id: action.id,
+              context: { chatJid: chat.jid }
             }).catch(console.error)
-          } else {
-            handleUnmute(contextMenu.jid)
           }
-        },
-        icon: (
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-        )
-      })
-    } else {
-      const executeMute = (durationMs: number) => {
-        if (muteContrib) {
-          api.executeContribution({
-            slot: 'chat-action',
-            pluginId: muteContrib.pluginId,
-            id: muteContrib.id,
-            context: { jid: contextMenu.jid, durationMs }
-          }).catch(console.error)
-        } else {
-          handleMute(contextMenu.jid, durationMs)
-        }
-      }
-      items.push({
-        label: muteContrib?.label || 'Mute Chat',
-        icon: (
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-            <path d="M18.63 13A17.89 17.89 0 0 1 18 8"/>
-            <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/>
-            <path d="M18 8a6 6 0 0 0-9.33-5"/>
-            <line x1="1" y1="1" x2="23" y2="23"/>
-          </svg>
-        ),
-        subMenu: [
-          { label: '8 Hours', onClick: () => executeMute(Date.now() + 8 * 60 * 60 * 1000) },
-          { label: '1 Week', onClick: () => executeMute(Date.now() + 7 * 24 * 60 * 60 * 1000) },
-          { label: 'Always', onClick: () => executeMute(-1) }
-        ]
-      })
-    }
-
-    // Additional external plugin actions
-    const builtInIds = ['pin', 'unpin', 'mute', 'unmute', 'archive', 'unarchive', 'mark-read']
-    const externalActions = chatActions.filter((a) => !builtInIds.includes(a.id))
-    for (const action of externalActions) {
-      items.push({
-        label: action.label,
-        onClick: () => {
-          api.executeContribution({
-            slot: 'chat-action',
-            pluginId: action.pluginId,
-            id: action.id,
-            context: { jid: contextMenu.jid }
-          }).catch(console.error)
-        }
-      })
-    }
-
-    return items
+    }))
   }
 
   return (
@@ -555,9 +445,7 @@ export default function ChatList({ activeJid, onSelectChat, onShowProfilePic, on
                       setContextMenu({
                         x: e.clientX,
                         y: e.clientY,
-                        jid: chat.jid,
-                        muted,
-                        pinned
+                        chat
                       })
                     }}
                   >

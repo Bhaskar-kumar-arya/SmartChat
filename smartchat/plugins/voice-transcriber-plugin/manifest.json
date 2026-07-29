@@ -1,0 +1,30 @@
+{
+  "id": "com.smartchat.voice-transcriber",
+  "name": "Voice Transcriber Plugin",
+  "version": "1.0.0",
+  "apiVersion": "2",
+  "main": "index.js",
+  "description": "External microkernel plugin that transcribes English audio messages and replies to the chat.",
+  "permissions": [
+    "messages:read",
+    "messages:send",
+    "ai:chat",
+    "ui:notification",
+    "ui:toast",
+    "events:*"
+  ],
+  "contributions": {
+    "messageActions": [
+      {
+        "id": "transcribe",
+        "label": "Transcribe Audio",
+        "icon": "mic",
+        "when": {
+          "field": "message.messageType",
+          "op": "in",
+          "value": ["audioMessage", "ptvMessage"]
+        }
+      }
+    ]
+  }
+}
