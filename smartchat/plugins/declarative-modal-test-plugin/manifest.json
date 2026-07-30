@@ -6,7 +6,9 @@
   "main": "index.js",
   "permissions": [
     "ui:notification",
-    "ui:toast"
+    "ui:toast",
+    "chats:read",
+    "chats:write"
   ],
   "contributions": {
     "chatActions": [
