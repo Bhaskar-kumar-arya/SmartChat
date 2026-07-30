@@ -1,0 +1,87 @@
+import { BrowserWindow } from 'electron'
+import { randomUUID } from 'node:crypto'
+import { IPanelHost, PanelDescriptor } from './IPanelHost'
+import { KernelNotFoundError } from '../api-modules/KernelErrors'
+
+export class PanelHost implements IPanelHost {
+  private readonly panels = new Map<string, PanelDescriptor>()
+
+  constructor(private readonly getMainWindow?: () => BrowserWindow | null) {}
+
+  registerPanel(desc: Omit<PanelDescriptor, 'panelId'>): string {
+    const existing = this.findPanel(desc.pluginId, desc.contributionId)
+    if (existing) {
+      return existing.panelId
+    }
+
+    const panelId = randomUUID()
+    const fullDesc: PanelDescriptor = {
+      ...desc,
+      panelId
+    }
+    this.panels.set(panelId, fullDesc)
+    return panelId
+  }
+
+  findPanel(pluginId: string, contributionId: string): PanelDescriptor | undefined {
+    for (const panel of this.panels.values()) {
+      if (panel.pluginId === pluginId && panel.contributionId === contributionId) {
+        return panel
+      }
+    }
+    return undefined
+  }
+
+  getPanel(panelId: string): PanelDescriptor | undefined {
+    const direct = this.panels.get(panelId)
+    if (direct) return direct
+
+    for (const panel of this.panels.values()) {
+      if (panel.contributionId === panelId) {
+        return panel
+      }
+    }
+    return undefined
+  }
+
+  getPluginId(panelId: string): string | undefined {
+    return this.getPanel(panelId)?.pluginId
+  }
+
+
+  deregisterPlugin(pluginId: string): void {
+    for (const [panelId, panel] of this.panels.entries()) {
+      if (panel.pluginId === pluginId) {
+        this.panels.delete(panelId)
+      }
+    }
+  }
+
+  async openPanel(pluginId: string, contributionId: string): Promise<{ success: boolean }> {
+    const panel = this.findPanel(pluginId, contributionId)
+    if (!panel) {
+      throw new KernelNotFoundError(`Panel '${contributionId}' not found for plugin '${pluginId}'`)
+    }
+    const win = this.getMainWindow?.()
+    if (win && (typeof win.isDestroyed !== 'function' || !win.isDestroyed())) {
+      win.webContents.send('kernel:ui:panel:open', {
+        contributionId,
+        pluginId,
+        panelId: panel.panelId
+      })
+    }
+    return { success: true }
+  }
+
+  async closePanel(pluginId: string, contributionId: string): Promise<{ success: boolean }> {
+    const win = this.getMainWindow?.()
+    if (win && (typeof win.isDestroyed !== 'function' || !win.isDestroyed())) {
+      win.webContents.send('kernel:ui:panel:close', {
+        contributionId,
+        pluginId
+      })
+    }
+    return { success: true }
+  }
+}
+

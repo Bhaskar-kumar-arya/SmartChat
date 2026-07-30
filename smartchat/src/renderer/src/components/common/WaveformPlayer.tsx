@@ -22,15 +22,10 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
   useEffect(() => {
     if (!containerRef.current) return
 
-    // Read colors from CSS variables so WaveSurfer respects the design system
-    const style = getComputedStyle(document.documentElement)
-    const primaryColor = style.getPropertyValue('--wa-icon-active').trim() || '#00a884'
-    const mutedColor = style.getPropertyValue('--wa-text-tertiary').trim() || '#808080'
-
     const ws = WaveSurfer.create({
       container: containerRef.current,
       waveColor: 'rgba(0, 0, 0, 0.2)',
-      progressColor: isPtt ? primaryColor : mutedColor,
+      progressColor: isPtt ? '#00a884' : '#333',
       cursorColor: 'transparent',
       barWidth: 2,
       barGap: 3,
@@ -79,21 +74,21 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
   }
 
   return (
-    <div className="audio-player-container" style={{ 
-      display: 'flex', 
-      alignItems: 'center', 
-      gap: '12px', 
-      width: '100%', 
+    <div className="audio-player-container" style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      width: '100%',
       padding: '4px 8px',
       background: 'transparent'
     }}>
-      <button 
+      <button
         onClick={togglePlay}
         style={{
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          color: isPtt ? 'var(--wa-icon-active)' : 'var(--wa-text-secondary)',
+          color: isPtt ? '#00a884' : '#54656f',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -105,11 +100,11 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
 
       <div style={{ flex: 1, position: 'relative' }}>
         <div ref={containerRef} style={{ width: '100%' }} />
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          fontSize: '0.7rem', 
-          color: 'var(--wa-text-tertiary)',
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: '0.7rem',
+          color: '#888',
           marginTop: '2px'
         }}>
           <span>{formatTime(currentTime)}</span>
@@ -117,17 +112,17 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
         </div>
       </div>
 
-      <button 
+      <button
         onClick={cycleSpeed}
         style={{
-          background: 'var(--wa-input-bg)',
+          background: '#f0f2f5',
           border: 'none',
           borderRadius: '12px',
           padding: '2px 8px',
           fontSize: '0.75rem',
           fontWeight: 700,
           cursor: 'pointer',
-          color: 'var(--wa-text-secondary)',
+          color: '#54656f',
           minWidth: '36px',
           textAlign: 'center'
         }}

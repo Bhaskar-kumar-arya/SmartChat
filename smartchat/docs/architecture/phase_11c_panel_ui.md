@@ -39,31 +39,35 @@ Panel HTML (webview)
   → response returned to panel
 ```
 
-The plugin worker is still loaded and active (it may register other contributions, handle events,
-etc.) — but it is not in the call path for panel UI operations. This avoids serialization overhead
-and keeps panel responsiveness independent of worker load.
+#### Rationale & Benefits
+- **Performance & 60 FPS Responsiveness**: Eliminates double serialization and 4-6 thread hops per call.
+- **Worker Independence**: If the plugin worker is performing heavy CPU tasks (e.g. audio transcription, AI embeddings, cron processing), the Panel UI remains 100% responsive.
+- **Developer Experience**: Panel authors write straightforward async browser code directly against `window.__smartchat.api.*` without manual message proxying.
+- **Security Parity**: Requests carry `panelId` mapped to `pluginId` in Main process and execute through the exact same capability check engine (`KernelAPIRouter`).
 
-### Panels support both declarative AND imperative opening
+#### Trade-offs & Mitigations
+1. **Trade-off**: Maintaining two bridge APIs (`WorkerPluginRuntime` for Node workers vs `panel-preload.ts` for browser webviews).
+   - *Mitigation*: Both bridge implementations map 1-to-1 to identical `KernelAPIRouter` namespaces (`kernel:chats`, `kernel:messages`, `kernel:storage`, etc.), keeping backend handlers 100% DRY.
+2. **Trade-off**: Worker thread and Panel webview do not share in-memory JS heap variables.
+   - *Mitigation*: Panels and workers synchronize state cleanly using persistent kernel storage (`ctx.storage` / `window.__smartchat.api.storage`) and pub-sub event subscriptions (`ctx.events` / `window.__smartchat.api.events`).
 
-Panels can be opened by the user (clicking a sidebar tab) **or** by the plugin worker
-programmatically. The plugin worker calls:
+### Panels render in the full main stage (right of Nav Rail)
+
+Panels declared under `sidebarPanels` in `manifest.json` render in the **main stage** to the right of the Nav Rail, occupying the full screen area.
+
+Panels are opened in two ways:
+1. **Declarative (user-driven):** user clicks a plugin's nav rail icon.
+2. **Imperative (plugin-driven):** the plugin worker calls `ctx.ui.openPanel(id)` / `ctx.ui.closePanel(id)` from any handler (e.g. when an event arrives or slash command executes).
 
 ```typescript
-// Opens / focuses the plugin's sidebar panel by contribution id
+// Opens / focuses the plugin's panel in the main stage
 await ctx.ui.openPanel('my-panel-id')
 
-// Hides it (collapses back to no active panel)
+// Closes / returns to default chat view
 await ctx.ui.closePanel('my-panel-id')
 ```
 
-This is modelled after VS Code's `workbench.view.extension.*` commands. Real use cases:
-- Incoming message → plugin opens its notification panel
-- Slash command handler → plugin opens its results panel
-- AI tool finishes → plugin surfaces its output panel
-
-Requires `ui:panel` capability. Does NOT force the user's panel to unmount — it only changes
-which panel tab is active. The same `<PanelWebview>` (already mounted or lazily mounted on first
-open) is revealed.
+Requires `ui:panel` capability. Opening a panel switches the active main stage view to the plugin's persistent `<PanelWebview>`. Moving away or closing returns to the standard Chat view.
 
 ---
 

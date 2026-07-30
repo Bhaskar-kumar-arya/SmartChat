@@ -30,7 +30,7 @@ export function NameChip({ jid, name, onSelectChat }: NameChipProps) {
         cursor: isClickable ? 'pointer' : 'default',
         fontWeight: 600,
         textDecoration: isClickable ? 'underline' : 'none',
-        color: isClickable ? 'var(--wa-primary)' : 'inherit',
+        color: isClickable ? 'var(--primary-color, #25D366)' : 'inherit',
         margin: '0 2px'
       }}
       onClick={() => {
@@ -166,7 +166,7 @@ export const SYSTEM_STUB_REGISTRY: Record<
     const timerSeconds = parseInt(typeof content.parameters?.[0] === 'string' ? content.parameters[0] : '0', 10)
     const changer = content.parameters?.[1]
     const actorChip = isEnrichedContact(changer) ? <NameChip jid={changer.jid} name={changer.name} onSelectChat={onSelectChat} /> : null
-    
+
     let durationText = ''
     if (timerSeconds === 86400) durationText = '24 hours'
     else if (timerSeconds === 604800) durationText = '7 days'

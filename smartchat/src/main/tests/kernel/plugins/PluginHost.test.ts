@@ -37,8 +37,10 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
       unregisterModule: vi.fn(),
       getModule: vi.fn(),
       attachChannel: vi.fn().mockReturnValue(() => {}),
-      handleRequest: vi.fn()
+      handleRequest: vi.fn(),
+      handle: vi.fn()
     }
+
     contributionRegistry = {
       register: vi.fn(),
       unregisterAll: vi.fn(),

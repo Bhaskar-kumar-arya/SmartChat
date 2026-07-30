@@ -155,7 +155,14 @@ declare global {
       overlayEvent: (overlayId: string, event: string, data: unknown) => void
       overlayDismiss: (overlayId: string) => void
       getOverlayPreloadPath: () => string
+
+      // ── Panel UI API (Phase 11c) ─────────────────────────────────────────
+      onPanelOpen: (handler: (data: { contributionId: string; pluginId: string; panelId: string }) => void) => () => void
+      onPanelClose: (handler: (data: { contributionId: string; pluginId: string }) => void) => () => void
+      notifyPanelClosed: (panelId: string) => void
+      getPanelPreloadPath: () => string
     }
   }
 }
+
 

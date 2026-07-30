@@ -21,14 +21,14 @@ export function SystemMessageBubble({
   const renderedElement = renderer
     ? renderer(content, onSelectChat, msg)
     : msg.messageType === 'call' || msg.messageType === 'callLogMesssage' || msg.messageType === 'scheduledCallCreationMessage'
-    ? (() => {
+      ? (() => {
         const callLog = (content as any).callLog
         if (callLog) {
           return <>📞 {callLog.isVideo ? 'Video' : 'Voice'} Call {callLog.isGroup ? '(Group)' : ''}</>
         }
         return <>📞 Call</>
       })()
-    : (() => {
+      : (() => {
         const chip = formatParticipants(content.parameters, onSelectChat)
         return chip || <>Group activity</>
       })()
@@ -47,7 +47,7 @@ export function SystemMessageBubble({
         className="system-message-bubble"
         style={{
           background: 'rgba(0, 0, 0, 0.05)',
-          color: 'var(--wa-text-tertiary)',
+          color: '#666',
           padding: '6px 14px',
           borderRadius: '8px',
           fontSize: '0.8rem',

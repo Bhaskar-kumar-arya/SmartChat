@@ -5,6 +5,7 @@ import { IPermissionStore } from '../permissions/IPermissionStore'
 import { INotificationService } from '../../services/notification/INotificationService'
 import { KernelNotFoundError } from './KernelErrors'
 import { IOverlayHost, WebviewOverlayOptions } from '../ui/IOverlayHost'
+import { IPanelHost } from '../ui/IPanelHost'
 
 export class KernelUIModule extends BaseKernelModule {
   readonly namespace = 'kernel:ui'
@@ -13,7 +14,8 @@ export class KernelUIModule extends BaseKernelModule {
     permissions: IPermissionStore,
     private readonly notificationService: INotificationService,
     private readonly getMainWindow?: () => BrowserWindow | null,
-    private readonly overlayHost?: IOverlayHost
+    private readonly overlayHost?: IOverlayHost,
+    private readonly panelHost?: IPanelHost
   ) {
     super(permissions)
   }
@@ -23,6 +25,13 @@ export class KernelUIModule extends BaseKernelModule {
       throw new Error('OverlayHost is not configured on KernelUIModule')
     }
     return this.overlayHost
+  }
+
+  private getPanelHost(): IPanelHost {
+    if (!this.panelHost) {
+      throw new Error('PanelHost is not configured on KernelUIModule')
+    }
+    return this.panelHost
   }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
@@ -89,8 +98,22 @@ export class KernelUIModule extends BaseKernelModule {
         return { success: true }
       }
 
+      case 'openPanel': {
+        this.requireCapability(pluginId, 'ui:panel')
+        const { id } = (payload as { id: string }) || {}
+        return await this.getPanelHost().openPanel(pluginId, id)
+      }
+
+      case 'closePanel': {
+        this.requireCapability(pluginId, 'ui:panel')
+        const { id } = (payload as { id: string }) || {}
+        return await this.getPanelHost().closePanel(pluginId, id)
+      }
+
       default:
         throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
+
 }
+

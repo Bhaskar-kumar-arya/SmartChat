@@ -35,7 +35,7 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
     if (!rawText) return ''
     // Split by code blocks (```...```) and inline code (`...`) to avoid formatting inside them
     const parts = rawText.split(/(```[\s\S]+?```|`[^`\n]+?`)/g)
-    
+
     return parts.map(part => {
       // If it is a code block or inline code, preserve it
       if (part.startsWith('```') || part.startsWith('`')) {
@@ -58,13 +58,13 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
         if (rawContent.startsWith('[') && rawContent.endsWith(']')) {
           rawContent = rawContent.substring(1, rawContent.length - 1)
         }
-        
+
         let name = normalizedMentions[rawContent]
-        
+
         if (!name && /^\d+$/.test(rawContent)) {
           name = normalizedMentions[`${rawContent}@s.whatsapp.net`] || normalizedMentions[`${rawContent}@lid`]
         }
- 
+
         if (!name) {
           const foundKey = Object.keys(normalizedMentions).find(k => k.startsWith(rawContent))
           if (foundKey) name = normalizedMentions[foundKey]
@@ -110,7 +110,7 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
           a: ({ href, children }: any) => {
             if (href && href.startsWith('mention:')) {
               return (
-                <span className="message-mention" style={{ color: 'var(--wa-primary)', fontWeight: 600 }}>
+                <span className="message-mention" style={{ color: 'var(--primary, #00a884)', fontWeight: 600 }}>
                   {children}
                 </span>
               )

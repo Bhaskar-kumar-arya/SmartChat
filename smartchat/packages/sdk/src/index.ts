@@ -4,3 +4,5 @@ export * from './events'
 export * from './context'
 export * from './channel'
 export * from './overlay'
+export * from './bridge'
+

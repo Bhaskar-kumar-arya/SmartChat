@@ -7,4 +7,6 @@ export interface IKernelAPIRouter {
   getModule(namespace: string): IKernelModule | undefined
   attachChannel(pluginId: string, channel: IPluginChannel): () => void
   handleRequest(pluginId: string, channel: IPluginChannel, request: KernelRequest): Promise<void>
+  handle(pluginId: string, type: string, payload: unknown): Promise<unknown>
 }
+

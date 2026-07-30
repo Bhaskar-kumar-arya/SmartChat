@@ -1,5 +1,83 @@
+/* ─── Sidebar Rail (Leftmost Vertical Bar) ────────────────────────── */
+.sidebar-rail {
+  width: 60px;
+  min-width: 60px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  background: var(--wa-sidebar-bg, #171717);
+  border-right: 1px solid var(--wa-border, #3c3c3c);
+  box-sizing: border-box;
+  z-index: 10;
+}
+
+.sidebar-rail-top,
+.sidebar-rail-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.sidebar-rail-item {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--wa-icon, #aebac1);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-rail-item:hover {
+  background: var(--wa-bg-hover, #2f2f2f);
+  color: var(--wa-text-primary, #e9edef);
+}
+
+.sidebar-rail-item.active {
+  background: var(--wa-bg-active, #2f2f2f);
+  color: var(--wa-primary, #22c05e);
+}
+
+.sidebar-rail-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  background: var(--wa-primary, #22c05e);
+  border-radius: 0 4px 4px 0;
+}
+
+.sidebar-rail-item.logout:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--wa-danger, #ef4444);
+}
+
+.sidebar-rail-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.chat-sidebar-container {
+  display: flex;
+  flex: none;
+  height: 100vh;
+}
+
 /* ─── Sidebar ─────────────────────────────────────────────────────── */
 .chat-sidebar {
+
   width: 360px;
   min-width: 360px;
   height: 100vh;
@@ -8,6 +86,7 @@
   background: var(--wa-sidebar-bg);
   border-right: 1px solid var(--wa-border);
 }
+
 
 .sidebar-header {
   height: 60px;

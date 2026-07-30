@@ -15,7 +15,9 @@ import { KernelAIModule } from '../../../kernel/api-modules/KernelAIModule'
 import { KernelStorageModule, IKernelStorageRepository } from '../../../kernel/api-modules/KernelStorageModule'
 import { KernelUIModule } from '../../../kernel/api-modules/KernelUIModule'
 import { KernelEventsModule } from '../../../kernel/api-modules/KernelEventsModule'
+import { KernelLogModule } from '../../../kernel/api-modules/KernelLogModule'
 import { WorkerPluginChannel } from '../../../kernel/channels/WorkerPluginChannel'
+
 
 describe('External Plugin E2E Test (All Features)', () => {
   let tmpDir: string
@@ -157,6 +159,8 @@ describe('External Plugin E2E Test (All Features)', () => {
     router.registerModule(storageModule)
     router.registerModule(uiModule)
     router.registerModule(eventsModule)
+    router.registerModule(new KernelLogModule(permissions))
+
 
     loader = new PluginLoader(tmpDir)
     registry = new PluginRegistry()

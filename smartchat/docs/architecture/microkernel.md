@@ -61,8 +61,10 @@ Panels get an optional **layout shell** from the host (header with plugin name/i
 button) — the plugin renders its content area. Design tokens are pushed to panels via the bridge
 so they can optionally theme-match.
 
+Sidebar panels (contributed via `sidebarPanels`) render in the **main stage** to the right of the Nav Rail (occupying the full screen area right of the icon rail).
+
 Sidebar panels support two opening modes:
-- **Declarative:** user clicks the plugin's sidebar tab — host activates the panel.
+- **Declarative:** user clicks the plugin's nav rail icon — host activates the panel.
 - **Imperative:** plugin worker calls `ctx.ui.openPanel(id)` / `ctx.ui.closePanel(id)` from any
   handler (e.g. surface a results panel from a slash command, open a notification panel on an
   incoming event). Requires `ui:panel` capability.

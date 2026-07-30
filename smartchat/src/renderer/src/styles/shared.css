@@ -70,8 +70,15 @@ body {
 }
 
 @keyframes slide-down {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .filter-section {
@@ -118,7 +125,7 @@ body {
   border: 1px solid var(--wa-border);
   border-radius: 8px;
   z-index: 1000;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   max-height: 250px;
   display: flex;
   flex-direction: column;
@@ -259,12 +266,12 @@ body {
 }
 
 .range-chip.clear {
-  color: var(--wa-danger);
+  color: #ef4444;
 }
 
 .range-chip.clear:hover {
   background: rgba(239, 68, 68, 0.1);
-  border-color: var(--wa-danger);
+  border-color: #ef4444;
 }
 
 /* ─── Deep Search Loading ────────────────────────────────────────── */
@@ -294,11 +301,22 @@ body {
   animation: pulse-ring 1.5s infinite;
 }
 
-.delay-1 { animation-delay: 0.5s; }
+.delay-1 {
+  animation-delay: 0.5s;
+}
 
 @keyframes pulse-ring {
-  0%, 100% { transform: scale(0.8); opacity: 0.5; }
-  50% { transform: scale(1.2); opacity: 1; }
+
+  0%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
 }
 
 .loading-text {
@@ -335,8 +353,13 @@ body {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 /* ─── Mention Menu ─────────────────────────────────────────────── */
@@ -360,8 +383,15 @@ body {
 }
 
 @keyframes slide-up {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .mention-item {
@@ -373,7 +403,8 @@ body {
   transition: all 0.1s ease;
 }
 
-.mention-item:hover, .mention-item.active {
+.mention-item:hover,
+.mention-item.active {
   background: var(--wa-bg-hover, #2a3942);
 }
 

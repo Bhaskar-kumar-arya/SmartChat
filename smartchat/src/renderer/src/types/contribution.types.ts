@@ -4,7 +4,10 @@ export type { ContributionMap, ContributionSlot }
 
 export type ContributionRegistrySnapshot = {
   [K in ContributionSlot]?: ContributionMap[K][]
+} & {
+  panelIds?: Record<string, string>
 }
+
 
 export interface ExecuteContributionOpts {
   slot: ContributionSlot

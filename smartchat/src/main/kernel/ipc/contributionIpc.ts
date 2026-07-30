@@ -7,11 +7,38 @@ import { IPluginLoader } from '../plugins/IPluginLoader'
 import { IToolRegistry } from '../../services/ai/IToolRegistry'
 import { isBidirectionalPluginChannel } from '../channels/IPluginChannel'
 
-export function getContributionSnapshot(registry: IContributionRegistry): Record<string, unknown[]> {
-  const snapshot: Record<string, unknown[]> = {}
+import { IPanelHost } from '../ui/IPanelHost'
+
+export function getContributionSnapshot(
+  registry: IContributionRegistry,
+  panelHost?: IPanelHost
+): Record<string, unknown> {
+  const snapshot: Record<string, unknown> = {}
   for (const slot of registry.getAllSlots()) {
     snapshot[slot] = registry.getAll(slot)
   }
+
+  if (panelHost) {
+    const panelIds: Record<string, string> = {}
+    const sidebarPanels = registry.getAll('sidebar-panel')
+    for (const p of sidebarPanels) {
+      const found = panelHost.findPanel(p.pluginId, p.id)
+      if (found) {
+        panelIds[p.id] = found.panelId
+      }
+    }
+
+    const settingsPages = registry.getAll('settings-page')
+    for (const p of settingsPages) {
+      const found = panelHost.findPanel(p.pluginId, p.id)
+      if (found) {
+        panelIds[p.id] = found.panelId
+      }
+    }
+
+    snapshot.panelIds = panelIds
+  }
+
   return snapshot
 }
 
@@ -21,8 +48,10 @@ export function registerContributionIpcHandlers(
   getWebContents?: () => WebContents | undefined,
   loader?: IPluginLoader,
   permissions?: IPermissionStore,
-  toolRegistry?: IToolRegistry
+  toolRegistry?: IToolRegistry,
+  panelHost?: IPanelHost
 ): () => void {
+
   const syncAiTools = () => {
     if (!toolRegistry) return
     const aiTools = registry.getAll('ai-tool')
@@ -63,8 +92,9 @@ export function registerContributionIpcHandlers(
   // Initial sync
   syncAiTools()
   const snapshotHandler = async () => {
-    return getContributionSnapshot(registry)
+    return getContributionSnapshot(registry, panelHost)
   }
+
 
   const executeHandler = async (
     _event: unknown,
@@ -145,10 +175,11 @@ export function registerContributionIpcHandlers(
     syncAiTools()
     const wc = getWebContents ? getWebContents() : undefined
     if (wc) {
-      const snapshot = getContributionSnapshot(registry)
+      const snapshot = getContributionSnapshot(registry, panelHost)
       wc.send('kernel:contributions:updated', snapshot)
     }
   })
+
 
   return () => {
     ipcMain.removeHandler('kernel:contributions:snapshot')

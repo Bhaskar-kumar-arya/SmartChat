@@ -10,7 +10,9 @@ import { ContributionRegistry } from '../../../kernel/contributions/Contribution
 import { PermissionStore } from '../../../kernel/permissions/PermissionStore'
 import { KernelUIModule } from '../../../kernel/api-modules/KernelUIModule'
 import { KernelMessagesModule } from '../../../kernel/api-modules/KernelMessagesModule'
+import { KernelLogModule } from '../../../kernel/api-modules/KernelLogModule'
 import { isBidirectionalPluginChannel } from '../../../kernel/channels/IPluginChannel'
+
 
 const PLUGIN_ID = 'com.smartchat.declarative-modal-test'
 const PLUGIN_PERMISSIONS = ['ui:notification', 'ui:toast', 'ui:overlay', 'chats:read', 'chats:write', 'messages:write']
@@ -95,8 +97,10 @@ describe('Declarative Modal Test Plugin - Webview Overlay Integration', () => {
 
     router.registerModule(uiModule)
     router.registerModule(messagesModule)
+    router.registerModule(new KernelLogModule(permissions))
 
     host = new PluginHost(loader, registry, router, contributionRegistry)
+
   })
 
   afterEach(async () => {

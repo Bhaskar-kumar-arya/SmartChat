@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Test Plugin Settings</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--wa-bg-deep, #111b21);
+      color: var(--wa-text-primary, #e9edef);
+    }
+    .settings-group {
+      background: var(--wa-card-bg, #1f2c34);
+      border: 1px solid var(--wa-border, rgba(255, 255, 255, 0.08));
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    h2 { font-size: 16px; margin-top: 0; color: var(--wa-primary, #00a884); }
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+    }
+    label { font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="settings-group">
+    <h2>⚙️ Test Plugin Custom Configuration</h2>
+    <div class="setting-row">
+      <label for="chk-auto">Enable Automated Processing</label>
+      <input type="checkbox" id="chk-auto" checked />
+    </div>
+    <div class="setting-row">
+      <label for="txt-api">Custom Server Endpoint</label>
+      <input type="text" id="txt-api" value="https://api.example.com/v1" style="background: rgba(0,0,0,0.2); color: #fff; border: 1px solid var(--wa-border); padding: 6px; border-radius: 6px;" />
+    </div>
+  </div>
+</body>
+</html>

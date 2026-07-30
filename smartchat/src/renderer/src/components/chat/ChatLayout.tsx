@@ -19,6 +19,8 @@ import { EmojiText } from '../common/EmojiText'
 import { useSidebarResize } from './hooks/useSidebarResize'
 import { ExtensionChatView } from './ExtensionChat/ExtensionChatView'
 import { useExtensionManager } from '../../hooks/useExtensionManager'
+import { SidebarPluginMainStage, useSidebarPanelFocus } from '../panels/SidebarPluginTabs'
+
 
 export default function ChatLayout() {
   const api = useAPI()
@@ -32,6 +34,9 @@ export default function ChatLayout() {
   const [isAIOpen, setIsAIOpen] = useState<boolean>(false)
   const [isChatSearchOpen, setIsChatSearchOpen] = useState<boolean>(false)
   const { sidebarWidth, startResizing } = useSidebarResize(500)
+  const { activePanelId: activeSidebarPanelId, selectPanel: selectSidebarPanel } = useSidebarPanelFocus()
+
+
 
   // Extension chat routing
   const [activeExtensionId, setActiveExtensionId] = useState<string | null>(null)
@@ -103,22 +108,25 @@ export default function ChatLayout() {
   }, [addFiles, api])
 
   const handleSelectChat = useCallback((jid: string, name: string, profilePictureUrl?: string | null, messageId?: string | null) => {
+    selectSidebarPanel(null)
     setActiveExtensionId(null) // leaving extension chat
     setActiveJid(jid)
     setActiveName(name)
     setActiveProfilePic(profilePictureUrl || null)
     setReplyingTo(null)
     setTargetMessageId(messageId || null)
-  }, [])
+  }, [selectSidebarPanel])
 
   const handleOpenExtensionChat = useCallback((extensionId: string, name: string) => {
+    selectSidebarPanel(null)
     setActiveExtensionId(extensionId)
     setActiveJid(`extension_${extensionId}`)
     setActiveName(name)
     setActiveProfilePic(null)
     setReplyingTo(null)
     setTargetMessageId(null)
-  }, [])
+  }, [selectSidebarPanel])
+
 
   useEffect(() => {
     api.setActiveChat(activeJid).catch(console.error)
@@ -243,12 +251,17 @@ export default function ChatLayout() {
     <div className="chat-layout" style={{ '--ai-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
       <ChatList
         activeJid={activeJid}
+        activeSidebarPanelId={activeSidebarPanelId}
+        onSelectSidebarPanel={selectSidebarPanel}
         onSelectChat={handleSelectChat}
         onShowProfilePic={openOverlay}
         onOpenExtensionChat={handleOpenExtensionChat}
       />
       <div className="chat-main" {...dragHandlers}>
-        {activeJid ? (
+        {activeSidebarPanelId ? (
+          <SidebarPluginMainStage activePanelId={activeSidebarPanelId} />
+        ) : activeJid ? (
+
           isExtensionChat && activeExtensionId ? (
             // Extension chat panel
             <>

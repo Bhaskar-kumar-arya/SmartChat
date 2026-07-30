@@ -73,7 +73,7 @@ function unwrapMessage(msg: any): RawMessageContent {
  * matching WhatsApp's behavior.
  */
 function getSenderColor(chatJid: string, participantJid: string | null | undefined): string {
-  if (!participantJid) return 'var(--wa-primary)' // Fallback to green
+  if (!participantJid) return '#22c05e' // Fallback to green
 
   // Clean JID to avoid device suffixes (e.g. :1)
   const cleanChat = chatJid.split('@')[0]
@@ -611,7 +611,7 @@ const MessageItem = memo(function MessageItem({
               </button>
               {isSticker && (
                 <button className="dropdown-item" onClick={() => { setShowStarConfirm(true); setShowDropdown(false); }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={isFavoriteSticker ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: isFavoriteSticker ? 'var(--wa-star)' : 'currentColor' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={isFavoriteSticker ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: isFavoriteSticker ? '#e9c46a' : 'currentColor' }}>
                     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                   </svg>
                   {isFavoriteSticker ? 'Unstar Sticker' : 'Star Sticker'}

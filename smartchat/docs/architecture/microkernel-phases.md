@@ -454,14 +454,48 @@ Implement `ctx.ui.showOverlay()` — Tier 2 overlay mechanism rendering custom p
 - [x] All 185 test files (822 tests) pass with zero errors
 - [x] Zero TypeScript typecheck errors
 
+- [x] Zero TypeScript typecheck errors
+
+---
+
+## Phase 11c — Panel UI ✅ DONE
+
+### Goal
+Implement complete webview-based panel infrastructure (`sidebar-panel` and `settings-page` contributions), including backend `PanelHost`, IPC routing, bridge preload, React webview renderer components (`PanelWebview`, `SidebarPluginTabs`, `SettingsPluginPage`), and E2E integration verification.
+
+### Architecture & Implementation
+- `IPanelHost` / `PanelHost` ([PanelHost.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/kernel/ui/PanelHost.ts)): Panel descriptor manager assigning unique UUID `panelId`s and mapping `panelId` -> `pluginId` for security attribution and focus signal routing.
+- Panel IPC Bridge ([panelIpc.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/kernel/ipc/panelIpc.ts)): Handles `kernel:panel:api` requests by forwarding to `KernelAPIRouter`, along with event subscription and cleanup listeners.
+- `KernelUIModule`: Imperative `openPanel` and `closePanel` actions requiring capability `ui:panel`, delegating directly to `PanelHost`.
+- Shared API Bridge ([bridge.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/packages/sdk/src/bridge.ts)): Single source of truth `createKernelApiBridge` shared between SDK worker contexts and panel preload scripts.
+- Panel Preload Bridge ([panel-preload.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/preload/panel-preload.ts)): Preload script exposing `window.__smartchat.api` and CSS token (`--wa-*`) injection.
+- Renderer UI Components:
+  - `PanelWebview.tsx` ([PanelWebview.tsx](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/renderer/src/components/panels/PanelWebview.tsx)): Sandboxed `<webview>` container with DOM token injection, state preservation (`display: flex/none`), and cleanup on unmount.
+  - `SidebarPluginTabs.tsx` ([SidebarPluginTabs.tsx](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/renderer/src/components/panels/SidebarPluginTabs.tsx)): Sidebar navigation tab buttons and persistent panel webview main stage rendering.
+  - `SettingsPluginPage.tsx` ([SettingsPluginPage.tsx](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/renderer/src/components/panels/SettingsPluginPage.tsx)): Dynamic plugin settings tab page integrated into `SettingsModal.tsx`.
+
+### Acceptance Criteria & Verification
+- [x] `PanelHost` registers panel descriptors and maps `panelId` -> `pluginId`
+- [x] `panelIpc` routes webview API requests through `KernelAPIRouter` with ABAC permission validation
+- [x] `panel-preload.ts` created and added to rollup inputs in `electron.vite.config.ts`
+- [x] `KernelUIModule` handles `openPanel`/`closePanel` actions requiring capability `ui:panel`
+- [x] `@smartchat/sdk` exposes `ctx.ui.openPanel(id)` and `ctx.ui.closePanel(id)`
+- [x] `panelIds` mapping included in contribution snapshot sent to renderer
+- [x] `PanelWebview.tsx` mounts sandboxed webviews with theme token injection and persistent state
+- [x] `SidebarPluginTabs.tsx` renders sidebar nav tabs and listens to imperative focus requests
+- [x] `SettingsPluginPage.tsx` renders plugin settings tabs inside `SettingsModal.tsx`
+- [x] Full unit & E2E integration test suite passed (32/32 tests passed)
+- [x] `npm run typecheck` clean (0 errors)
+
 ---
 
 ## Future Phases (Not Scoped Yet)
 
-- **Phase 11c — Panel UI** (`ui:panel` — webview-based panels for `sidebar-panel` and `settings-page` contributions. Builds on Phase 11b's webview infrastructure.)
 - **Phase 12 — Completion Providers** (inline suggestions while typing, `@` modal from plugins)
 - **Phase 13 — Message Send Pipeline** (plugin interceptors before send)
 - **Phase 14 — Inter-plugin API** (plugin exposes and another imports an API)
 - **Phase 15 — Permission UI** (Settings → Extensions → Permissions page)
 - **Phase 16 — Chat Badge Computation** (live badge updates from plugins on chat list)
+
+
 

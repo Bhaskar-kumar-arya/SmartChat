@@ -63,6 +63,12 @@ export async function packagePlugin(options?: { pluginDir?: string; outPath?: st
     zip.addLocalFolder(panelDir, 'panel')
   }
 
+  const panelsDir = path.join(pluginDir, 'panels')
+  if (fs.existsSync(panelsDir)) {
+    zip.addLocalFolder(panelsDir, 'panels')
+  }
+
+
   const overlaysDir = path.join(pluginDir, 'overlays')
   if (fs.existsSync(overlaysDir)) {
     zip.addLocalFolder(overlaysDir, 'overlays')

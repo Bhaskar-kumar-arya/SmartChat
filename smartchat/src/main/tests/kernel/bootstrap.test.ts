@@ -38,8 +38,8 @@ describe('KernelBootstrapper', () => {
     const loadedPlugins = result.host.listLoaded()
     expect(loadedPlugins).toContain('com.smartchat.builtin.whatsapp-core')
     expect(loadedPlugins).toContain('com.smartchat.builtin.ai-assistant')
-    expect(loadedPlugins).toContain('com.smartchat.builtin.search')
     expect(loadedPlugins).toContain('com.smartchat.builtin.notifications')
+
 
     const chatActions = result.registry.getAll('chat-action')
     expect(chatActions.length).toBeGreaterThan(0)
@@ -48,10 +48,8 @@ describe('KernelBootstrapper', () => {
     const aiTools = result.registry.getAll('ai-tool')
     expect(aiTools.length).toBeGreaterThan(0)
 
-    const sidebarPanels = result.registry.getAll('sidebar-panel')
-    expect(sidebarPanels.some((p) => p.id === 'search')).toBe(true)
-
     const settingsPages = result.registry.getAll('settings-page')
+
     expect(settingsPages.some((p) => p.id === 'notifications')).toBe(true)
 
     await result.dispose()

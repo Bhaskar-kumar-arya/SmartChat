@@ -38,7 +38,7 @@ export const ProfilePicOverlay: React.FC<ProfilePicOverlayProps> = ({
         {/* Header */}
         <div className="absolute -top-12 left-0 right-0 flex justify-between items-center text-white px-2">
           <span className="text-lg font-medium"><EmojiText text={name} /></span>
-          <button 
+          <button
             onClick={onClose}
             className="p-1 hover:bg-white/10 rounded-full transition-colors"
           >
@@ -47,26 +47,26 @@ export const ProfilePicOverlay: React.FC<ProfilePicOverlayProps> = ({
         </div>
 
         {/* Content */}
-        <div style={{ background: 'var(--wa-bg-secondary)', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 25px 50px rgba(0,0,0,0.5)', minHeight: '300px', minWidth: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="bg-zinc-900 rounded-lg overflow-hidden shadow-2xl min-h-[300px] min-w-[300px] flex items-center justify-center">
           {loading ? (
             <div className="flex flex-col items-center space-y-4">
-              <div style={{ width: '48px', height: '48px', border: '4px solid var(--wa-border)', borderTopColor: 'var(--wa-primary)', borderRadius: '9999px', animation: 'spin 1s linear infinite' }} />
-              <span style={{ color: 'var(--wa-text-secondary)', fontSize: '0.875rem' }}>Loading full image...</span>
+              <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+              <span className="text-zinc-400 text-sm">Loading full image...</span>
             </div>
           ) : imageUrl ? (
-            <img 
-              src={imageUrl} 
-              alt={name} 
-              className="max-h-[80vh] w-auto object-contain animate-in zoom-in-95 duration-300" 
+            <img
+              src={imageUrl}
+              alt={name}
+              className="max-h-[80vh] w-auto object-contain animate-in zoom-in-95 duration-300"
             />
           ) : (
-            <div style={{ color: 'var(--wa-text-tertiary)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px' }}>
+            <div className="text-zinc-500 flex flex-col items-center p-8">
               <span className="text-lg">No profile picture available</span>
             </div>
           )}
         </div>
       </div>
-      
+
       {/* Click outside to close */}
       <div className="absolute inset-0 -z-10" onClick={onClose} />
     </div>

@@ -3,6 +3,8 @@ import { KernelUIModule } from '../../../kernel/api-modules/KernelUIModule'
 import { IPermissionStore } from '../../../kernel/permissions/IPermissionStore'
 import { INotificationService } from '../../../services/notification/INotificationService'
 import { IOverlayHost } from '../../../kernel/ui/IOverlayHost'
+import { KernelNotFoundError } from '../../../kernel/api-modules/KernelErrors'
+
 
 describe('KernelUIModule', () => {
   let mockPermissions: IPermissionStore
@@ -219,6 +221,107 @@ describe('KernelUIModule', () => {
     expect(result).toEqual({ success: true })
   })
 
+  it('denies openPanel when ui:panel capability is lacking', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(false)
+
+    await expect(
+      module.handle('plugin-a', 'kernel:ui:openPanel', { id: 'sidebar-1' })
+    ).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+      message: "Plugin 'plugin-a' lacks capability 'ui:panel'",
+      permission: 'ui:panel'
+    })
+  })
+
+  it('allows openPanel and dispatches IPC signal when ui:panel is granted and panel exists', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    const mockPanelHost = {
+      registerPanel: vi.fn(),
+      findPanel: vi.fn().mockReturnValue({
+        panelId: 'panel-uuid-1',
+        contributionId: 'sidebar-1',
+        pluginId: 'plugin-a',
+        panelPath: 'panels/sidebar.html',
+        type: 'sidebar'
+      }),
+      getPanel: vi.fn(),
+      getPluginId: vi.fn(),
+      deregisterPlugin: vi.fn(),
+      openPanel: vi.fn().mockResolvedValue({ success: true }),
+      closePanel: vi.fn().mockResolvedValue({ success: true })
+    }
+
+    const moduleWithPanelHost = new KernelUIModule(
+      mockPermissions,
+      mockNotificationService,
+      () => mockMainWindow,
+      mockOverlayHost,
+      mockPanelHost
+    )
+
+    const result = await moduleWithPanelHost.handle('plugin-a', 'kernel:ui:openPanel', { id: 'sidebar-1' })
+
+    expect(mockPanelHost.openPanel).toHaveBeenCalledWith('plugin-a', 'sidebar-1')
+    expect(result).toEqual({ success: true })
+  })
+
+  it('throws NOT_FOUND when openPanel is called for a non-existent panel', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    const mockPanelHost = {
+      registerPanel: vi.fn(),
+      findPanel: vi.fn().mockReturnValue(undefined),
+      getPanel: vi.fn(),
+      getPluginId: vi.fn(),
+      deregisterPlugin: vi.fn(),
+      openPanel: vi.fn().mockRejectedValue(new KernelNotFoundError("Panel 'non-existent' not found for plugin 'plugin-a'")),
+
+      closePanel: vi.fn().mockResolvedValue({ success: true })
+    }
+
+
+    const moduleWithPanelHost = new KernelUIModule(
+      mockPermissions,
+      mockNotificationService,
+      () => mockMainWindow,
+      mockOverlayHost,
+      mockPanelHost
+    )
+
+    await expect(
+      moduleWithPanelHost.handle('plugin-a', 'kernel:ui:openPanel', { id: 'non-existent' })
+    ).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: "Panel 'non-existent' not found for plugin 'plugin-a'"
+    })
+  })
+
+  it('allows closePanel and delegates to panelHost when ui:panel is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    const mockPanelHost = {
+      registerPanel: vi.fn(),
+      findPanel: vi.fn(),
+      getPanel: vi.fn(),
+      getPluginId: vi.fn(),
+      deregisterPlugin: vi.fn(),
+      openPanel: vi.fn().mockResolvedValue({ success: true }),
+      closePanel: vi.fn().mockResolvedValue({ success: true })
+    }
+
+    const moduleWithPanelHost = new KernelUIModule(
+      mockPermissions,
+      mockNotificationService,
+      () => mockMainWindow,
+      mockOverlayHost,
+      mockPanelHost
+    )
+
+    const result = await moduleWithPanelHost.handle('plugin-a', 'kernel:ui:closePanel', { id: 'sidebar-1' })
+
+    expect(mockPanelHost.closePanel).toHaveBeenCalledWith('plugin-a', 'sidebar-1')
+    expect(result).toEqual({ success: true })
+  })
+
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:ui:unknown', {})
@@ -228,4 +331,5 @@ describe('KernelUIModule', () => {
     })
   })
 })
+
 

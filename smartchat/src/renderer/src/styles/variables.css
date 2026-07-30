@@ -9,7 +9,7 @@
   --wa-header-bg: #171717;
   --wa-sidebar-bg: #171717;
   --wa-chat-bg: #171717;
- 
+
   /* Message bubbles */
   --wa-bubble-sent: #134d37;
   --wa-bubble-sent-text: #e9edef;
@@ -52,20 +52,4 @@
 
   /* Transitions */
   --wa-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* Message status */
-  --wa-status-read: #53bdeb;
-
-  /* Star / Favorite */
-  --wa-star: #e9c46a;
-
-  /* AI panel */
-  --wa-ai-warning: #ffb340;
-  --wa-ai-action: #0a84ff;
-  --wa-ai-danger: #ff453a;
-  --wa-ai-text-muted: #a8bbd9;
-  --wa-ai-success: #4ade91;
-
-  /* Semantic utility */
-  --wa-text-on-accent: #ffffff;
 }

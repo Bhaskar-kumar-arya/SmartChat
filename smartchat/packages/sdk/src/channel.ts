@@ -1,14 +1,9 @@
 import { MessagePort } from 'node:worker_threads'
 import { PluginManifest } from './manifest'
+import { createKernelApiBridge } from './bridge'
 import {
   PluginContext,
-  IPluginLogAPI,
-  IPluginChatsAPI,
-  IPluginMessagesAPI,
-  IPluginContactsAPI,
-  IPluginAIAPI,
   IPluginEventsAPI,
-  IPluginStorageAPI,
   IPluginUIAPI,
   IPluginSchedulerAPI,
   IPluginContributionsAPI,
@@ -20,12 +15,11 @@ import {
   CompletionItem,
   OutgoingMessagePayload,
   SendResult,
-  SendMessageOptions,
-  AICallOptions,
   OverlayFormSchema,
   OverlayOptions,
   PluginOverlayHandle
 } from './context'
+
 
 export interface KernelRequest {
   id: string
@@ -350,74 +344,8 @@ export class WorkerPluginRuntime {
   public getContext(): PluginContext {
     const self = this
 
-    const logAPI: IPluginLogAPI = {
-      info(msg: string, ...data: unknown[]) {
-        self.port.postMessage({
-          type: 'kernel:log',
-          payload: { level: 'info', message: msg, data }
-        })
-      },
-      warn(msg: string, ...data: unknown[]) {
-        self.port.postMessage({
-          type: 'kernel:log',
-          payload: { level: 'warn', message: msg, data }
-        })
-      },
-      error(msg: string, ...data: unknown[]) {
-        self.port.postMessage({
-          type: 'kernel:log',
-          payload: { level: 'error', message: msg, data }
-        })
-      }
-    }
+    const bridge = createKernelApiBridge((type, payload) => self.request(type, payload))
 
-    const chatsAPI: IPluginChatsAPI = {
-      getList: (page = 1, limit = 20) => self.request('kernel:chats:getList', { page, limit }),
-      getById: (jid: string) => self.request('kernel:chats:getById', { jid }),
-      getGroupParticipants: (jid: string) => self.request('kernel:chats:getGroupParticipants', { jid }),
-      pin: (jid: string) => self.request('kernel:chats:pin', { jid }),
-      unpin: (jid: string) => self.request('kernel:chats:unpin', { jid }),
-      archive: (jid: string) => self.request('kernel:chats:archive', { jid }),
-      unarchive: (jid: string) => self.request('kernel:chats:unarchive', { jid }),
-      mute: (jid: string, durationMs: number) => self.request('kernel:chats:mute', { jid, durationMs }),
-      unmute: (jid: string) => self.request('kernel:chats:unmute', { jid }),
-      markRead: (jid: string) => self.request('kernel:chats:markRead', { jid })
-    }
-
-    const messagesAPI: IPluginMessagesAPI = {
-      getMessages: (jid: string, page = 1, limit = 50) => self.request('kernel:messages:getMessages', { jid, page, limit }),
-      getMessagesAroundId: (jid: string, messageId: string, lookBehind = 20) => self.request('kernel:messages:getMessagesAroundId', { jid, messageId, lookBehind }),
-      send: (jid: string, text: string, options?: SendMessageOptions) => self.request('kernel:messages:send', { jid, text, options }),
-      sendMedia: (jid: string, filePath: string, caption?: string, options?: SendMessageOptions) => self.request('kernel:messages:sendMedia', { jid, filePath, caption, options }),
-      edit: (messageId: string, newText: string, jid?: string) => self.request('kernel:messages:edit', { messageId, newText, jid }),
-      forward: (messageId: string, targetJids: string[], jid?: string) => self.request('kernel:messages:forward', { messageId, targetJids, jid }),
-      delete: (jid: string, messageId: string) => self.request('kernel:messages:delete', { jid, messageId }),
-      react: (jid: string, messageId: string, emoji: string) => self.request('kernel:messages:react', { jid, messageId, emoji }),
-      downloadMedia: (messageId: string) => self.request('kernel:messages:downloadMedia', { messageId }),
-      getReceipts: (messageId: string) => self.request('kernel:messages:getReceipts', { messageId }),
-      addFavoriteSticker: (messageId: string) => self.request('kernel:messages:addFavoriteSticker', { messageId }),
-      getFavoriteStickers: () => self.request('kernel:messages:getFavoriteStickers', {})
-    }
-
-    const contactsAPI: IPluginContactsAPI = {
-      getByJid: (jid: string) => self.request('kernel:contacts:getByJid', { jid }),
-      batchGetByJids: (jids: string[]) => self.request('kernel:contacts:batchGetByJids', { jids }),
-      getMe: () => self.request('kernel:contacts:getMe', {}),
-      upsertContact: (contact: import('./context').PluginContactInput) => self.request('kernel:contacts:upsertContact', { contact }),
-      resolveLid: (jid: string) => self.request('kernel:contacts:resolveLid', { jid }),
-      getAlias: (jid: string) => self.request('kernel:contacts:getAlias', { jid })
-    }
-
-    const aiAPI: IPluginAIAPI = {
-      chat: (prompt: string, options?: AICallOptions) => self.request('kernel:ai:chat', { prompt, options }),
-      callTool: (toolName: string, args: Record<string, unknown>) => self.request('kernel:ai:callTool', { toolName, args }),
-      getAvailableModels: () => self.request('kernel:ai:getAvailableModels', {}),
-      createSession: (title: string, modelId?: string) => self.request('kernel:ai:createSession', { title, modelId }),
-      listSessions: (page = 1, pageSize = 20) => self.request('kernel:ai:listSessions', { page, pageSize }),
-      getSession: (id: string) => self.request('kernel:ai:getSession', { id }),
-      renameSession: (id: string, title: string) => self.request('kernel:ai:renameSession', { id, title }),
-      deleteSession: (id: string) => self.request('kernel:ai:deleteSession', { id })
-    }
 
     const eventsAPI: IPluginEventsAPI = {
       on: <K extends import('./events').PluginEventName>(event: K, handler: (payload: import('./events').PluginEventMap[K]) => void | Promise<void>) => {
@@ -442,14 +370,6 @@ export class WorkerPluginRuntime {
       }
     }
 
-    const storageAPI: IPluginStorageAPI = {
-      get: <T = unknown>(key: string) => self.request<T>('kernel:storage:get', { key }),
-      set: (key: string, value: unknown) => self.request('kernel:storage:set', { key, value }),
-      delete: (key: string) => self.request('kernel:storage:delete', { key }),
-      clear: () => self.request('kernel:storage:clear', {}),
-      keys: () => self.request<string[]>('kernel:storage:keys', {})
-    }
-
     const uiAPI: IPluginUIAPI = {
       notify: (opts) => self.request('kernel:ui:notify', opts),
       toast: (msg, level = 'info') => void self.request('kernel:ui:toast', { message: msg, level }),
@@ -462,8 +382,12 @@ export class WorkerPluginRuntime {
           return self.requestOverlayHandle(opts) as any
         }
         return self.request('kernel:ui:showOverlay', opts)
-      }
+      },
+      openPanel: (id: string) => self.request('kernel:ui:openPanel', { id }),
+      closePanel: (id: string) => self.request('kernel:ui:closePanel', { id })
     }
+
+
 
     const schedulerAPI: IPluginSchedulerAPI = {
       setInterval: (ms, fn) => {
@@ -518,16 +442,17 @@ export class WorkerPluginRuntime {
       onDeactivate: (fn) => {
         this.deactivateCallbacks.push(fn)
       },
-      log: logAPI,
-      chats: chatsAPI,
-      messages: messagesAPI,
-      contacts: contactsAPI,
-      ai: aiAPI,
+      log: bridge.log,
+      chats: bridge.chats,
+      messages: bridge.messages,
+      contacts: bridge.contacts,
+      ai: bridge.ai,
       events: eventsAPI,
-      storage: storageAPI,
+      storage: bridge.storage,
       ui: uiAPI,
       scheduler: schedulerAPI,
       contributions: contributionsAPI
     }
   }
 }
+

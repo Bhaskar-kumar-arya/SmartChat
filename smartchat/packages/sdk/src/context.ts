@@ -252,7 +252,10 @@ export interface IPluginUIAPI {
   showAlert(opts: { title: string; body?: string; label?: string }): Promise<void>
   showOverlay(opts: OverlayOptions & { mode?: 'promise' }): Promise<unknown | null>
   showOverlay(opts: OverlayOptions & { mode: 'handle' }): Promise<PluginOverlayHandle>
+  openPanel(id: string): Promise<void>
+  closePanel(id: string): Promise<void>
 }
+
 
 
 export interface PluginAIModelInfo {

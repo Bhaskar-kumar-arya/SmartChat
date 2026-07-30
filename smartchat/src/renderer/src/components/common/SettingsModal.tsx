@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAPI } from '../../context/APIContext'
+import { useContributions } from '../../hooks/useContributions'
+import { SettingsPluginPage } from '../panels/SettingsPluginPage'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -8,6 +10,8 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const api = useAPI()
+  const pluginSettingsPages = useContributions('settings-page')
+  const [activeTab, setActiveTab] = useState<string>('general')
   const [prefs, setPrefs] = useState({
     enabled: true,
     soundEnabled: true,
@@ -16,6 +20,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     launchOnStartup: true
   })
   const [loading, setLoading] = useState(true)
+
 
   useEffect(() => {
     if (isOpen) {
@@ -56,14 +61,63 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </button>
         </div>
 
+        {pluginSettingsPages && pluginSettingsPages.length > 0 && (
+          <div className="settings-tab-bar" style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--wa-border)', padding: '0 16px 8px 16px' }}>
+            <button
+              className={`settings-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
+              onClick={() => setActiveTab('general')}
+              style={{
+                background: activeTab === 'general' ? 'var(--wa-bg-selected)' : 'transparent',
+                color: activeTab === 'general' ? 'var(--wa-primary)' : 'var(--wa-text-secondary)',
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 500
+              }}
+            >
+              General
+            </button>
+            {pluginSettingsPages.map((p) => (
+              <button
+                key={p.id}
+                className={`settings-tab-btn ${activeTab === p.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(p.id)}
+                style={{
+                  background: activeTab === p.id ? 'var(--wa-bg-selected)' : 'transparent',
+                  color: activeTab === p.id ? 'var(--wa-primary)' : 'var(--wa-text-secondary)',
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 500
+                }}
+              >
+                {p.title}
+              </button>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <div className="settings-loading">
             <div className="spinner" />
           </div>
+        ) : activeTab !== 'general' ? (
+          (() => {
+            const activePage = pluginSettingsPages.find((p) => p.id === activeTab)
+            if (!activePage) return null
+            return (
+              <div className="settings-scroll-content" style={{ padding: '16px' }}>
+                <SettingsPluginPage pluginId={activePage.pluginId} contributionId={activePage.id} />
+              </div>
+            )
+          })()
         ) : (
           <div className="settings-scroll-content">
             
             {/* Section: General */}
+
             <div className="settings-section">
               <h4 className="settings-section-title">General Settings</h4>
               <div className="settings-row">

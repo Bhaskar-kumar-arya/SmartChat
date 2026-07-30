@@ -20,11 +20,13 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
-          'overlay-preload': resolve(__dirname, 'src/preload/overlay-preload.ts')
+          'overlay-preload': resolve(__dirname, 'src/preload/overlay-preload.ts'),
+          'panel-preload': resolve(__dirname, 'src/preload/panel-preload.ts')
         }
       }
     }
   },
+
   renderer: {
     resolve: {
       alias: {

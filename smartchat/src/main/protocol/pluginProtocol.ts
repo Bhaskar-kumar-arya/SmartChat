@@ -1,6 +1,8 @@
 import * as Electron from 'electron'
 import path from 'node:path'
+import fs from 'node:fs'
 import { pathToFileURL } from 'node:url'
+
 
 type SessionLike = Partial<Electron.Session> & {
   protocol?: {
@@ -38,12 +40,17 @@ export function registerPluginProtocolForSession(targetSession: SessionLike, ext
         const relPath = decodeURIComponent(url.pathname)
         const rootDir = path.resolve(extensionsPath, pluginId)
         const allowedPrefix = rootDir.endsWith(path.sep) ? rootDir : rootDir + path.sep
-        const resolvedPath = path.resolve(rootDir, '.' + relPath)
+        let resolvedPath = path.resolve(rootDir, '.' + relPath)
 
         // Security check: ensure path stays strictly within the plugin's directory
         if (resolvedPath !== rootDir && !resolvedPath.startsWith(allowedPrefix)) {
           console.warn(`[pluginProtocol] Access Denied for resolvedPath '${resolvedPath}' outside rootDir '${rootDir}'`)
           return new Response('Access Denied', { status: 403 })
+        }
+
+        // If path points to directory, check index.html
+        if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+          resolvedPath = path.join(resolvedPath, 'index.html')
         }
 
         const res = await Electron.net.fetch(pathToFileURL(resolvedPath).href)
@@ -56,9 +63,11 @@ export function registerPluginProtocolForSession(targetSession: SessionLike, ext
           headers
         })
       } catch (err) {
-        console.error('[pluginProtocol] Error handling plugin URL:', err)
-        return new Response('Invalid plugin URL', { status: 400 })
+        console.warn(`[pluginProtocol] Error handling plugin URL '${request.url}':`, err)
+        return new Response('File Not Found', { status: 404 })
       }
+
+
     })
   } catch (err) {
     console.error('[pluginProtocol] Failed to register plugin protocol handler on session:', err)

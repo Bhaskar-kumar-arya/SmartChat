@@ -17,12 +17,21 @@ import { KernelAIModule } from './api-modules/KernelAIModule'
 import { KernelEventsModule } from './api-modules/KernelEventsModule'
 import { KernelStorageModule, IKernelStorageRepository } from './api-modules/KernelStorageModule'
 import { KernelUIModule } from './api-modules/KernelUIModule'
+import { KernelLogModule } from './api-modules/KernelLogModule'
+
+
+
+
+
 import { OverlayHost } from './ui/OverlayHost'
 import { registerOverlayIpcHandlers } from './ipc/overlayIpc'
+import { PanelHost } from './ui/PanelHost'
+import { registerPanelIpcHandlers } from './ipc/panelIpc'
 import { WhatsappCorePlugin } from '../plugins/builtin/whatsapp-core'
+
 import { AIAssistantPlugin } from '../plugins/builtin/ai-assistant'
-import { SearchPlugin } from '../plugins/builtin/search'
 import { NotificationsPlugin } from '../plugins/builtin/notifications'
+
 import type { IWAEventBus } from '../services/whatsapp/IWAEventBus'
 import type { SocketAccessor } from '../services/whatsapp/types'
 
@@ -45,8 +54,10 @@ export interface BootResult {
   registry: IContributionRegistry
   router: IKernelAPIRouter
   permissions: PermissionStore
+  panelHost: PanelHost
   dispose: () => Promise<void>
 }
+
 
 export class KernelBootstrapper {
   constructor(private readonly options: BootstrapperOptions) {}
@@ -104,7 +115,46 @@ export class KernelBootstrapper {
     const storageModule = new KernelStorageModule(permissions, storageRepo)
     const overlayHost = new OverlayHost(getMainWindow, (pluginId) => pluginRegistry.get(pluginId)?.channel)
     const unbindOverlayIpc = registerOverlayIpcHandlers(overlayHost)
-    const uiModule = new KernelUIModule(permissions, services.notificationService, getMainWindow, overlayHost)
+
+    const panelHost = new PanelHost(getMainWindow)
+
+    const unbindPanelIpc = registerPanelIpcHandlers(panelHost, router, getBus?.() ?? null)
+
+    const syncPanels = () => {
+      for (const p of registry.getAll('sidebar-panel')) {
+        if (p.panel) {
+          panelHost.registerPanel({
+            contributionId: p.id,
+            pluginId: p.pluginId,
+            panelPath: p.panel,
+            type: 'sidebar'
+          })
+        }
+      }
+      for (const p of registry.getAll('settings-page')) {
+        if (p.panel) {
+          panelHost.registerPanel({
+            contributionId: p.id,
+            pluginId: p.pluginId,
+            panelPath: p.panel,
+            type: 'settings'
+          })
+        }
+      }
+    }
+
+    registry.onChange(syncPanels)
+    syncPanels()
+
+    const uiModule = new KernelUIModule(
+      permissions,
+      services.notificationService,
+      getMainWindow,
+      overlayHost,
+      panelHost
+    )
+
+    const logModule = new KernelLogModule(permissions)
 
     router.registerModule(chatsModule)
     router.registerModule(messagesModule)
@@ -113,15 +163,17 @@ export class KernelBootstrapper {
     router.registerModule(eventsModule)
     router.registerModule(storageModule)
     router.registerModule(uiModule)
+    router.registerModule(logModule)
+
 
     const host = new PluginHost(loader, pluginRegistry, router, registry)
 
     const builtins = [
       new WhatsappCorePlugin(),
       new AIAssistantPlugin(services.toolRegistry),
-      new SearchPlugin(),
       new NotificationsPlugin()
     ]
+
 
     for (const plugin of builtins) {
       permissions.registerPluginManifest(plugin.id, plugin.manifest.permissions)
@@ -136,11 +188,13 @@ export class KernelBootstrapper {
 
     const dispose = async () => {
       unbindOverlayIpc()
+      unbindPanelIpc()
       const loaded = host.listLoaded()
       for (const id of loaded) {
         await host.unload(id)
       }
     }
+
 
     return {
       host,
@@ -148,7 +202,9 @@ export class KernelBootstrapper {
       registry,
       router,
       permissions,
+      panelHost,
       dispose
     }
   }
 }
+

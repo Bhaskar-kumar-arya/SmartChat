@@ -39,9 +39,9 @@ export function SearchResultsPanel({
             {mode === 'deep' ? 'Searching deeper meanings...' : 'Searching...'}
           </span>
           <p className="loading-sub">
-            {mode === 'deep' 
-               ? 'This may take a few seconds for large histories' 
-               : 'Finding matches in your messages'}
+            {mode === 'deep'
+              ? 'This may take a few seconds for large histories'
+              : 'Finding matches in your messages'}
           </p>
           {mode === 'deep' && (
             <div className="search-tip">
@@ -83,10 +83,10 @@ export function SearchResultsPanel({
   const renderScore = (score?: number) => {
     if (mode !== 'deep' || score === undefined) return null
     const pct = Math.round(score * 100)
-    let color = 'var(--wa-text-tertiary)'
-    if (pct > 80) color = 'var(--wa-primary-light)'
-    else if (pct > 60) color = 'var(--wa-status-read)'
-    
+    let color = '#a0a0a0'
+    if (pct > 80) color = '#25D366'
+    else if (pct > 60) color = '#34B7F1'
+
     return (
       <div className="result-score" style={{ color }}>
         <span className="score-sparkle">✦</span>

@@ -384,6 +384,29 @@ const api = {
     return pathToFileURL(join(__dirname, 'overlay-preload.js')).href
   },
 
+  // ── Panel UI API (Phase 11c) ─────────────────────────────────────────
+  onPanelOpen: (handler: (data: { contributionId: string; pluginId: string; panelId: string }) => void) => {
+    const listener = (_: unknown, data: { contributionId: string; pluginId: string; panelId: string }) => handler(data)
+    ipcRenderer.on('kernel:ui:panel:open', listener)
+    return () => {
+      ipcRenderer.removeListener('kernel:ui:panel:open', listener)
+    }
+  },
+  onPanelClose: (handler: (data: { contributionId: string; pluginId: string }) => void) => {
+    const listener = (_: unknown, data: { contributionId: string; pluginId: string }) => handler(data)
+    ipcRenderer.on('kernel:ui:panel:close', listener)
+    return () => {
+      ipcRenderer.removeListener('kernel:ui:panel:close', listener)
+    }
+  },
+  notifyPanelClosed: (panelId: string) => {
+    ipcRenderer.send('kernel:panel:closed', { panelId })
+  },
+  getPanelPreloadPath: (): string => {
+    return pathToFileURL(join(__dirname, 'panel-preload.js')).href
+  },
+
+
   // ── File Utilities ──────────────────────────────────────────────────
   // webUtils.getPathForFile is the modern Electron API to get the real
   // filesystem path of a File object dropped into the renderer.

@@ -10,10 +10,10 @@ interface AIChatExportButtonProps {
   focusInput?: () => void
 }
 
-export default function AIChatExportButton({ 
-  activeSessionId, 
-  messages, 
-  sessions, 
+export default function AIChatExportButton({
+  activeSessionId,
+  messages,
+  sessions,
   onSessionCloned,
   cloneSession,
   focusInput
@@ -27,7 +27,7 @@ export default function AIChatExportButton({
 
   const handleExport = async () => {
     if (!activeSessionId || messages.length === 0) return
-    
+
     setExporting(true)
     try {
       const session = sessions.find(s => s.id === activeSessionId) || { id: activeSessionId, title: 'Untitled' }
@@ -49,7 +49,7 @@ export default function AIChatExportButton({
 
   const confirmDelete = async () => {
     if (!activeSessionId) return
-    
+
     setDeleting(true)
     setShowConfirmDelete(false)
     try {
@@ -64,7 +64,7 @@ export default function AIChatExportButton({
 
   const handleClone = async () => {
     if (!activeSessionId || !cloneSession) return
-    
+
     setCloning(true)
     try {
       const newSession = await cloneSession(activeSessionId)
@@ -100,16 +100,16 @@ export default function AIChatExportButton({
         </div>
       )}
 
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        background: 'rgba(0,0,0,0.1)', 
-        borderRadius: '6px', 
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        background: 'rgba(0,0,0,0.1)',
+        borderRadius: '6px',
         padding: '2px',
         border: '1px solid var(--wa-border)'
       }}>
-        <button 
-          className="ai-close-btn" 
+        <button
+          className="ai-close-btn"
           onClick={handleExport}
           disabled={exporting || !activeSessionId || messages.length === 0}
           title="Export/Update JSON"
@@ -122,8 +122,8 @@ export default function AIChatExportButton({
           </svg>
         </button>
 
-        <button 
-          className="ai-close-btn" 
+        <button
+          className="ai-close-btn"
           onClick={handleClone}
           disabled={cloning || !activeSessionId}
           title="Clone Session"
@@ -134,15 +134,15 @@ export default function AIChatExportButton({
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
         </button>
-        
+
         <div style={{ width: '1px', height: '14px', background: 'var(--wa-border)', margin: '0 2px' }} />
 
-        <button 
-          className="ai-close-btn" 
+        <button
+          className="ai-close-btn"
           onClick={handleDelete}
           disabled={deleting || !activeSessionId}
           title="Remove from JSON"
-          style={{ color: 'var(--wa-danger)', padding: '4px' }}
+          style={{ color: '#ef4444', padding: '4px' }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="3 6 5 6 21 6"></polyline>

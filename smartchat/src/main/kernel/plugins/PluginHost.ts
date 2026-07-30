@@ -276,8 +276,11 @@ export class PluginHost implements IPluginHost {
             }) as any
           }
           return request('kernel:ui:showOverlay', opts)
-        }
+        },
+        openPanel: (id: string) => request('kernel:ui:openPanel', { id }) as Promise<void>,
+        closePanel: (id: string) => request('kernel:ui:closePanel', { id }) as Promise<void>
       },
+
       storage: {
         get: (key: string) => request('kernel:storage:get', { key }) as Promise<any>,
         set: (key: string, value: unknown) => request('kernel:storage:set', { key, value }) as Promise<void>,

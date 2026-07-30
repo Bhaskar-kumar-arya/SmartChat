@@ -91,6 +91,15 @@ export class KernelAPIRouter implements IKernelAPIRouter {
     }
   }
 
+  async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
+    const namespace = this.extractNamespace(type)
+    const module = namespace ? this.modules.get(namespace) : undefined
+    if (!module) {
+      throw new KernelError('NOT_FOUND', `No kernel module registered for type '${type}' (extracted namespace: '${namespace ?? 'none'}')`)
+    }
+    return await module.handle(pluginId, type, payload)
+  }
+
   private extractNamespace(type: string): string | null {
     if (this.modules.has(type)) {
       return type
@@ -98,10 +107,9 @@ export class KernelAPIRouter implements IKernelAPIRouter {
     const parts = type.split(':')
     if (parts.length >= 2) {
       const prefix = parts.slice(0, 2).join(':')
-      if (this.modules.has(prefix)) {
-        return prefix
-      }
+      return prefix
     }
     return parts[0] || null
   }
+
 }

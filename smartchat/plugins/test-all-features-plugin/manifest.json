@@ -19,6 +19,7 @@
     "storage:write",
     "ui:notification",
     "ui:toast",
+    "ui:panel",
     "events:*",
     "scheduler"
   ],
@@ -52,15 +53,19 @@
     "sidebarPanels": [
       {
         "id": "test-sidebar",
-        "title": "Test Sidebar Panel"
+        "title": "Test Sidebar Panel",
+        "panel": "panels/sidebar.html",
+        "icon": "layout"
       }
     ],
     "settingsPages": [
       {
         "id": "test-settings",
-        "title": "Test Settings Page"
+        "title": "Test Settings Page",
+        "panel": "panels/settings.html"
       }
     ],
+
     "aiTools": [
       {
         "name": "test_plugin_tool",
