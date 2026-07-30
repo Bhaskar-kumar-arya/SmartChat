@@ -270,16 +270,16 @@ npm run test:rebuild:electron
 
 ## Acceptance Criteria
 
-- [ ] `plugin://` protocol resolves `.scext` extracted files correctly
-- [ ] `overlay-preload.js` compiled and referenced in `<webview preload=...>`
-- [ ] `window.__smartchat.submit/emit/dismiss` available in overlay HTML
-- [ ] `smartchat:init` fires after `dom-ready` with both `tokens` and `context`
-- [ ] `applyTokens()` in SDK correctly injects all `--wa-*` vars as `:root` CSS
-- [ ] Model A: `showOverlay()` returns a Promise that resolves on `submit`, `null` on `dismiss`
-- [ ] Model B: `showOverlay({ mode: 'handle' })` returns a `PluginOverlayHandle` with `on/send/close`
-- [ ] `overlay.send()` reaches the webview as `smartchat:receive { event, data }`
-- [ ] Only one overlay per plugin enforced (`OVERLAY_ALREADY_OPEN` error)
-- [ ] Webview destroyed on close — no zombie webviews
-- [ ] `OverlayShell` uses host design system for backdrop/header shell; plugin owns content area only
-- [ ] Zero TypeScript errors (`npm run typecheck`)
-- [ ] All existing tests pass
+- [x] `plugin://` protocol resolves `.scext` extracted files correctly with path traversal safety and partition session support (`registerPluginProtocolForSession`)
+- [x] `overlay-preload.js` compiled and referenced in `<webview preload=...>`
+- [x] `window.__smartchat.submit/emit/dismiss` available in overlay HTML
+- [x] `smartchat:init` fires after `dom-ready` with both `tokens` and `context`
+- [x] `overlay-preload.ts` and SDK `applyTokens()` inject all `--wa-*` vars as `:root` CSS
+- [x] Model A: `showOverlay()` returns a Promise that resolves on `submit`, `null` on `dismiss`
+- [x] Model B: `showOverlay({ mode: 'handle' })` returns a `PluginOverlayHandle` with `on/send/close`
+- [x] `overlay.send()` reaches the webview as `smartchat:receive { event, data }`
+- [x] Only one overlay per plugin enforced (`OVERLAY_ALREADY_OPEN` error)
+- [x] Webview destroyed on close — no zombie webviews
+- [x] `OverlayShell` uses host design system for backdrop/header shell; plugin owns content area only
+- [x] Zero TypeScript errors (`npm run typecheck`)
+- [x] All existing tests pass
