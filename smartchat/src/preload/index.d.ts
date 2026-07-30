@@ -146,6 +146,15 @@ declare global {
       // ── Declarative Modal API (Phase 11a) ───────────────────────────────
       onModalShow: (handler: (req: import('../main/kernel/ui/IOverlayHost').ModalRequest) => void) => () => void
       resolveModal: (modalId: string, data: unknown) => Promise<void>
+
+      // ── Webview Overlay API (Phase 11b) ──────────────────────────────────
+      onOverlayShow: (handler: (req: import('../main/kernel/ui/IOverlayHost').WebviewOverlayRequest) => void) => () => void
+      onOverlaySend: (handler: (data: { overlayId: string; event: string; data: unknown }) => void) => () => void
+      onOverlayClose: (handler: (data: { overlayId: string }) => void) => () => void
+      overlaySubmit: (overlayId: string, data: unknown) => void
+      overlayEvent: (overlayId: string, event: string, data: unknown) => void
+      overlayDismiss: (overlayId: string) => void
+      getOverlayPreloadPath: () => string
     }
   }
 }

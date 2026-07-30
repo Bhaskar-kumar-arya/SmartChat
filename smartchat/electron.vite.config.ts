@@ -15,7 +15,16 @@ export default defineConfig({
       }
     }
   },
-  preload: {},
+  preload: {
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          'overlay-preload': resolve(__dirname, 'src/preload/overlay-preload.ts')
+        }
+      }
+    }
+  },
   renderer: {
     resolve: {
       alias: {

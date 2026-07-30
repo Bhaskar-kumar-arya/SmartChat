@@ -216,14 +216,17 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     if (trimmed.startsWith('/')) {
       const cmdName = trimmed.slice(1).split(' ')[0]
       const matchingCmd = slashCommands.find((c) => c.name === cmdName)
+      console.log(`[MessageInput] Slash command typed: '/${cmdName}', matchingCmd:`, matchingCmd)
       if (matchingCmd) {
         try {
+          console.log(`[MessageInput] Calling api.executeContribution for slash-command '${matchingCmd.name}'...`)
           await api.executeContribution({
             slot: 'slash-command',
             pluginId: matchingCmd.pluginId,
             id: matchingCmd.name,
             context: { jid: activeJid, text: trimmed }
           })
+          console.log(`[MessageInput] api.executeContribution completed for '/${cmdName}'`)
           setText('')
           if (editorRef.current) {
             editorRef.current.innerHTML = ''

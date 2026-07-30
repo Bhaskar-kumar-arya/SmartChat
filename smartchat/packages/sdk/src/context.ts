@@ -227,6 +227,21 @@ export interface OverlayFormSchema {
   cancelLabel?: string
 }
 
+export interface OverlayOptions {
+  panel: string
+  context?: Record<string, unknown>
+  width?: number
+  height?: number
+  title?: string
+  mode?: 'promise' | 'handle'
+}
+
+export interface PluginOverlayHandle {
+  on(event: string, handler: (data: unknown) => void): () => void
+  send(event: string, data: unknown): void
+  close(): void
+}
+
 export interface IPluginUIAPI {
   notify(opts: { title: string; body: string }): Promise<void>
   toast(msg: string, level?: 'info' | 'success' | 'warning' | 'error'): void
@@ -235,7 +250,10 @@ export interface IPluginUIAPI {
   ): Promise<T | null>
   showConfirm(opts: { title: string; body?: string; confirmLabel?: string; cancelLabel?: string }): Promise<boolean>
   showAlert(opts: { title: string; body?: string; label?: string }): Promise<void>
+  showOverlay(opts: OverlayOptions & { mode?: 'promise' }): Promise<unknown | null>
+  showOverlay(opts: OverlayOptions & { mode: 'handle' }): Promise<PluginOverlayHandle>
 }
+
 
 export interface PluginAIModelInfo {
   id: string

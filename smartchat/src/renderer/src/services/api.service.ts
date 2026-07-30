@@ -283,6 +283,15 @@ export const api: IAPIService = {
 
   // ── Declarative Modal API (Phase 11a) ───────────────────────────────
   onModalShow: (handler) => window.api.onModalShow(handler as any),
-  resolveModal: (modalId, data) => window.api.resolveModal(modalId, data)
+  resolveModal: (modalId, data) => window.api.resolveModal(modalId, data),
+
+  // ── Webview Overlay API (Phase 11b) ──────────────────────────────────
+  onOverlayShow: (handler) => window.api.onOverlayShow(handler as any),
+  onOverlaySend: (handler) => window.api.onOverlaySend(handler as any),
+  onOverlayClose: (handler) => window.api.onOverlayClose(handler as any),
+  overlaySubmit: (overlayId, data) => window.api.overlaySubmit(overlayId, data),
+  overlayEvent: (overlayId, event, data) => window.api.overlayEvent(overlayId, event, data),
+  overlayDismiss: (overlayId) => window.api.overlayDismiss(overlayId),
+  getOverlayPreloadPath: () => window.api.getOverlayPreloadPath()
 }
 

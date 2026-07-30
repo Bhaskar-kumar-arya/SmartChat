@@ -398,14 +398,70 @@ Expand missing high-value domain capabilities across `kernel:messages`, `kernel:
 
 ---
 
+## Phase 11a — Declarative Modal API ✅ DONE
+
+### Goal
+Implement `showForm`, `showConfirm`, and `showAlert` — host-rendered, zero-webview-lag Tier 1 overlay calls that collect user input using the app's own React design system.
+
+### Architecture & Implementation
+- `IOverlayHost` / `OverlayHost.ts`: Interface and concrete implementation bridging `KernelUIModule` to the renderer via `BrowserWindow.webContents`, with a pending-modal map keyed by `modalId` (UUID).
+- `KernelUIModule`: Extended with `showForm`, `showConfirm`, `showAlert` actions under `kernel:ui` namespace. Capability check: `ui:notification`.
+- SDK `context.ts`: `IPluginUIAPI` extended with all three methods + `OverlayFormSchema` / `OverlayFormField` types.
+- SDK `channel.ts`: `WorkerPluginRuntime` wires `showForm`, `showConfirm`, `showAlert` to `kernel:ui:*` requests.
+- Preload bridge: `onModalShow` (push from main) and `resolveModal` (renderer → main) exposed on `window.api`.
+- `ModalPortal.tsx`: Root-mounted portal managing pending modal queue.
+- `FormModal.tsx`, `ConfirmModal.tsx`, `AlertModal.tsx`: React components using `--wa-*` design tokens throughout.
+- IPC handler: `kernel:ui:modal:resolve` routes renderer response back to `OverlayHost.resolveModal()`.
+
+### Acceptance Criteria & Verification
+- [x] `showForm`, `showConfirm`, `showAlert` available on `ctx.ui` in SDK
+- [x] `FormModal` handles all 5 field types: `text`, `textarea`, `select`, `radio`, `checkbox`
+- [x] Submit resolves with form values; dismiss/cancel resolves with `null` / `false`
+- [x] All modal components use `--wa-*` tokens exclusively (zero hardcoded colors)
+- [x] `IOverlayHost` interface maintained — `KernelUIModule` has no direct `electron` import
+- [x] Zero TypeScript errors
+
+---
+
+## Phase 11b — Webview Overlay API ✅ DONE
+
+### Goal
+Implement `ctx.ui.showOverlay()` — Tier 2 overlay mechanism rendering custom plugin HTML inside a sandboxed Electron `<webview>` with bidirectional IPC event streaming and CSS design token injection.
+
+### Architecture & Implementation
+- `plugin://` Custom Protocol Handler ([pluginProtocol.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/protocol/pluginProtocol.ts)): Resolves plugin HTML assets from extracted `.scext` paths with strict path traversal isolation.
+- Overlay Preload Script ([overlay-preload.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/preload/overlay-preload.ts)): Built artifact exposing `window.__smartchat` bridge (`submit`, `emit`, `dismiss`).
+- SDK Integration ([context.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/packages/sdk/src/context.ts), [channel.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/packages/sdk/src/channel.ts), [overlay.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/packages/sdk/src/overlay.ts)): Added `OverlayOptions` and `PluginOverlayHandle` types, `applyTokens()` CSS token injection helper, and wired Model A (Promise) / Model B (Handle) overloads.
+- Domain Encapsulation ([IOverlayHost.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/kernel/ui/IOverlayHost.ts) & [OverlayHost.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/kernel/ui/OverlayHost.ts)): `OverlayHost` manages overlay UUID assignment, active overlay tracking (`OVERLAY_ALREADY_OPEN` error enforcement), and Promise/Handle resolution.
+- `KernelUIModule`: High-level capability check (`ui:overlay`) delegating directly to `IOverlayHost.showOverlay()`.
+- React Renderer UI ([OverlayShell.tsx](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/renderer/src/components/overlays/OverlayShell.tsx) & [ModalPortal.tsx](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/renderer/src/components/overlays/ModalPortal.tsx)): Host header shell with title and close button, sandboxed `<webview>`, `:root` CSS custom property serialization on `dom-ready`, and reverse IPC channel routing.
+
+### Key Files & Artifacts
+- [pluginProtocol.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/protocol/pluginProtocol.ts)
+- [overlay-preload.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/preload/overlay-preload.ts)
+- [OverlayShell.tsx](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/renderer/src/components/overlays/OverlayShell.tsx)
+- [OverlayHost.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/kernel/ui/OverlayHost.ts)
+- [KernelUIModule.ts](file:///c:/Users/prith/Desktop/smartChat/smartchat/src/main/kernel/api-modules/KernelUIModule.ts)
+
+### Acceptance Criteria & Verification
+- [x] `plugin://` protocol resolves `.scext` extracted files correctly with path traversal safety
+- [x] `overlay-preload.js` compiled and referenced in `<webview>`
+- [x] `window.__smartchat.submit/emit/dismiss` exposed in webviews
+- [x] `smartchat:init` delivers `--wa-*` design tokens and context to overlay
+- [x] Model A `showOverlay()` returns Promise resolving on submit and null on dismiss
+- [x] Model B `showOverlay({ mode: 'handle' })` returns `PluginOverlayHandle` for live event streaming
+- [x] `OVERLAY_ALREADY_OPEN` enforced (only one active overlay per plugin)
+- [x] All 185 test files (822 tests) pass with zero errors
+- [x] Zero TypeScript typecheck errors
+
+---
+
 ## Future Phases (Not Scoped Yet)
 
-The following are planned but not detailed until earlier phases are complete.
-Add detailed phase specs here when ready to execute:
-
-- **Phase 11 — Panel UI** (`ui:panel` webview-based panels for sidebar-panel and settings-page contributions)
+- **Phase 11c — Panel UI** (`ui:panel` — webview-based panels for `sidebar-panel` and `settings-page` contributions. Builds on Phase 11b's webview infrastructure.)
 - **Phase 12 — Completion Providers** (inline suggestions while typing, `@` modal from plugins)
 - **Phase 13 — Message Send Pipeline** (plugin interceptors before send)
 - **Phase 14 — Inter-plugin API** (plugin exposes and another imports an API)
 - **Phase 15 — Permission UI** (Settings → Extensions → Permissions page)
 - **Phase 16 — Chat Badge Computation** (live badge updates from plugins on chat list)
+

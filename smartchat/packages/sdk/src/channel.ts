@@ -22,7 +22,9 @@ import {
   SendResult,
   SendMessageOptions,
   AICallOptions,
-  OverlayFormSchema
+  OverlayFormSchema,
+  OverlayOptions,
+  PluginOverlayHandle
 } from './context'
 
 export interface KernelRequest {
@@ -90,6 +92,7 @@ export class WorkerPluginRuntime {
   private sendInterceptors = new Map<string, (payload: OutgoingMessagePayload, next: (p: OutgoingMessagePayload) => Promise<SendResult>) => Promise<SendResult>>()
   private eventHandlers = new Map<string, Array<(payload: any) => void | Promise<void>>>()
   private exposedAPIs = new Map<string, Record<string, unknown>>()
+  private overlayEventHandlers = new Map<string, Array<(data: unknown) => void>>()
 
   private incomingHandlers = new Map<string, RequestHandler>()
   private requestTimeoutMs: number
@@ -158,12 +161,13 @@ export class WorkerPluginRuntime {
     })
 
     this.registerIncomingHandler('contribution:execute:slash-command', async (req) => {
-      const { name, args, context } = (req.payload as any) || {}
-      const handler = this.slashCommandHandlers.get(name)
+      const { name, id, args, context } = (req.payload as any) || {}
+      const cmdName = name || id
+      const handler = this.slashCommandHandlers.get(cmdName)
       if (handler) {
-        await handler(args, context)
+        await handler(args || '', context)
       } else {
-        const err = new Error(`Slash command '${name}' not found`)
+        const err = new Error(`Slash command '${cmdName}' not found`)
         ;(err as any).code = 'NOT_FOUND'
         throw err
       }
@@ -216,6 +220,16 @@ export class WorkerPluginRuntime {
         throw err
       }
     })
+
+    this.registerIncomingHandler('kernel:ui:overlay:event', async (req) => {
+      const { overlayId, event, data } = (req.payload as { overlayId: string; event: string; data: unknown }) || {}
+      const handlers = this.overlayEventHandlers.get(`${overlayId}:${event}`)
+      if (handlers) {
+        for (const handler of handlers) {
+          handler(data)
+        }
+      }
+    })
   }
 
   private getRequestHandler(type: string): RequestHandler | undefined {
@@ -255,16 +269,20 @@ export class WorkerPluginRuntime {
   }
 
   private async handleIncomingKernelRequest(req: KernelRequest): Promise<void> {
+    console.log(`[WorkerPluginRuntime:${this.manifest.id}] Received incoming kernel request type '${req.type}':`, req.payload)
     try {
       const handler = this.getRequestHandler(req.type)
       if (!handler) {
+        console.warn(`[WorkerPluginRuntime:${this.manifest.id}] Unhandled incoming type '${req.type}'`)
         this.respondError(req.id, 'NOT_FOUND', `Unhandled incoming type '${req.type}'`)
         return
       }
 
       const result = await handler(req)
+      console.log(`[WorkerPluginRuntime:${this.manifest.id}] Successfully handled '${req.type}'`)
       this.respondSuccess(req.id, result)
     } catch (err: any) {
+      console.error(`[WorkerPluginRuntime:${this.manifest.id}] Error handling '${req.type}':`, err)
       const code = err?.code || 'INTERNAL_ERROR'
       this.respondError(req.id, code, err?.message || 'Error processing kernel request')
     }
@@ -295,6 +313,38 @@ export class WorkerPluginRuntime {
       const req: KernelRequest = { id, type, payload }
       this.port.postMessage(req)
     })
+  }
+
+  private async requestOverlayHandle(opts: OverlayOptions): Promise<PluginOverlayHandle> {
+    const res = await this.request<{ overlayId: string }>('kernel:ui:showOverlay', { ...opts, mode: 'handle' })
+    const overlayId = res.overlayId
+
+    const handle: PluginOverlayHandle = {
+      on: (event: string, handler: (data: unknown) => void) => {
+        const key = `${overlayId}:${event}`
+        if (!this.overlayEventHandlers.has(key)) {
+          this.overlayEventHandlers.set(key, [])
+        }
+        this.overlayEventHandlers.get(key)!.push(handler)
+
+        return () => {
+          const list = this.overlayEventHandlers.get(key)
+          if (list) {
+            const idx = list.indexOf(handler)
+            if (idx >= 0) list.splice(idx, 1)
+            if (list.length === 0) this.overlayEventHandlers.delete(key)
+          }
+        }
+      },
+      send: (event: string, data: unknown) => {
+        void this.request('kernel:ui:overlay:send', { overlayId, event, data })
+      },
+      close: () => {
+        void this.request('kernel:ui:overlay:close', { overlayId })
+      }
+    }
+
+    return handle
   }
 
   public getContext(): PluginContext {
@@ -406,7 +456,13 @@ export class WorkerPluginRuntime {
       showForm: <T extends Record<string, unknown> = Record<string, unknown>>(schema: OverlayFormSchema) =>
         self.request<T | null>('kernel:ui:showForm', schema),
       showConfirm: (opts) => self.request<boolean>('kernel:ui:showConfirm', opts),
-      showAlert: (opts) => self.request<void>('kernel:ui:showAlert', opts)
+      showAlert: (opts) => self.request<void>('kernel:ui:showAlert', opts),
+      showOverlay: (opts: any) => {
+        if (opts?.mode === 'handle') {
+          return self.requestOverlayHandle(opts) as any
+        }
+        return self.request('kernel:ui:showOverlay', opts)
+      }
     }
 
     const schedulerAPI: IPluginSchedulerAPI = {

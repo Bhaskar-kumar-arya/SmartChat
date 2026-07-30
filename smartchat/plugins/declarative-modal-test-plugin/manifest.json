@@ -7,10 +7,20 @@
   "permissions": [
     "ui:notification",
     "ui:toast",
+    "ui:overlay",
     "chats:read",
-    "chats:write"
+    "chats:write",
+    "messages:read",
+    "messages:send",
+    "messages:write"
   ],
   "contributions": {
+    "slashCommands": [
+      {
+        "name": "overlay",
+        "description": "Opens Webview Overlay to compose and send a message to the active chat"
+      }
+    ],
     "chatActions": [
       {
         "id": "test-form-action",
@@ -26,8 +36,12 @@
         "id": "test-alert-action",
         "label": "Test Alert Modal",
         "icon": "zap"
+      },
+      {
+        "id": "test-overlay-action",
+        "label": "Test Webview Overlay",
+        "icon": "layout"
       }
     ]
   }
 }
- 

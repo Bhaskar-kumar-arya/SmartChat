@@ -164,6 +164,15 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
     // Declarative Modal API
     onModalShow: vi.fn().mockReturnValue(() => {}),
     resolveModal: vi.fn(),
+
+    // Webview Overlay API
+    onOverlayShow: vi.fn().mockReturnValue(() => {}),
+    onOverlaySend: vi.fn().mockReturnValue(() => {}),
+    onOverlayClose: vi.fn().mockReturnValue(() => {}),
+    overlaySubmit: vi.fn(),
+    overlayEvent: vi.fn(),
+    overlayDismiss: vi.fn(),
+    getOverlayPreloadPath: vi.fn().mockReturnValue('file:///mock/overlay-preload.js'),
   }
 
 

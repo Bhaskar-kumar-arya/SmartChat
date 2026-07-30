@@ -26,6 +26,8 @@ import { NotificationsPlugin } from '../plugins/builtin/notifications'
 import type { IWAEventBus } from '../services/whatsapp/IWAEventBus'
 import type { SocketAccessor } from '../services/whatsapp/types'
 
+import { registerPluginProtocol } from '../protocol/pluginProtocol'
+
 export interface BootstrapperOptions {
   services: ServiceContainer
   getMainWindow?: () => BrowserWindow | null
@@ -60,6 +62,8 @@ export class KernelBootstrapper {
       storageRepo,
       getUserDataPath = () => (app ? app.getPath('userData') : '')
     } = this.options
+
+    registerPluginProtocol(extensionsPath)
 
     const permissions = new PermissionStore(permissionsFilePath)
     const registry = new ContributionRegistry()
@@ -98,7 +102,7 @@ export class KernelBootstrapper {
       (pluginId) => pluginRegistry.get(pluginId)?.channel
     )
     const storageModule = new KernelStorageModule(permissions, storageRepo)
-    const overlayHost = new OverlayHost(getMainWindow)
+    const overlayHost = new OverlayHost(getMainWindow, (pluginId) => pluginRegistry.get(pluginId)?.channel)
     const unbindOverlayIpc = registerOverlayIpcHandlers(overlayHost)
     const uiModule = new KernelUIModule(permissions, services.notificationService, getMainWindow, overlayHost)
 

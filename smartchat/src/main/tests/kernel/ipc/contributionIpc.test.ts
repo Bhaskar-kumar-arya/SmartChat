@@ -90,10 +90,10 @@ describe('contributionIpc', () => {
     expect(mockChannel.sendToPlugin).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'contribution:execute:chat-action',
-        payload: {
+        payload: expect.objectContaining({
           id: 'action-1',
           context: { jid: '123@s.whatsapp.net' }
-        }
+        })
       })
     )
 

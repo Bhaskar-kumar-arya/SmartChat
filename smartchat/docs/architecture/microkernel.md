@@ -55,11 +55,17 @@ data and the host renders them using the app's own design system.
 
 Complex contributions (sidebar-panel, settings-page, message-renderer) support **panel mode**:
 plugins ship a `panel/index.html` rendered inside a sandboxed Electron `<webview>`. The kernel
-provides a `postMessage` bridge so the panel can call kernel APIs.
+provides a `postMessage` bridge so the panel can call kernel APIs directly.
 
 Panels get an optional **layout shell** from the host (header with plugin name/icon, close
 button) — the plugin renders its content area. Design tokens are pushed to panels via the bridge
 so they can optionally theme-match.
+
+Sidebar panels support two opening modes:
+- **Declarative:** user clicks the plugin's sidebar tab — host activates the panel.
+- **Imperative:** plugin worker calls `ctx.ui.openPanel(id)` / `ctx.ui.closePanel(id)` from any
+  handler (e.g. surface a results panel from a slash command, open a notification panel on an
+  incoming event). Requires `ui:panel` capability.
 
 ### §1.9 Plugin Overlay / Modal API
 

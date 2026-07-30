@@ -21,7 +21,8 @@ import {
   PluginAliasItem,
   AICallOptions,
   PluginAIModelInfo,
-  PluginAISession
+  PluginAISession,
+  PluginOverlayHandle
 } from '../../../../packages/sdk/src/context'
 
 type ManifestContributionMapper = {
@@ -255,7 +256,27 @@ export class PluginHost implements IPluginHost {
         showForm: <T extends Record<string, unknown> = Record<string, unknown>>(schema: any) =>
           request<T | null>('kernel:ui:showForm', schema),
         showConfirm: (opts: any) => request<boolean>('kernel:ui:showConfirm', opts),
-        showAlert: (opts: any) => request<void>('kernel:ui:showAlert', opts)
+        showAlert: (opts: any) => request<void>('kernel:ui:showAlert', opts),
+        showOverlay: (opts: any) => {
+          if (opts?.mode === 'handle') {
+            return request<{ overlayId: string }>('kernel:ui:showOverlay', { ...opts, mode: 'handle' }).then((res) => {
+              const overlayId = res.overlayId
+              const handle: PluginOverlayHandle = {
+                on: (_event: string, _handler: (data: unknown) => void) => {
+                  return () => {}
+                },
+                send: (event: string, data: unknown) => {
+                  void request('kernel:ui:overlay:send', { overlayId, event, data })
+                },
+                close: () => {
+                  void request('kernel:ui:overlay:close', { overlayId })
+                }
+              }
+              return handle
+            }) as any
+          }
+          return request('kernel:ui:showOverlay', opts)
+        }
       },
       storage: {
         get: (key: string) => request('kernel:storage:get', { key }) as Promise<any>,

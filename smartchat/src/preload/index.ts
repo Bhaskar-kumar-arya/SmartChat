@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import { join } from 'path'
+import { pathToFileURL } from 'url'
 
 // Custom APIs for renderer
 const api = {
@@ -351,6 +353,35 @@ const api = {
   },
   resolveModal: (modalId: string, data: unknown) => {
     return ipcRenderer.invoke('kernel:ui:modal:resolve', { modalId, data })
+  },
+
+  // ── Webview Overlay API (Phase 11b) ──────────────────────────────────
+  onOverlayShow: (handler: (req: unknown) => void) => {
+    const listener = (_event: IpcRendererEvent, req: unknown) => handler(req)
+    ipcRenderer.on('kernel:ui:overlay:show', listener)
+    return () => { ipcRenderer.removeListener('kernel:ui:overlay:show', listener) }
+  },
+  onOverlaySend: (handler: (data: { overlayId: string; event: string; data: unknown }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { overlayId: string; event: string; data: unknown }) => handler(data)
+    ipcRenderer.on('kernel:ui:overlay:incoming', listener)
+    return () => { ipcRenderer.removeListener('kernel:ui:overlay:incoming', listener) }
+  },
+  onOverlayClose: (handler: (data: { overlayId: string }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { overlayId: string }) => handler(data)
+    ipcRenderer.on('kernel:ui:overlay:close', listener)
+    return () => { ipcRenderer.removeListener('kernel:ui:overlay:close', listener) }
+  },
+  overlaySubmit: (overlayId: string, data: unknown) => {
+    ipcRenderer.send('kernel:ui:overlay:submit', { overlayId, data })
+  },
+  overlayEvent: (overlayId: string, event: string, data: unknown) => {
+    ipcRenderer.send('kernel:ui:overlay:event', { overlayId, event, data })
+  },
+  overlayDismiss: (overlayId: string) => {
+    ipcRenderer.send('kernel:ui:overlay:dismiss', { overlayId })
+  },
+  getOverlayPreloadPath: (): string => {
+    return pathToFileURL(join(__dirname, 'overlay-preload.js')).href
   },
 
   // ── File Utilities ──────────────────────────────────────────────────

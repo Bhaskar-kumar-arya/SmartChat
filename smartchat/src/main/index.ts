@@ -1,7 +1,13 @@
 import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
 import { join } from 'path'
-
 import fs from 'fs'
+
+// Register 'app' and 'plugin' protocols as privileged at the top level BEFORE app is ready
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true, allowServiceWorkers: true } },
+  { scheme: 'plugin', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true, allowServiceWorkers: true } }
+])
+
 import { BaileysPatcher } from './services/whatsapp/BaileysPatcher'
 
 // Apply all node_modules patches for Baileys library before anything else starts
@@ -20,6 +26,7 @@ import { AppProtocolHandler } from './services/protocol/AppProtocolHandler'
 import { PrismaPluginStorageRepository } from './kernel/storage/PrismaPluginStorageRepository'
 import { KernelBootstrapper } from './kernel/KernelBootstrapper'
 import { registerContributionIpcHandlers } from './kernel/ipc/contributionIpc'
+import { registerPluginProtocol } from './protocol/pluginProtocol'
 
 function getLogFile(): string {
   try {
@@ -73,11 +80,6 @@ if (!gotTheLock) {
     }
   })
 
-  // Register 'app' protocol as privileged BEFORE app is ready
-  protocol.registerSchemesAsPrivileged([
-    { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } }
-  ])
-
   let mainWindow: BrowserWindow | null = null
 let services: ReturnType<typeof createServices>
 let waConnectionManager: WhatsAppConnectionManager
@@ -85,6 +87,8 @@ let trayService: TrayService | null = null
 let isQuitting = false
 
 const getSock = () => waConnectionManager?.getSocket() || null
+
+let isWaConnected = false
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -96,7 +100,8 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      webviewTag: true
     }
   })
 
@@ -124,12 +129,20 @@ function createWindow(): void {
         console.log('[Main] Started hidden via --hidden argument')
       }
       waConnectionManager.setWindow(mainWindow)
-      waConnectionManager.connect().catch(err => console.error('[Main] Failed to connect WA manager:', err))
+      if (!isWaConnected) {
+        isWaConnected = true
+        waConnectionManager.connect().catch(err => console.error('[Main] Failed to connect WA manager:', err))
+      }
     }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    const url = details.url
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      if (!url.includes('localhost:') && !url.includes('127.0.0.1:')) {
+        shell.openExternal(url)
+      }
+    }
     return { action: 'deny' }
   })
 
@@ -142,6 +155,10 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron.smartchat')
+
+  // Register plugin protocol handler BEFORE creating windows or loading webviews
+  const extDir = join(app.getPath('userData'), 'extensions')
+  registerPluginProtocol(extDir)
 
   // Setup Secure Protocol Handler
   const secureRegistry = new SecureFileRegistry();
@@ -157,6 +174,20 @@ app.whenReady().then(() => {
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+  })
+
+  app.on('web-contents-created', (_, contents) => {
+    if (contents.getType() === 'webview') {
+      contents.setWindowOpenHandler((details) => {
+        const url = details.url
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          if (!url.includes('localhost:') && !url.includes('127.0.0.1:')) {
+            shell.openExternal(url)
+          }
+        }
+        return { action: 'deny' }
+      })
+    }
   })
 
   ipcMain.on('ping', () => console.log('pong'))

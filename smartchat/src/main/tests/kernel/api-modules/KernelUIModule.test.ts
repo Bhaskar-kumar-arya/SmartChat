@@ -38,7 +38,13 @@ describe('KernelUIModule', () => {
 
     mockOverlayHost = {
       showModal: vi.fn(),
-      resolveModal: vi.fn()
+      resolveModal: vi.fn(),
+      showOverlay: vi.fn(),
+      sendToOverlay: vi.fn(),
+      closeOverlay: vi.fn(),
+      onOverlaySubmit: vi.fn(),
+      onOverlayEvent: vi.fn(),
+      onOverlayDismiss: vi.fn()
     }
 
     module = new KernelUIModule(
@@ -166,6 +172,53 @@ describe('KernelUIModule', () => {
     expect(result).toBeUndefined()
   })
 
+  it('denies showOverlay when ui:overlay capability is lacking', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(false)
+
+    await expect(
+      module.handle('plugin-a', 'kernel:ui:showOverlay', { panel: 'test.html' })
+    ).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+      message: "Plugin 'plugin-a' lacks capability 'ui:overlay'",
+      permission: 'ui:overlay'
+    })
+  })
+
+  it('allows showOverlay when ui:overlay is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    mockOverlayHost.showOverlay = vi.fn().mockResolvedValue({ overlayId: 'ov-123' })
+
+    const opts = { panel: 'test.html', mode: 'handle' as const }
+    const result = await module.handle('plugin-a', 'kernel:ui:showOverlay', opts)
+
+    expect(mockOverlayHost.showOverlay).toHaveBeenCalledWith('plugin-a', opts)
+    expect(result).toEqual({ overlayId: 'ov-123' })
+  })
+
+  it('delegates overlay:send to overlayHost', async () => {
+    mockOverlayHost.sendToOverlay = vi.fn()
+
+    const result = await module.handle('plugin-a', 'kernel:ui:overlay:send', {
+      overlayId: 'ov-1',
+      event: 'results',
+      data: [1, 2, 3]
+    })
+
+    expect(mockOverlayHost.sendToOverlay).toHaveBeenCalledWith('ov-1', 'results', [1, 2, 3])
+    expect(result).toEqual({ success: true })
+  })
+
+  it('delegates overlay:close to overlayHost', async () => {
+    mockOverlayHost.closeOverlay = vi.fn()
+
+    const result = await module.handle('plugin-a', 'kernel:ui:overlay:close', {
+      overlayId: 'ov-1'
+    })
+
+    expect(mockOverlayHost.closeOverlay).toHaveBeenCalledWith('ov-1')
+    expect(result).toEqual({ success: true })
+  })
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:ui:unknown', {})
@@ -175,3 +228,4 @@ describe('KernelUIModule', () => {
     })
   })
 })
+

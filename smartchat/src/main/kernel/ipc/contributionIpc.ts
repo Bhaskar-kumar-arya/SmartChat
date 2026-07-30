@@ -68,19 +68,24 @@ export function registerContributionIpcHandlers(
 
   const executeHandler = async (
     _event: unknown,
-    opts: { slot: ContributionSlot; pluginId: string; id: string; context?: Record<string, unknown> }
+    opts: { slot: ContributionSlot; pluginId: string; id: string; name?: string; args?: string; context?: Record<string, unknown> }
   ) => {
+    console.log('[contributionIpc] executeHandler received request:', opts)
     const plugin = host.getPlugin(opts.pluginId)
     if (!plugin) {
+      console.error(`[contributionIpc] Plugin not loaded: ${opts.pluginId}`)
       throw new Error(`Plugin not loaded: ${opts.pluginId}`)
     }
 
     const reqId = `exec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    console.log(`[contributionIpc] Sending contribution:execute:${opts.slot} to plugin '${opts.pluginId}' (reqId=${reqId})`)
     plugin.channel.sendToPlugin({
       id: reqId,
       type: `contribution:execute:${opts.slot}`,
       payload: {
         id: opts.id,
+        name: opts.name || opts.id,
+        args: opts.args || '',
         context: opts.context
       }
     })

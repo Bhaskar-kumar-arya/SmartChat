@@ -1,0 +1,9 @@
+{
+  "name": "smartchat-voice-transcriber-plugin",
+  "version": "1.0.0",
+  "description": "External microkernel plugin for transcribing English audio messages.",
+  "main": "index.js",
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2"
+  }
+}

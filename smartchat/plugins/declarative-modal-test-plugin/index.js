@@ -13,9 +13,9 @@ ctx.onActivate(async () => {
   ctx.log.info('Declarative Modal Test Plugin worker activated');
 });
 
-const extractJid = (actionCtx) => {
-  if (!actionCtx || typeof actionCtx !== 'object') return undefined;
-  const obj = actionCtx;
+const extractJid = (actionCtx, cmdCtx) => {
+  const obj = (cmdCtx && typeof cmdCtx === 'object') ? cmdCtx : actionCtx;
+  if (!obj || typeof obj !== 'object') return undefined;
   const nested = obj.context || {};
   return (
     nested.chatJid ||
@@ -24,6 +24,51 @@ const extractJid = (actionCtx) => {
     obj.jid
   );
 };
+
+const handleOpenOverlay = async (actionCtx, cmdCtx) => {
+  const targetJid = extractJid(actionCtx, cmdCtx);
+  ctx.log.info('Opening Webview Overlay for targetJid:', targetJid);
+
+  const result = await ctx.ui.showOverlay({
+    panel: 'overlays/send_message.html',
+    title: 'Compose & Send Message (Webview Overlay)',
+    width: 480,
+    height: 320,
+    context: { chatJid: targetJid }
+  });
+
+  if (!result || !result.text) {
+    ctx.log.info('Overlay dismissed or empty input');
+    if (ctx.ui.toast) {
+      ctx.ui.toast('Overlay dismissed', 'info');
+    }
+    return;
+  }
+
+  const { text } = result;
+  ctx.log.info(`Sending message from overlay to ${targetJid}:`, text);
+
+  if (targetJid && ctx.messages) {
+    try {
+      await ctx.messages.send(targetJid, text);
+      if (ctx.ui.toast) {
+        ctx.ui.toast('Message sent via Webview Overlay! 🚀', 'success');
+      }
+    } catch (err) {
+      ctx.log.error('Failed to send message via overlay:', err);
+      if (ctx.ui.toast) {
+        ctx.ui.toast(`Failed to send message: ${err.message}`, 'error');
+      }
+    }
+  } else {
+    if (ctx.ui.toast) {
+      ctx.ui.toast(`Overlay text submitted: ${text}`, 'info');
+    }
+  }
+};
+
+ctx.contributions.registerSlashCommand('overlay', handleOpenOverlay);
+ctx.contributions.registerChatAction('test-overlay-action', handleOpenOverlay);
 
 ctx.contributions.registerChatAction('test-form-action', async (actionCtx) => {
   const targetJid = extractJid(actionCtx);
