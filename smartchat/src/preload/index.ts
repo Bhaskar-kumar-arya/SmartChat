@@ -343,6 +343,16 @@ const api = {
     return () => { ipcRenderer.removeListener('kernel:contributions:updated', listener) }
   },
 
+  // ── Declarative Modal API (Phase 11a) ───────────────────────────────
+  onModalShow: (handler: (req: unknown) => void) => {
+    const listener = (_event: IpcRendererEvent, req: unknown) => handler(req)
+    ipcRenderer.on('kernel:ui:modal:show', listener)
+    return () => { ipcRenderer.removeListener('kernel:ui:modal:show', listener) }
+  },
+  resolveModal: (modalId: string, data: unknown) => {
+    return ipcRenderer.invoke('kernel:ui:modal:resolve', { modalId, data })
+  },
+
   // ── File Utilities ──────────────────────────────────────────────────
   // webUtils.getPathForFile is the modern Electron API to get the real
   // filesystem path of a File object dropped into the renderer.

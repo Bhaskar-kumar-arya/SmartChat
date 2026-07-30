@@ -1,0 +1,31 @@
+{
+  "id": "com.smartchat.declarative-modal-test",
+  "name": "Declarative Modal Test Plugin",
+  "version": "1.0.0",
+  "apiVersion": "2",
+  "main": "index.js",
+  "permissions": [
+    "ui:notification",
+    "ui:toast"
+  ],
+  "contributions": {
+    "chatActions": [
+      {
+        "id": "test-form-action",
+        "label": "Test Form Modal",
+        "icon": "zap"
+      },
+      {
+        "id": "test-confirm-action",
+        "label": "Test Confirm Modal",
+        "icon": "zap"
+      },
+      {
+        "id": "test-alert-action",
+        "label": "Test Alert Modal",
+        "icon": "zap"
+      }
+    ]
+  }
+}
+ 

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useAPI } from './context/APIContext'
 import { ChatLayout } from './components/chat'
+import { ModalPortal } from './components/overlays/ModalPortal'
 import { CheckCircle2, Loader2, Circle } from 'lucide-react'
 
 type AppState = 'initializing' | 'qr' | 'connected' | 'syncing' | 'ready'
@@ -129,7 +130,12 @@ export function App() {
 
   // ── Full-screen chat layout when ready ────────────────────────────
   if (appState === 'ready') {
-    return <ChatLayout />
+    return (
+      <>
+        <ChatLayout />
+        <ModalPortal />
+      </>
+    )
   }
 
   const radius = 60
@@ -137,7 +143,8 @@ export function App() {
   const strokeDashoffset = circumference - (syncProgress / 100) * circumference
 
   return (
-    <div className="setup-screen">
+    <>
+      <div className="setup-screen">
       {/* Background glow blobs */}
       <div className="bg-glow-blob blob-1" />
       <div className="bg-glow-blob blob-2" />
@@ -309,6 +316,8 @@ export function App() {
         )}
       </div>
     </div>
+    <ModalPortal />
+    </>
   )
 }
 

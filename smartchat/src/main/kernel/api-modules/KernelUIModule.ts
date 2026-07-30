@@ -1,8 +1,10 @@
 import { BrowserWindow } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { INotificationService } from '../../services/notification/INotificationService'
 import { KernelNotFoundError } from './KernelErrors'
+import { IOverlayHost } from '../ui/IOverlayHost'
 
 export class KernelUIModule extends BaseKernelModule {
   readonly namespace = 'kernel:ui'
@@ -10,7 +12,8 @@ export class KernelUIModule extends BaseKernelModule {
   constructor(
     permissions: IPermissionStore,
     private readonly notificationService: INotificationService,
-    private readonly getMainWindow?: () => BrowserWindow | null
+    private readonly getMainWindow?: () => BrowserWindow | null,
+    private readonly overlayHost?: IOverlayHost
   ) {
     super(permissions)
   }
@@ -38,6 +41,34 @@ export class KernelUIModule extends BaseKernelModule {
           win.webContents.send('toast', { message, level, pluginId })
         }
         return { success: true }
+      }
+
+      case 'showForm': {
+        this.requireCapability(pluginId, 'ui:notification')
+        if (!this.overlayHost) {
+          throw new Error('OverlayHost is not configured on KernelUIModule')
+        }
+        const modalId = randomUUID()
+        return await this.overlayHost.showModal({ type: 'form', modalId, payload })
+      }
+
+      case 'showConfirm': {
+        this.requireCapability(pluginId, 'ui:notification')
+        if (!this.overlayHost) {
+          throw new Error('OverlayHost is not configured on KernelUIModule')
+        }
+        const modalId = randomUUID()
+        return await this.overlayHost.showModal({ type: 'confirm', modalId, payload })
+      }
+
+      case 'showAlert': {
+        this.requireCapability(pluginId, 'ui:notification')
+        if (!this.overlayHost) {
+          throw new Error('OverlayHost is not configured on KernelUIModule')
+        }
+        const modalId = randomUUID()
+        await this.overlayHost.showModal({ type: 'alert', modalId, payload })
+        return undefined
       }
 
       default:

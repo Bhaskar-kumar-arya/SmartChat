@@ -160,6 +160,10 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
     }),
     executeContribution: vi.fn().mockResolvedValue(undefined),
     onContributionsUpdated: vi.fn().mockReturnValue(() => {}),
+
+    // Declarative Modal API
+    onModalShow: vi.fn().mockReturnValue(() => {}),
+    resolveModal: vi.fn(),
   }
 
 

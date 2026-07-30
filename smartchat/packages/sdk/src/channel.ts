@@ -21,7 +21,8 @@ import {
   OutgoingMessagePayload,
   SendResult,
   SendMessageOptions,
-  AICallOptions
+  AICallOptions,
+  OverlayFormSchema
 } from './context'
 
 export interface KernelRequest {
@@ -401,7 +402,11 @@ export class WorkerPluginRuntime {
 
     const uiAPI: IPluginUIAPI = {
       notify: (opts) => self.request('kernel:ui:notify', opts),
-      toast: (msg, level = 'info') => void self.request('kernel:ui:toast', { message: msg, level })
+      toast: (msg, level = 'info') => void self.request('kernel:ui:toast', { message: msg, level }),
+      showForm: <T extends Record<string, unknown> = Record<string, unknown>>(schema: OverlayFormSchema) =>
+        self.request<T | null>('kernel:ui:showForm', schema),
+      showConfirm: (opts) => self.request<boolean>('kernel:ui:showConfirm', opts),
+      showAlert: (opts) => self.request<void>('kernel:ui:showAlert', opts)
     }
 
     const schedulerAPI: IPluginSchedulerAPI = {

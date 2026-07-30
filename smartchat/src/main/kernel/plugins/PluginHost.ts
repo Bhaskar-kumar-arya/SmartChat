@@ -251,7 +251,11 @@ export class PluginHost implements IPluginHost {
       },
       ui: {
         notify: (opts: { title: string; body: string }) => request('kernel:ui:notify', opts) as Promise<void>,
-        toast: (msg: string, level?: string) => request('kernel:ui:toast', { msg, level }) as any
+        toast: (msg: string, level?: 'info' | 'success' | 'warning' | 'error') => void request('kernel:ui:toast', { message: msg, level }),
+        showForm: <T extends Record<string, unknown> = Record<string, unknown>>(schema: any) =>
+          request<T | null>('kernel:ui:showForm', schema),
+        showConfirm: (opts: any) => request<boolean>('kernel:ui:showConfirm', opts),
+        showAlert: (opts: any) => request<void>('kernel:ui:showAlert', opts)
       },
       storage: {
         get: (key: string) => request('kernel:storage:get', { key }) as Promise<any>,

@@ -280,5 +280,9 @@ export const api: IAPIService = {
   getContributions: () => window.api.getContributions(),
   executeContribution: (opts) => window.api.executeContribution(opts),
   onContributionsUpdated: (cb) => window.api.onContributionsUpdated(cb),
+
+  // ── Declarative Modal API (Phase 11a) ───────────────────────────────
+  onModalShow: (handler) => window.api.onModalShow(handler as any),
+  resolveModal: (modalId, data) => window.api.resolveModal(modalId, data)
 }
 

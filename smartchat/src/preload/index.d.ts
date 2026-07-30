@@ -142,6 +142,10 @@ declare global {
       getContributions: () => Promise<import('../renderer/src/types/contribution.types').ContributionRegistrySnapshot>
       executeContribution: (opts: import('../renderer/src/types/contribution.types').ExecuteContributionOpts) => Promise<void>
       onContributionsUpdated: (cb: (snapshot: import('../renderer/src/types/contribution.types').ContributionRegistrySnapshot) => void) => () => void
+
+      // ── Declarative Modal API (Phase 11a) ───────────────────────────────
+      onModalShow: (handler: (req: import('../main/kernel/ui/IOverlayHost').ModalRequest) => void) => () => void
+      resolveModal: (modalId: string, data: unknown) => Promise<void>
     }
   }
 }

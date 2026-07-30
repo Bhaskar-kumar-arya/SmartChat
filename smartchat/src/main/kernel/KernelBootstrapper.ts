@@ -17,6 +17,8 @@ import { KernelAIModule } from './api-modules/KernelAIModule'
 import { KernelEventsModule } from './api-modules/KernelEventsModule'
 import { KernelStorageModule, IKernelStorageRepository } from './api-modules/KernelStorageModule'
 import { KernelUIModule } from './api-modules/KernelUIModule'
+import { OverlayHost } from './ui/OverlayHost'
+import { registerOverlayIpcHandlers } from './ipc/overlayIpc'
 import { WhatsappCorePlugin } from '../plugins/builtin/whatsapp-core'
 import { AIAssistantPlugin } from '../plugins/builtin/ai-assistant'
 import { SearchPlugin } from '../plugins/builtin/search'
@@ -96,7 +98,9 @@ export class KernelBootstrapper {
       (pluginId) => pluginRegistry.get(pluginId)?.channel
     )
     const storageModule = new KernelStorageModule(permissions, storageRepo)
-    const uiModule = new KernelUIModule(permissions, services.notificationService, getMainWindow)
+    const overlayHost = new OverlayHost(getMainWindow)
+    const unbindOverlayIpc = registerOverlayIpcHandlers(overlayHost)
+    const uiModule = new KernelUIModule(permissions, services.notificationService, getMainWindow, overlayHost)
 
     router.registerModule(chatsModule)
     router.registerModule(messagesModule)
@@ -127,6 +131,7 @@ export class KernelBootstrapper {
     }
 
     const dispose = async () => {
+      unbindOverlayIpc()
       const loaded = host.listLoaded()
       for (const id of loaded) {
         await host.unload(id)

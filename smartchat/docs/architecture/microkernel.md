@@ -61,6 +61,42 @@ Panels get an optional **layout shell** from the host (header with plugin name/i
 button) — the plugin renders its content area. Design tokens are pushed to panels via the bridge
 so they can optionally theme-match.
 
+### §1.9 Plugin Overlay / Modal API
+
+Plugins can imperatively trigger UI overlays from within any contribution handler (e.g. a
+`messageAction` handler that needs to collect user input before acting). Two tiers are provided:
+
+**Tier 1 — Declarative (host-rendered).** Covers ~90% of real use cases with zero webview
+latency. The plugin describes what it needs as a JSON schema; the host renders it using the
+app's own design system (React, `--wa-*` tokens, matching dark mode).
+- `ctx.ui.showForm(schema)` — collect structured input (selects, text, checkboxes, radios)
+- `ctx.ui.showConfirm(opts)` — yes/no confirmation dialog
+- `ctx.ui.showAlert(opts)` — informational dialog
+
+All Tier 1 calls return a Promise that resolves with the user's response or `null` on dismiss.
+
+**Tier 2 — Webview overlay.** For complex, custom UI that cannot be expressed as a form schema.
+Plugins ship a `panel/overlay.html` inside their `.scext` archive. The host renders it inside a
+sandboxed `<webview>` positioned as a floating modal over the app.
+- `ctx.ui.showOverlay(opts)` — returns a Promise (Model A) **or** an event emitter (Model B)
+- Supports bidirectional communication: plugin pushes data in, overlay pushes events out
+- Design tokens (`--wa-*`) are injected into the webview on load via a standard preload script
+- The plugin does NOT modify the preload — the host owns it
+
+**Context delivery:** The call-site `context` argument (e.g. `{ messageId, text }`) is forwarded
+into the overlay via the `smartchat:init` postMessage immediately after the webview loads. The
+overlay reads context from that message, so it always knows which entity the action was triggered on.
+
+**Reverse channel (`window.__smartchat` bridge):** The host injects `overlay-preload.js` into
+every overlay webview. It exposes:
+- `window.__smartchat.submit(data)` — closes the overlay and delivers `data` to the awaiting plugin Promise
+- `window.__smartchat.emit(event, data)` — fires an event to the plugin WITHOUT closing (Model B)
+- `window.__smartchat.dismiss()` — cancels and resolves the Promise with `null`
+- `window.__smartchat.send` is populated by the host when the plugin calls `overlay.send(event, data)`,
+  allowing the plugin to push data back into the live overlay (e.g. search results)
+
+See §11 for the full interface definitions and message protocol.
+
 ### §1.4 Built-in Plugins Dogfood the Same API
 
 All internal features (pin chat, mute, AI tools, search panel, notification settings) are
@@ -294,7 +330,7 @@ export interface IKernelModule {
 | `kernel:ai` | `ai:chat`, `ai:tools:call`, `ai:tools:register` | AI service, tool registry |
 | `kernel:events` | `events:*` | WAEventBus bridge |
 | `kernel:storage` | `storage:read`, `storage:write` | Extension storage repository |
-| `kernel:ui` | `ui:notification`, `ui:toast`, `ui:panel` | Notification service, BrowserWindow |
+| `kernel:ui` | `ui:notification`, `ui:toast`, `ui:panel`, `ui:overlay` | Notification service, BrowserWindow, overlay host |
 | `kernel:contributions` | always available | ContributionRegistry |
 | `kernel:plugins` | always available | PluginHost (inter-plugin bus) |
 
@@ -333,7 +369,7 @@ export type PermissionCapability = string
 //  ai:chat, ai:tools:call, ai:tools:register
 //  events:<event-name>  (e.g. events:message:incoming — one per event type)
 //  storage:read, storage:write
-//  ui:notification, ui:toast, ui:panel
+//  ui:notification, ui:toast, ui:panel, ui:overlay
 //  scheduler
 //  receipts:read
 //
@@ -632,6 +668,72 @@ export interface IPluginSchedulerAPI {
 export interface IPluginUIAPI {
   notify(opts: { title: string; body: string }): Promise<void>
   toast(msg: string, level?: 'info' | 'success' | 'warning' | 'error'): void
+
+  // --- Tier 1: Declarative, host-rendered (no webview, zero lag) ---
+
+  /** Render a native modal with structured fields. Returns filled values or null on dismiss. */
+  showForm<T extends Record<string, unknown> = Record<string, unknown>>(
+    schema: OverlayFormSchema
+  ): Promise<T | null>
+
+  /** Render a native yes/no confirmation dialog. Returns true = confirmed, false = cancelled. */
+  showConfirm(opts: { title: string; body?: string; confirmLabel?: string; cancelLabel?: string }): Promise<boolean>
+
+  /** Render a native informational alert dialog. Resolves when dismissed. */
+  showAlert(opts: { title: string; body?: string; label?: string }): Promise<void>
+
+  // --- Tier 2: Webview overlay (full custom HTML, requires ui:overlay capability) ---
+
+  /**
+   * Mount a sandboxed <webview> overlay using a panel HTML file from the plugin's .scext.
+   * Returns a Promise (Model A) or PluginOverlayHandle (Model B) depending on `mode`.
+   *
+   * Model A — Promise: resolves when the overlay calls window.__smartchat.submit(data) or
+   *   window.__smartchat.dismiss(). Use for simple input collection (translate, export, etc.).
+   *
+   * Model B — Handle: the overlay stays open; use overlay.on() for events and overlay.send()
+   *   to push data back in. Use for live/interactive UI (search, live preview, etc.).
+   */
+  showOverlay(opts: OverlayOptions & { mode?: 'promise' }): Promise<unknown | null>
+  showOverlay(opts: OverlayOptions & { mode: 'handle' }): Promise<PluginOverlayHandle>
+}
+
+export interface OverlayFormField {
+  id: string
+  label: string
+  type: 'text' | 'textarea' | 'select' | 'radio' | 'checkbox'
+  placeholder?: string
+  required?: boolean
+  options?: Array<{ label: string; value: string }>  // for select / radio
+  defaultValue?: string | boolean
+}
+
+export interface OverlayFormSchema {
+  title: string
+  fields: OverlayFormField[]
+  submitLabel?: string
+  cancelLabel?: string
+}
+
+export interface OverlayOptions {
+  /** Path to panel HTML file, relative to .scext archive root. e.g. 'overlays/translate.html' */
+  panel: string
+  /** Serializable data forwarded to the overlay via smartchat:init postMessage. */
+  context?: Record<string, unknown>
+  /** Overlay dimensions. Defaults: width=480, height=360. */
+  width?: number
+  height?: number
+  /** Optional title shown in the overlay's host-rendered header shell. */
+  title?: string
+}
+
+export interface PluginOverlayHandle {
+  /** Listen for events emitted by the overlay via window.__smartchat.emit(). */
+  on(event: string, handler: (data: unknown) => void): () => void
+  /** Push data into the live overlay (overlay reads it from window.__smartchat.receive). */
+  send(event: string, data: unknown): void
+  /** Programmatically close the overlay. */
+  close(): void
 }
 
 export interface IPluginAIAPI {
@@ -813,6 +915,144 @@ packages/sdk/
 src/main/tests/kernel/
 └── (tests added per phase)
 ```
+
+---
+
+## §11 — Plugin Overlay / Modal API: Full Specification
+
+### §11.1 Capability
+
+Plugins must declare `ui:overlay` in `manifest.permissions` to call `ctx.ui.showOverlay()`.
+Tier 1 calls (`showForm`, `showConfirm`, `showAlert`) require only `ui:notification` (already
+part of basic `ui:*` capabilities) — no separate permission needed because they are fully
+host-rendered and carry no webview security surface.
+
+### §11.2 IPC Message Protocol
+
+All overlay/modal flows use the same `KernelRequest` / `KernelResponse` wire format (§2.1).
+
+#### Tier 1 — Declarative (plugin → kernel → renderer → back)
+
+```
+plugin: ctx.ui.showForm(schema)
+  → WorkerPluginRuntime: postMessage({ type: 'kernel:ui:showForm', payload: schema })
+  → KernelUIModule validates capability, forwards to renderer via BrowserWindow.webContents
+  → renderer: mounts React <FormModal> using host design system
+  → user submits / dismisses
+  → renderer: IPC reply kernel:ui:overlay:resolve { id, data }
+  → KernelUIModule: sendResponseToPlugin({ id, ok: true, payload: data | null })
+  → plugin's Promise resolves
+```
+
+#### Tier 2 — Webview Overlay
+
+```
+plugin: ctx.ui.showOverlay({ panel: 'translate.html', context: { messageId, text } })
+  → WorkerPluginRuntime: postMessage({ type: 'kernel:ui:showOverlay', payload: opts })
+  → KernelUIModule: validates ui:overlay capability, assigns overlayId, sends to renderer
+  → renderer: mounts <OverlayShell> with <webview src="plugin://[pluginId]/translate.html"
+              preload="overlay-preload.js">
+  → webview dom-ready:
+      host executes: webview.send('smartchat:init', { tokens, context })
+  → overlay HTML reads init, applyTokens(), renders UI with context data
+  → user clicks button → window.__smartchat.submit({ language: 'fr' })
+      → ipcRenderer.sendToHost('smartchat:submit', { language: 'fr' })
+      → renderer webview 'ipc-message' handler
+      → IPC to main: kernel:ui:overlay:submit { overlayId, data }
+      → KernelUIModule resolves pending Promise: sendResponseToPlugin({ id, ok: true, payload: data })
+      → renderer unmounts <OverlayShell>
+  → plugin's showOverlay() Promise resolves with { language: 'fr' }
+```
+
+### §11.3 Overlay Preload Contract (`overlay-preload.js`)
+
+The host owns and injects this preload. Plugins MUST NOT ship their own preload.
+The preload exposes `window.__smartchat` using Electron `contextBridge`:
+
+```javascript
+// src/renderer/overlay-preload.js  (compiled, not editable by plugins)
+context Bridge.exposeInMainWorld('__smartchat', {
+  submit:  (data)          => ipcRenderer.sendToHost('smartchat:submit', data),
+  emit:    (event, data)   => ipcRenderer.sendToHost('smartchat:event', { event, data }),
+  dismiss: ()              => ipcRenderer.sendToHost('smartchat:dismiss'),
+  // receive is patched by the host after webview loads (for overlay.send() → panel)
+  receive: null,
+})
+```
+
+### §11.4 Design Token Injection
+
+On webview `dom-ready`, the host serializes all `--wa-*` custom properties from the renderer's
+`:root` and sends them as part of the `smartchat:init` message. The SDK helper
+`applyTokens(tokens)` (in `@smartchat/sdk/overlay`) injects them as a `<style>` block on `:root`
+so the plugin's CSS can use `var(--wa-bg-secondary)`, `var(--wa-primary)`, etc. natively.
+
+**Recommended token subset for plugin overlay use:**
+
+| Category | Variables |
+|---|---|
+| Backgrounds | `--wa-bg-main`, `--wa-bg-secondary`, `--wa-bg-hover` |
+| Text | `--wa-text-primary`, `--wa-text-secondary`, `--wa-text-tertiary` |
+| Accent | `--wa-primary`, `--wa-primary-light`, `--wa-primary-dark` |
+| Inputs | `--wa-input-bg`, `--wa-input-border` |
+| Borders | `--wa-border`, `--wa-border-light`, `--wa-divider` |
+| State | `--wa-danger`, `--wa-badge`, `--wa-badge-text` |
+| Utility | `--wa-shadow`, `--wa-transition`, `--wa-text-on-accent`, `--wa-icon` |
+
+All `--wa-*` values are forwarded (not filtered) — the table above is the *recommended* subset
+for SDK documentation. Plugin authors may use any variable they observe in the running app.
+
+### §11.5 Bidirectional Event Stream (Model B)
+
+For overlays that stay open and require ongoing plugin ↔ overlay communication:
+
+```typescript
+// Plugin side
+const overlay = await ctx.ui.showOverlay({ panel: 'search.html', mode: 'handle' })
+
+overlay.on('query', async ({ text }) => {
+  const results = await ctx.messages.search(text)
+  overlay.send('results', results)   // push results into the webview
+})
+
+overlay.on('pick', ({ messageId }) => {
+  overlay.close()
+  // act on pick
+})
+```
+
+```javascript
+// Overlay HTML side
+window.addEventListener('message', (e) => {
+  if (e.data.type === 'smartchat:init') {
+    applyTokens(e.data.tokens)
+    init(e.data.context)
+  }
+  if (e.data.type === 'smartchat:receive') {
+    // data pushed from plugin via overlay.send()
+    renderResults(e.data.event, e.data.data)
+  }
+})
+
+document.querySelector('#search').addEventListener('input', (e) => {
+  window.__smartchat.emit('query', { text: e.target.value })
+})
+
+document.querySelector('#result').addEventListener('click', (e) => {
+  window.__smartchat.submit({ messageId: e.currentTarget.dataset.id })
+})
+```
+
+### §11.6 Invariant Rules for Overlay Implementation
+
+- The renderer is the **only** place that mounts webviews. The kernel (main process) issues
+  commands to the renderer; it never creates BrowserWindow children directly for overlays.
+- `overlayId` is a kernel-assigned UUID. The renderer echoes it back on every submit/event
+  so the kernel can route to the correct pending Promise.
+- Only one overlay per plugin may be open at a time. A second `showOverlay` call while one
+  is already open MUST reject with `KernelErrorCode: 'OVERLAY_ALREADY_OPEN'`.
+- Overlay webviews are destroyed when closed. They are never cached or reused across calls.
+- `context` passed to `showOverlay` must be JSON-serializable (same rule as all kernel payloads).
 
 ---
 

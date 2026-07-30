@@ -210,9 +210,31 @@ export interface IPluginSchedulerAPI {
   onCron(name: string, fn: () => void | Promise<void>): void
 }
 
+export interface OverlayFormField {
+  id: string
+  label: string
+  type: 'text' | 'textarea' | 'select' | 'radio' | 'checkbox'
+  placeholder?: string
+  required?: boolean
+  options?: Array<{ label: string; value: string }>
+  defaultValue?: string | boolean
+}
+
+export interface OverlayFormSchema {
+  title: string
+  fields: OverlayFormField[]
+  submitLabel?: string
+  cancelLabel?: string
+}
+
 export interface IPluginUIAPI {
   notify(opts: { title: string; body: string }): Promise<void>
   toast(msg: string, level?: 'info' | 'success' | 'warning' | 'error'): void
+  showForm<T extends Record<string, unknown> = Record<string, unknown>>(
+    schema: OverlayFormSchema
+  ): Promise<T | null>
+  showConfirm(opts: { title: string; body?: string; confirmLabel?: string; cancelLabel?: string }): Promise<boolean>
+  showAlert(opts: { title: string; body?: string; label?: string }): Promise<void>
 }
 
 export interface PluginAIModelInfo {

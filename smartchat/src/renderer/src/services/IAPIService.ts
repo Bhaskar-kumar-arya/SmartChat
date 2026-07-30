@@ -150,5 +150,9 @@ export interface IAPIService {
   getContributions(): Promise<import('../types/contribution.types').ContributionRegistrySnapshot>
   executeContribution(opts: import('../types/contribution.types').ExecuteContributionOpts): Promise<void>
   onContributionsUpdated(cb: (snapshot: import('../types/contribution.types').ContributionRegistrySnapshot) => void): () => void
+
+  // ── Declarative Modal API (Phase 11a) ───────────────────────────────
+  onModalShow(handler: (req: import('../../../main/kernel/ui/IOverlayHost').ModalRequest) => void): (() => void)
+  resolveModal(modalId: string, data: unknown): void
 }
 

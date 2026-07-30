@@ -781,6 +781,165 @@
   color: var(--wa-text-secondary);
 }
 
+/* ─── Tier 1 Declarative Modal Styles (Phase 11a) ──────────────────── */
+.tier1-modal {
+  background: var(--wa-bg-secondary);
+  border-radius: 12px;
+  width: 480px;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px var(--wa-shadow);
+  border: 1px solid var(--wa-border);
+  color: var(--wa-text-primary);
+  overflow: hidden;
+  animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalPop {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.tier1-modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--wa-divider);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tier1-modal-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--wa-text-primary);
+}
+
+.tier1-modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.tier1-modal-text {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--wa-text-secondary);
+  margin: 0;
+}
+
+.tier1-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tier1-field-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--wa-text-primary);
+}
+
+.tier1-input,
+.tier1-textarea,
+.tier1-select {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  background: var(--wa-input-bg);
+  border: 1px solid var(--wa-input-border);
+  border-radius: 6px;
+  color: var(--wa-text-primary);
+  font-size: 0.9rem;
+  outline: none;
+  transition: var(--wa-transition);
+}
+
+.tier1-input:focus,
+.tier1-textarea:focus,
+.tier1-select:focus {
+  border-color: var(--wa-primary);
+}
+
+.tier1-textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.tier1-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tier1-radio-item,
+.tier1-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--wa-text-primary);
+  cursor: pointer;
+}
+
+.tier1-radio-item input[type='radio'],
+.tier1-checkbox-item input[type='checkbox'] {
+  accent-color: var(--wa-primary);
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+}
+
+.tier1-modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--wa-divider);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  background: var(--wa-bg-main);
+}
+
+.tier1-btn {
+  padding: 0.5rem 1.25rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: var(--wa-transition);
+}
+
+.tier1-btn-secondary {
+  background: transparent;
+  color: var(--wa-text-secondary);
+  border: 1px solid var(--wa-border);
+}
+
+.tier1-btn-secondary:hover {
+  background: var(--wa-bg-hover);
+  color: var(--wa-text-primary);
+}
+
+.tier1-btn-primary {
+  background: var(--wa-primary);
+  color: var(--wa-text-on-accent);
+}
+
+.tier1-btn-primary:hover {
+  background: var(--wa-primary-light);
+}
+
+
 
 
 

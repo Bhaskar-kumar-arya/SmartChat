@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { KernelUIModule } from '../../../kernel/api-modules/KernelUIModule'
 import { IPermissionStore } from '../../../kernel/permissions/IPermissionStore'
 import { INotificationService } from '../../../services/notification/INotificationService'
+import { IOverlayHost } from '../../../kernel/ui/IOverlayHost'
 
 describe('KernelUIModule', () => {
   let mockPermissions: IPermissionStore
   let mockNotificationService: INotificationService
   let mockMainWindow: any
+  let mockOverlayHost: IOverlayHost
   let module: KernelUIModule
 
   beforeEach(() => {
@@ -34,7 +36,17 @@ describe('KernelUIModule', () => {
       }
     }
 
-    module = new KernelUIModule(mockPermissions, mockNotificationService, () => mockMainWindow)
+    mockOverlayHost = {
+      showModal: vi.fn(),
+      resolveModal: vi.fn()
+    }
+
+    module = new KernelUIModule(
+      mockPermissions,
+      mockNotificationService,
+      () => mockMainWindow,
+      mockOverlayHost
+    )
   })
 
   it('has correct namespace', () => {
@@ -93,6 +105,65 @@ describe('KernelUIModule', () => {
       pluginId: 'plugin-a'
     })
     expect(result).toEqual({ success: true })
+  })
+
+  it('denies showForm when ui:notification capability is lacking', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(false)
+
+    await expect(
+      module.handle('plugin-a', 'kernel:ui:showForm', { title: 'Test Form', fields: [] })
+    ).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+      message: "Plugin 'plugin-a' lacks capability 'ui:notification'"
+    })
+  })
+
+  it('delegates showForm to overlayHost when capability is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockOverlayHost.showModal).mockResolvedValue({ name: 'SmartChat' })
+
+    const schema = { title: 'Test Form', fields: [{ id: 'name', type: 'text', label: 'Name' }] }
+    const result = await module.handle('plugin-a', 'kernel:ui:showForm', schema)
+
+    expect(mockOverlayHost.showModal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'form',
+        payload: schema
+      })
+    )
+    expect(result).toEqual({ name: 'SmartChat' })
+  })
+
+  it('delegates showConfirm to overlayHost when capability is granted', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockOverlayHost.showModal).mockResolvedValue(true)
+
+    const opts = { title: 'Are you sure?', body: 'Action cannot be undone' }
+    const result = await module.handle('plugin-a', 'kernel:ui:showConfirm', opts)
+
+    expect(mockOverlayHost.showModal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'confirm',
+        payload: opts
+      })
+    )
+    expect(result).toBe(true)
+  })
+
+  it('delegates showAlert to overlayHost and resolves with undefined', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockOverlayHost.showModal).mockResolvedValue(undefined)
+
+    const opts = { title: 'Info', body: 'Operation complete' }
+    const result = await module.handle('plugin-a', 'kernel:ui:showAlert', opts)
+
+    expect(mockOverlayHost.showModal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'alert',
+        payload: opts
+      })
+    )
+    expect(result).toBeUndefined()
   })
 
   it('throws NOT_FOUND for unknown action type', async () => {
