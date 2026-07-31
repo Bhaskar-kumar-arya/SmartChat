@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Transcriptions History</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--wa-bg-main, #111b21);
+      color: var(--wa-text-primary, #e9edef);
+      padding: 16px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--wa-divider, #222d34);
+      padding-bottom: 10px;
+    }
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .title-icon {
+      font-size: 18px;
+    }
+
+    .title-text {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .count-badge {
+      font-size: 11px;
+      background: var(--wa-primary, #00a884);
+      color: #ffffff;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    .clear-btn {
+      background: transparent;
+      border: 1px solid var(--wa-divider, #222d34);
+      color: var(--wa-text-secondary, #8696a0);
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .clear-btn:hover {
+      color: #f87171;
+      border-color: rgba(248, 113, 113, 0.4);
+      background: rgba(248, 113, 113, 0.08);
+    }
+
+    .search-box {
+      width: 100%;
+    }
+
+    .search-box input {
+      width: 100%;
+      background: var(--wa-bg-secondary, #202c33);
+      color: var(--wa-text-primary, #e9edef);
+      border: 1px solid var(--wa-divider, #222d34);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .search-box input:focus {
+      border-color: var(--wa-primary, #00a884);
+    }
+
+    .history-list {
+      flex: 1;
+      overflow-y: auto;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      padding-right: 2px;
+    }
+
+    .history-card {
+      background: var(--wa-bg-secondary, #202c33);
+      border: 1px solid var(--wa-divider, #222d34);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color 0.2s ease;
+    }
+
+    .history-card:hover {
+      border-color: rgba(0, 168, 132, 0.4);
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--wa-text-secondary, #8696a0);
+    }
+
+    .jid-tag {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 140px;
+      white-space: nowrap;
+    }
+
+    .card-text {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--wa-text-primary, #e9edef);
+      word-break: break-word;
+      user-select: text;
+    }
+
+    .card-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding-top: 4px;
+      border-top: 1px dashed var(--wa-divider, #222d34);
+    }
+
+    .action-btn {
+      background: transparent;
+      border: none;
+      color: var(--wa-text-secondary, #8696a0);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 3px 6px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s ease;
+    }
+
+    .action-btn:hover {
+      color: var(--wa-text-primary, #e9edef);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .action-btn.copied {
+      color: var(--wa-primary, #00a884);
+    }
+
+    .action-btn.delete:hover {
+      color: #f87171;
+      background: rgba(248, 113, 113, 0.1);
+    }
+
+    .empty-state {
+      flex: 1;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--wa-text-secondary, #8696a0);
+      text-align: center;
+      padding: 30px 16px;
+    }
+
+    .empty-icon {
+      font-size: 32px;
+      opacity: 0.6;
+    }
+
+    .empty-title {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .empty-desc {
+      font-size: 12px;
+      line-height: 1.4;
+      max-width: 220px;
+    }
+
+    .loading-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--wa-text-secondary, #8696a0);
+      padding: 30px 16px;
+    }
+
+    .spinner {
+      width: 26px;
+      height: 26px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--wa-primary, #00a884);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="panel-header">
+    <div class="title-group">
+      <span class="title-icon">🎤</span>
+      <span class="title-text">Voice Transcriptions</span>
+      <span class="count-badge" id="count-badge">0</span>
+    </div>
+    <button type="button" class="clear-btn" id="clear-btn">Clear All</button>
+  </div>
+
+  <div class="search-box">
+    <input type="text" id="search-input" placeholder="Search transcriptions..." />
+  </div>
+
+  <div class="loading-state" id="loading-state">
+    <div class="spinner"></div>
+    <div style="font-size: 13px; font-weight: 500;">Loading transcriptions...</div>
+  </div>
+
+  <div class="history-list" id="history-list" style="display: none;"></div>
+
+  <div class="empty-state" id="empty-state" style="display: none;">
+    <div class="empty-icon">🎙️</div>
+    <div class="empty-title">No Transcriptions Yet</div>
+    <div class="empty-desc">Use "Transcribe Audio" on any audio message to see transcriptions saved here.</div>
+  </div>
+
+  <script>
+    let allRecords = [];
+    let isLoading = true;
+    const historyList = document.getElementById('history-list');
+    const emptyState = document.getElementById('empty-state');
+    const loadingState = document.getElementById('loading-state');
+    const countBadge = document.getElementById('count-badge');
+    const searchInput = document.getElementById('search-input');
+    const clearBtn = document.getElementById('clear-btn');
+
+    function formatDate(ts) {
+      if (!ts) return '';
+      const date = new Date(ts);
+      const now = new Date();
+      const diffMs = now - date;
+
+      if (diffMs < 60000) return 'Just now';
+      if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m ago`;
+      if (diffMs < 86400000) return `${Math.floor(diffMs / 3600000)}h ago`;
+
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function render() {
+      if (isLoading) {
+        if (loadingState) loadingState.style.display = 'flex';
+        emptyState.style.display = 'none';
+        historyList.style.display = 'none';
+        return;
+      }
+
+      if (loadingState) loadingState.style.display = 'none';
+
+      const query = (searchInput.value || '').toLowerCase().trim();
+      const filtered = allRecords.filter(r => {
+        if (!query) return true;
+        return (r.text || '').toLowerCase().includes(query) || (r.chatJid || '').toLowerCase().includes(query);
+      });
+
+      countBadge.textContent = allRecords.length;
+      historyList.innerHTML = '';
+
+      if (filtered.length === 0) {
+        emptyState.style.display = 'flex';
+        historyList.style.display = 'none';
+        return;
+      }
+
+      emptyState.style.display = 'none';
+      historyList.style.display = 'flex';
+
+      filtered.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'history-card';
+
+        const jidDisplay = (item.chatJid || 'Voice Message').split('@')[0];
+
+        card.innerHTML = `
+          <div class="card-meta">
+            <span class="jid-tag">${jidDisplay}</span>
+            <span>${formatDate(item.timestamp)}</span>
+          </div>
+          <div class="card-text">"${item.text || ''}"</div>
+          <div class="card-actions">
+            <button type="button" class="action-btn copy-btn">📋 Copy</button>
+            <button type="button" class="action-btn delete delete-btn">🗑️ Delete</button>
+          </div>
+        `;
+
+        const copyBtn = card.querySelector('.copy-btn');
+        copyBtn.addEventListener('click', async () => {
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(item.text || '');
+            } else {
+              const ta = document.createElement('textarea');
+              ta.value = item.text || '';
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand('copy');
+              document.body.removeChild(ta);
+            }
+          } catch (e) {}
+
+          copyBtn.classList.add('copied');
+          copyBtn.textContent = '✅ Copied!';
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+            copyBtn.textContent = '📋 Copy';
+          }, 2000);
+        });
+
+        const deleteBtn = card.querySelector('.delete-btn');
+        deleteBtn.addEventListener('click', async () => {
+          allRecords = allRecords.filter(r => r.id !== item.id);
+          saveHistory();
+          render();
+        });
+
+        historyList.appendChild(card);
+      });
+    }
+
+    async function loadHistory(showSpinner = true) {
+      if (showSpinner) {
+        isLoading = true;
+        render();
+      }
+
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      while (attempts < maxAttempts) {
+        attempts++;
+        if (window.__smartchat && window.__smartchat.api && window.__smartchat.api.storage) {
+          try {
+            const stored = await window.__smartchat.api.storage.get('transcriptions');
+            allRecords = Array.isArray(stored) ? stored : [];
+            isLoading = false;
+            render();
+            return;
+          } catch (err) {
+            // panelId not initialized by host yet, wait and retry
+          }
+        }
+        await new Promise(r => setTimeout(r, 150));
+      }
+
+      isLoading = false;
+      render();
+    }
+
+    async function saveHistory() {
+      if (window.__smartchat && window.__smartchat.api && window.__smartchat.api.storage) {
+        try {
+          await window.__smartchat.api.storage.set('transcriptions', allRecords);
+        } catch (err) {
+          console.error('Failed to save transcriptions:', err);
+        }
+      }
+    }
+
+    searchInput.addEventListener('input', render);
+
+    clearBtn.addEventListener('click', async () => {
+      if (allRecords.length === 0) return;
+      if (confirm('Clear all stored voice transcriptions?')) {
+        allRecords = [];
+        saveHistory();
+        render();
+      }
+    });
+
+    loadHistory();
+    window.addEventListener('smartchat:ready', () => loadHistory(false));
+    window.addEventListener('focus', () => loadHistory(false));
+    setInterval(() => loadHistory(false), 3000);
+  </script>
+</body>
+</html>

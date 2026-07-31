@@ -230,18 +230,42 @@ ctx.contributions.registerMessageAction('transcribe', async (actionCtx) => {
     transcribedText = '(No audible English speech detected)';
   }
 
-  const formattedMessage = `🎤 Audio Transcription (English):\n"${transcribedText}"`;
-
-  await ctx.messages?.send(chatJid, formattedMessage, { quotedMessageId: msgId });
+  const record = {
+    id: 'trans-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+    text: transcribedText,
+    chatJid,
+    messageId: msgId,
+    timestamp: Date.now()
+  };
 
   try {
-    await ctx.ui?.notify({
-      title: 'Audio Transcribed',
-      body: `Transcription sent to chat: "${transcribedText.slice(0, 40)}..."`
-    });
-  } catch (e) {}
+    if (ctx.storage) {
+      const history = (await ctx.storage.get('transcriptions')) || [];
+      const list = Array.isArray(history) ? history : [];
+      list.unshift(record);
+      await ctx.storage.set('transcriptions', list);
+    }
+  } catch (err) {
+    console.error('[VoiceTranscriber] Failed to persist transcription to storage:', err);
+  }
 
-  await ctx.ui?.toast('✨ Audio transcribed and sent to chat!', 'success');
+  await ctx.ui?.toast('✨ Audio transcribed! Opening overlay...', 'success');
+
+  try {
+    await ctx.ui?.showOverlay({
+      panel: 'overlays/transcription.html',
+      title: 'Audio Transcription',
+      width: 520,
+      height: 380,
+      context: {
+        text: transcribedText,
+        chatJid,
+        messageId: msgId
+      }
+    });
+  } catch (err) {
+    console.error('[VoiceTranscriber] Failed to show overlay:', err);
+  }
 
   return { success: true, transcription: transcribedText };
 });

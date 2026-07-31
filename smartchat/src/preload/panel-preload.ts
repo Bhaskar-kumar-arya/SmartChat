@@ -53,6 +53,9 @@ contextBridge.exposeInMainWorld('__smartchat', {
   _init(id: string, tokens: Record<string, string>) {
     panelId = id
     applyTokens(tokens)
+    try {
+      window.dispatchEvent(new CustomEvent('smartchat:ready', { detail: { panelId, tokens } }))
+    } catch (e) {}
   },
 
   api: {

@@ -4,13 +4,17 @@
   "version": "1.0.0",
   "apiVersion": "2",
   "main": "index.js",
-  "description": "External microkernel plugin that transcribes English audio messages and replies to the chat.",
+  "description": "External microkernel plugin that transcribes English audio messages and displays the result in a copyable webview overlay.",
   "permissions": [
     "messages:read",
     "messages:send",
     "ai:chat",
+    "storage:read",
+    "storage:write",
     "ui:notification",
     "ui:toast",
+    "ui:overlay",
+    "ui:panel",
     "events:*"
   ],
   "contributions": {
@@ -24,6 +28,14 @@
           "op": "in",
           "value": ["audioMessage", "ptvMessage"]
         }
+      }
+    ],
+    "sidebarPanels": [
+      {
+        "id": "transcription-history",
+        "title": "Voice Transcriptions",
+        "panel": "panels/transcriptions.html",
+        "icon": "mic"
       }
     ]
   }

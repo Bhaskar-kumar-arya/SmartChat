@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Transcription Overlay</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--wa-bg-main);
+      color: var(--wa-text-primary);
+      padding: 18px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow: hidden;
+      user-select: text;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--wa-divider);
+      padding-bottom: 10px;
+    }
+
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--wa-text-primary);
+    }
+
+    .header-icon {
+      font-size: 18px;
+    }
+
+    .info-badge {
+      font-size: 12px;
+      color: var(--wa-text-secondary);
+      background: var(--wa-card-bg);
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--wa-divider);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+    }
+
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+    }
+
+    .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--wa-text-secondary);
+      font-weight: 600;
+    }
+
+    textarea {
+      flex: 1;
+      width: 100%;
+      background: var(--wa-card-bg);
+      color: var(--wa-text-primary);
+      border: 1px solid var(--wa-divider);
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 14px;
+      line-height: 1.5;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+      transition: border-color 0.2s ease;
+    }
+
+    textarea:focus {
+      border-color: var(--wa-primary);
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 4px;
+    }
+
+    .status-text {
+      font-size: 12px;
+      color: var(--wa-primary);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      font-weight: 500;
+    }
+
+    .status-text.visible {
+      opacity: 1;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s ease, filter 0.2s ease, transform 0.1s ease;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--wa-text-secondary);
+      border: 1px solid var(--wa-divider);
+    }
+
+    .btn-secondary:hover {
+      color: var(--wa-text-primary);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .btn-primary {
+      background: var(--wa-primary);
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      background: var(--wa-primary-hover);
+      filter: brightness(1.05);
+    }
+
+    .btn-primary.copied {
+      background: #059669;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-title">
+      <span class="header-icon">🎤</span>
+      <span>Audio Transcription</span>
+    </div>
+    <div class="info-badge" id="info-badge">Voice Message</div>
+  </div>
+
+  <div class="content-area">
+    <div class="label">Transcribed Text</div>
+    <textarea id="transcription-text" readonly placeholder="Transcribing audio..."></textarea>
+  </div>
+
+  <div class="footer">
+    <div class="status-text" id="status-text">Copied to clipboard!</div>
+    <div class="btn-group">
+      <button type="button" class="btn-secondary" id="close-btn">Close</button>
+      <button type="button" class="btn-primary" id="copy-btn">
+        <span id="copy-icon">📋</span>
+        <span id="copy-label">Copy Text</span>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const textEl = document.getElementById('transcription-text');
+    const infoBadge = document.getElementById('info-badge');
+    const copyBtn = document.getElementById('copy-btn');
+    const copyLabel = document.getElementById('copy-label');
+    const copyIcon = document.getElementById('copy-icon');
+    const closeBtn = document.getElementById('close-btn');
+    const statusText = document.getElementById('status-text');
+
+    if (window.__smartchat) {
+      window.addEventListener('message', (e) => {
+        const { channel, args } = e.data || {};
+        if (channel === 'smartchat:init') {
+          const { tokens, context } = args[0] || {};
+          if (tokens && typeof tokens === 'object') {
+            const style = document.createElement('style');
+            const vars = Object.entries(tokens).map(([k, v]) => `  ${k}: ${v};`).join('\n');
+            style.textContent = `:root {\n${vars}\n}`;
+            document.head.appendChild(style);
+          }
+          if (context) {
+            if (context.text) {
+              textEl.value = context.text;
+            }
+            if (context.chatJid) {
+              infoBadge.textContent = context.chatJid.split('@')[0] || 'Voice Message';
+            }
+          }
+        }
+      });
+    }
+
+    async function copyToClipboard() {
+      const text = textEl.value;
+      if (!text) return;
+
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          textEl.select();
+          document.execCommand('copy');
+        }
+      } catch (err) {
+        textEl.select();
+        document.execCommand('copy');
+      }
+
+      copyBtn.classList.add('copied');
+      copyIcon.textContent = '✅';
+      copyLabel.textContent = 'Copied!';
+      statusText.classList.add('visible');
+
+      setTimeout(() => {
+        copyBtn.classList.remove('copied');
+        copyIcon.textContent = '📋';
+        copyLabel.textContent = 'Copy Text';
+        statusText.classList.remove('visible');
+      }, 2000);
+    }
+
+    copyBtn.addEventListener('click', copyToClipboard);
+
+    closeBtn.addEventListener('click', () => {
+      if (window.__smartchat && typeof window.__smartchat.dismiss === 'function') {
+        window.__smartchat.dismiss();
+      }
+    });
+  </script>
+</body>
+</html>
