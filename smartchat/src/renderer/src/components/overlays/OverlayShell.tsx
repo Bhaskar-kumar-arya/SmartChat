@@ -100,10 +100,12 @@ export function OverlayShell({ request, onClose }: OverlayShellProps) {
       if (payload.overlayId === overlayId && webviewRef.current) {
         const webview = webviewRef.current as any
         if (typeof webview.send === 'function') {
-          webview.send('smartchat:receive', {
+          const payloadData = {
             event: payload.event,
             data: payload.data
-          })
+          }
+          webview.send('smartchat:receive', payloadData)
+          webview.send('smartchat:send', payloadData)
         }
       }
     })

@@ -193,6 +193,32 @@ ctx.contributions.registerMessageAction('transcribe', async (actionCtx) => {
     return { success: false, reason: 'NOT_AUDIO' };
   }
 
+  // Launch overlay modal IMMEDIATELY with loading status
+  let overlay = null;
+  try {
+    overlay = await ctx.ui?.showOverlay({
+      panel: 'overlays/transcription.html',
+      title: 'Audio Transcription',
+      width: 520,
+      height: 380,
+      context: {
+        status: 'loading',
+        message: 'Preparing audio message...',
+        chatJid,
+        messageId: msgId
+      },
+      mode: 'handle'
+    });
+  } catch (err) {
+    console.error('[VoiceTranscriber] Failed to show overlay handle:', err);
+  }
+
+  // Update progress state on overlay
+  overlay?.send?.('status', {
+    state: 'loading',
+    message: 'Downloading audio message...'
+  });
+
   let resolvedPath = null;
   try {
     const downloadRes = await ctx.messages?.downloadMedia(msgId);
@@ -211,11 +237,19 @@ ctx.contributions.registerMessageAction('transcribe', async (actionCtx) => {
   }
 
   if (!resolvedPath || !fs.existsSync(resolvedPath)) {
-    await ctx.ui?.toast('⚠️ Unable to download or locate audio file for transcription.', 'warning');
+    const errorMsg = 'Unable to download or locate audio file for transcription.';
+    await ctx.ui?.toast(`⚠️ ${errorMsg}`, 'warning');
+    overlay?.send?.('status', {
+      state: 'error',
+      message: errorMsg
+    });
     return { success: false, reason: 'MEDIA_NOT_DOWNLOADED' };
   }
 
-  await ctx.ui?.toast('⏳ Transcribing English audio message...', 'info');
+  overlay?.send?.('status', {
+    state: 'loading',
+    message: 'Transcribing speech with Whisper AI...'
+  });
 
   let transcribedText = '';
   try {
@@ -223,6 +257,10 @@ ctx.contributions.registerMessageAction('transcribe', async (actionCtx) => {
   } catch (err) {
     console.error('[VoiceTranscriber] Speech recognition error:', err);
     await ctx.ui?.toast(`❌ Audio transcription failed: ${err.message}`, 'error');
+    overlay?.send?.('status', {
+      state: 'error',
+      message: err.message || 'Speech recognition failed.'
+    });
     throw err;
   }
 
@@ -249,23 +287,13 @@ ctx.contributions.registerMessageAction('transcribe', async (actionCtx) => {
     console.error('[VoiceTranscriber] Failed to persist transcription to storage:', err);
   }
 
-  await ctx.ui?.toast('✨ Audio transcribed! Opening overlay...', 'success');
+  // Push final completion payload into the live overlay modal
+  overlay?.send?.('status', {
+    state: 'complete',
+    text: transcribedText
+  });
 
-  try {
-    await ctx.ui?.showOverlay({
-      panel: 'overlays/transcription.html',
-      title: 'Audio Transcription',
-      width: 520,
-      height: 380,
-      context: {
-        text: transcribedText,
-        chatJid,
-        messageId: msgId
-      }
-    });
-  } catch (err) {
-    console.error('[VoiceTranscriber] Failed to show overlay:', err);
-  }
+  await ctx.ui?.toast('✨ Audio transcribed!', 'success');
 
   return { success: true, transcription: transcribedText };
 });

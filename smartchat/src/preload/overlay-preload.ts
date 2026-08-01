@@ -44,4 +44,10 @@ ipcRenderer.on('smartchat:init', (_event, payload) => {
 
 ipcRenderer.on('smartchat:send', (_event, payload) => {
   window.postMessage({ channel: 'smartchat:send', args: [payload] }, '*')
+  window.postMessage({ channel: 'smartchat:receive', args: [payload] }, '*')
+})
+
+ipcRenderer.on('smartchat:receive', (_event, payload) => {
+  window.postMessage({ channel: 'smartchat:send', args: [payload] }, '*')
+  window.postMessage({ channel: 'smartchat:receive', args: [payload] }, '*')
 })

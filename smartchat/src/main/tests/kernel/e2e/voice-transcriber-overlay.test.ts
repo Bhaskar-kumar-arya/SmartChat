@@ -71,6 +71,22 @@ describe('Voice Transcriber Plugin - Overlay Integration', () => {
       sendMessage: vi.fn()
     }
 
+    const mockMessageQueryService = {
+      getChatMessages: vi.fn().mockResolvedValue([
+        {
+          id: 'msg-test-123',
+          chatJid: '12345@s.whatsapp.net',
+          messageType: 'audioMessage',
+          content: JSON.stringify({ audioMessage: { localURI: 'nonexistent-audio-test-12345.ogg' } })
+        }
+      ]),
+      getMessagesAroundId: vi.fn().mockResolvedValue([])
+    }
+
+    const mockMediaService = {
+      downloadMedia: vi.fn().mockResolvedValue({ success: false })
+    }
+
     const uiModule = new KernelUIModule(
       permissions,
       mockNotificationService as any,
@@ -79,12 +95,12 @@ describe('Voice Transcriber Plugin - Overlay Integration', () => {
     )
     const messagesModule = new KernelMessagesModule(
       permissions,
-      {} as any,
+      mockMessageQueryService as any,
       mockMessageActionService as any,
       undefined,
       {} as any,
       () => tmpDir,
-      {} as any,
+      mockMediaService as any,
       {} as any
     )
 
@@ -136,5 +152,69 @@ describe('Voice Transcriber Plugin - Overlay Integration', () => {
     const panelContent = fs.readFileSync(panelHtml, 'utf8')
     expect(panelContent).toContain('Voice Transcriptions')
     expect(panelContent).toContain('loadHistory')
+
+    // Verify overlay file contains progress box elements
+    expect(htmlContent).toContain('progress-box')
+    expect(htmlContent).toContain('spinner')
+  })
+
+  it('executes transcribe message action and verifies immediate showOverlay call with mode handle', async () => {
+    mockOverlayHost.showOverlay = vi.fn().mockImplementation((...args) => {
+      console.log('[Test Mock] showOverlay called with:', args)
+      return Promise.resolve({ overlayId: 'ov-voice-123' })
+    })
+
+    const pluginFolder = path.join(__dirname, '../../../../../plugins/voice-transcriber-plugin')
+    
+    // Copy plugin files into tmpDir for loader
+    const targetDir = path.join(tmpDir, PLUGIN_ID)
+    fs.cpSync(pluginFolder, targetDir, { recursive: true })
+
+    const manifestPath = path.join(pluginFolder, 'manifest.json')
+    const rawManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+    permissions.registerPluginManifest(PLUGIN_ID, rawManifest.permissions)
+
+    console.log('[Test] Loading plugin...')
+    await host.load(PLUGIN_ID)
+    console.log('[Test] Plugin loaded. List loaded:', host.listLoaded())
+
+    const plugin = host.getPlugin(PLUGIN_ID)
+    expect(plugin).toBeDefined()
+
+    console.log('[Test] Sending transcribe action request...')
+    plugin!.channel.sendToPlugin({
+      id: 'exec-123',
+      type: 'contribution:execute:message-action',
+      payload: {
+        id: 'transcribe',
+        context: {
+          messageId: 'msg-test-123',
+          chatJid: '12345@s.whatsapp.net'
+        }
+      }
+    })
+
+    console.log('[Test] Waiting for showOverlay call...')
+    for (let i = 0; i < 20; i++) {
+      if (mockOverlayHost.showOverlay.mock.calls.length > 0) {
+        console.log('[Test] showOverlay was called!')
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+
+    expect(mockOverlayHost.showOverlay).toHaveBeenCalledWith(
+      PLUGIN_ID,
+      expect.objectContaining({
+        panel: 'overlays/transcription.html',
+        mode: 'handle',
+        context: expect.objectContaining({
+          status: 'loading'
+        })
+      })
+    )
   })
 })
+
+
+
