@@ -208,4 +208,27 @@ describe('WorkerPluginRuntime', () => {
       }
     })
   })
+
+  it('should not time out showOverlay requests waiting for user interaction even with short requestTimeoutMs', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest, { requestTimeoutMs: 50 })
+    const ctx = runtime.getContext()
+
+    let requestId = ''
+    port2.once('message', (msg) => {
+      expect(msg.type).toBe('kernel:ui:showOverlay')
+      requestId = msg.id
+      // Simulate slow user interaction that takes longer than 50ms (e.g. 100ms)
+      setTimeout(() => {
+        port2.postMessage({
+          id: requestId,
+          ok: true,
+          payload: { text: 'Submitted text after user delay' }
+        })
+      }, 100)
+    })
+
+    const overlayPromise = ctx.ui!.showOverlay({ panel: 'test.html' })
+    const result = await overlayPromise
+    expect(result).toEqual({ text: 'Submitted text after user delay' })
+  })
 })

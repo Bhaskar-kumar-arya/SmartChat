@@ -292,15 +292,16 @@ export class WorkerPluginRuntime {
     this.port.postMessage(res)
   }
 
-  public request<T = unknown>(type: string, payload?: unknown): Promise<T> {
+  public request<T = unknown>(type: string, payload?: unknown, timeoutMs?: number): Promise<T> {
     const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
     return new Promise<T>((resolve, reject) => {
       let timer: NodeJS.Timeout | undefined
-      if (this.requestTimeoutMs > 0) {
+      const effectiveTimeout = timeoutMs !== undefined ? timeoutMs : this.requestTimeoutMs
+      if (effectiveTimeout > 0) {
         timer = setTimeout(() => {
           this.pendingRequests.delete(id)
-          reject(new Error(`Request '${type}' timed out after ${this.requestTimeoutMs}ms`))
-        }, this.requestTimeoutMs)
+          reject(new Error(`Request '${type}' timed out after ${effectiveTimeout}ms`))
+        }, effectiveTimeout)
       }
 
       this.pendingRequests.set(id, { resolve, reject, timer })
@@ -374,14 +375,14 @@ export class WorkerPluginRuntime {
       notify: (opts) => self.request('kernel:ui:notify', opts),
       toast: (msg, level = 'info') => void self.request('kernel:ui:toast', { message: msg, level }),
       showForm: <T extends Record<string, unknown> = Record<string, unknown>>(schema: OverlayFormSchema) =>
-        self.request<T | null>('kernel:ui:showForm', schema),
-      showConfirm: (opts) => self.request<boolean>('kernel:ui:showConfirm', opts),
-      showAlert: (opts) => self.request<void>('kernel:ui:showAlert', opts),
+        self.request<T | null>('kernel:ui:showForm', schema, 0),
+      showConfirm: (opts) => self.request<boolean>('kernel:ui:showConfirm', opts, 0),
+      showAlert: (opts) => self.request<void>('kernel:ui:showAlert', opts, 0),
       showOverlay: (opts: any) => {
         if (opts?.mode === 'handle') {
           return self.requestOverlayHandle(opts) as any
         }
-        return self.request('kernel:ui:showOverlay', opts)
+        return self.request('kernel:ui:showOverlay', opts, 0)
       },
       openPanel: (id: string) => self.request('kernel:ui:openPanel', { id }),
       closePanel: (id: string) => self.request('kernel:ui:closePanel', { id })
