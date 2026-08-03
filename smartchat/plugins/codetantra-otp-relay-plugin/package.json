@@ -1,0 +1,9 @@
+{
+  "name": "codetantra-otp-relay-plugin",
+  "version": "1.0.0",
+  "description": "SmartChat CodeTantra OTP Relay Plugin",
+  "main": "index.js",
+  "dependencies": {
+    "@smartchat/sdk": "*"
+  }
+}

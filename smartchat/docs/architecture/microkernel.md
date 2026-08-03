@@ -9,6 +9,21 @@
 
 ---
 
+## Problem Statement: Context Isolation & API Execution Boundaries
+
+### Architectural Conflict
+Plugins in the SmartChat microkernel system operate across two distinct runtime environments with asymmetric security models and network capabilities:
+
+1. **Webview UI Context (`panel/*.html`)**: Renders within a Chromium-sandboxed Electron `<webview>`.
+2. **Plugin Worker Context (`index.js`)**: Executes inside a Node.js worker thread (`node:worker_threads`).
+
+### The Core Problem
+When a plugin UI panel attempts to perform privileged or external operations — such as issuing cross-origin HTTP requests with custom headers (`Cookie`, `User-Agent`, `Referer`), processing manual HTTP redirect chains, or calling non-DOM APIs — directly from client-side Webview JavaScript, Chromium's web security sandbox (CORS rules, forbidden request header checks, and origin isolation) blocks the call.
+
+This manifests as runtime execution failures (e.g., `TypeError: Failed to fetch`), caused by attempting to execute backend/privileged operations directly in the browser DOM instead of delegating execution across the IPC boundary to the Node.js plugin worker context.
+
+---
+
 ## §1 — Architectural Decisions
 
 ### §1.1 What "Microkernel" Means Here

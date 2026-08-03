@@ -29,7 +29,8 @@
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
     "plugin:package:test-all": "node scripts/package-test-plugin.js",
-    "plugin:package:declarative-modal-test": "node scripts/package-declarative-modal-test-plugin.js"
+    "plugin:package:declarative-modal-test": "node scripts/package-declarative-modal-test-plugin.js",
+    "plugin:package:codetantra-otp-relay": "node scripts/package-codetantra-otp-relay-plugin.js"
   },
   "dependencies": {
     "@electron-fonts/noto-color-emoji": "^1.2.0",

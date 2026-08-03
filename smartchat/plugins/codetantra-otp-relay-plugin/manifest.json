@@ -1,0 +1,69 @@
+{
+  "id": "com.smartchat.codetantra-otp-relay",
+  "name": "CodeTantra OTP Relay",
+  "version": "1.0.0",
+  "apiVersion": "2",
+  "main": "index.js",
+  "description": "Relays CodeTantra class OTPs across SmartChat group members automatically without external servers.",
+  "permissions": [
+    "messages:read",
+    "messages:send",
+    "chats:read",
+    "storage:read",
+    "storage:write",
+    "ui:notification",
+    "ui:toast",
+    "ui:overlay",
+    "ui:panel",
+    "ai:tools:call",
+    "ai:tools:register",
+    "events:*"
+  ],
+  "contributions": {
+    "sidebarPanels": [
+      {
+        "id": "codetantra-dashboard",
+        "title": "CodeTantra OTP Relay",
+        "panel": "panel/index.html",
+        "icon": "key"
+      }
+    ],
+    "slashCommands": [
+      {
+        "name": "relay-otp",
+        "description": "Relay a CodeTantra OTP to the target group chat and submit for self"
+      },
+      {
+        "name": "codetantra",
+        "description": "Open CodeTantra OTP Relay Dashboard"
+      }
+    ],
+    "chatActions": [
+      {
+        "id": "action.codetantra.relay-otp",
+        "label": "Send CodeTantra OTP",
+        "icon": "key",
+        "when": {
+          "field": "chat.type",
+          "op": "equals",
+          "value": "GROUP"
+        }
+      }
+    ],
+    "aiTools": [
+      {
+        "name": "codetantra_submit_otp",
+        "description": "Submits CodeTantra OTP for a class meeting via Node background session",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "meetingId": { "type": "string" },
+            "otp": { "type": "string" },
+            "meetingTitle": { "type": "string" }
+          },
+          "required": ["meetingId", "otp"]
+        }
+      }
+    ]
+  }
+}
