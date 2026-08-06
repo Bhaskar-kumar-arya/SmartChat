@@ -272,6 +272,107 @@
       white-space: pre-wrap;
       word-break: break-all;
     }
+
+    /* Date Selector & Classes Table Styles */
+    .date-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .date-input {
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .date-btn {
+      padding: 8px 10px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .classes-table-container {
+      overflow-x: auto;
+      border: 1px solid var(--wa-divider, #222d34);
+      border-radius: 6px;
+      background: var(--wa-bg-main, #111b21);
+      max-height: 250px;
+      overflow-y: auto;
+    }
+
+    .classes-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .classes-table th, .classes-table td {
+      border-bottom: 1px solid var(--wa-divider, #222d34);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .classes-table th {
+      background: var(--wa-bg-secondary, #202c33);
+      color: var(--wa-text-secondary, #8696a0);
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    .classes-table tr.clickable-row {
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .classes-table tr.clickable-row:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .classes-table tr.selected-row {
+      background: rgba(0, 168, 132, 0.15) !important;
+      border-left: 3px solid var(--wa-primary, #00a884);
+    }
+
+    .badge-status {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+
+    .badge-started {
+      background: rgba(0, 168, 132, 0.2);
+      color: #00a884;
+      border: 1px solid rgba(0, 168, 132, 0.4);
+    }
+
+    .badge-scheduled {
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+    }
+
+    .badge-ended {
+      background: rgba(134, 150, 160, 0.2);
+      color: #8696a0;
+      border: 1px solid rgba(134, 150, 160, 0.4);
+    }
+
+    .selected-class-banner {
+      background: var(--wa-bg-main, #111b21);
+      border: 1px solid var(--wa-primary, #00a884);
+      padding: 10px 12px;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
   </style>
 </head>
 <body>
@@ -301,15 +402,52 @@
 
     <div class="card">
       <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
-        <span>Broadcast & Submit OTP</span>
-        <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px;" onclick="loadMeetings()">🔄 Refresh Classes</button>
+        <span>Select Class & Date</span>
+        <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px;" onclick="refreshClasses()">🔄 Refresh Classes</button>
       </div>
-      
+
+      <!-- Date Selection Bar -->
       <div class="form-group">
-        <label for="meetingSelect">Active / Upcoming Classes</label>
-        <select id="meetingSelect">
-          <option value="">-- Loading Classes... --</option>
-        </select>
+        <label for="classDatePicker">Select Date</label>
+        <div class="date-bar">
+          <button class="btn btn-secondary date-btn" onclick="changeDate(-1)">◄ Prev</button>
+          <input type="date" id="classDatePicker" class="date-input" onchange="onDateChanged()">
+          <button class="btn btn-secondary date-btn" onclick="changeDate(1)">Next ►</button>
+          <button class="btn btn-secondary date-btn" onclick="setTodayDate()">Today</button>
+        </div>
+      </div>
+
+      <!-- Classes Table -->
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <label>Classes for Selected Date</label>
+          <span id="classCountBadge" class="help-text">0 found</span>
+        </div>
+        
+        <div class="classes-table-container">
+          <table class="classes-table">
+            <thead>
+              <tr>
+                <th style="width: 36px; text-align: center;">Select</th>
+                <th>Time</th>
+                <th>Class Title</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="classesTableBody">
+              <tr>
+                <td colspan="4" style="text-align: center; color: #8696a0; padding: 20px;">Loading classes...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Selected Class Details Banner -->
+      <div id="selectedClassCard" class="selected-class-banner" style="display: none;">
+        <div style="font-size: 11px; color: #8696a0;">SELECTED CLASS</div>
+        <div id="selectedClassTitle" style="font-size: 13px; font-weight: 600; color: var(--wa-text-primary, #e9edef);">--</div>
+        <div id="selectedClassTime" style="font-size: 11px; color: var(--wa-primary, #00a884);">--</div>
       </div>
 
       <div class="form-group">
@@ -536,10 +674,56 @@
       }
     }
 
-    async function loadMeetings() {
-      const select = document.getElementById('meetingSelect');
+    let rawMeetingsList = [];
+    let selectedMeetingId = null;
+    let selectedMeetingObj = null;
+
+    function getLocalDateString(d = new Date()) {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function initDatePicker() {
+      const picker = document.getElementById('classDatePicker');
+      if (picker && !picker.value) {
+        picker.value = getLocalDateString();
+      }
+    }
+
+    function setTodayDate() {
+      const picker = document.getElementById('classDatePicker');
+      if (picker) {
+        picker.value = getLocalDateString();
+        renderClassesTable();
+      }
+    }
+
+    function changeDate(daysOffset) {
+      const picker = document.getElementById('classDatePicker');
+      if (!picker) return;
+      const currentVal = picker.value || getLocalDateString();
+      const parts = currentVal.split('-');
+      const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      dt.setDate(dt.getDate() + daysOffset);
+      picker.value = getLocalDateString(dt);
+      renderClassesTable();
+    }
+
+    function onDateChanged() {
+      renderClassesTable();
+    }
+
+    async function refreshClasses() {
       const logBox = document.getElementById('meetingsLogBox');
-      if (!select || !window.__smartchat || !window.__smartchat.api || !window.__smartchat.api.storage) return;
+      if (logBox) logBox.textContent = 'Refreshing meetings schedule...';
+      await loadMeetings();
+    }
+
+    async function loadMeetings() {
+      const logBox = document.getElementById('meetingsLogBox');
+      if (!window.__smartchat || !window.__smartchat.api || !window.__smartchat.api.storage) return;
 
       try {
         const logMsg = await window.__smartchat.api.storage.get('codetantra_meetings_log');
@@ -548,21 +732,172 @@
         }
 
         const meetings = await window.__smartchat.api.storage.get('codetantra_meetings');
-        if (!Array.isArray(meetings) || meetings.length === 0) {
-          select.innerHTML = '<option value="">-- No active/upcoming classes found --</option>';
-          return;
+        if (Array.isArray(meetings)) {
+          rawMeetingsList = meetings;
+        } else {
+          rawMeetingsList = [];
         }
-
-        select.innerHTML = '';
-        meetings.forEach(m => {
-          const opt = document.createElement('option');
-          opt.value = m.id;
-          opt.textContent = `${m.title} [${m.status}]`;
-          select.appendChild(opt);
-        });
+        renderClassesTable();
       } catch (err) {
         if (logBox) logBox.textContent = 'Initializing API connection...';
       }
+    }
+
+    function renderClassesTable() {
+      const tbody = document.getElementById('classesTableBody');
+      const countBadge = document.getElementById('classCountBadge');
+      const picker = document.getElementById('classDatePicker');
+      if (!tbody) return;
+
+      initDatePicker();
+      const selectedDateStr = picker ? picker.value : getLocalDateString();
+
+      // Filter meetings for the selected date (matching local date YYYY-MM-DD)
+      const dayMeetings = rawMeetingsList.filter(m => {
+        if (!m.startTime) return false;
+        const mDateStr = getLocalDateString(new Date(m.startTime));
+        return mDateStr === selectedDateStr;
+      });
+
+      dayMeetings.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
+
+      if (countBadge) {
+        countBadge.textContent = `${dayMeetings.length} class${dayMeetings.length === 1 ? '' : 'es'} found`;
+      }
+
+      if (dayMeetings.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; color: #8696a0; padding: 24px 12px;">
+              <div>📅 No classes scheduled for ${selectedDateStr}</div>
+              <div class="help-text" style="margin-top: 4px;">Use the date selector above to pick another day or click Refresh.</div>
+            </td>
+          </tr>
+        `;
+        updateSelectedClassCard(null);
+        return;
+      }
+
+      tbody.innerHTML = '';
+      dayMeetings.forEach(m => {
+        const tr = document.createElement('tr');
+        const isSelected = selectedMeetingId === m.id;
+        tr.className = `clickable-row ${isSelected ? 'selected-row' : ''}`;
+        
+        let timeStr = '--:--';
+        if (m.startTime) {
+          const sDate = new Date(m.startTime);
+          const startFmt = sDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          if (m.endTime) {
+            const eDate = new Date(m.endTime);
+            const endFmt = eDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            timeStr = `${startFmt} - ${endFmt}`;
+          } else {
+            timeStr = startFmt;
+          }
+        }
+
+        const statusLower = (m.status || 'unknown').toLowerCase();
+        let badgeClass = 'badge-ended';
+        if (statusLower === 'started') badgeClass = 'badge-started';
+        else if (statusLower === 'scheduled') badgeClass = 'badge-scheduled';
+
+        const cleanTitle = m.title || 'Untitled Meeting';
+
+        tr.innerHTML = `
+          <td style="text-align: center;">
+            <input type="radio" name="meetingRadio" ${isSelected ? 'checked' : ''}>
+          </td>
+          <td style="white-space: nowrap; font-weight: 500;">${timeStr}</td>
+          <td style="font-weight: 600; word-break: break-word;">${cleanTitle}</td>
+          <td><span class="badge-status ${badgeClass}">${m.status || 'unknown'}</span></td>
+        `;
+
+        tr.onclick = (e) => {
+          selectMeeting(m);
+        };
+
+        tbody.appendChild(tr);
+      });
+
+      // Maintain selection or auto-select started / first meeting
+      if (selectedMeetingId) {
+        const exists = dayMeetings.find(m => m.id === selectedMeetingId);
+        if (exists) {
+          updateSelectedClassCard(exists);
+        } else {
+          const autoSelect = dayMeetings.find(m => (m.status || '').toLowerCase() === 'started') || dayMeetings[0];
+          selectMeeting(autoSelect);
+        }
+      } else if (dayMeetings.length > 0) {
+        const autoSelect = dayMeetings.find(m => (m.status || '').toLowerCase() === 'started') || dayMeetings[0];
+        selectMeeting(autoSelect);
+      }
+    }
+
+    function selectMeeting(m) {
+      if (!m) {
+        selectedMeetingId = null;
+        selectedMeetingObj = null;
+        updateSelectedClassCard(null);
+        return;
+      }
+
+      selectedMeetingId = m.id;
+      selectedMeetingObj = m;
+
+      // Update table row styling and radio selection state
+      const rows = document.querySelectorAll('#classesTableBody tr.clickable-row');
+      const radios = document.querySelectorAll('input[name="meetingRadio"]');
+
+      const picker = document.getElementById('classDatePicker');
+      const selectedDateStr = picker ? picker.value : getLocalDateString();
+      const dayMeetings = rawMeetingsList.filter(meeting => {
+        if (!meeting.startTime) return false;
+        return getLocalDateString(new Date(meeting.startTime)) === selectedDateStr;
+      });
+      dayMeetings.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
+
+      dayMeetings.forEach((meeting, idx) => {
+        if (rows[idx]) {
+          if (meeting.id === selectedMeetingId) {
+            rows[idx].classList.add('selected-row');
+            if (radios[idx]) radios[idx].checked = true;
+          } else {
+            rows[idx].classList.remove('selected-row');
+            if (radios[idx]) radios[idx].checked = false;
+          }
+        }
+      });
+
+      updateSelectedClassCard(m);
+    }
+
+    function updateSelectedClassCard(m) {
+      const card = document.getElementById('selectedClassCard');
+      const titleEl = document.getElementById('selectedClassTitle');
+      const timeEl = document.getElementById('selectedClassTime');
+
+      if (!card || !titleEl || !timeEl) return;
+
+      if (!m) {
+        card.style.display = 'none';
+        titleEl.textContent = '--';
+        timeEl.textContent = '--';
+        return;
+      }
+
+      card.style.display = 'flex';
+      titleEl.textContent = m.title || 'Untitled Meeting';
+
+      let timeStr = '';
+      if (m.startTime) {
+        const sDate = new Date(m.startTime);
+        const startFmt = sDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const dateFmt = sDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+        timeStr = `${dateFmt} • ${startFmt}`;
+      }
+      timeEl.textContent = `${timeStr} [${m.status || 'unknown'}]`;
     }
 
     async function exchangeCodeForTokens(authCode) {
@@ -798,9 +1133,8 @@
     }
 
     async function handleRelaySubmit() {
-      const meetingSelect = document.getElementById('meetingSelect');
-      const meetingId = meetingSelect ? meetingSelect.value : '';
-      const selectedText = meetingSelect && meetingSelect.options[meetingSelect.selectedIndex] ? meetingSelect.options[meetingSelect.selectedIndex].text : 'Class';
+      const meetingId = selectedMeetingId;
+      const selectedText = selectedMeetingObj ? selectedMeetingObj.title : 'Class';
       const otp = document.getElementById('otpInput').value.trim();
       const msgEl = document.getElementById('relayMessage');
 
@@ -812,7 +1146,7 @@
 
       if (!meetingId) {
         msgEl.style.color = '#f87171';
-        msgEl.textContent = '❌ Please select a class to submit OTP for.';
+        msgEl.textContent = '❌ Please select a class from the table to submit OTP for.';
         return;
       }
 
@@ -830,7 +1164,7 @@
         otp: otp,
         meetingId: meetingId,
         meetingTitle: selectedText,
-        meetingUrl: `https://iiitb.codetantra.com/secure/tla/mi.jsp?s=m&m=${meetingId}`,
+        meetingPath: `/secure/tla/mi.jsp?s=m&m=${meetingId}`,
         timestamp: Date.now()
       };
       const textMessage = `[CODETANTRA_OTP_RELAY]\n${JSON.stringify(payload, null, 2)}`;

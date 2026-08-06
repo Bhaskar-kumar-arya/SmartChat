@@ -234,7 +234,7 @@ async function ensureActiveSession(forceRefresh = false) {
 }
 
 // Fetch active meetings from CodeTantra API
-async function fetchMeetings() {
+async function fetchMeetings(targetDateMs = null) {
   ctx.log.info('[Meetings Fetch] Starting meeting retrieval...');
   const session = await ensureActiveSession();
   if (!session) {
@@ -244,13 +244,17 @@ async function fetchMeetings() {
   }
 
   try {
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const rangeEnd = todayStart + (7 * 24 * 60 * 60 * 1000);
+    const baseTime = (targetDateMs && !isNaN(targetDateMs)) ? Number(targetDateMs) : Date.now();
+    const baseDate = new Date(baseTime);
+    const dayStart = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate()).getTime();
+    
+    // Fetch 14 days prior to 21 days in future to cover past & upcoming schedule
+    const minDate = dayStart - (14 * 24 * 60 * 60 * 1000);
+    const maxDate = dayStart + (21 * 24 * 60 * 60 * 1000);
 
     const payload = {
-      minDate: todayStart,
-      maxDate: rangeEnd,
+      minDate: minDate,
+      maxDate: maxDate,
       filters: { showSelf: true, status: 'started,ended,scheduled' }
     };
 
@@ -291,26 +295,30 @@ async function fetchMeetings() {
       let meetingId = m._id;
       const status = m.status || 'unknown';
       let startTimeMs = m.startTime || 0;
+      let endTimeMs = m.endTime || 0;
 
       if (status === 'scheduled' || m.extra?.recurrence?.slots?.length > 0) {
         try {
           const slot = m.extra.recurrence.slots[0];
           meetingId = slot.id || m._id;
           startTimeMs = slot.start || m.startTime || 0;
+          if (slot.end) endTimeMs = slot.end;
         } catch (e) {
           meetingId = m._id;
         }
       }
 
+      const rawTitle = m.title || 'Untitled Meeting';
       const dateStr = startTimeMs ? new Date(startTimeMs).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-      const displayTitle = dateStr ? `${m.title || 'Untitled Meeting'} (${dateStr})` : (m.title || 'Untitled Meeting');
+      const displayTitle = dateStr ? `${rawTitle} (${dateStr})` : rawTitle;
 
       return {
         id: meetingId,
-        title: displayTitle,
+        title: rawTitle,
+        displayTitle: displayTitle,
         status: status,
         startTime: startTimeMs,
-        endTime: m.endTime,
+        endTime: endTimeMs || (startTimeMs ? startTimeMs + (60 * 60 * 1000) : 0),
         url: `${BASE_URL}/secure/tla/mi.jsp?s=m&m=${meetingId}`
       };
     });
@@ -395,12 +403,18 @@ async function submitOtpToCodeTantra(meetingId, otp, meetingUrl, title = 'Class 
 async function broadcastOtpToGroup(targetGroupJid, meetingId, otp, meetingTitle, meetingUrl) {
   if (!ctx.messages || !targetGroupJid) return false;
 
+  // IMPORTANT: Do NOT include a full https:// URL in the broadcast payload.
+  // Baileys (with generateHighQualityLinkPreview:true) scans message text for URLs
+  // and fetches them to build link previews — causing ~2-3s delay per message.
+  // Instead, store only the path fragment; receivers reconstruct the full URL.
+  const meetingPath = `/secure/tla/mi.jsp?s=m&m=${meetingId}`;
+
   const payload = {
     type: 'CODETANTRA_OTP_RELAY',
     otp: otp,
     meetingId: meetingId,
     meetingTitle: meetingTitle,
-    meetingUrl: meetingUrl || `${BASE_URL}/secure/tla/mi.jsp?s=m&m=${meetingId}`,
+    meetingPath: meetingPath,
     timestamp: Date.now()
   };
 
@@ -432,7 +446,9 @@ async function handleIncomingMessage(evt) {
       const otp = String(data.otp).trim();
       const meetingId = String(data.meetingId).trim();
       const meetingTitle = data.meetingTitle || 'CodeTantra Class';
-      const meetingUrl = data.meetingUrl || '';
+      // Reconstruct full URL from path fragment (avoids link preview fetch on sender side)
+      const meetingUrl = data.meetingUrl ||
+        (data.meetingPath ? `${BASE_URL}${data.meetingPath}` : `${BASE_URL}/secure/tla/mi.jsp?s=m&m=${meetingId}`);
 
       if (!/^\d{6}$/.test(otp)) return;
 
@@ -574,5 +590,6 @@ if (ctx.ai && ctx.ai.registerTool) {
     }
   }).catch(err => ctx.log.error('Failed to register codetantra_submit_otp in ToolRegistry:', err.message));
 }
+
 
 
