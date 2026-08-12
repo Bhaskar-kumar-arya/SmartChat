@@ -15,6 +15,7 @@ import { is } from "@electron-toolkit/utils";
 import * as sqliteVec from "sqlite-vec";
 import type { IVectorSyncService } from "./services/search/IVectorSyncService";
 import { existsSync, copyFileSync, mkdirSync } from "fs";
+import { runMigrations, RawSqliteDb } from "./db/schema-migrations";
 
 // In dev, use the local db. In prod, use the userData dir
 export const dbPath = (() => {
@@ -67,7 +68,7 @@ const baseAdapter = new PrismaBetterSqlite3({
  * and load the sqlite-vec extension directly into it.
  */
 interface ConnectionWithClient {
-  client?: {
+  client?: RawSqliteDb & {
     loadExtension: (path: string) => void;
     pragma: (statement: string) => unknown;
   };
@@ -88,6 +89,12 @@ const adapter = new Proxy(baseAdapter, {
             console.log("[AdapterPatch] SQLite pragmas successfully applied (busy_timeout = 5000, journal_mode = WAL, synchronous = NORMAL)");
           } catch (e: unknown) {
             console.error("[AdapterPatch] Failed to apply SQLite pragmas:", e);
+          }
+
+          try {
+            runMigrations(conn.client);
+          } catch (e: unknown) {
+            console.error("[AdapterPatch] Schema migration failed — app may be in a broken state:", e);
           }
 
           try {

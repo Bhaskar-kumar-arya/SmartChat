@@ -7,6 +7,9 @@ const outPath = path.join(__dirname, '../plugins/codetantra-otp-relay.scext')
 const sdkSourceDir = path.join(__dirname, '../packages/sdk')
 const sdkTargetDir = path.join(pluginDir, 'node_modules/@smartchat/sdk')
 
+const appDataDir = process.env.APPDATA || ''
+const installedExtDir = appDataDir ? path.join(appDataDir, 'smartchat', 'extensions', 'com.smartchat.codetantra-otp-relay') : null
+
 console.log('[Package Plugin] Packaging codetantra-otp-relay-plugin...')
 
 try {
@@ -20,6 +23,11 @@ try {
   zip.addLocalFolder(pluginDir)
   zip.writeZip(outPath)
   console.log(`[Package Plugin] Successfully created package: ${outPath}`)
+
+  if (installedExtDir && fs.existsSync(installedExtDir)) {
+    fs.cpSync(pluginDir, installedExtDir, { recursive: true })
+    console.log(`[Package Plugin] Synced updated files to installed directory: ${installedExtDir}`)
+  }
 } catch (err) {
   console.error('[Package Plugin] Failed to package plugin:', err)
   process.exit(1)

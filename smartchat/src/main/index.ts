@@ -211,6 +211,10 @@ app.whenReady().then(() => {
 
   bootstrapper.boot().then((bootResult) => {
     registerContributionIpcHandlers(bootResult.registry, bootResult.host, () => mainWindow?.webContents, bootResult.loader, bootResult.permissions, services.toolRegistry, bootResult.panelHost)
+    // When WhatsApp creates a new event bus (on connect/reconnect), flush any queued plugin subscriptions
+    waConnectionManager.onBusCreated((bus) => {
+      bootResult.eventsModule.onBusConnected(bus)
+    })
   }).catch((err) => logMain('[Main] Failed to boot microkernel', err))
 
 

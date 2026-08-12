@@ -55,6 +55,7 @@ export interface BootResult {
   router: IKernelAPIRouter
   permissions: PermissionStore
   panelHost: PanelHost
+  eventsModule: KernelEventsModule
   dispose: () => Promise<void>
 }
 
@@ -109,7 +110,7 @@ export class KernelBootstrapper {
     )
     const eventsModule = new KernelEventsModule(
       permissions,
-      getBus?.() ?? null,
+      getBus ?? null,
       (pluginId) => pluginRegistry.get(pluginId)?.channel
     )
     const storageModule = new KernelStorageModule(permissions, storageRepo)
@@ -203,6 +204,7 @@ export class KernelBootstrapper {
       router,
       permissions,
       panelHost,
+      eventsModule,
       dispose
     }
   }

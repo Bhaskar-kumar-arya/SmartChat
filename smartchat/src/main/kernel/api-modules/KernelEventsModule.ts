@@ -8,13 +8,59 @@ import { KernelPermissionError, KernelNotFoundError } from './KernelErrors'
 export class KernelEventsModule extends BaseKernelModule {
   readonly namespace = 'kernel:events'
   private pluginSubscriptions = new Map<string, Map<string, AsyncHandler<any>>>()
+  /** Subscriptions requested while the bus was null — replayed on the next onBusConnected() call */
+  private pendingSubscriptions: Array<{ pluginId: string; event: keyof WAEventMap }> = []
 
   constructor(
     permissions: IPermissionStore,
-    private readonly bus: IWAEventBus | null = null,
+    private readonly getBus: (() => IWAEventBus | null) | IWAEventBus | null = null,
     private readonly getChannel?: (pluginId: string) => IPluginChannel | undefined
   ) {
     super(permissions)
+  }
+
+  private resolveBus(): IWAEventBus | null {
+    if (typeof this.getBus === 'function') return this.getBus()
+    return this.getBus
+  }
+
+  /**
+   * Called by the kernel when a new WAEventBus becomes available (WhatsApp connected).
+   * Flushes all subscriptions that were queued while the bus was null.
+   */
+  public onBusConnected(bus: IWAEventBus): void {
+    for (const { pluginId, event } of this.pendingSubscriptions) {
+      this.registerOnBus(bus, pluginId, event)
+    }
+    this.pendingSubscriptions = []
+  }
+
+  private registerOnBus(bus: IWAEventBus, pluginId: string, event: keyof WAEventMap): void {
+    const handler: AsyncHandler<any> = async (_data: any) => {
+      const channel = this.getChannel?.(pluginId)
+      if (channel) {
+        const sanitizedData = sanitizeForPlugin(_data)
+        channel.sendToPlugin({
+          id: `evt:${String(event)}:${Date.now()}:${Math.random().toString(36).substring(2, 7)}`,
+          type: 'kernel:events:emit',
+          payload: {
+            event: String(event),
+            payload: sanitizedData
+          }
+        })
+      }
+    }
+
+    if (!this.pluginSubscriptions.has(pluginId)) {
+      this.pluginSubscriptions.set(pluginId, new Map())
+    }
+    const pluginMap = this.pluginSubscriptions.get(pluginId)!
+    const existingHandler = pluginMap.get(String(event))
+    if (existingHandler) {
+      bus.off(event, existingHandler)
+    }
+    pluginMap.set(String(event), handler)
+    bus.on(event, handler)
   }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
@@ -31,33 +77,12 @@ export class KernelEventsModule extends BaseKernelModule {
           )
         }
 
-        const bus = this.bus
+        const bus = this.resolveBus()
         if (bus) {
-          const handler: AsyncHandler<any> = async (_data: any) => {
-            const channel = this.getChannel?.(pluginId)
-            if (channel) {
-              const sanitizedData = sanitizeForPlugin(_data)
-              channel.sendToPlugin({
-                id: `evt:${String(event)}:${Date.now()}:${Math.random().toString(36).substring(2, 7)}`,
-                type: 'kernel:events:emit',
-                payload: {
-                  event: String(event),
-                  payload: sanitizedData
-                }
-              })
-            }
-          }
-
-          if (!this.pluginSubscriptions.has(pluginId)) {
-            this.pluginSubscriptions.set(pluginId, new Map())
-          }
-          const pluginMap = this.pluginSubscriptions.get(pluginId)!
-          const existingHandler = pluginMap.get(String(event))
-          if (existingHandler) {
-            bus.off(event, existingHandler)
-          }
-          pluginMap.set(String(event), handler)
-          bus.on(event, handler)
+          this.registerOnBus(bus, pluginId, event)
+        } else {
+          // Bus not yet available — queue for replay when WhatsApp connects
+          this.pendingSubscriptions.push({ pluginId, event })
         }
 
         return { success: true, event: String(event) }
@@ -65,7 +90,7 @@ export class KernelEventsModule extends BaseKernelModule {
 
       case 'unsubscribe': {
         const { event } = payload as { event: keyof WAEventMap }
-        const bus = this.bus
+        const bus = this.resolveBus()
         const pluginMap = this.pluginSubscriptions.get(pluginId)
         if (bus && pluginMap) {
           const handler = pluginMap.get(String(event))

@@ -51,13 +51,16 @@ ctx.onActivate(async () => {
   }, AUTO_AUTH_INTERVAL_MS);
 
   // Register message incoming event handler
-  ctx.events.on('message:incoming', async (evt) => {
-    try {
-      await handleIncomingMessage(evt);
-    } catch (err) {
-      ctx.log.error('Error handling incoming message:', err);
-    }
-  });
+  if (ctx.events) {
+    ctx.events.on('message:incoming', async (evt) => {
+      ctx.log.info(`[CodeTantra Relay] 📩 Event received: message:incoming (chatJid: ${evt?.chatJid}, sender: ${evt?.senderJid}, fromMe: ${evt?.fromMe})`);
+      try {
+        await handleIncomingMessage(evt);
+      } catch (err) {
+        ctx.log.error('[CodeTantra Relay] Error handling incoming message:', err);
+      }
+    });
+  }
 });
 
 // --- Storage Helpers ---
@@ -233,6 +236,13 @@ async function ensureActiveSession(forceRefresh = false) {
   return null;
 }
 
+function toMs(ts) {
+  if (!ts) return 0;
+  const num = Number(ts);
+  if (isNaN(num)) return 0;
+  return num < 1e11 ? num * 1000 : num;
+}
+
 // Fetch active meetings from CodeTantra API
 async function fetchMeetings(targetDateMs = null) {
   ctx.log.info('[Meetings Fetch] Starting meeting retrieval...');
@@ -255,7 +265,7 @@ async function fetchMeetings(targetDateMs = null) {
     const payload = {
       minDate: minDate,
       maxDate: maxDate,
-      filters: { showSelf: true, status: 'started,ended,scheduled' }
+      filters: { showSelf: true, status: 'started,ended,scheduled,upcoming,ongoing,completed' }
     };
 
     ctx.log.info('[Meetings Fetch] Sending POST request to:', MEETINGS_API_URL);
@@ -291,36 +301,46 @@ async function fetchMeetings(targetDateMs = null) {
       return { success: true, meetings: [] };
     }
 
-    const meetings = data.ref.map(m => {
-      let meetingId = m._id;
-      const status = m.status || 'unknown';
-      let startTimeMs = m.startTime || 0;
-      let endTimeMs = m.endTime || 0;
-
-      if (status === 'scheduled' || m.extra?.recurrence?.slots?.length > 0) {
-        try {
-          const slot = m.extra.recurrence.slots[0];
-          meetingId = slot.id || m._id;
-          startTimeMs = slot.start || m.startTime || 0;
-          if (slot.end) endTimeMs = slot.end;
-        } catch (e) {
-          meetingId = m._id;
-        }
-      }
-
+    const meetings = [];
+    data.ref.forEach(m => {
       const rawTitle = m.title || 'Untitled Meeting';
-      const dateStr = startTimeMs ? new Date(startTimeMs).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-      const displayTitle = dateStr ? `${rawTitle} (${dateStr})` : rawTitle;
+      const status = m.status || 'unknown';
 
-      return {
-        id: meetingId,
-        title: rawTitle,
-        displayTitle: displayTitle,
-        status: status,
-        startTime: startTimeMs,
-        endTime: endTimeMs || (startTimeMs ? startTimeMs + (60 * 60 * 1000) : 0),
-        url: `${BASE_URL}/secure/tla/mi.jsp?s=m&m=${meetingId}`
-      };
+      if (m.extra?.recurrence?.slots?.length > 0) {
+        m.extra.recurrence.slots.forEach(slot => {
+          const meetingId = slot.id || m._id;
+          const startTimeMs = toMs(slot.start || slot.startTime || m.startTime);
+          const endTimeMs = toMs(slot.end || slot.endTime || m.endTime) || (startTimeMs ? startTimeMs + (60 * 60 * 1000) : 0);
+          const dateStr = startTimeMs ? new Date(startTimeMs).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+          const displayTitle = dateStr ? `${rawTitle} (${dateStr})` : rawTitle;
+
+          meetings.push({
+            id: meetingId,
+            title: rawTitle,
+            displayTitle: displayTitle,
+            status: status,
+            startTime: startTimeMs,
+            endTime: endTimeMs,
+            url: `${BASE_URL}/secure/tla/mi.jsp?s=m&m=${meetingId}`
+          });
+        });
+      } else {
+        const meetingId = m._id;
+        const startTimeMs = toMs(m.startTime);
+        const endTimeMs = toMs(m.endTime) || (startTimeMs ? startTimeMs + (60 * 60 * 1000) : 0);
+        const dateStr = startTimeMs ? new Date(startTimeMs).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const displayTitle = dateStr ? `${rawTitle} (${dateStr})` : rawTitle;
+
+        meetings.push({
+          id: meetingId,
+          title: rawTitle,
+          displayTitle: displayTitle,
+          status: status,
+          startTime: startTimeMs,
+          endTime: endTimeMs,
+          url: `${BASE_URL}/secure/tla/mi.jsp?s=m&m=${meetingId}`
+        });
+      }
     });
 
     ctx.log.info(`[Meetings Fetch] Successfully retrieved ${meetings.length} meetings.`);
@@ -431,12 +451,52 @@ async function broadcastOtpToGroup(targetGroupJid, meetingId, otp, meetingTitle,
 
 // Handle incoming messages for automatic OTP detection & submission
 async function handleIncomingMessage(evt) {
-  if (!evt || !evt.textContent || evt.fromMe) return;
+  if (!evt) return;
+
+  // Always log incoming message to persistent storage audit trail
+  if (ctx.storage) {
+    try {
+      const logs = (await ctx.storage.get('incoming_message_log')) || [];
+      const entry = {
+        timestamp: new Date().toISOString(),
+        senderJid: evt.senderJid || 'unknown',
+        chatJid: evt.chatJid || 'unknown',
+        fromMe: Boolean(evt.fromMe),
+        snippet: evt.textContent ? evt.textContent.slice(0, 100) : '[No Text]',
+        hasRelayHeader: Boolean(evt.textContent && evt.textContent.includes(RELAY_HEADER))
+      };
+      logs.unshift(entry);
+      await ctx.storage.set('incoming_message_log', logs.slice(0, 100));
+    } catch (err) {
+      ctx.log.warn('[CodeTantra Relay] Failed to write incoming_message_log to storage:', err);
+    }
+  }
+
+  if (!evt.textContent) {
+    ctx.log.info('[CodeTantra Relay] Incoming message skipped: empty text content');
+    return;
+  }
+  if (evt.fromMe) {
+    ctx.log.info('[CodeTantra Relay] Incoming message skipped: sent by self');
+    return;
+  }
 
   const targetJid = await getTargetGroupJid();
-  if (!targetJid || evt.chatJid !== targetJid) return;
+  if (!targetJid) {
+    ctx.log.info('[CodeTantra Relay] Incoming message skipped: target group JID not set');
+    return;
+  }
+  if (evt.chatJid !== targetJid) {
+    ctx.log.info(`[CodeTantra Relay] Incoming message skipped: chatJid '${evt.chatJid}' does not match target group JID '${targetJid}'`);
+    return;
+  }
 
-  if (!evt.textContent.includes(RELAY_HEADER)) return;
+  ctx.log.info(`[CodeTantra Relay] 📥 Target group message received from ${evt.senderJid}: "${evt.textContent.slice(0, 100)}"`);
+
+  if (!evt.textContent.includes(RELAY_HEADER)) {
+    ctx.log.info('[CodeTantra Relay] Target group message skipped: does not contain CODETANTRA_OTP_RELAY header');
+    return;
+  }
 
   try {
     const jsonStr = evt.textContent.substring(evt.textContent.indexOf(RELAY_HEADER) + RELAY_HEADER.length).trim();
@@ -450,15 +510,19 @@ async function handleIncomingMessage(evt) {
       const meetingUrl = data.meetingUrl ||
         (data.meetingPath ? `${BASE_URL}${data.meetingPath}` : `${BASE_URL}/secure/tla/mi.jsp?s=m&m=${meetingId}`);
 
-      if (!/^\d{6}$/.test(otp)) return;
+      if (!/^\d{6}$/.test(otp)) {
+        ctx.log.warn(`[CodeTantra Relay] Invalid OTP format in payload: '${otp}'`);
+        return;
+      }
 
       ctx.log.info(`🎯 Instant OTP capture: ${otp} for meeting ${meetingId} in target group`);
 
       const res = await submitOtpToCodeTantra(meetingId, otp, meetingUrl, meetingTitle);
 
-      if (ctx.messages && ctx.messages.react) {
+      const msgId = evt.messageId || evt.id || (evt.processed && evt.processed.id) || (evt.enriched && evt.enriched.id);
+      if (ctx.messages && ctx.messages.react && msgId) {
         const emoji = res.success ? '✅' : '❌';
-        await ctx.messages.react(evt.chatJid, evt.messageId, emoji);
+        await ctx.messages.react(evt.chatJid, msgId, emoji);
       }
 
       if (ctx.ui && ctx.ui.toast) {
@@ -468,6 +532,8 @@ async function handleIncomingMessage(evt) {
           ctx.ui.toast(`❌ OTP Submission failed for ${meetingTitle}: ${res.message}`, 'error');
         }
       }
+    } else {
+      ctx.log.warn('[CodeTantra Relay] Message contained RELAY_HEADER but payload structure was invalid:', data);
     }
   } catch (err) {
     ctx.log.error('Failed to parse or process incoming OTP relay message:', err);
@@ -563,6 +629,12 @@ ctx.contributions.registerSlashCommand('codetantra', async () => {
 });
 
 if (ctx.contributions.registerAITool) {
+  ctx.contributions.registerAITool('codetantra_refresh_meetings', async () => {
+    ctx.log.info('[AITool] Live meetings refresh requested');
+    const res = await fetchMeetings();
+    return { text: res.success ? `Success: ${res.meetings.length} classes loaded` : `Failed: ${res.error}` };
+  });
+
   ctx.contributions.registerAITool('codetantra_submit_otp', async (args) => {
     const meetingId = String(args.meetingId || '').trim();
     const otp = String(args.otp || '').trim();
@@ -576,6 +648,15 @@ if (ctx.contributions.registerAITool) {
 }
 
 if (ctx.ai && ctx.ai.registerTool) {
+  ctx.ai.registerTool({
+    name: 'codetantra_refresh_meetings',
+    description: 'Refreshes live meetings schedule from CodeTantra API',
+    schema: {
+      type: 'object',
+      properties: {}
+    }
+  }).catch(err => ctx.log.error('Failed to register codetantra_refresh_meetings in ToolRegistry:', err.message));
+
   ctx.ai.registerTool({
     name: 'codetantra_submit_otp',
     description: 'Submits CodeTantra OTP for a class meeting via Node background session',

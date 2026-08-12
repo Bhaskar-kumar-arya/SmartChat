@@ -5,6 +5,11 @@ import { bootstrapWorkerRepositories } from './bootstrapWorkerRepositories'
 import { WorkerConnectionManager } from './socket/workerConnectionManager'
 import { WorkerCommandRouter } from './routing/workerCommandRouter'
 import { WorkerCommandMessage } from './whatsappWorker.types'
+import { runMigrations, RawSqliteDb } from '../../db/schema-migrations'
+
+// better-sqlite3 is a CJS module; require() is intentional here.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const openDatabase = require('better-sqlite3') as new (path: string) => RawSqliteDb
 
 console.log('[WhatsAppWorker] Worker thread spawned and starting up...')
 
@@ -20,6 +25,17 @@ const eventPublisher = {
 const connectionManager = new WorkerConnectionManager(eventPublisher)
 
 async function bootstrapPrismaAndRepos(dbPath: string, userDataPath: string) {
+  // Run schema migrations synchronously before Prisma touches the DB.
+  // Uses a short-lived raw better-sqlite3 connection so we don't depend on
+  // Prisma being able to open a schema-inconsistent database.
+  try {
+    const migrationDb = new openDatabase(dbPath)
+    runMigrations(migrationDb)
+    migrationDb.close()
+  } catch (err) {
+    console.error('[WhatsAppWorker] Schema migration failed — worker may be in a broken state:', err)
+  }
+
   const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` })
   const prisma = new PrismaClient({ adapter })
 

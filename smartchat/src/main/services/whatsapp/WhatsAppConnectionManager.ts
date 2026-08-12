@@ -16,6 +16,7 @@ export class WhatsAppConnectionManager {
   private mainWindow: BrowserWindow | null = null
   private currentBus: IWAEventBus | null = null
   private isFreshLogin = false
+  private busCreatedCallback: ((bus: IWAEventBus) => void) | null = null
 
   constructor(
     private deps: WhatsAppConnectionDependencies,
@@ -36,6 +37,10 @@ export class WhatsAppConnectionManager {
 
   public getBus(): IWAEventBus | null {
     return this.currentBus
+  }
+
+  public onBusCreated(callback: (bus: IWAEventBus) => void): void {
+    this.busCreatedCallback = callback
   }
 
   public async connect(): Promise<void> {
@@ -89,6 +94,8 @@ export class WhatsAppConnectionManager {
     const bus = this.eventBusFactory()
     this.currentBus = bus
     createSubscribers(bus, this.deps, () => this.mainWindow)
+    // Notify any listeners that a fresh bus is available (e.g. to replay plugin subscriptions)
+    this.busCreatedCallback?.(bus)
 
     this.currentSock = this.waWorkerBridge
 
