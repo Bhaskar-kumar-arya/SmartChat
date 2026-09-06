@@ -18,7 +18,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 7 | Kernel API modules & router | DONE (9 findings) | 2026-09-06 | 0 crit / 1 high / 4 med / 4 low. S7-01 = resource-scope enforced inconsistently across kernel API (bypass by unscoped action / omitted jid). Deep-read all Kernel*Module business logic; router/BaseKernelModule/Events perm paths deferred to slice 8 |
 | 8 | Kernel plugins, contributions, permissions | DONE (10 findings) | 2026-09-06 | 0 crit / 1 high / 6 med / 3 low. Deep-read PluginLoader, PluginHost, PluginRegistry, PermissionStore, ContributionRegistry, PluginManifest, KernelEventsModule, KernelMessagesModule (perm paths), KernelAPIRouter, BaseKernelModule, contributionIpc, channels/{Direct,Worker}PluginChannel, pluginProtocol. Light: other Kernel*Module perm checks, I*.ts |
 | 9 | Kernel storage, channels, ipc, ui | DONE (10 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 4 low. Deep-read PrismaPluginStorageRepository, {Direct,Worker}PluginChannel, overlayIpc, panelIpc, contributionIpc, OverlayHost, PanelHost. S9-01/S9-02 = panel event IPC bypasses bus-accessor + permission checks. Light: I*.ts interfaces |
-| 10 | App IPC & auth | TODO | — | trust boundary |
+| 10 | App IPC & auth | IN PROGRESS | 2026-09-06 | trust boundary |
 | 11 | apiServer, search, notification, calls, audio | TODO | — | HTTP surface = apiServer |
 | 12 | SDK, tools, data wipe, domain, db, protocol | TODO | — | DataWipeService = data-loss risk |
 | 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
