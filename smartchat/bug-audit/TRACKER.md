@@ -21,16 +21,19 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 10 | App IPC & auth | DONE (10 findings) | 2026-09-06 | 1 crit / 1 high / 4 med / 4 low. S10-01 = swallowed authState read error → hasCreds()=false → wipeAllData on a logged-in user (data loss). S10-02 = silent Signal keystore tx failure. Deep-read auth.ts, ipcHandlers.ts, services/auth/*, ServiceContainer.ts; ipc/*.types.ts trivial |
 | 11 | apiServer, search, notification, calls, audio | DONE (14 findings) | 2026-09-06 | 0 crit / 1 high / 7 med / 6 low. S11-01 = HTTP /api/tools/execute bypasses the tool permission model (ExecuteScript/SQL/send over a static-token localhost API). S11-02 = APIConfigProvider clobbers ai_preferences.json on a transient read error. S11-03 = embedding worker crash never rejects pending jobs → index queue stalls forever. Light: I*.ts interfaces |
 | 12 | SDK, tools, data wipe, domain, db, protocol | DONE (14 findings) | 2026-09-06 | 1 crit / 2 high / 6 med / 5 low. S12-01 = `app://local/<abs>` arbitrary file read (LFI "fix" was a no-op). S12-03 = executeScript vm "sandbox" trivially escapes to host RCE. S12-05 = DataWipeService partial-wipe swallowed + reported success. Light: sdk/{events,contributions,context,overlay}.ts, domain/*.types.ts. manifest.main/id traversal already S8-xx |
-| 13 | Cross-cutting pass | IN PROGRESS | 2026-09-06 | event flow / tx boundaries / startup-shutdown seams + light-coverage sweep |
+| 13 | Cross-cutting pass | DONE (9 findings) | 2026-09-06 | 0 crit / 1 high / 5 med / 3 low. S13-01 = startup race: kernel bus-created callback wired after connect() may miss the first bus → all plugin WA events dead from cold start. S13-02 = will-quit never disposes kernel/workers. S13-06 = BaileysPatcher rewrites node_modules at import, silent on version bump |
 
 ## Summary counts
 
 | Severity | Count |
 |----------|-------|
 | crit | 3 |
-| high | 7 |
-| med  | 60 |
-| low  | 48 |
+| high | 8 |
+| med  | 65 |
+| low  | 51 |
+
+All 13 slices audited. Total findings: 127. Next phase: triage in the Fix phase
+section below.
 
 ---
 
@@ -1717,7 +1720,162 @@ favourites dir before returning.
 
 ## Slice 13 — Cross-cutting pass
 
-_none yet_
+Focus: end-to-end event flow (worker → main bus → subscribers/plugins), transaction
+boundaries spanning services, startup/shutdown ordering. Files read: src/main/index.ts
+(full), WhatsAppConnectionManager.ts, workers/bridge/WAWorkerBridge.ts,
+KernelBootstrapper.ts (dispose), services/search/EmbeddingWorkerManager.ts (lifecycle),
+services/whatsapp/BaileysPatcher.ts, notification/TrayService.ts. Light-coverage sweep of
+earlier slices: BaileysPatcher (was "not deep-read" in S3), formatters/PollFormatter
+(S2 peripheral) — PollFormatter clean, no finding.
+
+Cross-refs to existing findings this pass confirms from the seam side: S3-01 / S9-01
+(bus rebuilt on every `connect()`), S8-06 / S8-07 (plugin unload teardown gaps),
+S5-02 (main vs worker cache divergence), S11-03 (embedding worker crash).
+
+### [S13-01] high — src/main/index.ts:132-135, 212-218 + services/whatsapp/WhatsAppConnectionManager.ts:42-44, 94-98
+**What:** The kernel's bus-created callback is registered only inside
+`bootstrapper.boot().then(...)` (`waConnectionManager.onBusCreated(bus => eventsModule.onBusConnected(bus))`,
+index.ts:215-217). But `waConnectionManager.connect()` is kicked off independently from the
+window's `ready-to-show` handler (index.ts:134). `connect()` does a bounded number of awaits
+(`hasCreds`, `countChats`, `getHistorySyncCompleted`, `getSyncFullHistory`) and then at line 98
+calls `this.busCreatedCallback?.(bus)` — which is still `null` if `boot()` (plugin zip extraction,
+worker spawn, `host.load` for every installed plugin) hasn't resolved yet.
+**Why it's a bug:** startup ordering race. When boot loses the race, the very first WhatsApp
+event bus is created without the events module ever seeing it, so
+`KernelEventsModule.pendingSubscriptions` (every subscription requested by plugins during
+`host.load`) is never drained onto a bus. Every plugin that listens for WhatsApp events (e.g. the
+CodeTantra OTP relay plugin) receives **nothing** from cold start until something calls
+`connect()` again (a settings toggle, re-login) — and per S3-01 even that re-attaches only the
+pending set. No error, no log. The inverse ordering (boot wins) is the only one that works, and it
+is not guaranteed. Also `bootstrapper.boot()` is a floating promise whose `.catch` only logs — if
+boot throws, `onBusCreated` is never wired at all and *all* plugin events are dead for the session.
+**Fix idea:** register the `onBusCreated` callback synchronously (before `connect()` can run) and
+have it queue the bus until `eventsModule` exists; or have `connect()` await a "kernel ready"
+signal; or keep one stable bus instance for the process lifetime (also fixes S3-01/S9-01) and let
+the events module attach to it once.
+**Status:** open
+
+### [S13-02] med — src/main/index.ts:266-282 (`will-quit`) + KernelBootstrapper.ts:190-197 (`dispose`)
+**What:** The `will-quit` cleanup only awaits `apiServer.stop()` and `aiService.cleanup()`, then
+`app.exit(0)`. The kernel `bootResult` is never stored at module scope, so
+`bootstrapper.dispose()` (which unbinds overlay/panel IPC and `host.unload`s every plugin) is
+**never called**. Nor is `waConnectionManager` / `waWorkerBridge.stop()`, `trayService.destroy()`,
+or any embedding-worker shutdown.
+**Why it's a bug:** on every app quit, plugin `onDeactivate` / teardown never runs (compounds
+S8-07 which already notes the deactivate message races termination) — plugin `ctx.storage` flushes,
+external connection closes and state persistence are all skipped. The WhatsApp worker thread and
+plugin worker threads are killed abruptly by `app.exit(0)` while they may be mid-`prisma`
+transaction (history-sync batch write, identity dedup) → partially-applied writes with FK
+enforcement possibly left OFF (see S1-02 / S12-05). `trayService` leaks its native `Tray`.
+**Fix idea:** retain `bootResult`; in `will-quit` await (with a timeout) `bootResult.dispose()`,
+`waConnectionManager` shutdown / `waWorkerBridge.stop()`, embedding-worker terminate, and
+`trayService.destroy()` before `app.exit(0)`.
+**Status:** open
+
+### [S13-03] med — workers/bridge/WAWorkerBridge.ts:169-185 (`sendCommand`)
+**What:** `sendCommand` registers a `pendingReplies` entry and `postMessage`s to the worker with
+**no timeout**. The promise settles only on a matching `reply`/`reply_error` or on the worker's
+`exit` event.
+**Why it's a bug:** main-process twin of S9-04 for the WhatsApp worker. If the worker thread wedges
+without exiting — stuck in a long synchronous Baileys/Prisma call, an infinite loop, a dropped
+message, a deadlock on the shared SQLite file — every `sendCommand` caller hangs forever:
+`sendMessage` (so `MessageSenderService` optimistic sends never resolve or fail — feeds S2-02),
+`groupMetadata`, `profilePictureUrl`, `logout`, `getPNForLID` (blocks contact name resolution).
+The `pendingReplies` map also leaks those entries permanently. A single wedged worker silently
+freezes all outbound WhatsApp operations with no surfaced error.
+**Fix idea:** attach a per-command timeout that rejects with a `WORKER_TIMEOUT` error and deletes
+the pending entry; consider a heartbeat / watchdog that restarts the worker if it stops responding.
+**Status:** open
+
+### [S13-04] med — workers/bridge/WAWorkerBridge.ts:135-147 (`error` / `exit` handlers)
+**What:** `worker.on('error')` only `console.error`s. `worker.on('exit')` nulls `this.worker`,
+clears `currentUser`, and rejects pending replies — but neither handler notifies
+`WhatsAppConnectionManager`, restarts the worker, or updates any connection state. `connect()` set
+`this.currentSock = this.waWorkerBridge` once; after a worker crash `getSocket()` still returns the
+bridge, whose `this.worker` is now `null`.
+**Why it's a bug:** the WhatsApp worker has **no supervision**. If it crashes (OOM during a large
+history-sync batch, native module fault, uncaught exception in an event handler), WhatsApp goes
+permanently dead — no reconnect, no QR, no UI signal — until the user restarts the app. Subsequent
+`sendCommand` calls throw `Worker thread is not running` synchronously (better than S13-03's hang,
+but still unrecovered). The renderer's connection indicator is driven by `wa-connected` /
+`wa-logged-out` window events, none of which fire on a silent worker death.
+**Fix idea:** on `exit` with a non-zero code (or `error`), emit a `wa-disconnected` window event and
+have `WhatsAppConnectionManager` re-run `connect()` with backoff (bounded retries), or surface a
+"WhatsApp stopped — reconnect" state to the UI.
+**Status:** open
+
+### [S13-05] med — services/search/EmbeddingWorkerManager.ts (whole file — no shutdown path)
+**What:** `EmbeddingWorkerManager` spawns a `Worker` in `ensureWorker` but exposes **no**
+`terminate` / `dispose` / `stop` method, and nothing in `will-quit` or `KernelBootstrapper.dispose`
+stops it. `worker.on('exit')` only nulls the handle. Combines with S11-03 (crash never rejects
+`pendingJobs`).
+**Why it's a bug:** at app quit the embedding worker is killed mid-flight by `app.exit(0)` while it
+may be running `delete/insertIntoVecMessages` on the `vec_messages` virtual table (VectorSyncService
+path) → a torn write to the sqlite-vec table that `initVectorDb`'s dimension/count self-heal
+(S10-10) then has to notice and repair on next launch (it drops the whole table if it can't). There
+is also no way to cycle the worker after a fault without restarting the app.
+**Fix idea:** add `EmbeddingWorkerManager.terminate()` (await `worker.terminate()`, reject pending
+jobs, null state) and call it from the shutdown sequence after the queue is drained/paused; let
+`EmbeddingService` finish or checkpoint the current batch first.
+**Status:** open
+
+### [S13-06] med — services/whatsapp/BaileysPatcher.ts:5-178 (invoked at src/main/index.ts:14)
+**What:** `BaileysPatcher.patch()` runs synchronously at module-import time and rewrites four files
+inside `node_modules/@whiskeysockets/baileys` (`Utils/chat-utils.js`, `Utils/decode-wa-message.js`,
+`Socket/chats.js`) by string/regex replacement, persisting with `fs.writeFileSync`. Each target is
+located by an exact source-signature match; a miss just `console.error`s and continues.
+**Why it's a bug:** (1) Fragile coupling to Baileys' compiled output — any dependency bump that
+reformats or renames these snippets silently drops the corresponding patch with only a log line,
+and the failure modes are severe and non-obvious: no `app-state.sync` emission (favorite-sticker /
+app-state features stop syncing), the `tried remove, but no previous op` `Boom` is thrown again and
+aborts the whole app-state sync, `messageContextInfo` is lost for `deviceSentMessage` (ephemeral /
+view-once parsing breaks), and the profile-picture `tctoken` nesting regresses. (2) In a packaged
+build `node_modules` is inside the asar archive (read-only) unless explicitly unpacked, so every
+`writeFileSync` throws (caught, logged) and the app runs against an **unpatched** Baileys. (3)
+Mutating installed package source on disk means the patch state depends on install history
+(`npm ci` reverts it, a second app version re-patches differently).
+**Fix idea:** vendor a forked/patched Baileys, or apply patches via `patch-package` at install time
+(checked into the repo, version-pinned, CI-verified), or wrap the needed behavior with runtime
+composition instead of source rewriting. At minimum, make a failed patch a hard startup error in
+dev so a version bump can't ship silently broken.
+**Status:** open
+
+### [S13-07] low — services/whatsapp/WhatsAppConnectionManager.ts:19, 42-44
+**What:** `busCreatedCallback` is a single nullable field; `onBusCreated(cb)` overwrites it
+(`this.busCreatedCallback = callback`). There is no list of listeners.
+**Why it's a bug:** latent — today only `index.ts` registers one callback. If any future code
+(a second kernel subsystem, a test harness, panel IPC wiring) also needs to know when the bus is
+rebuilt, whichever registers last silently wins and the other never fires. Given S9-01 already
+wants `panelIpc` to track bus rebuilds, this is a foot-gun on the exact path that needs fixing.
+**Fix idea:** store an array and invoke all registered callbacks in `connect()`; return an
+unregister handle.
+**Status:** open
+
+### [S13-08] low — src/main/index.ts:266-282 (`will-quit` — no watchdog)
+**What:** `will-quit` does `e.preventDefault()` then `await apiServer.stop()` and
+`await aiService.cleanup()` with no bounding timeout before the `finally { app.exit(0) }`.
+**Why it's a bug:** if either cleanup hangs (an in-flight AI provider request that never aborts —
+see S6-04 Gemini has no real abort; an HTTP connection `server.close()` waiting on a kept-alive
+socket), the app never quits — the process lingers with a hidden window / tray icon and the user
+must kill it. `will-quit` also runs cleanup that assumes `services` is defined; a crash before
+`index.ts:195` makes this handler throw (caught) but that path is fine.
+**Fix idea:** `Promise.race` the cleanup against a hard timeout (e.g. 5 s), then `app.exit(0)`
+regardless.
+**Status:** open
+
+### [S13-09] low — services/whatsapp/WhatsAppConnectionManager.ts:47
+**What:** `connect()` begins with `this.deps.embeddingService.setPaused(false)` unconditionally,
+before it has determined `shouldSyncHistory` / started the worker.
+**Why it's a bug:** `connect()` runs on every reconnect (settings toggle, re-login). If a history
+sync is about to run (`shouldSyncHistory === true`), embedding is briefly un-paused at the top and
+only re-paused later once the worker/`HistorySyncManager` path issues its own `setPaused(true)`.
+During that window (and given S11-04, embedding loops only re-check `isPaused` at entry) the
+embedding pipeline can start draining its queue against the DB just as the heavy sync begins —
+the contention the pause exists to prevent. Minor because the window is short and sync writes
+dominate, but the "clean start" comment masks an ordering assumption.
+**Fix idea:** only `setPaused(false)` after determining no sync will run, or at the end of
+`connect()` on the not-syncing path; let the sync path own the pause lifecycle entirely.
+**Status:** open
 
 ---
 
