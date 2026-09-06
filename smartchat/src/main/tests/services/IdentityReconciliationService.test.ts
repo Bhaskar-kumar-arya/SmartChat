@@ -34,6 +34,10 @@ describe('IdentityReconciliationService', () => {
         delete: vi.fn(),
       }
     }
+    // Interactive transaction: run the callback against the same mock client.
+    prisma.$transaction = vi.fn((arg: any) =>
+      typeof arg === 'function' ? arg(prisma) : Promise.all(arg)
+    )
 
     contactService = {
       linkLidAndPn: vi.fn(),
@@ -50,6 +54,40 @@ describe('IdentityReconciliationService', () => {
     prisma.identity.findMany.mockResolvedValue([])
     const result = await service.deduplicateIdentities()
     expect(result).toEqual({ merged: 0, skipped: 0 })
+  })
+
+  it('deduplicateIdentities runs the stub merge inside a single interactive transaction', async () => {
+    prisma.identity.findMany
+      .mockResolvedValueOnce([
+        { id: 1, pushName: 'Alice', displayName: null, verifiedName: null, profilePictureUrl: null, aliases: [] },
+      ])
+      .mockResolvedValueOnce([{ id: 2, pushName: 'Alice', phoneNumber: '123', displayName: 'Alice' }])
+    prisma.identityAlias.updateMany.mockResolvedValue({ count: 1 })
+    prisma.message.updateMany.mockResolvedValue({ count: 0 })
+    prisma.chatMember.findMany.mockResolvedValue([])
+    prisma.reaction.findMany.mockResolvedValue([])
+    prisma.identity.delete.mockResolvedValue({})
+
+    const result = await service.deduplicateIdentities()
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1)
+    expect(prisma.identity.delete).toHaveBeenCalledWith({ where: { id: 1 } })
+    expect(result).toEqual({ merged: 1, skipped: 0 })
+  })
+
+  it('deduplicateIdentities does not delete the stub if an earlier merge step fails (tx rolls back)', async () => {
+    prisma.identity.findMany
+      .mockResolvedValueOnce([
+        { id: 1, pushName: 'Bob', displayName: null, verifiedName: null, profilePictureUrl: null, aliases: [] },
+      ])
+      .mockResolvedValueOnce([{ id: 2, pushName: 'Bob', phoneNumber: '999', displayName: 'Bob' }])
+    prisma.identityAlias.updateMany.mockResolvedValue({ count: 1 })
+    prisma.message.updateMany.mockRejectedValue(new Error('DB locked'))
+
+    const result = await service.deduplicateIdentities()
+
+    expect(prisma.identity.delete).not.toHaveBeenCalled()
+    expect(result).toEqual({ merged: 0, skipped: 1 })
   })
 
   it('reconcileLidPnFromJids links LID and PN when both are present', async () => {

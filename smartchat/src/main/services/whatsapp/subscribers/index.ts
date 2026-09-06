@@ -16,6 +16,7 @@ import type { IWAEventSubscriber } from './IWAEventSubscriber'
 import { NotificationSubscriber }  from './NotificationSubscriber'
 import { UIBroadcastSubscriber }   from './UIBroadcastSubscriber'
 import { EmbeddingSyncSubscriber } from './EmbeddingSyncSubscriber'
+import { ContactCacheSyncSubscriber } from './ContactCacheSyncSubscriber'
 
 import type { IMessageWriterService } from '../../messages/IMessageWriterService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
@@ -66,7 +67,8 @@ export function createSubscribers(
   const subscribers: IWAEventSubscriber[] = [
     new NotificationSubscriber(services.chatService, services.contactService, services.profileSyncService, services.notificationService),
     new UIBroadcastSubscriber(services.contactService, services.messageQueryService, services.messageQueryRepository, getMainWindow),
-    new EmbeddingSyncSubscriber(services.embeddingService)
+    new EmbeddingSyncSubscriber(services.embeddingService),
+    new ContactCacheSyncSubscriber(services.contactService)
   ]
 
   // Register each subscriber on the bus — order matters for same-event handlers

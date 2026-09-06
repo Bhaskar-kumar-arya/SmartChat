@@ -88,71 +88,76 @@ export class IdentityReconciliationService implements IIdentityReconciliationSer
       const stubId = stub.id
 
       try {
-        // 1. Re-point all LID aliases from stub → keep
-        await this.prisma.identityAlias.updateMany({
-          where: { identityId: stubId },
-          data: { identityId: keepId }
-        })
-
-        // 2. Re-point messages
-        await this.prisma.message.updateMany({
-          where: { senderId: stubId },
-          data: { senderId: keepId }
-        })
-
-        // 3. Merge ChatMember rows — handle composite PK conflicts
-        const stubMemberships = await this.prisma.chatMember.findMany({ where: { identityId: stubId } })
-        for (const m of stubMemberships) {
-          const conflict = await this.prisma.chatMember.findUnique({
-            where: { chatJid_identityId: { chatJid: m.chatJid, identityId: keepId } }
+        // Steps 1-6 run in a single interactive transaction so a mid-merge
+        // failure (lock contention, FK/unique conflict, or a concurrent
+        // history-sync write re-adding a child row) rolls back to the
+        // pre-merge state instead of leaving a dangling half-merged stub.
+        await this.prisma.$transaction(async (tx) => {
+          // 1. Re-point all LID aliases from stub → keep
+          await tx.identityAlias.updateMany({
+            where: { identityId: stubId },
+            data: { identityId: keepId }
           })
-          if (conflict) {
-            await this.prisma.chatMember.delete({
-              where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } }
+
+          // 2. Re-point messages
+          await tx.message.updateMany({
+            where: { senderId: stubId },
+            data: { senderId: keepId }
+          })
+
+          // 3. Merge ChatMember rows — handle composite PK conflicts
+          const stubMemberships = await tx.chatMember.findMany({ where: { identityId: stubId } })
+          for (const m of stubMemberships) {
+            const conflict = await tx.chatMember.findUnique({
+              where: { chatJid_identityId: { chatJid: m.chatJid, identityId: keepId } }
             })
-          } else {
-            await this.prisma.chatMember.update({
-              where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } },
-              data: { identityId: keepId }
-            })
+            if (conflict) {
+              await tx.chatMember.delete({
+                where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } }
+              })
+            } else {
+              await tx.chatMember.update({
+                where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } },
+                data: { identityId: keepId }
+              })
+            }
           }
-        }
 
-        // 4. Merge Reactions — handle composite PK conflicts
-        const stubReactions = await this.prisma.reaction.findMany({ where: { senderId: stubId } })
-        for (const r of stubReactions) {
-          const conflict = await this.prisma.reaction.findUnique({
-            where: { messageId_senderId: { messageId: r.messageId, senderId: keepId } }
-          })
-          if (conflict) {
-            await this.prisma.reaction.delete({
-              where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } }
+          // 4. Merge Reactions — handle composite PK conflicts
+          const stubReactions = await tx.reaction.findMany({ where: { senderId: stubId } })
+          for (const r of stubReactions) {
+            const conflict = await tx.reaction.findUnique({
+              where: { messageId_senderId: { messageId: r.messageId, senderId: keepId } }
             })
-          } else {
-            await this.prisma.reaction.update({
-              where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } },
-              data: { senderId: keepId }
-            })
+            if (conflict) {
+              await tx.reaction.delete({
+                where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } }
+              })
+            } else {
+              await tx.reaction.update({
+                where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } },
+                data: { senderId: keepId }
+              })
+            }
           }
-        }
 
-        // 5. Enrich the survivor with any unique data the stub held
-        const enrichUpdate: {
-          displayName?: string | null
-          verifiedName?: string | null
-          profilePictureUrl?: string | null
-        } = {}
-        if (!keep.displayName && stub.displayName) enrichUpdate.displayName = stub.displayName
-        if (!keep.verifiedName && stub.verifiedName) enrichUpdate.verifiedName = stub.verifiedName
-        if (!keep.profilePictureUrl && stub.profilePictureUrl) enrichUpdate.profilePictureUrl = stub.profilePictureUrl
-        if (Object.keys(enrichUpdate).length > 0) {
-          await this.prisma.identity.update({ where: { id: keepId }, data: enrichUpdate }).catch((err) => {
-            console.error(`[deduplicateIdentities] Failed to enrich identity ${keepId} during merge:`, err)
-          })
-        }
+          // 5. Enrich the survivor with any unique data the stub held
+          const enrichUpdate: {
+            displayName?: string | null
+            verifiedName?: string | null
+            profilePictureUrl?: string | null
+          } = {}
+          if (!keep.displayName && stub.displayName) enrichUpdate.displayName = stub.displayName
+          if (!keep.verifiedName && stub.verifiedName) enrichUpdate.verifiedName = stub.verifiedName
+          if (!keep.profilePictureUrl && stub.profilePictureUrl)
+            enrichUpdate.profilePictureUrl = stub.profilePictureUrl
+          if (Object.keys(enrichUpdate).length > 0) {
+            await tx.identity.update({ where: { id: keepId }, data: enrichUpdate })
+          }
 
-        // 6. Delete the now-empty stub
-        await this.prisma.identity.delete({ where: { id: stubId } })
+          // 6. Delete the now-empty stub
+          await tx.identity.delete({ where: { id: stubId } })
+        })
 
         merged++
         console.log(`[deduplicateIdentities] Merged stub id=${stubId} ("${pushName}") → id=${keepId} (${keep.phoneNumber})`)
