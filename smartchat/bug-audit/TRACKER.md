@@ -11,7 +11,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |---|-------|--------|--------------|-------|
 | 1 | WhatsApp worker & socket | DONE (8 findings) | 2026-09-06 | 0 crit / 0 high / 5 med / 3 low |
 | 2 | Message pipeline | DONE (12 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 6 low; peripheral formatters + ffmpeg paths lightly covered |
-| 3 | WhatsApp service & subscribers | IN PROGRESS | 2026-09-06 | recent OTP relay + queue-subscriptions fix |
+| 3 | WhatsApp service & subscribers | DONE (6 findings) | 2026-09-06 | 1 high / 3 med / 2 low; S3-01 = plugin subs lost on bus rebuild. type files + BaileysPatcher lightly covered |
 | 4 | Chats & sync | TODO | — | |
 | 5 | Contacts | TODO | — | |
 | 6 | AI (providers, mentions, citations) | TODO | — | ~45 files; may need 2 sessions |
@@ -28,9 +28,9 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | Severity | Count |
 |----------|-------|
 | crit | 0 |
-| high | 0 |
-| med  | 11 |
-| low  | 9 |
+| high | 1 |
+| med  | 14 |
+| low  | 11 |
 
 ---
 
@@ -235,7 +235,114 @@ media dir before `openPath`.
 
 ## Slice 3 — WhatsApp service & subscribers
 
-_none yet_
+Files read: WhatsAppConnectionManager.ts, WAEventBus.ts, WAEventWiringService.ts, WAEventHandler.ts,
+WACatchUpManager.ts, HistorySyncManager.ts, ReceiptService.ts, WASocketFactory.ts, AppStateSyncParser.ts,
+secret/{SecretMessageService,MessageEditStrategy,MessageReactionStrategy}.ts,
+subscribers/{index,UIBroadcastSubscriber,NotificationSubscriber,PersistenceSubscriber,ReceiptSubscriber,
+EmbeddingSyncSubscriber,ContactGroupSubscriber,FavoriteStickerSubscriber,CallEventSubscriber}.ts,
++ cross-refs: kernel/api-modules/KernelEventsModule.ts, index.ts (bootstrap wiring), ServiceContainer.ts,
+ipcHandlers.ts (connect call sites), constants.ts.
+Not deep-read (thin / peripheral): events/{chat,contact,group,misc,message,sync}Events.ts type files,
+WAEventLogger.ts, BaileysPatcher.ts, types/*.
+
+### [S3-01] high — kernel/api-modules/KernelEventsModule.ts:31-36 + services/whatsapp/WhatsAppConnectionManager.ts:62-98
+**What:** `KernelEventsModule.onBusConnected(newBus)` only replays `pendingSubscriptions` (subs
+requested while the bus was `null`). Subscriptions that were registered live (bus was non-null at
+`subscribe` time) live only in `pluginSubscriptions` and are **never re-attached** to a new bus.
+`WhatsAppConnectionManager.connect()` does `this.currentBus.removeAllListeners(); this.currentBus =
+eventBusFactory()` and calls `busCreatedCallback(newBus)` → `onBusConnected(newBus)` every time it
+re-runs.
+**Why it's a bug:** `connect()` is re-invoked on user actions — `ipcHandlers.ts:252`
+(`set-sync-full-history`), the `wa-connect` IPC path, re-login — not just first boot. After any such
+re-connect, every plugin that subscribed to WhatsApp events (e.g. the CodeTantra OTP relay plugin)
+silently stops receiving them: `removeAllListeners()` killed the old bus's handlers and nothing
+re-registers them on the new bus. No error, no log. `pluginSubscriptions` still lists the plugin as
+subscribed, so even a defensive re-subscribe by the plugin would just replace a handler on a bus no
+one holds. Persists until full app restart.
+**Fix idea:** in `onBusConnected`, iterate `pluginSubscriptions` and `registerOnBus(newBus, …)` for
+every existing `{pluginId,event}` in addition to draining `pendingSubscriptions`; or have
+`WhatsAppConnectionManager` keep the same bus instance across reconnects and only reset the built-in
+subscribers.
+**Status:** open
+
+### [S3-02] med — services/whatsapp/subscribers/EmbeddingSyncSubscriber.ts:17-45
+**What:** The subscriber registers for `wa-connected`, `wa-sync-progress`, `wa-sync-status`,
+`wa-sync-complete` on the `WAEventBus`. Grep of the whole codebase shows **no production code emits
+those events on the bus** — only `EmbeddingSyncSubscriber.test.ts`. HistorySyncManager /
+WACatchUpManager send `wa-sync-*` via `mainWindow.webContents.send(...)` (renderer IPC), not
+`bus.emit(...)`.
+**Why it's a bug:** the intended decoupled "pause the embedding pipeline while WhatsApp is
+ingesting" mechanism is dead. Embedding-pause currently works only via direct
+`embeddingService.setPaused()` calls scattered in `connect()`, `HistorySyncManager`,
+`WACatchUpManager`. Any ingestion path that forgets a direct call runs CPU/GPU embedding
+concurrently with heavy DB ingestion (the exact thing this subscriber was meant to prevent).
+Secondary: if the events were ever wired, `onSyncProgress` unpauses on *any* payload with
+`progress >= 100`, including intermediate group-hydration progress callbacks in
+`HistorySyncManager.finishSync`, so it would unpause mid-dedup.
+**Fix idea:** either emit the `wa-sync-*` domain events on the bus from HistorySyncManager/
+WACatchUpManager (single source of truth) and delete the direct `setPaused` calls, or delete
+`EmbeddingSyncSubscriber` and keep the direct calls — but don't ship a no-op subscriber that looks
+like it's providing the guarantee.
+**Status:** open
+
+### [S3-03] med — services/whatsapp/HistorySyncManager.ts:85-88 (also the worker's copy via same file)
+**What:** `this.syncTimeout = setTimeout(() => this.finishSync(sock, syncFullHistory),
+HISTORY_SYNC_TIMEOUT_MS)` (180 000 ms) is armed **before** `await handleHistorySync(data, …)` and is
+not cleared for the duration of that await.
+**Why it's a bug:** if a single sync chunk's persist takes longer than 180 s (large
+INITIAL_BOOTSTRAP / FULL chunk, slow disk, SQLite lock contention), the safety timer fires *while
+`handleHistorySync` is still writing messages*. `finishSync` then: sets `syncComplete = true`,
+`isInitialSyncInProgress = false`, unpauses `embeddingService` and the favorite-sticker queue, runs
+`groupHydrationService.hydrateGroups`, `identityReconciliationService.deduplicateIdentities()` and
+`authSettingsService.setHistorySyncCompleted()` — all concurrent with the unfinished ingestion.
+Dedup running against a half-imported dataset can merge/split identities wrongly, and
+`history_sync_completed` gets persisted before the sync actually finished, so a later restart skips
+re-syncing the missing tail.
+**Fix idea:** arm the timeout to cover *inactivity between chunks*, not work in flight — clear it at
+the top of `handleSyncChunk` and re-arm only in a `finally` after `handleHistorySync` resolves; or
+guard `finishSync` so it no-ops while a chunk is actively being processed.
+**Status:** open
+
+### [S3-04] low — services/whatsapp/WhatsAppConnectionManager.ts (connect call sites) & ipcHandlers.ts:252
+**What:** `connect()` is invoked as a floating promise in several places: `ipcHandlers.ts:252`
+(`set-sync-full-history` → `waConnectionManager.connect()` with no `await`/`.catch`), and
+`index.ts` `set-sync-full-history`/reconnect paths. `connect()` does real async work that can reject
+(`authSettingsService.hasCreds()`, `chatRepository.countChats()`, `dataWipeService.wipeAllData()`,
+`getHistorySyncCompleted()`).
+**Why it's a bug:** twin of [S1-01] on the main-process side. A rejection during a settings-driven
+reconnect is an unhandled promise rejection and leaves the connection half-torn-down (old bus
+already `removeAllListeners()`'d at the top of `connect()`, new bus/worker not started) with nothing
+surfaced to the user.
+**Fix idea:** `await` + try/catch (or `.catch` with a user-visible error + safe-state restore) at
+every `connect()` call site.
+**Status:** open
+
+### [S3-05] low — ServiceContainer.ts:332-335, 381-384 (dead duplicated socket stack in main)
+**What:** `WASocketFactory`, `WACatchUpManager`, `HistorySyncManager`, `WAEventWiringService` are
+constructed in `ServiceContainer` and exported on the container, but in the **main** process
+`waEventWiringService.wire()` / `WAEventHandler` are never instantiated or called (grep: `.wire(`
+and `new WAEventHandler(` appear only in `workers/whatsapp/bootstrapWorkerRepositories.ts` and
+tests). The socket now lives entirely in the worker, which builds its **own**
+`historySyncManager` / `eventHandler`.
+**Why it's a bug:** latent-bug / maintenance hazard. The main copies hold live references
+(`embeddingService`, repos, `getMainWindow`) and pause/timeout logic that never runs, so reading
+`ServiceContainer` gives a false picture of where history-sync and embedding-pause happen. A future
+change wiring one of these in main would double-process every chunk. The main `HistorySyncManager`'s
+embedding-pause is inert (see [S3-02]).
+**Fix idea:** delete the unused main-process instances (or the classes if the worker's are the only
+real users) and keep a single source of truth.
+**Status:** open
+
+### [S3-06] low — services/whatsapp/subscribers/CallEventSubscriber.ts:25-32
+**What:** `upsertCallLog({ …, timestamp: BigInt(Math.floor(Date.now() / 1000)) })` — always uses
+"now", ignoring `call.date` / `call.offerTime` present on the Baileys `call` payload (the synthetic
+call-message path in `WAEventHandler.handleCallEvent` *does* use `call.date`).
+**Why it's a bug:** on reconnect Baileys re-delivers queued `call` events (missed calls while
+offline); their DB `CallLog.timestamp` is stamped with the reconnect time, not the call time, so
+call history and any message enrichment keyed on call time is wrong by minutes-to-hours.
+**Fix idea:** prefer `call.date?.getTime()` / offer timestamp; fall back to `Date.now()` only when
+absent.
+**Status:** open
 
 ## Slice 4 — Chats & sync
 
