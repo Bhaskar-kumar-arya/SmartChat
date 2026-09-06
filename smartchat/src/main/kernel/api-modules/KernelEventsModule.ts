@@ -26,9 +26,21 @@ export class KernelEventsModule extends BaseKernelModule {
 
   /**
    * Called by the kernel when a new WAEventBus becomes available (WhatsApp connected).
-   * Flushes all subscriptions that were queued while the bus was null.
+   *
+   * `connect()` calls `removeAllListeners()` on the old bus and swaps in a fresh
+   * instance on *every* reconnect (settings toggle, re-login, cold start), so we
+   * must re-attach every already-registered live subscription to the new bus —
+   * not just the ones queued while no bus existed. Missing this silently kills
+   * all plugin WhatsApp event delivery after the first reconnect. (S3-01)
    */
   public onBusConnected(bus: IWAEventBus): void {
+    // Re-attach existing live subscriptions.
+    for (const [pluginId, pluginMap] of this.pluginSubscriptions) {
+      for (const event of pluginMap.keys()) {
+        this.registerOnBus(bus, pluginId, event as keyof WAEventMap)
+      }
+    }
+    // Drain subscriptions requested while the bus was null.
     for (const { pluginId, event } of this.pendingSubscriptions) {
       this.registerOnBus(bus, pluginId, event)
     }

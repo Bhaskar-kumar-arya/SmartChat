@@ -27,6 +27,7 @@ import { PrismaPluginStorageRepository } from './kernel/storage/PrismaPluginStor
 import { KernelBootstrapper } from './kernel/KernelBootstrapper'
 import { registerContributionIpcHandlers } from './kernel/ipc/contributionIpc'
 import { registerPluginProtocol } from './protocol/pluginProtocol'
+import type { IWAEventBus } from './services/whatsapp/IWAEventBus'
 
 function getLogFile(): string {
   try {
@@ -85,6 +86,13 @@ let services: ReturnType<typeof createServices>
 let waConnectionManager: WhatsAppConnectionManager
 let trayService: TrayService | null = null
 let isQuitting = false
+
+// The kernel events module only exists once bootstrapper.boot() resolves, but
+// waConnectionManager.connect() (and its bus creation) can run first. Wire the
+// onBusCreated callback synchronously and buffer the latest bus here until the
+// module is ready, so cold-start plugin WhatsApp subscriptions are not lost. (S13-01)
+let kernelEventsModule: { onBusConnected(bus: IWAEventBus): void } | null = null
+let bufferedWaBus: IWAEventBus | null = null
 
 const getSock = () => waConnectionManager?.getSocket() || null
 
@@ -211,10 +219,15 @@ app.whenReady().then(() => {
 
   bootstrapper.boot().then((bootResult) => {
     registerContributionIpcHandlers(bootResult.registry, bootResult.host, () => mainWindow?.webContents, bootResult.loader, bootResult.permissions, services.toolRegistry, bootResult.panelHost)
-    // When WhatsApp creates a new event bus (on connect/reconnect), flush any queued plugin subscriptions
-    waConnectionManager.onBusCreated((bus) => {
-      bootResult.eventsModule.onBusConnected(bus)
-    })
+    // The onBusCreated callback is wired synchronously below (after
+    // waConnectionManager is constructed). Now that the events module exists,
+    // point the buffer at it and replay any bus that was created before boot
+    // finished. (S13-01)
+    kernelEventsModule = bootResult.eventsModule
+    if (bufferedWaBus) {
+      bootResult.eventsModule.onBusConnected(bufferedWaBus)
+      bufferedWaBus = null
+    }
   }).catch((err) => logMain('[Main] Failed to boot microkernel', err))
 
 
@@ -236,6 +249,17 @@ app.whenReady().then(() => {
     () => new WAEventBus(),
     services.waWorkerBridge
   )
+  // Wire the WhatsApp bus → kernel events bridge synchronously, before
+  // createWindow() → ready-to-show → connect() can create the first bus.
+  // Buffers the bus if boot() has not resolved yet. (S13-01)
+  waConnectionManager.onBusCreated((bus) => {
+    if (kernelEventsModule) {
+      kernelEventsModule.onBusConnected(bus)
+    } else {
+      bufferedWaBus = bus
+    }
+  })
+
   registerIpcHandlers(services, getSock, waConnectionManager, secureRegistry)
   initVectorDb(services.vectorSyncService)
 

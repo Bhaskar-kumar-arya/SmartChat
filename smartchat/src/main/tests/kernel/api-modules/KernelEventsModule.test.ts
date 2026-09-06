@@ -112,6 +112,72 @@ describe('KernelEventsModule', () => {
     })
   })
 
+  it('S3-01: re-attaches live subscriptions to a fresh bus on reconnect', async () => {
+    const getChannel = vi.fn().mockReturnValue({
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    })
+    const eventsModule = new KernelEventsModule(mockPermissions, mockBus, getChannel)
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    // Plugin subscribes while the initial bus is live (not queued as pending).
+    await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+    expect(mockBus.on).toHaveBeenCalledWith('message:incoming', expect.any(Function))
+
+    // connect() tears down the old bus and swaps in a brand-new instance.
+    const newBus: IWAEventBus = {
+      on: vi.fn(),
+      off: vi.fn(),
+      emit: vi.fn(),
+      removeAllListeners: vi.fn()
+    }
+    eventsModule.onBusConnected(newBus)
+
+    // The existing subscription must be re-registered on the new bus, otherwise
+    // the plugin stops receiving WhatsApp events after the first reconnect.
+    expect(newBus.on).toHaveBeenCalledWith('message:incoming', expect.any(Function))
+  })
+
+  it('S3-01: the new bus handler still forwards to the plugin channel after reconnect', async () => {
+    const mockChannel = {
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    }
+    const eventsModule = new KernelEventsModule(
+      mockPermissions,
+      mockBus,
+      vi.fn().mockReturnValue(mockChannel)
+    )
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+
+    let newHandler: ((data: any) => Promise<void>) | null = null
+    const newBus: IWAEventBus = {
+      on: vi.fn().mockImplementation((evt, fn) => {
+        if (evt === 'message:incoming') newHandler = fn as any
+        return newBus
+      }),
+      off: vi.fn(),
+      emit: vi.fn(),
+      removeAllListeners: vi.fn()
+    }
+    eventsModule.onBusConnected(newBus)
+    expect(newHandler).not.toBeNull()
+
+    await newHandler!({ id: 'm2' })
+    expect(mockChannel.sendToPlugin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'kernel:events:emit',
+        payload: { event: 'message:incoming', payload: { id: 'm2' } }
+      })
+    )
+  })
+
   it('sanitizes event payloads containing sock objects, functions, and bigints', async () => {
     const mockChannel = {
       sendToPlugin: vi.fn(),

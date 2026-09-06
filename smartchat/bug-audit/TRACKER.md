@@ -267,6 +267,14 @@ every existing `{pluginId,event}` in addition to draining `pendingSubscriptions`
 `WhatsAppConnectionManager` keep the same bus instance across reconnects and only reset the built-in
 subscribers.
 **Status:** open
+**Fix status:** fixed in `main` (S3-01+S13-01 combined commit — same root cause). `KernelEventsModule.onBusConnected`
+now re-attaches **every** entry in `pluginSubscriptions` to the incoming bus via `registerOnBus`
+(fresh handler closure bound to the new bus) before draining `pendingSubscriptions`. `registerOnBus`
+already overwrites the stored per-event handler, so no leak/dupe. Tests: `KernelEventsModule.test.ts`
++2 — a live subscription is re-registered on a new bus after `onBusConnected`, and the new bus's
+handler still forwards to the plugin channel. Kernel suite: 200 pass, 3 pre-existing baseline
+failures unchanged (declarative-modal / voice-transcriber e2e). typecheck clean. Not manually run
+in-app (would need a plugin subscribed to WA events + a settings-toggle reconnect).
 
 ### [S3-02] med — services/whatsapp/subscribers/EmbeddingSyncSubscriber.ts:17-45
 **What:** The subscriber registers for `wa-connected`, `wa-sync-progress`, `wa-sync-status`,
@@ -1851,6 +1859,15 @@ have it queue the bus until `eventsModule` exists; or have `connect()` await a "
 signal; or keep one stable bus instance for the process lifetime (also fixes S3-01/S9-01) and let
 the events module attach to it once.
 **Status:** open
+**Fix status:** fixed in `main` (S3-01+S13-01 combined commit). `src/main/index.ts` now wires
+`waConnectionManager.onBusCreated(...)` **synchronously** right after the manager is constructed —
+before `createWindow()` → `ready-to-show` → `connect()` can create the first bus. Module-scoped
+`kernelEventsModule` / `bufferedWaBus`: the sync callback forwards to the module if `boot()` has
+resolved, else stashes the latest bus; `boot().then` sets `kernelEventsModule` and replays
+`bufferedWaBus`. So a cold-start bus created before boot finishes is no longer dropped, and the
+first plugin subscriptions (registered during `host.load`) get drained onto it. (The `boot()`
+floating-promise `.catch`-only-logs gap remains — noted; a full "boot failed → surface + retry" is
+out of scope here.) typecheck clean. Not manually run in-app.
 
 ### [S13-02] med — src/main/index.ts:266-282 (`will-quit`) + KernelBootstrapper.ts:190-197 (`dispose`)
 **What:** The `will-quit` cleanup only awaits `apiServer.stop()` and `aiService.cleanup()`, then
