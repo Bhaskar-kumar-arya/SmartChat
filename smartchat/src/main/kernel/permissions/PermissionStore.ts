@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, copyFileSync } from 'fs'
 import { dirname } from 'path'
 import { IPermissionStore, PermissionScope, PluginPermissionState } from './IPermissionStore'
 
@@ -107,16 +107,45 @@ export class PermissionStore implements IPermissionStore {
 
   private loadFromDisk(): void {
     if (!this.storageFilePath) return
+    if (!existsSync(this.storageFilePath)) return
 
+    let raw: string
     try {
-      if (existsSync(this.storageFilePath)) {
-        const raw = readFileSync(this.storageFilePath, 'utf-8')
-        this.storageData = JSON.parse(raw)
-      }
+      raw = readFileSync(this.storageFilePath, 'utf-8')
     } catch (err: unknown) {
-      console.error('[PermissionStore] Failed to load permissions from disk:', err)
-      this.storageData = { plugins: {} }
+      console.error('[PermissionStore] Failed to read permissions file:', err)
+      throw err
     }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch (err: unknown) {
+      // Do NOT reset to `{ plugins: {} }` — that silently discards every
+      // user-configured denial and resource scope (fail-open). Preserve the
+      // bad file and fail loud instead. (S8-05)
+      const backup = `${this.storageFilePath}.corrupt-${Date.now()}`
+      try {
+        copyFileSync(this.storageFilePath, backup)
+      } catch { /* best-effort */ }
+      throw new Error(
+        `[PermissionStore] permissions file is corrupt and could not be parsed. ` +
+        `A copy was saved to ${backup}. Refusing to start with all plugin restrictions dropped.`
+      )
+    }
+
+    if (!parsed || typeof parsed !== 'object' || typeof (parsed as PersistedPermissionData).plugins !== 'object' || (parsed as PersistedPermissionData).plugins === null) {
+      const backup = `${this.storageFilePath}.corrupt-${Date.now()}`
+      try {
+        copyFileSync(this.storageFilePath, backup)
+      } catch { /* best-effort */ }
+      throw new Error(
+        `[PermissionStore] permissions file has an unexpected shape. ` +
+        `A copy was saved to ${backup}. Refusing to start with all plugin restrictions dropped.`
+      )
+    }
+
+    this.storageData = parsed as PersistedPermissionData
   }
 
   private saveToDisk(): void {
@@ -127,7 +156,12 @@ export class PermissionStore implements IPermissionStore {
       if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true })
       }
-      writeFileSync(this.storageFilePath, JSON.stringify(this.storageData, null, 2), 'utf-8')
+      // Atomic write: a crash mid-write must not leave a truncated file that
+      // fails to parse on next launch (which used to silently drop all
+      // restrictions). (S8-05)
+      const tmp = `${this.storageFilePath}.tmp`
+      writeFileSync(tmp, JSON.stringify(this.storageData, null, 2), 'utf-8')
+      renameSync(tmp, this.storageFilePath)
     } catch (err: unknown) {
       console.error('[PermissionStore] Failed to save permissions to disk:', err)
     }

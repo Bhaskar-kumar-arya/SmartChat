@@ -1,4 +1,4 @@
-import { join } from 'path'
+import { join, resolve, sep } from 'path'
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IMessageQueryService } from '../../services/messages/IMessageQueryService'
@@ -59,6 +59,38 @@ export class KernelMessagesModule extends BaseKernelModule {
     // reach this branch; unscoped plugins are unaffected either way.
   }
 
+  /**
+   * `sendMedia` reads an arbitrary path off disk and uploads it. `messages:send`
+   * (even chat-scoped) must NOT double as "read any local file and exfiltrate it
+   * as media". Restrict the source path to files the plugin can legitimately
+   * reach: its own extension directory, or the app's media cache (which it can
+   * already read via `downloadMedia`). (S7-02)
+   */
+  private resolveSendableMediaPath(pluginId: string, filePath: string): string {
+    if (typeof filePath !== 'string' || filePath.length === 0) {
+      throw new KernelError('BAD_REQUEST', 'sendMedia requires a non-empty filePath')
+    }
+    const userData = this.getUserDataPath?.()
+    if (!userData) {
+      throw new KernelError('INTERNAL_ERROR', 'sendMedia is unavailable: no user-data path configured')
+    }
+    const resolved = resolve(filePath)
+    const allowedRoots = [
+      resolve(userData, 'media'),
+      resolve(userData, 'extensions', pluginId)
+    ]
+    const contained = allowedRoots.some(
+      (root) => resolved === root || resolved.startsWith(root + sep)
+    )
+    if (!contained) {
+      throw new KernelError(
+        'PERMISSION_DENIED',
+        `Plugin '${pluginId}' may only send files from its own extension directory or the app media cache`
+      )
+    }
+    return resolved
+  }
+
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
     const action = this.extractAction(type)
 
@@ -107,13 +139,14 @@ export class KernelMessagesModule extends BaseKernelModule {
         }
         this.requireCapability(pluginId, 'messages:send')
         this.requireResourceScope(pluginId, 'messages:send', jid)
+        const safeFilePath = this.resolveSendableMediaPath(pluginId, filePath)
         const sock = this.getSocketOrThrow()
         const qMsgId = options?.quotedMsgId || quotedMsgId
         const mList = options?.mentions || mentions
         const msg = await this.messageActionService.sendMediaMessageWorkflow(
           sock,
           jid,
-          filePath,
+          safeFilePath,
           caption,
           qMsgId,
           mList

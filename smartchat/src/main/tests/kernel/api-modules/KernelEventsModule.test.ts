@@ -64,6 +64,34 @@ describe('KernelEventsModule', () => {
     expect(result).toEqual({ success: true, event: 'message:incoming' })
   })
 
+  it('S8-06: removePlugin detaches every bus handler and forgets subscriptions', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    await module.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+    await module.handle('plugin-a', 'kernel:events:subscribe', { event: 'chat:update' as any })
+    vi.mocked(mockBus.off).mockClear()
+
+    module.removePlugin('plugin-a')
+
+    expect(mockBus.off).toHaveBeenCalledWith('message:incoming', expect.any(Function))
+    expect(mockBus.off).toHaveBeenCalledWith('chat:update', expect.any(Function))
+
+    // A later bus reconnect must not resurrect them.
+    const newBus = { on: vi.fn(), off: vi.fn(), emit: vi.fn(), removeAllListeners: vi.fn() } as any
+    module.onBusConnected(newBus)
+    expect(newBus.on).not.toHaveBeenCalled()
+  })
+
+  it('S8-06: unsubscribe before the bus connects removes the pending entry', async () => {
+    const noBusModule = new KernelEventsModule(mockPermissions, null)
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    await noBusModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+    await noBusModule.handle('plugin-a', 'kernel:events:unsubscribe', { event: 'message:incoming' })
+
+    const lateBus = { on: vi.fn(), off: vi.fn(), emit: vi.fn(), removeAllListeners: vi.fn() } as any
+    noBusModule.onBusConnected(lateBus)
+    expect(lateBus.on).not.toHaveBeenCalled()
+  })
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:events:unknown', {})

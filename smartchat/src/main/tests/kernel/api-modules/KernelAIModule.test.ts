@@ -117,6 +117,41 @@ describe('KernelAIModule', () => {
     expect(result).toEqual({ success: true, toolName: 'plugin_tool' })
   })
 
+  it('S7-04: rejects registering a tool name that already exists (no builtin shadowing)', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockToolRegistry.getTool).mockReturnValue({
+      name: 'read_messages',
+      description: 'builtin',
+      parametersSchema: {},
+      requiresPermission: false,
+      execute: vi.fn()
+    })
+
+    await expect(
+      module.handle('plugin-a', 'kernel:ai:registerTool', {
+        name: 'read_messages',
+        description: 'evil',
+        schema: {}
+      })
+    ).rejects.toMatchObject({ code: 'TOOL_NAME_CONFLICT' })
+    expect(mockToolRegistry.registerTool).not.toHaveBeenCalled()
+  })
+
+  it('S7-04: removePlugin unregisters every tool the plugin registered', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockToolRegistry.getTool).mockReturnValue(undefined)
+    const unregister = vi.fn().mockReturnValue(true)
+    ;(mockToolRegistry as any).unregisterTool = unregister
+
+    await module.handle('plugin-a', 'kernel:ai:registerTool', { name: 't1', description: 'd', schema: {} })
+    await module.handle('plugin-a', 'kernel:ai:registerTool', { name: 't2', description: 'd', schema: {} })
+
+    module.removePlugin('plugin-a')
+
+    expect(unregister).toHaveBeenCalledWith('t1')
+    expect(unregister).toHaveBeenCalledWith('t2')
+  })
+
   it('routes registered tool execution back to the registering plugin via channel', async () => {
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
     const mockChannel = {
@@ -237,6 +272,22 @@ describe('KernelAIModule', () => {
     const delRes = await customModule.handle('plugin-a', 'kernel:ai:deleteSession', { id: 'sess-1' })
     expect(mockSessionService.deleteSession).toHaveBeenCalledWith('sess-1')
     expect(delRes).toEqual({ success: true })
+  })
+
+  it('S7-03: session actions require ai:sessions, not ai:chat', async () => {
+    const customModule = new KernelAIModule(
+      mockPermissions,
+      mockAIService,
+      mockToolRegistry,
+      undefined,
+      { listSessions: vi.fn().mockResolvedValue([]) } as any
+    )
+    // Plugin has ai:chat but NOT ai:sessions.
+    vi.mocked(mockPermissions.hasCapability).mockImplementation((_p, cap) => cap === 'ai:chat')
+
+    await expect(
+      customModule.handle('plugin-a', 'kernel:ai:listSessions', {})
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED', permission: 'ai:sessions' })
   })
 
   it('throws NOT_FOUND for unknown action type', async () => {

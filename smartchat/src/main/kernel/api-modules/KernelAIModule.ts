@@ -19,6 +19,23 @@ export class KernelAIModule extends BaseKernelModule {
     super(permissions)
   }
 
+  /** Tool names each plugin has registered, so they can be torn down on unload. (S7-04) */
+  private readonly pluginTools = new Map<string, Set<string>>()
+
+  /**
+   * Called by PluginHost when a plugin is unloaded/uninstalled: drop every AI
+   * tool it registered so the model can no longer invoke a dead closure and the
+   * name is freed for re-registration. (S7-04)
+   */
+  public removePlugin(pluginId: string): void {
+    const names = this.pluginTools.get(pluginId)
+    if (!names) return
+    for (const name of names) {
+      this.toolRegistry.unregisterTool?.(name)
+    }
+    this.pluginTools.delete(pluginId)
+  }
+
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
     const action = this.extractAction(type)
 
@@ -43,7 +60,10 @@ export class KernelAIModule extends BaseKernelModule {
 
       case 'createSession': {
         const { title, modelId } = payload as { title: string; modelId?: string | null }
-        this.requireCapability(pluginId, 'ai:chat')
+        // Session CRUD exposes the user's *entire* main-app AI chat history
+        // (read + delete). That is a much higher bar than "may talk to the
+        // LLM", so it needs its own capability rather than riding on `ai:chat`. (S7-03)
+        this.requireCapability(pluginId, 'ai:sessions')
         if (!this.aiChatSessionService) {
           throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
         }
@@ -53,7 +73,7 @@ export class KernelAIModule extends BaseKernelModule {
 
       case 'listSessions': {
         const { page = 1, pageSize = 20 } = (payload as { page?: number; pageSize?: number }) || {}
-        this.requireCapability(pluginId, 'ai:chat')
+        this.requireCapability(pluginId, 'ai:sessions')
         if (!this.aiChatSessionService) {
           throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
         }
@@ -63,7 +83,7 @@ export class KernelAIModule extends BaseKernelModule {
 
       case 'getSession': {
         const { id } = payload as { id: string }
-        this.requireCapability(pluginId, 'ai:chat')
+        this.requireCapability(pluginId, 'ai:sessions')
         if (!this.aiChatSessionService) {
           throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
         }
@@ -73,7 +93,7 @@ export class KernelAIModule extends BaseKernelModule {
 
       case 'renameSession': {
         const { id, title } = payload as { id: string; title: string }
-        this.requireCapability(pluginId, 'ai:chat')
+        this.requireCapability(pluginId, 'ai:sessions')
         if (!this.aiChatSessionService) {
           throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
         }
@@ -83,7 +103,7 @@ export class KernelAIModule extends BaseKernelModule {
 
       case 'deleteSession': {
         const { id } = payload as { id: string }
-        this.requireCapability(pluginId, 'ai:chat')
+        this.requireCapability(pluginId, 'ai:sessions')
         if (!this.aiChatSessionService) {
           throw new KernelError('INTERNAL_ERROR', 'AIChatSessionService is not available in KernelAIModule')
         }
@@ -110,6 +130,19 @@ export class KernelAIModule extends BaseKernelModule {
           schema: object
         }
         this.requireCapability(pluginId, 'ai:tools:register')
+
+        if (typeof name !== 'string' || name.length === 0) {
+          throw new KernelError('BAD_REQUEST', 'registerTool requires a non-empty tool name')
+        }
+        // Reject a name that already exists — otherwise a plugin can shadow a
+        // trusted builtin (`read_messages`, `execute_script`, …) or another
+        // plugin's tool, and the user's assistant silently runs the impostor. (S7-04)
+        if (this.toolRegistry.getTool(name)) {
+          throw new KernelError(
+            'TOOL_NAME_CONFLICT',
+            `AI tool '${name}' is already registered; choose a unique name`
+          )
+        }
 
         const tool: AITool = {
           name,
@@ -151,6 +184,10 @@ export class KernelAIModule extends BaseKernelModule {
           }
         }
         this.toolRegistry.registerTool(tool)
+        if (!this.pluginTools.has(pluginId)) {
+          this.pluginTools.set(pluginId, new Set())
+        }
+        this.pluginTools.get(pluginId)!.add(name)
         return { success: true, toolName: name }
       }
 

@@ -11,6 +11,10 @@ export class ToolRegistry implements IToolRegistry, ISystemInstructionBuilder {
     this.tools.set(tool.name, tool);
   }
 
+  unregisterTool(name: string): boolean {
+    return this.tools.delete(name);
+  }
+
   getTool(name: string): AITool | undefined {
     return this.tools.get(name);
   }

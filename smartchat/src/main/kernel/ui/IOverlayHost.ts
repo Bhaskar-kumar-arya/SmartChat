@@ -24,6 +24,8 @@ export interface IOverlayHost {
   resolveModal(modalId: string, data: unknown): void
 
   showOverlay(pluginId: string, opts: WebviewOverlayOptions): Promise<unknown>
+  /** True when `overlayId` is a live overlay created by `pluginId`. (S7-05) */
+  isOverlayOwnedBy(overlayId: string, pluginId: string): boolean
   sendToOverlay(overlayId: string, event: string, data: unknown): void
   closeOverlay(overlayId: string): void
   onOverlaySubmit(overlayId: string, data: unknown): void

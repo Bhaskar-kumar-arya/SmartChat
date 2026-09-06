@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { join, resolve } from 'path'
 import { KernelMessagesModule } from '../../../kernel/api-modules/KernelMessagesModule'
 import { IPermissionStore } from '../../../kernel/permissions/IPermissionStore'
 import { IMessageQueryService } from '../../../services/messages/IMessageQueryService'
@@ -247,7 +248,17 @@ describe('KernelMessagesModule', () => {
     expect(result).toEqual([{ id: 'msg-10', chatJid: '123@s.whatsapp.net', textContent: 'Context message' }])
   })
 
-  it('allows sendMedia when messages:send capability and scope are granted', async () => {
+  it('allows sendMedia from the plugin extension dir when messages:send capability and scope are granted', async () => {
+    const userData = '/mock/user/data'
+    const safePath = join(userData, 'extensions', 'plugin-a', 'out.png')
+    const customModule = new KernelMessagesModule(
+      mockPermissions,
+      mockMessageQueryService,
+      mockMessageActionService,
+      () => ({ sendMessage: vi.fn() } as any),
+      undefined,
+      () => userData
+    )
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
     vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
     vi.mocked(mockMessageActionService.sendMediaMessageWorkflow).mockResolvedValue({
@@ -256,9 +267,9 @@ describe('KernelMessagesModule', () => {
       textContent: 'Caption'
     } as any)
 
-    const result = await module.handle('plugin-a', 'kernel:messages:sendMedia', {
+    const result = await customModule.handle('plugin-a', 'kernel:messages:sendMedia', {
       jid: '123@s.whatsapp.net',
-      filePath: '/tmp/test.png',
+      filePath: safePath,
       caption: 'Caption'
     })
 
@@ -266,12 +277,33 @@ describe('KernelMessagesModule', () => {
     expect(mockMessageActionService.sendMediaMessageWorkflow).toHaveBeenCalledWith(
       expect.anything(),
       '123@s.whatsapp.net',
-      '/tmp/test.png',
+      resolve(safePath),
       'Caption',
       undefined,
       undefined
     )
     expect(result).toEqual({ id: 'msg-media-1', chatJid: '123@s.whatsapp.net', textContent: 'Caption' })
+  })
+
+  it('S7-02: sendMedia rejects a filePath outside the plugin sandbox / media cache', async () => {
+    const customModule = new KernelMessagesModule(
+      mockPermissions,
+      mockMessageQueryService,
+      mockMessageActionService,
+      () => ({ sendMessage: vi.fn() } as any),
+      undefined,
+      () => '/mock/user/data'
+    )
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+
+    await expect(
+      customModule.handle('plugin-a', 'kernel:messages:sendMedia', {
+        jid: '123@s.whatsapp.net',
+        filePath: '/etc/passwd'
+      })
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(mockMessageActionService.sendMediaMessageWorkflow).not.toHaveBeenCalled()
   })
 
   it('allows edit when messages:send capability is granted', async () => {

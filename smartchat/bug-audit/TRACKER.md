@@ -1003,6 +1003,12 @@ media to its own chat / a chat the attacker owns. `messages:send` is a much lowe
 **Fix idea:** restrict `sendMedia` source paths to a per-plugin staging dir (or a path the user
 explicitly picked via a dialog), resolve+normalize and verify containment before reading.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 7) — `KernelMessagesModule.sendMedia` now runs
+`resolveSendableMediaPath(pluginId, filePath)` which `path.resolve`s the arg and requires it to sit
+inside `<userData>/media` (the cache the plugin can already read via `downloadMedia`) or
+`<userData>/extensions/<pluginId>` (its own dir); anything else → `PERMISSION_DENIED`, and the
+resolved path (not the raw arg) is uploaded. Test: `KernelMessagesModule.test.ts` (+1 sandbox path
+allowed/resolved, +1 `/etc/passwd` rejected). typecheck clean.
 
 ### [S7-03] med — api-modules/KernelAIModule.ts:44-92 (session actions)
 **What:** `createSession` / `listSessions` / `getSession` / `renameSession` / `deleteSession` gate
@@ -1016,6 +1022,13 @@ private user data + data loss, from a capability that looks like "may talk to th
 the caller's own sessions; or split "manage sessions" into its own capability that builtins get and
 3rd-party plugins do not.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 7) — the 5 session actions (`create/list/get/rename/delete
+Session`) now `requireCapability(pluginId, 'ai:sessions')` instead of riding on `ai:chat`. A plugin
+that only needs to talk to the model no longer gets read+delete over the user's entire main-app AI
+chat history; enumerating/reading/wiping sessions now requires an explicit, separately-granted
+capability. (Per-session ownership tagging deferred — this closes the privilege gap with a much
+smaller change.) Test: `KernelAIModule.test.ts` +1 (ai:chat alone → `PERMISSION_DENIED` on
+listSessions).
 
 ### [S7-04] med — api-modules/KernelAIModule.ts:106-155 (`registerTool`) + services/ai/AIToolService.ts:10-12
 **What:** `registerTool` does `toolRegistry.registerTool(tool)` → `this.tools.set(tool.name, tool)`
@@ -1031,6 +1044,14 @@ available" error string to the model).
 **Fix idea:** reject registration of a name that already exists (or namespace plugin tools as
 `<pluginId>/<name>`); add `unregisterTool` and call it from `PluginHost.unload`.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 7) — `registerTool` now rejects a name that already exists in
+the `ToolRegistry` with `TOOL_NAME_CONFLICT` (can't shadow a builtin or another plugin). Added
+`IToolRegistry.unregisterTool` (impl in `ToolRegistry`). `KernelAIModule` tracks each plugin's
+registered tool names and exposes `removePlugin(pluginId)`; `PluginHost.unload` calls a new
+`onPluginUnload` kernel-teardown hook (wired in `KernelBootstrapper`) → `aiModule.removePlugin` so a
+plugin's tools disappear on unload/uninstall instead of leaving a dead `execute` closure. Tests:
+`KernelAIModule.test.ts` +2 (duplicate rejected, removePlugin unregisters), `PluginHost.test.ts` +1
+(hook fired on unload).
 
 ### [S7-05] med — api-modules/KernelUIModule.ts:89-99 (`overlay:send`, `overlay:close`)
 **What:** Unlike `showOverlay` (`ui:overlay`) and the panel actions (`ui:panel` + pluginId-scoped),
@@ -1044,6 +1065,12 @@ tampering across a trust boundary.
 **Fix idea:** require `ui:overlay`, and have `OverlayHost` verify the `overlayId` was created by the
 same `pluginId` before routing.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 7) — `overlay:send` / `overlay:close` now
+`requireCapability(pluginId, 'ui:overlay')` and `requireOverlayOwnership(pluginId, overlayId)`, which
+calls the new `OverlayHost.isOverlayOwnedBy(overlayId, pluginId)` (checks `pendingOverlays[overlayId]
+.pluginId`). A plugin can no longer push events into or close another plugin's overlay. Tests:
+`KernelUIModule.test.ts` +2 (no `ui:overlay` → denied; other plugin's overlayId → denied). Mocks in
+`overlayIpc.test.ts` updated for the new interface method. typecheck clean.
 
 ### [S7-06] low — api-modules/KernelAIModule.ts:94-104 (`callTool`)
 **What:** `callTool` checks `ai:tools:call` + resource scope on the tool **name**, then runs
@@ -1159,6 +1186,10 @@ destination; `forward` does not.
 **Fix idea:** iterate `targetJids` and call `requireResourceScope(pluginId, 'messages:send', t)` for
 each before dispatching.
 **Status:** open
+**Fix status:** fixed in b42bff6 (S7-01 combined fix) — `forward` now loops `targetJids` and calls
+`requireResourceScope(pluginId, 'messages:send', targetJid)` for every destination before dispatch,
+in addition to scoping the source message via `requireMessageScope`. Regression test in
+`KernelMessagesModule.test.ts` ("forward also enforces scope on every destination jid").
 
 ### [S8-03] med — api-modules/KernelMessagesModule.ts:89-98, 100-108 (`edit`, `forward`)
 **What:** Both actions guard the resource scope with `if (jid) { this.requireResourceScope(...) }`.
@@ -1172,6 +1203,11 @@ should be mandatory, not opt-in via a field the caller controls.
 **Fix idea:** resolve the message's real chat JID server-side (from the message row) and scope-check
 against that; never make a security check conditional on an optional request field.
 **Status:** open
+**Fix status:** fixed in b42bff6 (S7-01 combined fix) — `edit` and `forward` now call
+`requireMessageScope(pluginId, 'messages:send', messageId, jid)`, which resolves the message's real
+owning chat via the injected `IMessageOwnerLookup` and scopes on THAT jid (a spoofed/omitted `jid`
+is ignored); a genuinely-missing message with no jid → `NOT_FOUND`. Regression tests in
+`KernelMessagesModule.test.ts` (S7-01 describe block: "edit ignores a spoofed jid…").
 
 ### [S8-04] med — api-modules/KernelMessagesModule.ts:132-162 (`downloadMedia`), 164-172 (`getReceipts`)
 **What:** `downloadMedia` and `getReceipts` check only `requireCapability(pluginId, 'messages:read')`
@@ -1185,6 +1221,12 @@ reads don't.
 **Fix idea:** look up the message's chat JID and `requireResourceScope(pluginId, 'messages:read',
 chatJid)` before returning anything.
 **Status:** open
+**Fix status:** fixed in b42bff6 (S7-01 combined fix) — `downloadMedia` and `getReceipts` (and
+`addFavoriteSticker`) now call `requireMessageScope(pluginId, 'messages:read'|'messages:write',
+messageId)` which resolves the owning chat and scope-checks it. A `messages:read` scoped to chat A
+can no longer pull media/receipts for a message in chat B. Regression tests in
+`KernelMessagesModule.test.ts` (S7-01 describe block: "downloadMedia is denied for a message in a
+chat outside the plugin scope", "getReceipts is allowed when the message belongs to an allowed chat").
 
 ### [S8-05] med — permissions/PermissionStore.ts:108-134 (`loadFromDisk` / `saveToDisk`)
 **What:** Permissions are persisted with a single non-atomic `writeFileSync` of the whole JSON blob.
@@ -1198,6 +1240,12 @@ discarded, so every plugin regains all capabilities its manifest declares (which
 **Fix idea:** write to a temp file + atomic rename; on parse failure preserve a `.corrupt` copy and
 surface an error / keep last-known-good rather than resetting to allow-all.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 8) — `saveToDisk` now writes `<path>.tmp` then `renameSync`s
+into place (atomic; a crash mid-write can't leave a truncated file). `loadFromDisk` no longer resets
+to `{ plugins: {} }` on a parse error or wrong-shape file: it copies the bad file to
+`<path>.corrupt-<ts>` and **throws** (fail-closed) so the app surfaces the problem instead of
+silently dropping every user-configured denial and scope. Tests: `PermissionStore.test.ts` +3
+(corrupt JSON throws + backup written, wrong-shape throws, no `.tmp` left behind).
 
 ### [S8-06] med — api-modules/KernelEventsModule.ts (no unload hook) + plugins/PluginHost.ts:433-462 (`unload`)
 **What:** `PluginHost.unload` unregisters contributions, destroys the channel, unregisters from the
@@ -1216,6 +1264,12 @@ sub→unsub before the bus connects still subscribes on connect.
 **Fix idea:** add `KernelEventsModule.removePlugin(pluginId)` that `bus.off`s every handler in that
 plugin's map and deletes the map + any `pendingSubscriptions` entries; call it from `PluginHost.unload`.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 8) — added `KernelEventsModule.removePlugin(pluginId)`:
+`bus.off`s every handler in that plugin's map, deletes the map, and filters `pendingSubscriptions`.
+Wired into `PluginHost.unload` via the new `onPluginUnload` hook (`KernelBootstrapper`). Also
+`unsubscribe` now drops the matching `pendingSubscriptions` entry (a sub→unsub before the bus
+connected previously still subscribed on connect). Tests: `KernelEventsModule.test.ts` +2 (removePlugin
+detaches handlers and a later `onBusConnected` doesn't resurrect them; pending sub→unsub before bus).
 
 ### [S8-07] med — plugins/PluginHost.ts:445-451 (`unload`, worker plugins)
 **What:** For a non-builtin plugin, `unload` does
@@ -1231,6 +1285,13 @@ teardown.
 **Fix idea:** send `plugin:deactivate`, await a response (or a bounded timeout) from the worker, then
 `destroy()`. Mirror the builtin path which `await builtin.deactivate()` before destroying.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 8) — for a non-builtin plugin whose channel is
+bidirectional, `PluginHost.unload` now `await Promise.race([channel.sendRequestToPlugin({type:
+'plugin:deactivate'}).catch(()=>{}), timeout(2000ms)])` before `contributionRegistry.unregisterAll` /
+`channel.destroy()`. The SDK already responds to `plugin:deactivate` once its `onDeactivate`
+callbacks resolve, so the worker's cleanup (flush storage, close connections) runs before the thread
+is terminated; a hung/unresponsive plugin is capped at 2s. Non-bidirectional channels keep the old
+fire-and-forget `sendToPlugin`. Test: `PluginHost.test.ts` +1 (deactivate ack awaited before destroy).
 
 ### [S8-08] low — permissions/PermissionStore.ts:23-35, 102-106 (no shape validation after load)
 **What:** `loadFromDisk` accepts whatever `JSON.parse` returns. If the file parses to a valid JSON

@@ -6,6 +6,7 @@ import { IKernelAPIRouter } from '../IKernelAPIRouter'
 import { IContributionRegistry } from '../contributions/IContributionRegistry'
 import { ContributionSlot } from '../contributions/ContributionPoints'
 import { DirectPluginChannel } from '../channels/DirectPluginChannel'
+import { isBidirectionalPluginChannel } from '../channels/IPluginChannel'
 import { PluginContext } from './PluginContext'
 import { ContributionsDeclaration } from './PluginManifest'
 import {
@@ -121,8 +122,13 @@ export class PluginHost implements IPluginHost {
     private readonly loader: IPluginLoader,
     private readonly registry: IPluginRegistry,
     private readonly router: IKernelAPIRouter,
-    private readonly contributionRegistry: IContributionRegistry
+    private readonly contributionRegistry: IContributionRegistry,
+    /** Kernel-side teardown for a plugin being unloaded (WA event subs, AI tools). (S7-04 / S8-06) */
+    private readonly onPluginUnload?: (pluginId: string) => void
   ) {}
+
+  /** Grace period for a worker plugin to run its onDeactivate before we terminate it. (S8-07) */
+  private static readonly DEACTIVATE_TIMEOUT_MS = 2000
 
   async registerBuiltin(plugin: IBuiltinPlugin): Promise<void> {
     if (this.registry.get(plugin.id)) {
@@ -443,11 +449,29 @@ export class PluginHost implements IPluginHost {
         this.builtinPlugins.delete(id)
       }
     } else {
-      metadata.channel.sendToPlugin({
+      // Give the worker a chance to actually run its onDeactivate cleanup
+      // (flush storage, close connections) before the channel — and, for
+      // WorkerPluginChannel, the worker thread itself — is torn down. The SDK
+      // responds to plugin:deactivate once its callbacks resolve. (S8-07)
+      const deactivateReq = {
         id: `deactivate-${Date.now()}`,
         type: 'plugin:deactivate',
         payload: {}
-      })
+      }
+      if (isBidirectionalPluginChannel(metadata.channel)) {
+        await Promise.race([
+          metadata.channel.sendRequestToPlugin(deactivateReq).catch(() => undefined),
+          new Promise((resolve) => setTimeout(resolve, PluginHost.DEACTIVATE_TIMEOUT_MS))
+        ])
+      } else {
+        metadata.channel.sendToPlugin(deactivateReq)
+      }
+    }
+
+    try {
+      this.onPluginUnload?.(id)
+    } catch (err) {
+      console.error(`[PluginHost] onPluginUnload hook failed for '${id}':`, err)
     }
 
     this.contributionRegistry.unregisterAll(id)

@@ -47,6 +47,26 @@ export class KernelEventsModule extends BaseKernelModule {
     this.pendingSubscriptions = []
   }
 
+  /**
+   * Called by PluginHost when a plugin is unloaded/uninstalled: detach every
+   * bus handler it registered and forget its subscriptions, otherwise the
+   * orphaned handlers keep deep-cloning every WA event for the life of the bus
+   * and accumulate across reloads. (S8-06)
+   */
+  public removePlugin(pluginId: string): void {
+    const bus = this.resolveBus()
+    const pluginMap = this.pluginSubscriptions.get(pluginId)
+    if (pluginMap) {
+      if (bus) {
+        for (const [event, handler] of pluginMap) {
+          bus.off(event as keyof WAEventMap, handler)
+        }
+      }
+      this.pluginSubscriptions.delete(pluginId)
+    }
+    this.pendingSubscriptions = this.pendingSubscriptions.filter((s) => s.pluginId !== pluginId)
+  }
+
   private registerOnBus(bus: IWAEventBus, pluginId: string, event: keyof WAEventMap): void {
     const handler: AsyncHandler<any> = async (_data: any) => {
       const channel = this.getChannel?.(pluginId)
@@ -116,6 +136,11 @@ export class KernelEventsModule extends BaseKernelModule {
       case 'unsubscribe': {
         const { event } = payload as { event: keyof WAEventMap }
         const bus = this.resolveBus()
+        // Also drop any not-yet-replayed pending entry, or a sub→unsub before
+        // the bus connects still subscribes on connect. (S8-06)
+        this.pendingSubscriptions = this.pendingSubscriptions.filter(
+          (s) => !(s.pluginId === pluginId && s.event === event)
+        )
         const pluginMap = this.pluginSubscriptions.get(pluginId)
         if (bus && pluginMap) {
           const handler = pluginMap.get(String(event))

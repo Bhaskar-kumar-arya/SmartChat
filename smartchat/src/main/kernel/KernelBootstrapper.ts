@@ -168,7 +168,12 @@ export class KernelBootstrapper {
     router.registerModule(logModule)
 
 
-    const host = new PluginHost(loader, pluginRegistry, router, registry)
+    const host = new PluginHost(loader, pluginRegistry, router, registry, (pluginId) => {
+      // Kernel-side teardown when a plugin unloads: detach its WA event-bus
+      // subscriptions (S8-06) and remove any AI tools it registered (S7-04).
+      eventsModule.removePlugin(pluginId)
+      aiModule.removePlugin(pluginId)
+    })
 
     const builtins = [
       new WhatsappCorePlugin(),

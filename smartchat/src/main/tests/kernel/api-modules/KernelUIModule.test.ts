@@ -42,6 +42,7 @@ describe('KernelUIModule', () => {
       showModal: vi.fn(),
       resolveModal: vi.fn(),
       showOverlay: vi.fn(),
+      isOverlayOwnedBy: vi.fn().mockReturnValue(true),
       sendToOverlay: vi.fn(),
       closeOverlay: vi.fn(),
       onOverlaySubmit: vi.fn(),
@@ -198,6 +199,7 @@ describe('KernelUIModule', () => {
   })
 
   it('delegates overlay:send to overlayHost', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
     mockOverlayHost.sendToOverlay = vi.fn()
 
     const result = await module.handle('plugin-a', 'kernel:ui:overlay:send', {
@@ -211,6 +213,7 @@ describe('KernelUIModule', () => {
   })
 
   it('delegates overlay:close to overlayHost', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
     mockOverlayHost.closeOverlay = vi.fn()
 
     const result = await module.handle('plugin-a', 'kernel:ui:overlay:close', {
@@ -219,6 +222,25 @@ describe('KernelUIModule', () => {
 
     expect(mockOverlayHost.closeOverlay).toHaveBeenCalledWith('ov-1')
     expect(result).toEqual({ success: true })
+  })
+
+  it('S7-05: overlay:send is denied when ui:overlay capability is lacking', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(false)
+
+    await expect(
+      module.handle('plugin-a', 'kernel:ui:overlay:send', { overlayId: 'ov-1', event: 'x', data: {} })
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED', permission: 'ui:overlay' })
+    expect(mockOverlayHost.sendToOverlay).not.toHaveBeenCalled()
+  })
+
+  it("S7-05: overlay:send is denied for another plugin's overlay", async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockOverlayHost.isOverlayOwnedBy).mockReturnValue(false)
+
+    await expect(
+      module.handle('plugin-a', 'kernel:ui:overlay:close', { overlayId: 'ov-belongs-to-b' })
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED', permission: 'ui:overlay' })
+    expect(mockOverlayHost.closeOverlay).not.toHaveBeenCalled()
   })
 
   it('denies openPanel when ui:panel capability is lacking', async () => {

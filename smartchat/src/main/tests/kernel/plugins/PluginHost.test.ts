@@ -106,6 +106,37 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
     expect(host.listLoaded()).not.toContain('com.builtin.test')
   })
 
+  it('S8-07 / S7-04 / S8-06: unload() awaits worker deactivate ack and runs the kernel teardown hook', async () => {
+    const onPluginUnload = vi.fn()
+    const hookedHost = new PluginHost(loader, registry, router, contributionRegistry, onPluginUnload)
+
+    const order: string[] = []
+    const mockChannel = {
+      sendToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      sendRequestToPlugin: vi.fn().mockImplementation(async (msg: any) => {
+        expect(msg.type).toBe('plugin:deactivate')
+        order.push('deactivate-ack')
+        return { id: msg.id, ok: true }
+      }),
+      destroy: vi.fn().mockImplementation(() => order.push('destroy'))
+    }
+    const mockManifest: PluginManifest = {
+      id: 'com.external.worker', name: 'W', version: '1.0.0', apiVersion: '2',
+      main: 'dist/index.js', permissions: [], contributions: {}
+    }
+    vi.mocked(loader.load).mockResolvedValue({ manifest: mockManifest, channel: mockChannel as any })
+
+    await hookedHost.load('com.external.worker')
+    await hookedHost.unload('com.external.worker')
+
+    expect(mockChannel.sendRequestToPlugin).toHaveBeenCalled()
+    expect(onPluginUnload).toHaveBeenCalledWith('com.external.worker')
+    // deactivate ack is awaited before the channel (and worker thread) is destroyed
+    expect(order).toEqual(['deactivate-ack', 'destroy'])
+  })
+
   it('load() uses IPluginLoader mock without touching filesystem or worker threads', async () => {
     const mockChannel: IPluginChannel = {
       sendToPlugin: vi.fn(),

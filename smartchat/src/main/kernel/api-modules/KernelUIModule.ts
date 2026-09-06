@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { INotificationService } from '../../services/notification/INotificationService'
-import { KernelNotFoundError } from './KernelErrors'
+import { KernelNotFoundError, KernelPermissionError } from './KernelErrors'
 import { IOverlayHost, WebviewOverlayOptions } from '../ui/IOverlayHost'
 import { IPanelHost } from '../ui/IPanelHost'
 
@@ -32,6 +32,20 @@ export class KernelUIModule extends BaseKernelModule {
       throw new Error('PanelHost is not configured on KernelUIModule')
     }
     return this.panelHost
+  }
+
+  /**
+   * `overlay:send` / `overlay:close` route by a caller-supplied `overlayId`
+   * only. Without an owner check any plugin could push spoofed events into — or
+   * close — another plugin's overlay. (S7-05)
+   */
+  private requireOverlayOwnership(pluginId: string, overlayId: string): void {
+    if (!overlayId || !this.getOverlayHost().isOverlayOwnedBy(overlayId, pluginId)) {
+      throw new KernelPermissionError(
+        `Plugin '${pluginId}' does not own overlay '${overlayId}'`,
+        'ui:overlay'
+      )
+    }
   }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
@@ -88,12 +102,16 @@ export class KernelUIModule extends BaseKernelModule {
 
       case 'overlay:send': {
         const { overlayId, event, data } = (payload as { overlayId: string; event: string; data: unknown }) || {}
+        this.requireCapability(pluginId, 'ui:overlay')
+        this.requireOverlayOwnership(pluginId, overlayId)
         this.getOverlayHost().sendToOverlay(overlayId, event, data)
         return { success: true }
       }
 
       case 'overlay:close': {
         const { overlayId } = (payload as { overlayId: string }) || {}
+        this.requireCapability(pluginId, 'ui:overlay')
+        this.requireOverlayOwnership(pluginId, overlayId)
         this.getOverlayHost().closeOverlay(overlayId)
         return { success: true }
       }

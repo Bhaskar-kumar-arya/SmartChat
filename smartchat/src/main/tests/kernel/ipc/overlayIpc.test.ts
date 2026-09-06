@@ -42,6 +42,7 @@ describe('overlayIpc', () => {
       showModal: vi.fn(),
       resolveModal: vi.fn(),
       showOverlay: vi.fn(),
+      isOverlayOwnedBy: vi.fn().mockReturnValue(true),
       sendToOverlay: vi.fn(),
       closeOverlay: vi.fn(),
       onOverlaySubmit: vi.fn(),

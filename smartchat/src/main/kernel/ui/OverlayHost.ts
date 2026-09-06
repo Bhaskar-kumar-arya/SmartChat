@@ -43,6 +43,10 @@ export class OverlayHost implements IOverlayHost {
     }
   }
 
+  public isOverlayOwnedBy(overlayId: string, pluginId: string): boolean {
+    return this.pendingOverlays.get(overlayId)?.pluginId === pluginId
+  }
+
   public hasActiveOverlayForPlugin(pluginId: string): boolean {
     for (const entry of this.pendingOverlays.values()) {
       if (entry.pluginId === pluginId) {

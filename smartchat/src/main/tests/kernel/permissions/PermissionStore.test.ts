@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PermissionStore } from '../../../kernel/permissions/PermissionStore'
 import { join } from 'path'
-import { existsSync, unlinkSync } from 'fs'
+import { existsSync, unlinkSync, writeFileSync, readdirSync } from 'fs'
+import { dirname, basename } from 'path'
 
 describe('PermissionStore', () => {
   const testStoragePath = join(__dirname, '../../../../tmp-test-permissions.json')
@@ -12,6 +13,16 @@ describe('PermissionStore', () => {
         unlinkSync(testStoragePath)
       } catch {}
     }
+    // Remove any .corrupt-* / .tmp siblings a test produced.
+    try {
+      const dir = dirname(testStoragePath)
+      const stem = basename(testStoragePath)
+      for (const f of readdirSync(dir)) {
+        if (f.startsWith(stem) && f !== stem) {
+          try { unlinkSync(join(dir, f)) } catch {}
+        }
+      }
+    } catch {}
   }
 
   beforeEach(() => {
@@ -75,6 +86,31 @@ describe('PermissionStore', () => {
 
     expect(store.isResourceAllowed('plugin-a', 'chats:read', 'normal-group@g.us')).toBe(true)
     expect(store.isResourceAllowed('plugin-a', 'chats:read', 'secret-group@g.us')).toBe(false)
+  })
+
+  it('S8-05: a corrupt permissions file throws (fail-closed) and is backed up, not reset to allow-all', () => {
+    writeFileSync(testStoragePath, '{ this is not json', 'utf-8')
+
+    expect(() => new PermissionStore(testStoragePath)).toThrow(/corrupt/i)
+
+    const dir = dirname(testStoragePath)
+    const stem = basename(testStoragePath)
+    const backups = readdirSync(dir).filter((f) => f.startsWith(`${stem}.corrupt-`))
+    expect(backups.length).toBeGreaterThan(0)
+  })
+
+  it('S8-05: a well-formed-JSON-but-wrong-shape file also fails closed', () => {
+    writeFileSync(testStoragePath, '[]', 'utf-8')
+    expect(() => new PermissionStore(testStoragePath)).toThrow(/shape/i)
+  })
+
+  it('S8-05: saveToDisk leaves no .tmp file behind (atomic rename)', async () => {
+    const store = new PermissionStore(testStoragePath)
+    store.registerPluginManifest('plugin-a', ['messages:send'])
+    await store.setCapability('plugin-a', 'messages:send', false)
+
+    expect(existsSync(testStoragePath)).toBe(true)
+    expect(existsSync(`${testStoragePath}.tmp`)).toBe(false)
   })
 
   it('getPluginPermissions() reflects persisted state after setCapability', async () => {
