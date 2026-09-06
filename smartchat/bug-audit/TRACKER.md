@@ -10,7 +10,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | # | Slice | Status | Last touched | Notes |
 |---|-------|--------|--------------|-------|
 | 1 | WhatsApp worker & socket | DONE (8 findings) | 2026-09-06 | 0 crit / 0 high / 5 med / 3 low |
-| 2 | Message pipeline | TODO | — | largest slice (~55 files); may need 2 sessions |
+| 2 | Message pipeline | IN PROGRESS | 2026-09-06 | largest slice (~55 files); may need 2 sessions |
 | 3 | WhatsApp service & subscribers | TODO | — | recent OTP relay + queue-subscriptions fix |
 | 4 | Chats & sync | TODO | — | |
 | 5 | Contacts | TODO | — | |
