@@ -44,6 +44,23 @@ export class ToolsController {
         return
       }
 
+      // The tool permission model (user prompt for anything with
+      // requiresPermission !== false) is enforced only in the renderer. This
+      // HTTP surface has no user in the loop, so permission-gated tools
+      // (ExecuteScript = RCE, QueryDatabase = arbitrary SQL, SendMessage /
+      // MessageAction / ChatAction = act as the user) must not be reachable
+      // here. Deny them outright rather than silently running unprompted.
+      if (tool.requiresPermission !== false) {
+        console.warn(
+          `[APIServer] DENIED tools/execute for permission-gated tool "${tool.name}" (no user in the loop on the HTTP surface)`
+        )
+        sendJSON(res, 403, {
+          error: `Tool "${tool.name}" requires user permission and cannot be executed over the HTTP API`
+        })
+        return
+      }
+
+      console.log(`[APIServer] tools/execute "${tool.name}"`)
       const result = await tool.execute(data.arguments || {})
       sendJSON(res, 200, { success: true, result })
     } catch (err) {

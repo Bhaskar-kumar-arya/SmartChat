@@ -1375,7 +1375,19 @@ is effectively unauthenticated-to-the-user RCE.
 **Fix idea:** reject (or require an explicit config opt-in per tool) any tool with
 `requiresPermission === true` on the HTTP surface; at minimum log every execution and gate script/SQL
 tools behind a separate capability.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — `ToolsController.executeTool` now rejects
+any tool with `requiresPermission !== false` (fail-closed: `undefined` counts as
+gated too) with `403` and a `console.warn` audit line, before `tool.execute` is
+reached; allowed executions are `console.log`ged. This removes the
+unprompted-RCE / arbitrary-SQL / send-as-user path over `http://127.0.0.1:3003`.
+The renderer still prompts for these tools via its own path — unaffected.
+The broader hardening the finding also mentions (wildcard CORS, Host/Origin
+validation in `Router.handle`, static plaintext token) is out of scope for this
+finding and tracked separately in slice 11 notes. Regression test
+`src/main/tests/services/apiServer/ToolsController.test.ts`. typecheck clean.
+Not manually run in the app: pure request-handler branch, fully covered by the
+unit test.
 
 ### [S11-02] med — services/apiServer/APIConfigProvider.ts:13-20, 32-44
 **What:** `loadOrCreateConfig` reads `ai_preferences.json`, and on any read/parse error the `catch`
