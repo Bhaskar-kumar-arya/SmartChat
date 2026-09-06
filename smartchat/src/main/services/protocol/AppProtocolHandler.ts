@@ -31,9 +31,16 @@ export class AppProtocolHandler {
       let filePath: string | null = null;
 
       if (host === 'local') {
-        // For 'local', the pathname contains the absolute path
+        // For 'local', the pathname contains the absolute path. Only serve it if
+        // the exact path was explicitly granted (e.g. the user picked it in a
+        // native file dialog). This prevents arbitrary local file disclosure
+        // (LFI) from any renderer / injected content that can reach app://.
         const decodedPath = decodeURIComponent(pathname.startsWith('/') ? pathname.slice(1) : pathname);
-        filePath = decodedPath;
+        if (this.registry.isFileGranted(decodedPath)) {
+          filePath = decodedPath;
+        } else {
+          console.warn('[AppProtocolHandler] Denied ungranted app://local request:', decodedPath);
+        }
       } else {
         filePath = this.registry.resolvePath(host, pathname);
       }

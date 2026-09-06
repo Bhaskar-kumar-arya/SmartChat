@@ -411,7 +411,12 @@ const api = {
   // webUtils.getPathForFile is the modern Electron API to get the real
   // filesystem path of a File object dropped into the renderer.
   getPathForFile: (file: File): string => {
-    return webUtils.getPathForFile(file)
+    const path = webUtils.getPathForFile(file)
+    // A File object carrying a real OS path can only come from a genuine user
+    // drag-drop / dialog action. Grant read access so the renderer can preview
+    // it via app://local/<path> before sending.
+    if (path) ipcRenderer.send('grant-local-file-preview', path)
+    return path
   }
 }
 

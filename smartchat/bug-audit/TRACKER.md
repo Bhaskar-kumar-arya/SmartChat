@@ -610,7 +610,12 @@ the entire user base so one abuse report kills AI for everyone. They cannot be r
 release.
 **Fix idea:** remove the secrets from source; ship with no default key and require the user (or a
 server-side proxy) to supply one; rotate the leaked keys immediately.
-**Status:** open
+**Status:** fixed (code) — `AIKeyService.DEFAULTS` now all `''`; keys come only from
+`*_API_KEY` env vars or user-saved local config. Regression test in
+`tests/services/AIKeyService.test.ts` ("ships no hardcoded keys"). typecheck clean.
+⚠️ **Still required:** the four leaked keys (Gemini/Groq/Mistral/DeepSeek) must be
+revoked & rotated at each provider by the user — removing from source does not
+un-leak them from git history.
 
 ### [S6-02] med — providers/GroqProvider.ts:46, MistralProvider.ts:48, DeepSeekProvider.ts:47 (`formatMessages`)
 **What:** History role mapping is `msg.role === 'model' || msg.role === 'assistant' ? 'assistant' :
@@ -1216,7 +1221,14 @@ into a destructive false negative.
 **Fix idea:** `getValue` must distinguish "row absent" (return null) from "query failed" (throw or
 return a sentinel); `hasCreds()` / the wipe path in `connect()` must fail closed (skip wipe, retry)
 on error, never treat an errored read as "no creds".
-**Status:** open
+**Status:** fixed. `AuthStateRepository.getValue` now rethrows on query failure
+(only a genuinely absent row returns `null`). `AuthSettingsService.hasCreds()`
+propagates; `getSyncFullHistory`/`getHistorySyncCompleted` fail closed to
+safe defaults (false / true). Both wipe call sites
+(`WhatsAppConnectionManager.connect()` and worker `workerConnectionManager`)
+now catch a `hasCreds()` throw and assume creds exist → **skip the wipe**.
+Regression tests in `tests/repositories/AuthStateRepository.test.ts` +
+`tests/services/AuthSettingsService.test.ts`. typecheck clean.
 
 ### [S10-02] high — auth.ts:223-257 (`baseKeyStore.set`)
 **What:** All Signal key mutations (pre-keys, sessions, sender-keys, app-state-sync keys) are
@@ -1551,7 +1563,17 @@ renderer, or a plugin webview that can reach `app://` — can `fetch('app://loca
 Full local-file disclosure across the trust boundary.
 **Fix idea:** delete the `host === 'local'` branch entirely; route every host through
 `registry.resolvePath` so only whitelisted directories are reachable.
-**Status:** open
+**Status:** fixed. `app://local/<abs>` now resolves **only** if the exact absolute
+path was explicitly granted via `SecureFileRegistry.grantFile()`. Grants are
+issued by the `select-file` IPC handler (native dialog results) and by the
+preload `getPathForFile` wrapper (drag-drop, via a new `grant-local-file-preview`
+ipc) — both are genuine user file-selection actions. Arbitrary renderer/injected
+`fetch('app://local/…')` gets 404 without ever touching `fs`/`net`. Registry
+threaded through `registerIpcHandlers(…, secureRegistry)`. Regression tests in
+`tests/services/AppProtocolHandler.test.ts`. typecheck clean.
+Also hardened `SecureFileRegistry.resolvePath` traversal check to
+`=== baseDir || startsWith(baseDir + sep)` — **partially addresses S12-02**
+(win32 drive-letter casing still open there).
 
 ### [S12-02] med — services/protocol/SecureFileRegistry.ts:26
 **What:** The traversal guard is `if (!resolvedPath.startsWith(baseDir)) return null`. A plain string
@@ -1562,7 +1584,9 @@ sibling directory whose name begins with `media`) passes the check.
 `path.resolve`) which can wrongly *deny* valid paths.
 **Fix idea:** require `resolvedPath === baseDir || resolvedPath.startsWith(baseDir + path.sep)`;
 normalize case on win32.
-**Status:** open
+**Status:** partially fixed alongside S12-01 — prefix check is now
+`=== baseDir || startsWith(baseDir + path.sep)`. Remaining: win32 drive-letter
+case normalization.
 
 ### [S12-03] high — tools/ExecuteScriptTool.ts:198-256 (`buildSandbox`)
 **What:** The `vm.createContext` sandbox is presented as a security boundary ("Safe JS built-ins

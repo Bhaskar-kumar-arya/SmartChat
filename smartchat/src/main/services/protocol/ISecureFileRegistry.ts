@@ -11,4 +11,16 @@ export interface ISecureFileRegistry {
    * Returns null if the host is not registered or if the path attempts to escape the directory.
    */
   resolvePath(host: string, relativePath: string): string | null;
+
+  /**
+   * Grants read access to a single absolute file path (used for files the user
+   * explicitly picked via a native dialog, previewed before sending, etc.).
+   * This is the only way `app://local/<abs path>` can resolve.
+   */
+  grantFile(absolutePath: string): void;
+
+  /**
+   * Returns true if the given absolute path was previously granted via grantFile.
+   */
+  isFileGranted(absolutePath: string): boolean;
 }

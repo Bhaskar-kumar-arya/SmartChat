@@ -236,7 +236,7 @@ app.whenReady().then(() => {
     () => new WAEventBus(),
     services.waWorkerBridge
   )
-  registerIpcHandlers(services, getSock, waConnectionManager)
+  registerIpcHandlers(services, getSock, waConnectionManager, secureRegistry)
   initVectorDb(services.vectorSyncService)
 
   try {

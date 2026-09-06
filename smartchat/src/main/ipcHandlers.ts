@@ -11,6 +11,7 @@ import { AIChatMessageInput } from './services/ai/IAIChatSessionService'
 import { ExportSession, ExportMessage } from './services/ai/IAIChatExportService'
 import { NotificationPreferences } from './services/notification/INotificationService'
 import { ChatListItem } from './ipc/chat.types'
+import { ISecureFileRegistry } from './services/protocol/ISecureFileRegistry'
 
 const DIR_NAME_TEMP = 'temp'
 const PREFIX_VOICE = 'voice_'
@@ -21,10 +22,11 @@ const EVENT_EMBEDDING_STATE = 'embedding-state'
 export function registerIpcHandlers(
   services: ServiceContainer,
   getSock: () => WASocket | null,
-  waConnectionManager: WhatsAppConnectionManager
+  waConnectionManager: WhatsAppConnectionManager,
+  secureRegistry: ISecureFileRegistry
 ): void {
   registerChatAndMessageHandlers(services, getSock)
-  registerMediaAndFileHandlers(services, getSock)
+  registerMediaAndFileHandlers(services, getSock, secureRegistry)
   registerStickerHandlers(services)
   registerAuthAndProfileHandlers(services, getSock, waConnectionManager)
   registerSearchAndVectorHandlers(services, getSock)
@@ -147,7 +149,8 @@ function mapChatToListItem(item: ChatListItem): ChatListItem {
 
 function registerMediaAndFileHandlers(
   services: ServiceContainer,
-  getSock: () => WASocket | null
+  getSock: () => WASocket | null,
+  secureRegistry: ISecureFileRegistry
 ): void {
   ipcMain.handle('save-temp-file', async (_event, buffer: Buffer | ArrayBuffer | Uint8Array, fileName: string) => {
     const tempDir = join(app.getPath('userData'), DIR_NAME_TEMP)
@@ -177,13 +180,23 @@ function registerMediaAndFileHandlers(
     return filePath
   })
 
+  ipcMain.on('grant-local-file-preview', (_event, filePath: unknown) => {
+    if (typeof filePath === 'string' && filePath.length > 0) {
+      secureRegistry.grantFile(filePath)
+    }
+  })
+
   ipcMain.handle('select-file', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
       properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'All Files', extensions: ['*'] }]
     })
-    return (canceled || filePaths.length === 0) ? null : filePaths
+    if (canceled || filePaths.length === 0) return null
+    // Grant read access so the renderer can preview these exact files via
+    // app://local/<path> before sending. Nothing else can reach app://local.
+    for (const p of filePaths) secureRegistry.grantFile(p)
+    return filePaths
   })
 
   ipcMain.handle('download-media', async (_event, msgId: string) => {
