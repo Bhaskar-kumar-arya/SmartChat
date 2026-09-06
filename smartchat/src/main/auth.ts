@@ -224,36 +224,62 @@ export const usePrismaAuthState = async (): Promise<{
       // Aggregate ALL key mutations into a single prisma.$transaction() call.
       // This replaces N individual SQLite lock/write/unlock cycles with ONE,
       // which is the primary fix for the slow 1-5 message trickle on reconnect.
-      const ops: Prisma.PrismaPromise<unknown>[] = [];
-      for (const category in data) {
-        const categoryData = data[category];
-        if (!categoryData) continue;
+      // Build the op list fresh per attempt — a PrismaPromise can't be reused.
+      const buildOps = (): Prisma.PrismaPromise<unknown>[] => {
+        const ops: Prisma.PrismaPromise<unknown>[] = [];
+        for (const category in data) {
+          const categoryData = data[category];
+          if (!categoryData) continue;
 
-        for (const id in categoryData) {
-          const value = categoryData[id];
-          const key = `${category}-${id}`;
-          if (value !== null && value !== undefined) {
-            const serialized = JSON.stringify(value, BufferJSON.replacer);
-            ops.push(
-              prisma.authState.upsert({
-                where: { id: key },
-                update: { data: serialized },
-                create: { id: key, data: serialized },
-              })
-            );
-          } else {
-            // deleteMany won't throw if the row doesn't exist
-            ops.push(prisma.authState.deleteMany({ where: { id: key } }));
+          for (const id in categoryData) {
+            const value = categoryData[id];
+            const key = `${category}-${id}`;
+            if (value !== null && value !== undefined) {
+              const serialized = JSON.stringify(value, BufferJSON.replacer);
+              ops.push(
+                prisma.authState.upsert({
+                  where: { id: key },
+                  update: { data: serialized },
+                  create: { id: key, data: serialized },
+                })
+              );
+            } else {
+              // deleteMany won't throw if the row doesn't exist
+              ops.push(prisma.authState.deleteMany({ where: { id: key } }));
+            }
+          }
+        }
+        return ops;
+      };
+
+      if (buildOps().length === 0) return;
+
+      // Do NOT swallow a failed keystore write (S10-02): Baileys has already
+      // advanced the ratchet / advertised these keys, so losing them silently
+      // corrupts the session until a re-link. Retry the transient case, then
+      // throw so the socket errors and reconnects.
+      const MAX_ATTEMPTS = 3;
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          await prisma.$transaction(buildOps());
+          return;
+        } catch (err: unknown) {
+          lastErr = err;
+          console.error(
+            `[AuthState] Batch keystore transaction failed (attempt ${attempt}/${MAX_ATTEMPTS}):`,
+            err
+          );
+          if (attempt < MAX_ATTEMPTS) {
+            await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** (attempt - 1)));
           }
         }
       }
-      if (ops.length > 0) {
-        try {
-          await prisma.$transaction(ops);
-        } catch (err: unknown) {
-          console.error('[AuthState] Batch keystore transaction failed:', err);
-        }
-      }
+      throw new Error(
+        `[AuthState] keystore persist failed after ${MAX_ATTEMPTS} attempts: ${
+          (lastErr as Error)?.message || String(lastErr)
+        }`
+      );
     },
   };
   return {

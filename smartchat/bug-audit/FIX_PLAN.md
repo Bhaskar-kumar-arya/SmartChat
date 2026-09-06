@@ -87,7 +87,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | Finding | File | What | Status |
 |---|---|---|---|
 | S12-05 | `services/DataWipeService.ts:33-76` | partial wipe swallowed, reported success | DONE — single `$transaction` wipe + FK restore in `finally` + re-throw; callers abort/reject on failure; regression tests |
-| S10-02 | `auth.ts:223-257` | silent Signal keystore tx failure | TODO |
+| S10-02 | `auth.ts:223-257` (live copy: `workers/whatsapp/socket/useLocalPrismaAuthState.ts`) | silent Signal keystore tx failure | DONE — retry 3× w/ backoff then throw (forces reconnect); both copies fixed; regression test |
 | S3-01 + S13-01 | `KernelEventsModule.ts` + `WhatsAppConnectionManager.ts` + `src/main/index.ts` | same root cause: bus-created callback wired after connect() → plugin WA events dead from cold start. **Fix together, one commit.** | TODO |
 | S7-01 | `KernelMessagesModule.ts` + `KernelChatsModule.ts` + `KernelContactsModule.ts` + `KernelEventsModule.ts` | resource-scope enforced inconsistently across kernel API (bypass) | TODO |
 

@@ -1265,6 +1265,17 @@ require a full re-link to recover. No error surfaces to Baileys or the user.
 transaction with backoff; at minimum emit a hard error that forces a reconnect rather than
 continuing as if the keys were stored.
 **Status:** open
+**Fix status:** fixed in `main` (S10-02 commit). The live path is
+`workers/whatsapp/socket/useLocalPrismaAuthState.ts` (`auth.ts`'s `usePrismaAuthState` is currently
+dead — no callers — but fixed identically to keep the copies from diverging). `baseKeyStore.set`
+now: builds the op list via a `buildOps()` closure (a PrismaPromise can't be handed to
+`$transaction` twice), retries the `$transaction` up to 3× with 50/100 ms backoff for the transient
+lock case, and **throws** `keystore persist failed after 3 attempts` if all fail —
+`makeCacheableSignalKeyStore.set` does not catch, so it propagates and the socket errors/reconnects
+instead of running on stale key state. New test
+`tests/workers/whatsapp/socket/useLocalPrismaAuthState.test.ts` (3 cases: single-tx happy path,
+transient-retry-then-succeed, all-fail-throws). typecheck clean; 68/68 worker+repo+auth tests pass.
+Not manually run in-app (needs induced SQLite lock contention during a live ratchet write).
 
 ### [S10-03] med — auth.ts:179-205 (`readData`) + 207-208 (`creds` bootstrap)
 **What:** `readData` catches every error and returns `null`. `const creds = (await readData("creds"))

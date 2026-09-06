@@ -70,35 +70,64 @@ export const useLocalPrismaAuthState = async (
       return data;
     },
     set: async (data): Promise<void> => {
-      const ops: Prisma.PrismaPromise<unknown>[] = [];
-      for (const category in data) {
-        const categoryData = data[category];
-        if (!categoryData) continue;
+      // Build the op list fresh on every attempt — a PrismaPromise cannot be
+      // handed to $transaction twice.
+      const buildOps = (): Prisma.PrismaPromise<unknown>[] => {
+        const ops: Prisma.PrismaPromise<unknown>[] = [];
+        for (const category in data) {
+          const categoryData = data[category];
+          if (!categoryData) continue;
 
-        for (const id in categoryData) {
-          const value = categoryData[id];
-          const key = `${category}-${id}`;
-          if (value !== null && value !== undefined) {
-            const serialized = JSON.stringify(value, BufferJSON.replacer);
-            ops.push(
-              prisma.authState.upsert({
-                where: { id: key },
-                update: { data: serialized },
-                create: { id: key, data: serialized },
-              })
-            );
-          } else {
-            ops.push(prisma.authState.deleteMany({ where: { id: key } }));
+          for (const id in categoryData) {
+            const value = categoryData[id];
+            const key = `${category}-${id}`;
+            if (value !== null && value !== undefined) {
+              const serialized = JSON.stringify(value, BufferJSON.replacer);
+              ops.push(
+                prisma.authState.upsert({
+                  where: { id: key },
+                  update: { data: serialized },
+                  create: { id: key, data: serialized },
+                })
+              );
+            } else {
+              ops.push(prisma.authState.deleteMany({ where: { id: key } }));
+            }
+          }
+        }
+        return ops;
+      };
+
+      if (buildOps().length === 0) return;
+
+      // Baileys calls set() *after* it has advanced the ratchet / advertised
+      // these keys to the server. Silently swallowing a failed write (S10-02)
+      // loses that key material — the session then can't decrypt until a
+      // re-link. Retry the transient failure (lock contention with the main
+      // process), and if it still fails, throw so the socket errors out and
+      // reconnects instead of running on with stale key state.
+      const MAX_ATTEMPTS = 3;
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          await prisma.$transaction(buildOps());
+          return;
+        } catch (err: unknown) {
+          lastErr = err;
+          console.error(
+            `[LocalAuthState] Batch keystore transaction failed (attempt ${attempt}/${MAX_ATTEMPTS}):`,
+            err
+          );
+          if (attempt < MAX_ATTEMPTS) {
+            await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** (attempt - 1)));
           }
         }
       }
-      if (ops.length > 0) {
-        try {
-          await prisma.$transaction(ops);
-        } catch (err: unknown) {
-          console.error("[LocalAuthState] Batch keystore transaction failed:", err);
-        }
-      }
+      throw new Error(
+        `[LocalAuthState] keystore persist failed after ${MAX_ATTEMPTS} attempts: ${
+          (lastErr as Error)?.message || String(lastErr)
+        }`
+      );
     },
   };
 
