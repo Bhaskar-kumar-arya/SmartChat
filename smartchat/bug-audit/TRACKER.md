@@ -14,7 +14,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 3 | WhatsApp service & subscribers | DONE (6 findings) | 2026-09-06 | 1 high / 3 med / 2 low; S3-01 = plugin subs lost on bus rebuild. type files + BaileysPatcher lightly covered |
 | 4 | Chats & sync | IN PROGRESS | 2026-09-06 | |
 | 5 | Contacts | IN PROGRESS | 2026-09-06 | |
-| 6 | AI (providers, mentions, citations) | TODO | — | ~45 files; may need 2 sessions |
+| 6 | AI (providers, mentions, citations) | IN PROGRESS | 2026-09-06 | ~45 files; may need 2 sessions |
 | 7 | Kernel API modules & router | TODO | — | |
 | 8 | Kernel plugins, contributions, permissions | TODO | — | |
 | 9 | Kernel storage, channels, ipc, ui | TODO | — | |
