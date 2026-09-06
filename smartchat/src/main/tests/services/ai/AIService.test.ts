@@ -126,6 +126,37 @@ describe('AIService', () => {
     )
   })
 
+  it('caps the tool-execution loop at 25 turns even if a huge maxTurns is requested', async () => {
+    aiService['providers']['mock'] = mockProvider
+    aiService['providerOrder'] = ['mock']
+    // Model that always emits a tool call → infinite loop without a cap.
+    mockProvider.generateResponse.mockResolvedValue(
+      '<tool_call>{"tool":"noop","arguments":{}}</tool_call>'
+    )
+    mockToolRegistry.getTool.mockReturnValue({ execute: vi.fn().mockResolvedValue('ok') } as any)
+
+    await expect(
+      aiService.generateResponseWithTools('go', [], [], [], { model: 'mock-model', maxTurns: 1000000 })
+    ).rejects.toThrow(/maximum tool execution turns \(25\)/)
+
+    expect(mockProvider.generateResponse).toHaveBeenCalledTimes(25)
+  })
+
+  it('bails out of the tool loop between turns when the request is aborted', async () => {
+    aiService['providers']['mock'] = mockProvider
+    aiService['providerOrder'] = ['mock']
+    mockProvider.generateResponse.mockImplementation(async () => {
+      aiService.abortResponse('req-loop')
+      return '<tool_call>{"tool":"noop","arguments":{}}</tool_call>'
+    })
+    mockToolRegistry.getTool.mockReturnValue({ execute: vi.fn().mockResolvedValue('ok') } as any)
+
+    await expect(
+      aiService.generateResponseWithTools('go', [], [], [], { model: 'mock-model', requestId: 'req-loop' })
+    ).rejects.toThrow(/aborted/i)
+    expect(mockProvider.generateResponse).toHaveBeenCalledTimes(1)
+  })
+
   it('should handle streaming response', async () => {
     aiService['providers']['mock'] = mockProvider
     aiService['providerOrder'] = ['mock']

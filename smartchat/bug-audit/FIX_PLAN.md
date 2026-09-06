@@ -99,8 +99,8 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | 2 — Message pipeline | 6 | DONE (2026-09-06) — S2-01..06 all fixed (S2-02 UI-retry deferred as follow-up feature) |
 | 3 — WhatsApp service & subscribers | 2 | DONE (2026-09-06) — S3-02 (unpause only on wa-sync-complete) + S3-03 (safety timer covers between-chunk inactivity only; finishSync deferred while a chunk writes) fixed. FIX_PLAN's "3" was a miscount — slice 3 has 2 med. |
 | 4 — Chats & sync | 4 | DONE (2026-09-06) — S4-01 (per-batch try/catch), S4-03 (batched identity prefetch), S4-04 (persist unreadCount>=0) fixed; S4-02 partial (outOfWindow flag fixes pagination signal; 60× enrichment refactor deferred) |
-| 5 — Contacts | 2 | TODO |
-| 6 — AI | 7 | TODO |
+| 5 — Contacts | 2 | DONE (2026-09-06) — S5-01 (per-stub merge in one interactive $transaction), S5-02 (new ContactCacheSyncSubscriber flushes main-process contact caches on wa-sync-complete) |
+| 6 — AI | 7 | DONE (2026-09-06) — S6-02 ('ai' role → assistant in Groq/Mistral/DeepSeek), S6-03 (maxTurns cap 25 + abort between turns), S6-04 (Gemini abortSignal threaded), S6-05 (empty-name skip + replacer fn + boundary), S6-06 (escapeXml on all strategy interpolations), S6-07 (citation persist createMany→per-row upsert fallback), S6-08 (userData path + corrupt-file backup+throw + atomic write) |
 | 7 — Kernel API modules & router | 4 | TODO |
 | 8 — Kernel plugins/contributions/permissions | 6 | TODO |
 | 9 — Kernel storage/channels/ipc/ui | 6 | TODO |

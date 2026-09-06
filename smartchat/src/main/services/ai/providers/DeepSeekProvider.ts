@@ -44,7 +44,9 @@ export class DeepSeekProvider implements IStreamingProvider, IFullResponseProvid
     }
 
     for (const msg of history || []) {
-      const role = msg.role === 'model' || msg.role === 'assistant' ? 'assistant' : 'user';
+      // App history uses role 'ai' for assistant turns (see IAIChatSessionService).
+      const role =
+        msg.role === 'ai' || msg.role === 'model' || msg.role === 'assistant' ? 'assistant' : 'user';
       messages.push({ role, content: msg.content });
     }
 

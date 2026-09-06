@@ -20,6 +20,9 @@ export class AIService implements IAIService {
   private providerOrder: string[] = []
   private currentModelId: string = 'gemini:gemma-4-31b-it' // Default
   private activeRequests: Map<string, AbortController> = new Map()
+  // requestIds for which abortResponse() was called — lets the tool-execution
+  // loop bail between turns (tool.execute itself is not cancellable).
+  private abortedRequests: Set<string> = new Set()
 
   constructor(
     private readonly aiKeyService: IAIKeyService,
@@ -362,9 +365,21 @@ export class AIService implements IAIService {
     let currentPrompt = prompt
     const currentHistory = history ? [...history] : []
     let turns = 0
-    const maxTurns = options?.maxTurns || 1000000
+    // Hard ceiling on the tool-execution loop. A misbehaving model that keeps
+    // emitting <tool_call> would otherwise run up to ~1e6 paid provider
+    // round-trips before bailing. Callers may lower this but not raise it past
+    // the cap.
+    const MAX_TOOL_TURNS_CAP = 25
+    const requested = typeof options?.maxTurns === 'number' && options.maxTurns > 0 ? options.maxTurns : MAX_TOOL_TURNS_CAP
+    const maxTurns = Math.min(requested, MAX_TOOL_TURNS_CAP)
 
+    if (options?.requestId) this.abortedRequests.delete(options.requestId)
+
+    try {
     while (turns < maxTurns) {
+      if (options?.requestId && this.abortedRequests.has(options.requestId)) {
+        throw new Error('AI response aborted')
+      }
       const response = await this.generateResponse(
         currentPrompt,
         contextFiles,
@@ -414,9 +429,13 @@ export class AIService implements IAIService {
     }
 
     throw new Error(`LLM call exceeded maximum tool execution turns (${maxTurns})`)
+    } finally {
+      if (options?.requestId) this.abortedRequests.delete(options.requestId)
+    }
   }
 
   abortResponse(requestId: string): void {
+    this.abortedRequests.add(requestId);
     const controller = this.activeRequests.get(requestId);
     if (controller) {
       console.log(`[AIService] Aborting request: ${requestId}`);

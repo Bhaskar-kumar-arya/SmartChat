@@ -52,23 +52,27 @@ export class GeminiProvider implements IStreamingProvider, IFullResponseProvider
     prompt: string,
     history: Array<{ role: string; content: string; isSystem?: boolean }>,
     options: { model?: string; [key: string]: unknown },
-    _signal?: AbortSignal
+    signal?: AbortSignal
   ): Promise<string> {
     const formattedHistory = this.formatHistory(history);
     const isPromptSystem = options?.isSystem === true;
     const finalPrompt = this.wrapWithRole(prompt, isPromptSystem, 'user');
 
     const systemInstructions = typeof options?.systemPrompt === 'string' ? options.systemPrompt : undefined;
-    
+
     // Prepare contents including history and current prompt
     const contents = [...formattedHistory, { role: 'user', parts: [{ text: finalPrompt }] }];
-    
+
+    const actualSignal = options?.signal instanceof AbortSignal ? options.signal : signal;
     const rawModelOption = typeof options?.model === 'string' ? options.model : "gemini:gemma-4-31b-it";
     const rawModel = rawModelOption.replace(/^gemini:/, '');
     const response = await this.ai.models.generateContent({
       model: rawModel,
       contents,
-      config: systemInstructions ? { systemInstruction: systemInstructions } : undefined,
+      config: {
+        ...(systemInstructions ? { systemInstruction: systemInstructions } : {}),
+        ...(actualSignal ? { abortSignal: actualSignal } : {}),
+      },
     });
 
     return response.text || '';
@@ -96,7 +100,10 @@ export class GeminiProvider implements IStreamingProvider, IFullResponseProvider
     const responseStream = await this.ai.models.generateContentStream({
       model: rawModel,
       contents,
-      config: systemInstructions ? { systemInstruction: systemInstructions } : undefined,
+      config: {
+        ...(systemInstructions ? { systemInstruction: systemInstructions } : {}),
+        ...(actualSignal ? { abortSignal: actualSignal } : {}),
+      },
     });
 
     for await (const chunk of responseStream) {

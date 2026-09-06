@@ -12,10 +12,13 @@ describe('CitationSessionManager', () => {
       citation: {
         aggregate: vi.fn(),
         createMany: vi.fn(),
+        upsert: vi.fn(),
         findUnique: vi.fn(),
         findMany: vi.fn()
       },
-      $transaction: vi.fn(async (cb) => await cb(mockPrisma))
+      $transaction: vi.fn(async (arg) =>
+        typeof arg === 'function' ? await arg(mockPrisma) : await Promise.all(arg)
+      )
     }
     manager = new CitationSessionManager(mockPrisma as unknown as PrismaClient)
     vi.clearAllMocks()
@@ -61,6 +64,26 @@ describe('CitationSessionManager', () => {
           { sessionId: 'session-1', index: 2, type: 'message', payload: JSON.stringify({ type: 'message', chatJid: 'test@s.whatsapp.net', messageId: 'msg-1' }) }
         ]
       })
+    })
+
+    it('falls back to per-citation upsert when createMany hits a unique collision', async () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      mockPrisma.citation.createMany.mockRejectedValue(
+        Object.assign(new Error('Unique constraint failed'), { code: 'P2002' })
+      )
+      const citations = new Map<number, CitationEntity>()
+      citations.set(3, { type: 'chat', chatJid: 'a@s.whatsapp.net' })
+      citations.set(4, { type: 'chat', chatJid: 'b@s.whatsapp.net' })
+
+      await manager.persist('session-1', citations)
+
+      expect(mockPrisma.citation.upsert).toHaveBeenCalledTimes(2)
+      expect(mockPrisma.citation.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId_index: { sessionId: 'session-1', index: 3 } }
+        })
+      )
+      consoleSpy.mockRestore()
     })
   })
 

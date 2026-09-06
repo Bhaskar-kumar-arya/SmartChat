@@ -1,5 +1,6 @@
 import { IChatEnrichmentStrategy, IChatMentionData } from '../IChatEnrichmentStrategy'
 import { IChatReadRepository } from '../../../chats/IChatRepository'
+import { escapeXml } from '../xmlEscape'
 
 export class CommunityEnrichmentStrategy implements IChatEnrichmentStrategy {
   constructor(private readonly chatRepository: IChatReadRepository) {}
@@ -9,9 +10,9 @@ export class CommunityEnrichmentStrategy implements IChatEnrichmentStrategy {
   }
 
   async enrich(chat: IChatMentionData, name: string, lid: string | null): Promise<string> {
-    const lidAttr = lid ? ` lid="${lid}"` : ''
-    let xml = `<mentioned_chat jid="${chat.jid}" type="Community"${lidAttr}>\n`
-    xml += `  <name>${name}</name>\n`
+    const lidAttr = lid ? ` lid="${escapeXml(lid)}"` : ''
+    let xml = `<mentioned_chat jid="${escapeXml(chat.jid)}" type="Community"${lidAttr}>\n`
+    xml += `  <name>${escapeXml(name)}</name>\n`
     
     // Fetch subgroups directly
     const allSubgroups = await this.chatRepository.findChatsByCommunityJids([chat.jid])
@@ -21,7 +22,7 @@ export class CommunityEnrichmentStrategy implements IChatEnrichmentStrategy {
       xml += `  <subgroups>\n`
       for (const sg of subgroups) {
         const sgName = sg.name || sg.jid.split('@')[0]
-        xml += `    <subgroup jid="${sg.jid}">${sgName}</subgroup>\n`
+        xml += `    <subgroup jid="${escapeXml(sg.jid)}">${escapeXml(sgName)}</subgroup>\n`
       }
       xml += `  </subgroups>\n`
     }

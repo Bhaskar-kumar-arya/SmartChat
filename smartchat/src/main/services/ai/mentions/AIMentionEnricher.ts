@@ -23,9 +23,13 @@ export class AIMentionEnricher implements IAIMentionEnricher {
     let enrichedPrompt = prompt
     for (const m of mentions) {
       const trimmedName = (m.name || '').trim()
+      // Skip mentions with no name — otherwise the pattern collapses to /@/g and
+      // every '@' in the prompt (emails, other handles) gets replaced (S6-05).
+      if (!trimmedName) continue
       const safeName = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const mentionRegex = new RegExp(`@${safeName}`, 'g')
-      
+      // Trailing boundary so "@Alice" doesn't match inside "@AliceB".
+      const mentionRegex = new RegExp(`@${safeName}(?![\\p{L}\\p{N}_])`, 'gu')
+
       const chat = chatMap.get(m.jid)
       let replacementStr = m.jid // Fallback to raw jid
 
@@ -50,7 +54,10 @@ export class AIMentionEnricher implements IAIMentionEnricher {
         }
       }
 
-      enrichedPrompt = enrichedPrompt.replace(mentionRegex, replacementStr)
+      // Use a replacer function so `$&`, `$1`, etc. inside the (attacker-
+      // controlled) enriched block are inserted literally, not as replacement
+      // patterns (S6-05).
+      enrichedPrompt = enrichedPrompt.replace(mentionRegex, () => replacementStr)
     }
 
     return enrichedPrompt

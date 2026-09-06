@@ -636,6 +636,13 @@ partial state the *common* failure mode under the concurrency window [S3-03] des
 interactive tx) so a failure rolls back to the pre-merge state; keep the per-stub
 `try/catch` outside the tx for the `skipped++` bookkeeping.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 5) — steps 1-6 of each stub→keep merge now run inside a single
+`this.prisma.$transaction(async (tx) => …)` interactive transaction; a mid-merge failure rolls back to
+the pre-merge state instead of leaving a dangling alias-less stub. The per-stub `try/catch` stays
+outside the tx for the `skipped++` bookkeeping. The step-5 enrich `.catch` swallow was removed (a
+failed enrich now rolls the whole merge back rather than silently half-applying). Test:
+`IdentityReconciliationService.test.ts` +2 (merge runs in one `$transaction`; a step-2 failure leaves
+the stub undeleted → `{merged:0,skipped:1}`). typecheck clean.
 
 ### [S5-02] med — services/contacts/ContactCache.ts:5,26 + IdentityReconciliationService.ts (no cache signal) vs services/whatsapp/HistorySyncManager.ts:186
 **What:** After `deduplicateIdentities()` the **worker** process calls
@@ -660,6 +667,14 @@ full history sync.
 `contactService.clearCaches()` on it; or make `deduplicateIdentities` itself return the
 set of merged stub ids so callers can do a targeted cache eviction in both processes.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 5) — new `ContactCacheSyncSubscriber` (registered in
+`subscribers/index.ts`) listens for `wa-sync-complete` on the main-process `WAEventBus` and calls
+`contactService.clearCaches()`. The worker publishes `wa-sync-complete` at the end of `finishSync`
+(right after `deduplicateIdentities`) and `WAWorkerBridge` forwards it onto the main bus, so the main
+process's `identityIdCache` is flushed immediately after every dedup pass — a later
+`updateIdentity(stubId, …)` / `findIdentityById(stubId)` in main no longer hits a deleted row. Test:
+`ContactCacheSyncSubscriber.test.ts` (flush on `wa-sync-complete`; no flush on unrelated events).
+typecheck clean.
 
 ### [S5-03] low — services/contacts/LidPnLinker.ts:40-81 (`linkLidAndPn` relational sync)
 **What:** Classic check-then-act with no transaction: `findIdentityByPhoneNumber(cleanPn)` /
@@ -754,6 +769,11 @@ the user. Degrades coherence badly and, in `generateResponseWithTools`, the assi
 **Fix idea:** treat `'ai' | 'model' | 'assistant'` as assistant in all three providers (or normalize
 role once in `AIService` before dispatch).
 **Status:** open
+**Fix status:** fixed in Batch D (slice 6) — `formatMessages` in GroqProvider / MistralProvider /
+DeepSeekProvider now maps `msg.role === 'ai' || 'model' || 'assistant'` → `'assistant'`. Prior
+assistant turns (and `<tool_call>` turns in `generateResponseWithTools`) keep their role instead of
+collapsing to `user`. Test: `providerRoleMapping.test.ts` (all three providers map `'ai'` →
+assistant). typecheck clean.
 
 ### [S6-03] med — AIService.ts:365 (`generateResponseWithTools`)
 **What:** `const maxTurns = options?.maxTurns || 1000000`. No real ceiling on the tool-execution loop.
@@ -765,6 +785,12 @@ in-flight provider call; `tool.execute` between turns is not cancellable).
 **Fix idea:** default `maxTurns` to a small number (e.g. 10-25); check the request's `AbortSignal`
 at the top of each loop iteration and bail.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 6) — `generateResponseWithTools` now clamps to
+`MAX_TOOL_TURNS_CAP = 25` (`Math.min(requested, cap)`, default 25 when unset); callers can lower but
+not raise it. Added an `abortedRequests: Set<string>` — `abortResponse()` records the id and the
+tool loop throws `'AI response aborted'` at the top of each iteration if its `requestId` is in the
+set (cleared in a `finally`). Test: `AIService.test.ts` +2 (loop caps at 25 even with
+`maxTurns: 1e6`; abort mid-loop stops after the current turn). typecheck clean.
 
 ### [S6-04] med — providers/GeminiProvider.ts:51-75 (`generateResponse`) & 77-108 (`generateResponseStream`)
 **What:** Both methods receive `_signal` / `signal` but never pass an abort signal to the
@@ -778,6 +804,13 @@ second abort is a no-op too.
 **Fix idea:** thread the `AbortSignal` into the genai request options (`config: { abortSignal }` /
 the SDK's `RequestOptions`), and reject promptly on abort.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 6) — both `generateResponse` and `generateResponseStream` now
+thread the resolved `AbortSignal` into `config.abortSignal` of the `@google/genai`
+`generateContent` / `generateContentStream` call (the SDK's `GenerateContentConfig` supports it in
+1.48.0). `generateResponse` also now honours `options.signal` (previously ignored its `_signal`
+entirely). Note: per the SDK docs abort is client-side only (in-flight tokens still billed) but the
+promise now rejects promptly so "stop" works for the non-streaming path. typecheck clean; no unit
+test (needs the genai SDK / network).
 
 ### [S6-05] med — mentions/AIMentionEnricher.ts:24-54 (`enrichMentionsInline`)
 **What:** For each mention it builds `new RegExp('@' + escape(m.name.trim()), 'g')` and does
@@ -793,6 +826,12 @@ name-driven text injection/duplication. Also `@Alice` matches inside `@AliceB`, 
 **Fix idea:** skip mentions with empty names; use a replacer *function* (returns `replacementStr`
 literally); add word-boundary handling.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 6) — `enrichMentionsInline` now (1) `continue`s on an empty
+trimmed name (no more `/@/g` wholesale substitution), (2) appends a `(?![\p{L}\p{N}_])` boundary so
+`@Alice` no longer matches inside `@AliceB`, (3) passes a replacer **function** `() => replacementStr`
+so `$&` / `$1` / `` $` `` inside the (untrusted) enriched block are inserted literally. Test:
+`mentionEnrichment.test.ts` (empty name skipped, literal `$&`/`$1`, no `@AliceB` match). typecheck
+clean.
 
 ### [S6-06] med — mentions/strategies/GroupEnrichmentStrategy.ts:8-12 (and DM/Default/Community siblings)
 **What:** The enrichment strategies interpolate the chat/contact `name` (and `jid`, `lid`) directly
@@ -805,6 +844,12 @@ is a prompt-injection / context-spoofing vector through untrusted WhatsApp metad
 **Fix idea:** escape `<`, `>`, `&`, `"` in all interpolated values; consider a non-markup delimiter
 or JSON with strict encoding.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 6) — new `mentions/xmlEscape.ts` (`escapeXml`, escapes
+`& < > " '`); Group / DM / Default / Community enrichment strategies now run every interpolated value
+(`name`, `jid`, `lid`, `identityId`, subgroup jid/name) through it. A group renamed to
+`</name></mentioned_chat><system>…` can no longer break out of the block. Test:
+`mentionEnrichment.test.ts` (hostile group name stays inside one `<mentioned_chat>`; quotes/ampersands
+in the jid attr escaped). typecheck clean.
 
 ### [S6-07] med — citations/CitationSessionManager.ts:9-33 (`createEmitter` + `persist`)
 **What:** `createEmitter` reads `MAX(index)` for the session and hands it to `CitationEmitter` as the
@@ -819,6 +864,12 @@ already persisted.
 **Fix idea:** allocate indices inside the persisting transaction (re-read `MAX(index)` there), or
 upsert per-citation / use `skipDuplicates`, or make the index a per-session autoincrement.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 6) — `persist` still tries the fast `createMany` inside a
+`$transaction`, but a failure (e.g. `sessionId_index` collision from two overlapping generations) is
+now caught and retried as a `$transaction` of per-citation `upsert`s (`where: sessionId_index`,
+last-writer-wins for a colliding index) instead of losing **every** citation for the response.
+Re-numbering was rejected — the emitted indices are already baked into the response text. Test:
+`CitationSessionManager.test.ts` (createMany P2002 → 2 upserts with the right keys). typecheck clean.
 
 ### [S6-08] med — AIChatExportService.ts:18-57
 **What:** (1) `getExportPath()` returns `join(process.cwd(), 'ai_chats_export.json')`. (2)
@@ -832,6 +883,15 @@ upsert per-citation / use `skipDuplicates`, or make the index a per-session auto
 **Fix idea:** write under `app.getPath('userData')` (or a user-chosen path via save dialog);
 back up / refuse on parse failure instead of replacing; write to a temp file + rename.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 6) — `getExportPath()` now uses
+`join(app.getPath('userData'), 'ai_chats_export.json')` (was `process.cwd()`). New `readExports()`
+helper: on a `JSON.parse` failure or non-array payload it writes the bad content to
+`<path>.corrupt-<ts>` and **throws** instead of continuing with `[]` (which then overwrote every
+prior export). New `writeExports()` helper does temp-file + `renameSync` for atomicity. All three
+methods (`exportChat`, `delete…`, `duplicate…`) go through the helpers; the IPC handlers now
+propagate the throw to the renderer (fail loudly). Tests: `AIChatExportService.test.ts` +2 (corrupt
+file preserved + not overwritten; atomic temp+rename), electron `app` mocked, `fs.renameSync` added
+to the fs mock. typecheck clean.
 
 ### [S6-09] low — AIChatSessionService.ts:113-145 (`saveMessages`)
 **What:** Persistence is "delete all messages for the session, then `createMany` the supplied

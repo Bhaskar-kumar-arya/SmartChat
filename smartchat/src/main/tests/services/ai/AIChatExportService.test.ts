@@ -2,11 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { AIChatExportService } from '../../../services/ai/AIChatExportService'
 import fs from 'fs'
 
+vi.mock('electron', () => ({
+  app: { getPath: vi.fn().mockReturnValue('/mock/userData') }
+}))
+
 vi.mock('fs', () => ({
   default: {
     existsSync: vi.fn(),
     readFileSync: vi.fn(),
-    writeFileSync: vi.fn()
+    writeFileSync: vi.fn(),
+    renameSync: vi.fn()
   }
 }))
 
@@ -67,6 +72,31 @@ describe('AIChatExportService', () => {
     const writtenArray = JSON.parse(writeCallArgs)
     expect(writtenArray.length).toBe(1)
     expect(writtenArray[0].title).toBe('New Title')
+  })
+
+  it('preserves a corrupt export file and throws instead of overwriting it', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue('{ this is not valid json')
+
+    await expect(
+      service.exportChat({ id: 's1', title: 'T', modelId: 'm' }, [{ role: 'user', content: 'hi' }])
+    ).rejects.toThrow(/corrupt/i)
+
+    // The corrupt file is backed up; the real export file is never rewritten
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('.corrupt-'),
+      '{ this is not valid json',
+      'utf8'
+    )
+    expect(fs.renameSync).not.toHaveBeenCalled()
+  })
+
+  it('writes atomically via a temp file + rename', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+    await service.exportChat({ id: 's1', title: 'T', modelId: 'm' }, [{ role: 'user', content: 'hi' }])
+    const tmpPath = vi.mocked(fs.writeFileSync).mock.calls[0][0] as string
+    expect(tmpPath).toMatch(/\.tmp-/)
+    expect(fs.renameSync).toHaveBeenCalledWith(tmpPath, expect.stringMatching(/ai_chats_export\.json$/))
   })
 
   it('should delete an exported chat', async () => {

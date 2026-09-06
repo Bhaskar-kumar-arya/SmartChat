@@ -25,12 +25,29 @@ export class CitationSessionManager implements ICitationSessionManager {
       payload: JSON.stringify(entity)
     }));
 
-    // Batch insert inside a transaction to ensure atomic saves
-    await this.prisma.$transaction(async (tx) => {
-      await tx.citation.createMany({
-        data: dataToInsert
+    // Batch insert inside a transaction to ensure atomic saves. If two
+    // generations in the same session overlap (regenerate while a previous
+    // response is still finalizing) their emitters can produce colliding
+    // (sessionId, index) pairs; a bare createMany then hits the unique
+    // constraint and *every* citation for the response is lost. Fall back to
+    // a per-citation upsert so each one is still persisted (last writer wins
+    // for a colliding index).
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.citation.createMany({ data: dataToInsert });
       });
-    });
+    } catch (err) {
+      console.warn('[CitationSessionManager] createMany failed, falling back to per-citation upsert:', err);
+      await this.prisma.$transaction(
+        dataToInsert.map((row) =>
+          this.prisma.citation.upsert({
+            where: { sessionId_index: { sessionId: row.sessionId, index: row.index } },
+            create: row,
+            update: { type: row.type, payload: row.payload }
+          })
+        )
+      );
+    }
   }
 
   async resolve(sessionId: string, index: number): Promise<CitationEntity | null> {
