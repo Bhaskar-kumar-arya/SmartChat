@@ -5,6 +5,7 @@ import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 import { unwrapMessage } from '../../../utils/messageUtils'
 import { IFavoriteStickerService, FavoriteStickerDTO } from '../../../services/messages/IFavoriteStickerService'
 import { ensureBuffer, streamToBuffer, extractStickerSha } from '../utils/workerUtils'
+import { getSafeMediaFileName } from '../../../services/messages/MediaHelper'
 
 export interface StickerMessageLike {
   localURI?: string | null
@@ -31,14 +32,11 @@ export class WorkerFavoriteStickerService implements IFavoriteStickerService {
     if (stickerMsg.localURI && stickerMsg.localURI.startsWith('app://media/')) {
       return stickerMsg.localURI.replace('app://media/', '')
     }
-    let fileHash = 'unknown'
-    const sha = extractStickerSha(stickerMsg)
-    if (sha) {
-      fileHash = sha.replace(/[/\\?%*:|"<>+]/g, '-').substring(0, 64)
-    } else if (msgId) {
-      fileHash = msgId
-    }
-    return `hash_${fileHash}.webp`
+    // Must match exactly what WorkerMediaService wrote the cached file under —
+    // it names sticker files via getSafeMediaFileName (hex-encoded sha). The
+    // old base64 encoding here produced a different name, so "add to favorites"
+    // could never find the already-cached sticker file.
+    return getSafeMediaFileName(msgId ?? 'unknown', 'sticker', stickerMsg)
   }
 
   async addStickerToFavorites(msgId: string): Promise<boolean> {

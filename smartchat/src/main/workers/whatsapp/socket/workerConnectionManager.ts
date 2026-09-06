@@ -165,11 +165,26 @@ export class WorkerConnectionManager {
     this.eventDispatcher!.register(this.sock)
   }
 
+  private static readonly RECONNECT_MAX_DELAY_MS = 60_000
+
   private scheduleReconnect(delay: number) {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout)
     }
-    this.reconnectTimeout = setTimeout(() => this.connect(), delay)
+    this.reconnectTimeout = setTimeout(() => {
+      // connect() does real async work that can reject (Prisma open/query,
+      // hasCreds(), chat.count(), wipeAllData). A floating rejection here would
+      // silently kill the reconnect chain and strand the worker offline until
+      // the app restarts — so catch it and schedule another attempt.
+      this.connect().catch((err) => {
+        const nextDelay = Math.min(delay * 2, WorkerConnectionManager.RECONNECT_MAX_DELAY_MS)
+        console.error(
+          `[WhatsAppWorker] Reconnect attempt failed — retrying in ${nextDelay}ms:`,
+          err
+        )
+        this.scheduleReconnect(nextDelay)
+      })
+    }, delay)
   }
 
   private async wipeAndReconnect() {
@@ -179,7 +194,12 @@ export class WorkerConnectionManager {
     } catch (err) {
       console.error('[WhatsAppWorker] Error wiping data:', err)
     }
-    this.connect()
+    try {
+      await this.connect()
+    } catch (err) {
+      console.error('[WhatsAppWorker] Reconnect after wipe failed — rescheduling:', err)
+      this.scheduleReconnect(WorkerConnectionManager.RECONNECT_MAX_DELAY_MS)
+    }
   }
 
   private clearDirectory(dirPath: string): void {
@@ -194,21 +214,32 @@ export class WorkerConnectionManager {
   }
 
   private async wipeAllData(prismaClient: PrismaClient, userPath: string): Promise<void> {
-    try {
-      const tables = await prismaClient.$queryRawUnsafe<{ name: string }[]>(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_prisma_migrations'"
-      )
+    const tables = await prismaClient.$queryRawUnsafe<{ name: string }[]>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_prisma_migrations'"
+    )
 
-      await prismaClient.$executeRawUnsafe('PRAGMA foreign_keys = OFF;')
-      for (const table of tables) {
-        await prismaClient.$executeRawUnsafe(`DELETE FROM "${table.name}";`)
-      }
-      await prismaClient.$executeRawUnsafe("DELETE FROM sqlite_sequence;").catch((err: unknown) => {
+    // FK enforcement can only be toggled outside a transaction (PRAGMA is a
+    // no-op mid-transaction), so disable it here and restore it in `finally` —
+    // the old code skipped the restore on any error, leaving FK enforcement
+    // off for the rest of the connection's life.
+    await prismaClient.$executeRawUnsafe('PRAGMA foreign_keys = OFF;')
+    try {
+      // One atomic transaction: either every table is emptied or none is. The
+      // old per-DELETE loop could half-wipe the DB on a mid-loop failure and
+      // then the caller would treat the inconsistent DB as valid.
+      await prismaClient.$transaction(
+        tables.map((table) =>
+          prismaClient.$executeRawUnsafe(`DELETE FROM "${table.name}";`)
+        )
+      )
+      // Best-effort: sqlite_sequence only exists when a table uses AUTOINCREMENT.
+      await prismaClient.$executeRawUnsafe('DELETE FROM sqlite_sequence;').catch((err: unknown) => {
         console.warn('[WhatsAppWorker] sqlite_sequence reset skipped:', (err as Error)?.message || err)
       })
-      await prismaClient.$executeRawUnsafe('PRAGMA foreign_keys = ON;')
-    } catch (err) {
-      console.error('[WhatsAppWorker] Failed to dynamically clear tables:', err)
+    } finally {
+      await prismaClient.$executeRawUnsafe('PRAGMA foreign_keys = ON;').catch((err: unknown) => {
+        console.error('[WhatsAppWorker] Failed to restore foreign_keys pragma:', err)
+      })
     }
 
     this.clearDirectory(join(userPath, 'favourites'))

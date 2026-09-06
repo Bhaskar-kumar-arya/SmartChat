@@ -48,30 +48,58 @@ Files read: whatsapp.worker.ts, routing/workerCommandRouter.ts, socket/{workerCo
 **Why it's a bug:** `connect()` does real async work that can reject: `useLocalPrismaAuthState(prisma)` (Prisma open / query), `repos.authSettingsService.hasCreds()`, `prisma.chat.count()`, `wipeAllData`. Only `fetchLatestBaileysVersion` is guarded. If any of those throw during a reconnect (DB locked, transient Prisma error), the rejection is unhandled and the reconnect chain silently dies — the worker stays permanently disconnected with no retry and no surfaced error, until the app is restarted.
 **Fix idea:** wrap the timer/`wipeAndReconnect` body in an async function with try/catch that re-schedules another reconnect on failure.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 1) — `scheduleReconnect` now runs `connect().catch()` inside the
+timer and reschedules with exponential backoff capped at 60s; `wipeAndReconnect` awaits `connect()` in
+try/catch and reschedules on failure. Test: `workers/whatsapp/socket/workerConnectionManager.test.ts`
+(reschedule-on-reject + backoff cap). typecheck clean; full suite 888 pass / 5 baseline failures.
+Not manually run in-app (needs a forced reconnect + transient DB error).
 
 ### [S1-02] med — socket/workerConnectionManager.ts:188-204 (`wipeAllData`)
 **What:** The per-table `DELETE FROM "<table>"` loop runs as a sequence of independent `$executeRawUnsafe` calls with `PRAGMA foreign_keys = OFF` before and `= ON` after, no transaction.
 **Why it's a bug:** (1) If any `DELETE` throws mid-loop (FK violation because ordering isn't dependency-aware and the OFF pragma may not stick, disk/lock error), the catch is outside the loop, so the DB is left partially wiped — some tables emptied, others not — an inconsistent state that the subsequent `connect()` treats as a valid DB. (2) `PRAGMA foreign_keys = ON` is skipped on that error path; since the Prisma better-sqlite3 adapter reuses one connection, FK enforcement stays disabled for the rest of the worker's life, letting later writes create orphan rows. (3) `PRAGMA foreign_keys` is a no-op if issued inside an implicit transaction, so the intended disabling may not even take effect.
 **Fix idea:** compute delete order or wrap the whole wipe in a single `prisma.$transaction`, and restore `foreign_keys = ON` in a `finally`.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 1) — per-table DELETEs now run in one `prisma.$transaction([...])`
+(atomic: all tables or none), `PRAGMA foreign_keys = OFF/ON` toggled outside the tx with `ON` restored
+in a `finally` (was skipped on the error path before), and a wipe failure now propagates instead of
+being swallowed. `sqlite_sequence` reset kept best-effort outside the tx (table may not exist). Test:
+`workerConnectionManager.test.ts` (single-transaction wipe + FK-restore-on-failure).
 
 ### [S1-03] med — services/WorkerMediaService.ts:169-190
 **What:** For `templateMessage` media, `resolveMediaType` (utils/workerUtils.ts:24-35) returns a **freshly synthesized** `target` object, not a reference into `rawMessage`. `downloadAndCacheMedia` then mutates `mediaMsg.mediaKey` and sets `mediaMsg.localURI`, and persists via `this.messageRepository.updateContentAndFetchWithSender(msgId, JSON.stringify(rawMessage))`.
 **Why it's a bug:** for template-wrapped media the mutations never land in `rawMessage`, so the stored `content` never gets `localURI`. Every open of that message re-runs the full download, and the renderer has no `app://media/...` URI to resolve, so template media effectively never displays from cache.
 **Fix idea:** write the resolved node back into the real message tree (or persist a normalized copy), instead of mutating the throwaway object.
 **Status:** open
+**Fix status:** NOT A BUG in current code (Batch D re-verification). `resolveMediaType`'s template branch
+builds a fresh `target` **object literal** but its properties (`hydrated?.imageMessage` etc.) are live
+references into `rawMessage` (`unwrapMessage` does not deep-copy). So `mediaMsg.localURI = …` at
+`WorkerMediaService.downloadAndCacheMedia` does land in `rawMessage` and is persisted. Regression guard
+added: `WorkerMediaService.test.ts` "persists localURI into a templateMessage-wrapped media node".
+Closing as wontfix (already correct).
 
 ### [S1-04] med — services/WorkerMediaService.ts:49-53, 64-92
 **What:** `clearFavoriteStickerQueue()` sets `activeDownloadsCount = 0` and `isProcessingQueue = false` unconditionally, but in-flight `downloadAndCacheMedia` promises are not cancelled.
 **Why it's a bug:** `WorkerHistorySyncManager.clear()` calls `clearFavoriteStickerQueue()` on every reconnect / new sync. Any download still running when that happens will, on settle, run its `.finally` → `this.activeDownloadsCount--`, driving the counter negative. From then on `activeDownloadsCount >= this.concurrencyLimit` is satisfied only after `limit + N` concurrent downloads, so the concurrency cap is silently raised for the rest of the session (repeatedly, once per leftover). Unbounded parallel media downloads during the next sync.
 **Fix idea:** track in-flight promises and either await/settle them in `clear()`, or guard the `.finally` decrement with `Math.max(0, ...)` and a generation token so stale callbacks are ignored.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 1) — added `queueGeneration` counter bumped by
+`clearFavoriteStickerQueue`; each in-flight download captures the generation at start and its `.finally`
+no-ops if the generation changed (queue was cleared). Decrement also guarded with `Math.max(0, …)`.
+Test: `WorkerMediaService.test.ts` "leftover in-flight downloads do not drive activeDownloadsCount
+negative".
 
 ### [S1-05] med — services/messages/MediaHelper.ts:83-96 vs services/WorkerFavoriteStickerService.ts:34-41 / utils/workerUtils.ts:84-108
 **What:** Two different filename encodings for the same sticker. `getSafeMediaFileName` encodes a Buffer / `{type:'Buffer'}` `fileSha256` as **hex** (`sha.toString('hex')`), producing `hash_<hex>.webp`. `WorkerFavoriteStickerService.getStickerFileName` derives the name from `extractStickerSha`, which encodes the same shapes as **base64**, producing `hash_<base64-sanitized>.webp`.
 **Why it's a bug:** `WorkerMediaService` writes the cached sticker file under the hex name. `addStickerToFavorites` computes `srcPath = join(mediaDir, getStickerFileName(...))` (base64 name), finds no file, and throws `Sticker file not downloaded or cached yet` even though the sticker is cached. Manual "add to favorites" fails for any sticker whose stored `fileSha256` isn't already a plain string. (Auto-copy during sync happens to work only because `handleStickerAutoCopy` passes the real `filePath` through directly.)
 **Fix idea:** share one canonical sha-encoding + filename helper between `MediaHelper` and the worker sticker service.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 1) — `WorkerFavoriteStickerService.getStickerFileName` now
+delegates to `getSafeMediaFileName(msgId ?? 'unknown', 'sticker', stickerMsg)` (the same helper
+`WorkerMediaService` uses to name the cached file), keeping the `app://media/` localURI short-circuit.
+Buffer/`{type:'Buffer'}` shas now resolve to the same hex name on both sides; string-sha filenames are
+unchanged (so `syncFavoriteSticker` needs no migration). Test:
+`WorkerFavoriteStickerService.test.ts` (filename parity + `addStickerToFavorites` finds a hex-named
+cached file).
 
 ### [S1-06] low — services/WorkerFavoriteStickerService.ts:166-199 (`syncFavoriteSticker`)
 **What:** The `favoriteSticker` row is upserted (create branch) even when `downloadSuccess === false`.
