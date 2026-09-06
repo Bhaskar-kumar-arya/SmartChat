@@ -86,6 +86,37 @@ describe('HistorySyncManager', () => {
     expect(mockAuthSettings.setHistorySyncCompleted).toHaveBeenCalled()
   })
 
+  it('S3-03: finishSync is deferred while a chunk is still writing, then runs once it settles', async () => {
+    const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+    let resolveSync: (v: any) => void = () => {}
+    vi.mocked(handleHistorySync).mockReturnValue(new Promise(r => { resolveSync = r }) as any)
+
+    const chunkPromise = manager.handleSyncChunk({ progress: 10, syncType: 3 }, true, sock)
+
+    // A finishSync arriving mid-ingestion must not run dedup / persist completion
+    await manager.finishSync(sock, true)
+    expect(mockDeps.identityReconciliationService.deduplicateIdentities).not.toHaveBeenCalled()
+    expect(mockAuthSettings.setHistorySyncCompleted).not.toHaveBeenCalled()
+    expect(manager.isComplete).toBe(false)
+
+    resolveSync({ importedMessages: [] })
+    await chunkPromise
+
+    expect(mockDeps.identityReconciliationService.deduplicateIdentities).toHaveBeenCalled()
+    expect(mockAuthSettings.setHistorySyncCompleted).toHaveBeenCalled()
+    expect(manager.isComplete).toBe(true)
+  })
+
+  it('S3-03: inactivity timer is re-armed after a chunk and fires finishSync in the gap', async () => {
+    const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+
+    await manager.handleSyncChunk({ progress: 10, syncType: 3 }, true, sock)
+    expect(mockAuthSettings.setHistorySyncCompleted).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(mockAuthSettings.setHistorySyncCompleted).toHaveBeenCalled()
+  })
+
   it('clear should reset state', () => {
     manager.setInProgress(true)
     manager.clear()

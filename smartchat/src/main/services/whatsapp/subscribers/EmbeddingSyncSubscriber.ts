@@ -30,13 +30,13 @@ export class EmbeddingSyncSubscriber implements IWAEventSubscriber {
     this.embeddingService.setPaused(true)
   }
 
-  private onSyncProgress(payload: WASyncProgressPayload): void {
-    if (payload.progress < 100) {
-      this.embeddingService.setPaused(true)
-    } else {
-      console.log('[EmbeddingSyncSubscriber] Sync progress reached 100%. Unpausing embedding.')
-      this.embeddingService.setPaused(false)
-    }
+  private onSyncProgress(_payload: WASyncProgressPayload): void {
+    // Any sync-progress event means ingestion is still active — keep the pipeline
+    // paused. Do NOT unpause here: a payload with progress >= 100 can be an
+    // intermediate signal (RECENT-sync chunk hitting 100, or a group-hydration
+    // progress callback) that fires long before finishSync's deduplication runs.
+    // Unpausing is owned solely by onSyncComplete (the authoritative done signal).
+    this.embeddingService.setPaused(true)
   }
 
   private onSyncComplete(): void {

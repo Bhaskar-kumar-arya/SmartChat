@@ -49,10 +49,13 @@ describe('EmbeddingSyncSubscriber', () => {
     expect(embeddingService.setPaused).toHaveBeenCalledWith(true)
   })
 
-  it('should unpause embedding when progress is 100', async () => {
+  it('should NOT unpause embedding on progress 100 (only wa-sync-complete unpauses)', async () => {
+    // S3-02: an intermediate progress=100 (RECENT chunk / group-hydration callback)
+    // must not unpause while finishSync's deduplication is still pending.
     const payload: WASyncProgressPayload = { progress: 100 } as any
     await bus.emit('wa-sync-progress', payload)
-    expect(embeddingService.setPaused).toHaveBeenCalledWith(false)
+    expect(embeddingService.setPaused).toHaveBeenCalledWith(true)
+    expect(embeddingService.setPaused).not.toHaveBeenCalledWith(false)
   })
 
   it('should unpause embedding on wa-sync-complete', async () => {

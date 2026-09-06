@@ -362,6 +362,17 @@ WACatchUpManager (single source of truth) and delete the direct `setPaused` call
 `EmbeddingSyncSubscriber` and keep the direct calls — but don't ship a no-op subscriber that looks
 like it's providing the guarantee.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 3) — re-verification: the subscriber is **not** dead in current
+code. `WAWorkerBridge` forwards every worker domain event (incl. `wa-connected` / `wa-sync-progress` /
+`wa-sync-status` / `wa-sync-complete`) onto the main-process bus via `bus.emit(...)`, so
+`EmbeddingSyncSubscriber` is live and is the real pause mechanism for the **main** embedding service
+(the direct `setPaused` calls in `WorkerHistorySyncManager` only touch the worker's control). The real
+remaining bug was the secondary one: `onSyncProgress` unpaused on any `progress >= 100`, which for a
+RECENT non-full-history chunk (or a group-hydration progress callback) fires long before `finishSync`'s
+deduplication runs. Fix: `onSyncProgress` now only ever *pauses*; unpausing is owned solely by
+`onSyncComplete` (the authoritative done signal, emitted unconditionally at the end of
+`WorkerHistorySyncManager.finishSync`). Test: `EmbeddingSyncSubscriber.test.ts` updated — progress=100
+keeps it paused, only `wa-sync-complete` unpauses. typecheck clean; whatsapp suite 57 pass.
 
 ### [S3-03] med — services/whatsapp/HistorySyncManager.ts:85-88 (also the worker's copy via same file)
 **What:** `this.syncTimeout = setTimeout(() => this.finishSync(sock, syncFullHistory),
@@ -380,6 +391,16 @@ re-syncing the missing tail.
 the top of `handleSyncChunk` and re-arm only in a `finally` after `handleHistorySync` resolves; or
 guard `finishSync` so it no-ops while a chunk is actively being processed.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 3) — both copies (`HistorySyncManager` +
+`WorkerHistorySyncManager`). Added an `activeChunks` counter (incremented at the top of
+`handleSyncChunk`, decremented in a new `finally`) and a `pendingFinish` flag. The safety timer is now
+**disarmed** for the duration of a chunk's `handleHistorySync` write and **re-armed in the `finally`**
+only once `activeChunks === 0` — so it covers inactivity *between* chunks, never work in flight.
+`finishSync` no-ops with `pendingFinish = true` while `activeChunks > 0`; the `finally` runs the
+deferred `finishSync` once the last in-flight chunk settles. `clear()` resets both new fields. Tests:
+`HistorySyncManager.test.ts` +2 (deferred-while-writing, timer re-arm), new
+`WorkerHistorySyncManager.test.ts` +2 (same). typecheck clean; whatsapp suite 57 pass. Not manually
+run in-app (needs a >180s chunk persist).
 
 ### [S3-04] low — services/whatsapp/WhatsAppConnectionManager.ts (connect call sites) & ipcHandlers.ts:252
 **What:** `connect()` is invoked as a floating promise in several places: `ipcHandlers.ts:252`

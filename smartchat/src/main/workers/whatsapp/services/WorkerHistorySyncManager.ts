@@ -41,6 +41,11 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
   private syncComplete = false
   private isInitialSyncInProgress = false
   private syncTimeout: NodeJS.Timeout | null = null
+  // S3-03: number of handleSyncChunk calls currently writing to the DB. The
+  // inactivity safety timer must only fire in a gap *between* chunks, and
+  // finishSync must never run while ingestion is still in flight.
+  private activeChunks = 0
+  private pendingFinish = false
 
   constructor(
     private deps: HistorySyncDependencies,
@@ -65,6 +70,8 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
     this.maxProgress = 0
     this.syncComplete = false
     this.isInitialSyncInProgress = false
+    this.activeChunks = 0
+    this.pendingFinish = false
     if (this.syncTimeout) {
       clearTimeout(this.syncTimeout)
       this.syncTimeout = null
@@ -73,6 +80,7 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
   }
 
   async handleSyncChunk(data: unknown, syncFullHistory: boolean, sock: WASocket): Promise<void> {
+    this.activeChunks++
     try {
       this.syncChunkCount++
       const rawData = data as Record<string, unknown>
@@ -83,8 +91,12 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
         this.deps.embeddingService.setPaused(true)
         this.deps.mediaService.setFavoriteStickerQueuePaused(true)
         this.isInitialSyncInProgress = true
-        if (this.syncTimeout) clearTimeout(this.syncTimeout)
-        this.syncTimeout = setTimeout(() => this.finishSync(sock, syncFullHistory), HISTORY_SYNC_TIMEOUT_MS)
+        // Disarm the inactivity timer for the duration of this chunk's write —
+        // it is re-armed in the finally once no chunk is in flight.
+        if (this.syncTimeout) {
+          clearTimeout(this.syncTimeout)
+          this.syncTimeout = null
+        }
       }
 
       const syncResult = await handleHistorySync(
@@ -139,11 +151,32 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       }
     } catch (err) {
       console.error('[WorkerHistorySync] Error processing sync payload:', err)
+    } finally {
+      this.activeChunks--
+      if (this.activeChunks === 0 && !this.syncComplete) {
+        if (this.pendingFinish) {
+          this.pendingFinish = false
+          await this.finishSync(sock, syncFullHistory).catch((err) => {
+            console.error('[WorkerHistorySync] Deferred finishSync failed:', err)
+          })
+        } else {
+          if (this.syncTimeout) clearTimeout(this.syncTimeout)
+          this.syncTimeout = setTimeout(() => this.finishSync(sock, syncFullHistory), HISTORY_SYNC_TIMEOUT_MS)
+        }
+      }
     }
   }
 
   async finishSync(sock: WASocket, syncFullHistory: boolean): Promise<void> {
     if (this.syncComplete) return
+    if (this.activeChunks > 0) {
+      // A chunk is still writing to the DB. Defer completion (dedup, group
+      // hydration, history_sync_completed) until it settles — running them now
+      // would corrupt identity dedup against a half-imported dataset and persist
+      // history_sync_completed before the sync actually finished.
+      this.pendingFinish = true
+      return
+    }
     this.syncComplete = true
     this.isInitialSyncInProgress = false
     if (this.syncTimeout) {
