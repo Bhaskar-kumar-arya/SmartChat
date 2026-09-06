@@ -95,7 +95,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 
 | Slice | Med count | Status |
 |---|---|---|
-| 1 — WhatsApp worker & socket | 5 | TODO |
+| 1 — WhatsApp worker & socket | 5 | IN PROGRESS (2026-09-06) |
 | 2 — Message pipeline | 6 | TODO |
 | 3 — WhatsApp service & subscribers | 3 | TODO |
 | 4 — Chats & sync | 4 | TODO |
