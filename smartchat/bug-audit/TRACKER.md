@@ -20,17 +20,17 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 9 | Kernel storage, channels, ipc, ui | DONE (10 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 4 low. Deep-read PrismaPluginStorageRepository, {Direct,Worker}PluginChannel, overlayIpc, panelIpc, contributionIpc, OverlayHost, PanelHost. S9-01/S9-02 = panel event IPC bypasses bus-accessor + permission checks. Light: I*.ts interfaces |
 | 10 | App IPC & auth | DONE (10 findings) | 2026-09-06 | 1 crit / 1 high / 4 med / 4 low. S10-01 = swallowed authState read error → hasCreds()=false → wipeAllData on a logged-in user (data loss). S10-02 = silent Signal keystore tx failure. Deep-read auth.ts, ipcHandlers.ts, services/auth/*, ServiceContainer.ts; ipc/*.types.ts trivial |
 | 11 | apiServer, search, notification, calls, audio | DONE (14 findings) | 2026-09-06 | 0 crit / 1 high / 7 med / 6 low. S11-01 = HTTP /api/tools/execute bypasses the tool permission model (ExecuteScript/SQL/send over a static-token localhost API). S11-02 = APIConfigProvider clobbers ai_preferences.json on a transient read error. S11-03 = embedding worker crash never rejects pending jobs → index queue stalls forever. Light: I*.ts interfaces |
-| 12 | SDK, tools, data wipe, domain, db, protocol | IN PROGRESS | 2026-09-06 | DataWipeService = data-loss risk |
+| 12 | SDK, tools, data wipe, domain, db, protocol | DONE (14 findings) | 2026-09-06 | 1 crit / 2 high / 6 med / 5 low. S12-01 = `app://local/<abs>` arbitrary file read (LFI "fix" was a no-op). S12-03 = executeScript vm "sandbox" trivially escapes to host RCE. S12-05 = DataWipeService partial-wipe swallowed + reported success. Light: sdk/{events,contributions,context,overlay}.ts, domain/*.types.ts. manifest.main/id traversal already S8-xx |
 | 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
 
 ## Summary counts
 
 | Severity | Count |
 |----------|-------|
-| crit | 2 |
-| high | 5 |
-| med  | 54 |
-| low  | 43 |
+| crit | 3 |
+| high | 7 |
+| med  | 60 |
+| low  | 48 |
 
 ---
 
@@ -1525,7 +1525,195 @@ triggers `ERR_HTTP_HEADERS_SENT` inside the `.catch`, which is itself unhandled.
 
 ## Slice 12 — SDK, tools, data wipe, domain, db, protocol
 
-_none yet_
+Files read: services/DataWipeService.ts, tools/{ExecuteScriptTool,QueryDatabaseTool,ReadMessagesTool,
+SendMessageTool,MessageActionTool,ChatActionTool}.ts, services/protocol/{AppProtocolHandler,
+SecureFileRegistry}.ts, services/storage/LocalFileStorage.ts, db/schema-migrations.ts,
+auth.ts:55-135 (adapter proxy / migration / sqlite-vec), workers/whatsapp/whatsapp.worker.ts:1-55
+(worker migration bootstrap), packages/sdk/src/{channel,bridge,manifest,cli/package}.ts,
+domain/{projections,filters,entities,types}.ts. Cross-ref: index.ts:6-8,165-173 (protocol reg).
+Light / not deep-read: sdk/{events,contributions,context,overlay,generatedDocs,index}.ts (type/surface
+files), domain/*.types.ts (interface-only). NOTE: manifest.id / manifest.main path-traversal is
+already filed as S8-xx — not re-reported here.
+
+### [S12-01] crit — services/protocol/AppProtocolHandler.ts:33-36
+**What:** `handleRequest` still special-cases `host === 'local'` and treats the URL pathname as an
+absolute filesystem path (`filePath = decodedPath`), then `fs.existsSync(filePath)` + `net.fetch`es
+it. index.ts:167 says "'local' directory access is intentionally removed to prevent LFI" — but only
+the `registry.registerDirectory('local', …)` call was removed; the handler never consults the
+registry for `local`, so the removal is a no-op.
+**Why it's a bug:** the `app` scheme is registered `secure + standard + supportFetchAPI + stream +
+corsEnabled + bypassCSP` (index.ts:7). Any renderer code — or injected/remote content running in a
+renderer, or a plugin webview that can reach `app://` — can `fetch('app://local/C:/Users/<user>/AppData/.../dev.db')`
+(or `app://local//etc/passwd`, auth-state DB, key files) and read arbitrary local files off disk.
+Full local-file disclosure across the trust boundary.
+**Fix idea:** delete the `host === 'local'` branch entirely; route every host through
+`registry.resolvePath` so only whitelisted directories are reachable.
+**Status:** open
+
+### [S12-02] med — services/protocol/SecureFileRegistry.ts:26
+**What:** The traversal guard is `if (!resolvedPath.startsWith(baseDir)) return null`. A plain string
+prefix check: with `baseDir = <userData>/media`, a resolved path of `<userData>/media-x/…` (or any
+sibling directory whose name begins with `media`) passes the check.
+**Why it's a bug:** `../media_backup/x` or similar resolves outside the intended `media` /
+`favourites` roots yet is served. Also brittle on Windows drive-letter casing (`C:\` vs `c:\` from
+`path.resolve`) which can wrongly *deny* valid paths.
+**Fix idea:** require `resolvedPath === baseDir || resolvedPath.startsWith(baseDir + path.sep)`;
+normalize case on win32.
+**Status:** open
+
+### [S12-03] high — tools/ExecuteScriptTool.ts:198-256 (`buildSandbox`)
+**What:** The `vm.createContext` sandbox is presented as a security boundary ("Safe JS built-ins
+only", "Explicitly block dangerous globals" — `require`, `process`, `Buffer`, … set to `undefined`),
+but host-realm constructors are injected directly (`Promise`, `Object`, `Array`, `Function` reachable
+via `Object.constructor`, …).
+**Why it's a bug:** `vm` is not a sandbox. A script can do
+`Array.constructor('return process')()` (or `this.constructor.constructor(...)`) to reach the host
+`process` / `require` and get full Node execution — fs, child_process, network, the plaintext
+key files. The tool `requiresPermission`, but the user is approving what the description frames as a
+sandboxed "safe built-ins" script; a prompt-injected script (from message content the model just
+read) that the user waves through is arbitrary RCE in the main process.
+**Fix idea:** don't rely on `vm` for isolation — run scripts in a real worker/`child_process` with no
+`require`, a frozen minimal global, and an explicit RPC channel for tool calls; or drop the
+"sandbox" framing and gate the tool far more strictly.
+**Status:** open
+
+### [S12-04] med — tools/ExecuteScriptTool.ts:161-178, 266-279
+**What:** `runScriptWithTimeout` is a `Promise.race` against a `setTimeout`. On timeout it rejects
+the `execute` call with `timedOut: true`, but nothing stops the still-running vm script — `vm` has no
+async interruption and the promise is not cancelled. The `setTimeout` is also never `clearTimeout`ed
+on the success path.
+**Why it's a bug:** after the model is told the script "timed out", the orphaned script keeps
+executing for real — including further `await <tool>(…)` calls that have side effects (`sendMessage`,
+`messageAction`, `chatAction`, DB writes via other tools) up to `MAX_TOOL_CALLS = 10000`. The user
+sees a timeout; messages still get sent. The dangling timer also keeps the event loop busy 60s per
+call.
+**Fix idea:** thread an `AbortSignal` the tool wrappers check before executing; refuse new tool calls
+once `timedOut`; `clearTimeout` in a `finally`.
+**Status:** open
+
+### [S12-05] high — services/DataWipeService.ts:33-53 & 55-76 (`wipeAllData` / `wipeUserDataOnly`)
+**What:** The per-table `DELETE FROM "<name>"` loop runs as independent `$executeRawUnsafe` calls
+bracketed by `PRAGMA foreign_keys = OFF/ON`, with **no transaction**; the single `try/catch` is
+outside the loop and only `console.error`s; both methods return `void` and never throw; `wipeAllFolders()`
+runs unconditionally afterward; the method logs `"All database tables cleared"` regardless.
+**Why it's a bug:** (1) If any `DELETE` throws mid-loop (lock, FK, disk), the DB is left
+**partially wiped** — some tables emptied, others intact — and `PRAGMA foreign_keys = ON` is skipped,
+so FK enforcement stays OFF on that pooled connection for the rest of the process (later writes
+silently create orphan rows). (2) `wipeAllFolders()` still deletes all of `media/`, `favourites/`,
+`temp*/` even though the DB wipe failed → DB rows point at files that no longer exist. (3) The caller
+(see S10-01: this runs on a *logged-in* user when `hasCreds()` wrongly returns false) gets no error
+and the success log, so the app proceeds as if the wipe was clean. (4) `PRAGMA foreign_keys` is a
+no-op if issued inside an implicit/Prisma-wrapped transaction, so the OFF may not even take effect.
+**Fix idea:** wrap the whole wipe in one `prisma.$transaction`, restore `foreign_keys = ON` in a
+`finally`, propagate failure to the caller, and only `wipeAllFolders()` after the DB wipe committed.
+**Status:** open
+
+### [S12-06] med — auth.ts:94-98 & workers/whatsapp/whatsapp.worker.ts:31-37
+**What:** `schema-migrations.ts` is documented to treat a failed migration as "a startup-blocking
+error" and `runMigrations` re-throws to enforce that. Both call sites defeat it: the adapter-proxy
+`connect` hook (auth.ts) wraps `runMigrations(conn.client)` in `try { } catch { console.error("app
+may be in a broken state") }` and continues; the worker does the same ("worker may be in a broken
+state").
+**Why it's a bug:** a genuinely failed migration (bad future DDL, disk full, permissions) no longer
+blocks startup — Prisma proceeds against an inconsistent schema and every query touching the missing
+table throws at runtime, scattered and hard to diagnose, instead of one clear fatal error at boot.
+**Fix idea:** let the throw propagate (fail fast with a user-visible "database upgrade failed"), or
+explicitly decide migrations are best-effort and remove the "startup-blocking" guarantee from the
+docstring.
+**Status:** open
+
+### [S12-07] med — db/schema-migrations.ts:104-146 + auth.ts:95 + whatsapp.worker.ts:32-33
+**What:** On first launch the **main** process (Prisma adapter `connect` proxy) and the **worker**
+(its own raw `new openDatabase(dbPath)`) both run `runMigrations` concurrently against the same file.
+`INSERT INTO "_schema_migrations"` is a plain `INSERT` (not `INSERT OR IGNORE`), and the worker's
+raw `migrationDb` has **no `busy_timeout`** set (the `PRAGMA busy_timeout` is applied only later, to
+the separate Prisma connection).
+**Why it's a bug:** the two racers both read an empty `_schema_migrations`, both try to apply
+`0001_*` and `INSERT` the same PK → the loser rejects with a UNIQUE violation; or the loser's write
+transaction hits `SQLITE_BUSY` immediately (no busy_timeout). Both paths are swallowed (S12-06) with
+a scary "broken state" log. If the losing process then runs Prisma queries before the winner's DDL
+has committed, `Citation` / `Extension` / `ExtensionKV` don't exist yet → query failures during
+startup.
+**Fix idea:** `INSERT OR IGNORE` into `_schema_migrations`; set `busy_timeout` on the raw
+`migrationDb` before `runMigrations`; ideally run migrations in exactly one process and have the
+other wait.
+**Status:** open
+
+### [S12-08] med — tools/QueryDatabaseTool.ts:258-265 & tools/ReadMessagesTool.ts:202-209
+**What:** The read-only guard loops `FORBIDDEN_KEYWORDS` (`INSERT UPDATE DELETE DROP ALTER CREATE
+… REPLACE TRUNCATE GRANT REVOKE VACUUM`) and rejects the query if `new RegExp('\\b'+kw+'\\b').test(normalized)`
+matches, where `normalized` is the whole uppercased SQL — **including string literals**.
+**Why it's a bug:** legitimate message searches are rejected: `WHERE textContent LIKE '%create a
+poll%'`, `'%please update me%'`, `'%delete this%'`, `'%grant access%'` etc. all contain a forbidden
+word as data and throw `Forbidden keyword detected`. The AI simply cannot search the message corpus
+for a large set of common English words. (`better-sqlite3` already compiles only one statement and
+rejects multi-statement input, so the blocklist is also weak as a write-prevention mechanism —
+prefer relying on that + a read-only connection.)
+**Fix idea:** enforce read-only structurally (open a read-only DB handle for these tools / check the
+parsed statement type) instead of substring-scanning; at minimum strip string/quoted literals and
+comments before keyword matching.
+**Status:** open
+
+### [S12-09] med — tools/QueryDatabaseTool.ts:299-307 (`execute`, row-cap enforcement)
+**What:** When the query has no `LIMIT`, the tool does `finalSql = trimmed.replace(/;?\s*$/, '') + '
+LIMIT ' + MAX_ROWS`. Trailing `--` line comments are not stripped.
+**Why it's a bug:** a query ending in a `-- comment` (or with a trailing comment on the last line)
+gets ` LIMIT 1500` appended **on the same line, after the `--`**, so SQLite ignores it. The
+`MAX_ROWS` guarantee ("Results are capped at 1500 rows automatically") is silently bypassed and an
+unbounded result set is loaded into memory and serialized (twin mechanism to S2-11, but here the cap
+is advertised as guaranteed). A `/* … */` block comment spanning the end has the same effect.
+**Fix idea:** wrap every query as `SELECT * FROM (<sql>) LIMIT <cap>` (the path already used when a
+LIMIT is present) rather than string-appending; or strip trailing comments first.
+**Status:** open
+
+### [S12-10] low — packages/sdk/src/channel.ts:393-405 (`schedulerAPI`)
+**What:** `ctx.scheduler.setInterval` / `setTimeout` create real timers and return a disposer, but
+`WorkerPluginRuntime` never tracks them. `plugin:deactivate` only runs `deactivateCallbacks`.
+**Why it's a bug:** a plugin that schedules an interval and relies on the "managed" scheduler API
+(rather than manually disposing in `onDeactivate`) leaks the timer when it is disabled/unloaded — it
+keeps firing and calling kernel APIs against a deactivated context.
+**Fix idea:** track every scheduler-created timer id and clear them all on `plugin:deactivate`.
+**Status:** open
+
+### [S12-11] low — packages/sdk/src/channel.ts:402-405 (`schedulerAPI.onCron`)
+**What:** `onCron(name, fn)` does `self.eventHandlers.set(\`cron:${name}\`, [fn])` — a `set` (not
+`push`), and unlike `eventsAPI.on` it never sends `kernel:events:subscribe`.
+**Why it's a bug:** a second `onCron` with the same `name` silently replaces the first handler; and
+cron delivery depends entirely on the kernel pushing `kernel:events:emit { event: 'cron:<name>' }`
+without a subscription record, which is inconsistent with how every other event is wired.
+**Fix idea:** append to the handler list and register a subscription like `eventsAPI.on` does.
+**Status:** open
+
+### [S12-12] low — packages/sdk/src/channel.ts:121-129 & 218-226
+**What:** The `kernel:events:emit` and `kernel:ui:overlay:event` incoming handlers do
+`for (const h of handlers) { await h(payload) }`.
+**Why it's a bug:** if one plugin event/overlay handler throws, the rejection propagates out of the
+loop so the remaining handlers for that same event never run; for `kernel:events:emit` it also turns
+into a `respondError` back to the kernel. One buggy handler silently disables the others.
+**Fix idea:** wrap each `h(payload)` in try/catch and log, matching the isolation other dispatchers
+use.
+**Status:** open
+
+### [S12-13] low — packages/sdk/src/cli/package.ts:100-103
+**What:** `packagePlugin` does `zip.addLocalFolder(nodeModulesPath, 'node_modules')` — the plugin's
+**entire** `node_modules` tree is bundled into the distributed `.scext`, including devDependencies,
+`.bin`, nested caches, and any `.env` / secret files vendored inside dependencies;
+`adm-zip.addLocalFolder` also follows symlinks.
+**Why it's a bug:** ships far more than the plugin needs and risks leaking secrets that happen to
+live under a dependency directory into a shareable artifact.
+**Fix idea:** bundle only production deps (walk the `dependencies` closure), exclude `.bin`/dotfiles,
+don't follow symlinks; or require plugins to pre-bundle.
+**Status:** open
+
+### [S12-14] low — services/storage/LocalFileStorage.ts:67-77 (`resolveMediaPath`)
+**What:** `appUri.replace('app://media/', '')` / `'app://favourites/'` then `join(userData, 'media',
+fileName)` with no `basename` / traversal check.
+**Why it's a bug:** an `appUri` of `app://media/../../<path>` resolves outside the media dir; callers
+(e.g. `MessageActionService`, open-file paths) that pass through a renderer- or content-derived URI
+get an arbitrary-path read/copy (twin of S2-12).
+**Fix idea:** `path.basename` the filename, or resolve and assert containment within the media /
+favourites dir before returning.
+**Status:** open
 
 ## Slice 13 — Cross-cutting pass
 
