@@ -12,9 +12,9 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 1 | WhatsApp worker & socket | DONE (8 findings) | 2026-09-06 | 0 crit / 0 high / 5 med / 3 low |
 | 2 | Message pipeline | DONE (12 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 6 low; peripheral formatters + ffmpeg paths lightly covered |
 | 3 | WhatsApp service & subscribers | DONE (6 findings) | 2026-09-06 | 1 high / 3 med / 2 low; S3-01 = plugin subs lost on bus rebuild. type files + BaileysPatcher lightly covered |
-| 4 | Chats & sync | IN PROGRESS | 2026-09-06 | |
-| 5 | Contacts | IN PROGRESS | 2026-09-06 | |
-| 6 | AI (providers, mentions, citations) | IN PROGRESS | 2026-09-06 | ~45 files; may need 2 sessions |
+| 4 | Chats & sync | DONE (9 findings) | 2026-09-06 | 0 crit / 0 high / 4 med / 5 low; S4-01 = group hydration aborts remaining batches on concurrent-write conflict; S4-02 = chat-list pagination returns dup/overflow rows. I*.ts interfaces lightly covered |
+| 5 | Contacts | DONE (5 findings) | 2026-09-06 | 0 crit / 0 high / 2 med / 3 low; identity merge tx gap + cross-process cache staleness. I*.ts interfaces lightly covered |
+| 6 | AI (providers, mentions, citations) | DONE (11 findings) | 2026-09-06 | 1 crit / 0 high / 7 med / 3 low. Deep-read AIService, providers/*, AIKeyService, FSKeyStorage, AIChatSessionService, AIChatExportService, AIToolService, mentions/*, citations/*. Light: prompts/* (SystemPromptContent, protocol strategies), ToolDefinitionFormatter |
 | 7 | Kernel API modules & router | TODO | — | |
 | 8 | Kernel plugins, contributions, permissions | TODO | — | |
 | 9 | Kernel storage, channels, ipc, ui | TODO | — | |
@@ -29,8 +29,8 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |----------|-------|
 | crit | 0 |
 | high | 1 |
-| med  | 14 |
-| low  | 11 |
+| med  | 16 |
+| low  | 14 |
 
 ---
 
@@ -346,11 +346,246 @@ absent.
 
 ## Slice 4 — Chats & sync
 
-_none yet_
+Files read: historySync.ts, services/sync/{SyncChatsHandler,SyncMessagesHandler,SyncContactsHandler,
+SyncRepository,index}.ts, services/chats/{ChatRepository,ChatService,ChatActionService,ChatListEnricher,
+GroupHydrationService,GroupMembershipService,ChatMemberRepository,CommunityRepository}.ts,
+services/chats/sync/{ChatSyncHandler,CommunitySyncHandler,MembershipSyncHandler}.ts,
++ cross-refs: workers/whatsapp/services/WorkerHistorySyncManager.ts, WorkerMediaService.downloadFavoriteStickersFromSync,
+messages/ReactionRepository.bulkSyncReactions, utils/messageUtils.parseBaileysTimestamp.
+Not deep-read (thin / interface-only): I*.ts interfaces, types.ts, chats/CommunityRepository trivial.
+
+### [S4-01] med — services/chats/GroupHydrationService.ts:29-44 + services/sync/SyncRepository.ts:79-98, 191-198 + chats/sync/MembershipSyncHandler.ts:228-243
+**What:** `hydrateGroups` iterates group batches with `for (i += BATCH_SIZE) { await this.hydrateBatch(...) }`
+and **no per-batch try/catch**. `hydrateBatch` → `MembershipSyncHandler` / `ChatSyncHandler` /
+`CommunitySyncHandler`, which call `SyncRepository.bulkCreateChats` (`prisma.chat.createMany`),
+`bulkCreateIdentityAliases` (`identityAlias.createMany`), `bulkUpdateChats`/`bulkUpdateIdentityAliases`
+(`$transaction` of `.update`s). None pass `skipDuplicates` (unsupported on the SQLite provider anyway)
+and none are wrapped in a catch inside the handler.
+**Why it's a bug:** the worker processes live Baileys events (`contacts.upsert`, `messaging-history.set`
+tail, group events) on the **same** event loop, interleaving at the `await new Promise(r => setImmediate(r))`
+yield points. A live write that inserts an `IdentityAlias` / `Chat` / `Identity` row (or deletes a Chat)
+between a handler's `findIdentityAliases` / `findExistingChats` read and its `createMany` / `$transaction`
+write causes a unique-constraint violation (`createMany`) or `P2025` (`update` in a `$transaction`). That
+rejection propagates out of the `for` loop in `hydrateGroups`; `finishSync` only `.catch()`es at the
+top (`WorkerHistorySyncManager.ts:171`), so **every remaining group batch is skipped** — members,
+community links, and LID↔PN aliases for all groups after the failing batch are never hydrated until a
+future full re-sync. Silent (one `console.error`).
+**Fix idea:** wrap `hydrateBatch` in a per-batch try/catch that logs and continues; make the bulk
+create/update repo methods tolerate pre-existing rows (filter against a fresh existence check inside the
+same tick, or catch P2002/P2025 and fall back to per-row upsert like `ReactionRepository` does).
+**Status:** open
+
+### [S4-02] med — services/chats/ChatListEnricher.ts:22-52 (`getChatList`)
+**What:** After fetching exactly `pageSize` chats (`findChatsPaginated(skip, take)`), the method appends
+**every** chat returned by `findChatsByCommunityJids(...)` for any community touched by the page — with
+no limit and no relation to the `skip`/`take` window — then enriches and returns the whole set.
+**Why it's a bug:** (1) a "page" can return far more than `pageSize` rows; a community with 60 subgroups
+pulls all 60 in whenever one member chat lands on the page, doing 60× the per-chat enrichment work
+(`findLastMessage` + `findLastReaction` + name resolution each). (2) Those injected sibling chats are
+**not excluded from their own natural page**, so the same `jid` is returned on multiple pages. An
+infinite-scroll renderer that concatenates pages gets duplicate chat rows (duplicate React keys / repeated
+entries) unless it dedups by jid defensively. (3) `skip`/`take` count only the base query, so the injected
+rows shift nothing — pagination cannot be reasoned about.
+**Fix idea:** resolve community grouping in the renderer, or fetch community siblings once for the whole
+list and dedupe by jid across the already-emitted set / track a cursor; never return rows outside the
+requested window from a paginated call.
+**Status:** open
+
+### [S4-03] med — services/sync/SyncMessagesHandler.ts:253-291 (`_parseBatch`) + 216-238 (`_resolveSenderId`)
+**What:** `_parseBatch` loops over the 200-message batch and does `await this._resolveSenderId(...)` for
+every message serially. For a never-before-seen participant `_resolveSenderId` runs
+`await contactService.upsertContact({ id })` **then** `await contactService.getIdentityIdByJid(id)` — two
+sequential DB round-trips — before the loop can advance.
+**Why it's a bug:** (1) Performance: an INITIAL_BOOTSTRAP / FULL chunk with thousands of messages from
+many distinct senders becomes thousands of strictly-sequential DB round-trips (the `identityCache` only
+helps repeats within the same `processMessages` call); this is the kind of "await in a loop that should be
+batched" the checklist calls out, and it runs while `embeddingService` and the sticker queue are paused
+and the 180 s `finishSync` safety timer is ticking (feeds [S3-03]). (2) Correctness smell: `upsertContact`
+followed by a separate `getIdentityIdByJid` is check-then-act on async state — a concurrent identity
+merge/dedup between the two awaits can make the second call return an id that is about to be deleted, or
+`null` (then `senderId` is silently dropped to `null` and the message is stored with no sender).
+**Fix idea:** collect all distinct participant JIDs for the batch up front, do one bulk
+upsert + one bulk `batchGetIdentityIds`, then resolve from the map with no per-message awaits (the
+`MembershipSyncHandler` batch pattern).
+**Status:** open
+
+### [S4-04] med — services/chats/ChatService.ts:42-44 (`upsertChat`)
+**What:** `if (typeof update.unreadCount === 'number' && update.unreadCount === 0) data.unreadCount = 0`
+— the only unread value this handler will ever persist is `0`. Any `chats.update` / `chats.upsert`
+carrying `unreadCount > 0` is dropped.
+**Why it's a bug:** `chats.update` is how WhatsApp propagates "marked unread on another device" and the
+authoritative unread count after a multi-device reconciliation. Because the branch ignores every non-zero
+value, a chat the user marked unread on their phone (or whose server-side unread count jumped) stays
+showing as read in this client, and the count can only ever be driven by the local `incrementUnread`
+path. There is no comment saying non-zero is intentionally owned elsewhere.
+**Fix idea:** persist `unreadCount` whenever it is a number `>= 0` (WhatsApp uses `-1` for "unknown" —
+skip only that), or document why non-zero is deliberately ignored.
+**Status:** open
+
+### [S4-05] low — services/sync/SyncMessagesHandler.ts:73, 96, 108 (`importedMessages`)
+**What:** `importedMessages` is typed `Message[]` but is filled with `push(...(standardMessages as unknown
+as Message[]))` where `standardMessages` are freshly parsed `SyncMessageRow` objects, not DB rows. They
+are pushed **before** `bulkSyncMessages` is awaited, and `bulkSyncMessages` swallows its errors to
+`console.error` ([S2-10]).
+**Why it's a bug:** the array is handed to `WorkerMediaService.downloadFavoriteStickersFromSync`, which
+queues a favorite-sticker download keyed on `msg.id`. If the batch's `bulkSyncMessages` actually failed,
+downloads are queued for message ids that are not in the DB (later `queueFavoriteStickerDownload` /
+persistence steps no-op or error). It also includes revoked/edited/`ciphertext` rows as "imported".
+Works today only because both consumers read just `.id` and `.content`; any consumer that touches a real
+`Message` column (`remoteJid`, `createdAt`, …) will get `undefined`.
+**Fix idea:** return the rows actually persisted (or their ids) from `bulkSyncMessages`, and only push
+after it resolves; drop the `as unknown as` cast by giving the function an honest return type.
+**Status:** open
+
+### [S4-06] low — services/messages/ReactionRepository.ts:80-122 (`bulkSyncReactions`) as driven by SyncMessagesHandler.ts:99-103
+**What:** `bulkSyncReactions` keeps only reactions whose `targetId` already exists in the DB (or, per its
+doc comment, the current batch — the `_currentBatchIds` param is actually unused/dead). It is invoked once
+per 200-message batch, and standard messages of a batch are inserted just before its reactions are
+processed.
+**Why it's a bug:** a reaction collected in batch *k* whose target message is only inserted in batch
+*k+1..n* of the **same** history chunk is silently discarded (`existingMessageIds` miss → filtered out,
+`valid.length === 0` → `return`). There is no deferral/retry, so that reaction is lost until the exact
+sticker/message is re-encountered in a later sync. History payloads don't guarantee a message precedes
+its inline `reactionMessage`.
+**Fix idea:** accumulate unresolved reactions across batches within a `processMessages` call and retry
+them after all message batches are inserted; or run one reaction pass at the end.
+**Status:** open
+
+### [S4-07] low — services/sync/SyncChatsHandler.ts:131 & SyncContactsHandler.ts:124
+**What:** `processChats` returns `chats.length` and `processContacts` returns `contacts.length`, ignoring
+the local `count` that skips entries with no `id`.
+**Why it's a bug:** cosmetic only — the values become `chatCount` / `contactCount` in the
+`[HistorySync]` progress log and the `HistorySyncResult`, overstating how many rows were actually
+upserted when the payload contains id-less entries. No functional impact found.
+**Fix idea:** return the real processed count.
+**Status:** open
+
+### [S4-08] low — services/chats/GroupHydrationService.ts:40-42
+**What:** `const progressVal = 95 + Math.round((processedCount / totalGroups) * 4)` — the multiplier is
+`4`, so the reported progress asymptotes to `99` and the loop never emits `100`.
+**Why it's a bug:** minor UX — the group-hydration phase of a sync visibly stalls at 99%. `finishSync`
+does later publish an explicit `progress: 100`, so it self-corrects, but only after
+`deduplicateIdentities()` (which can take seconds-to-minutes) completes.
+**Fix idea:** use `* 5` (95→100) or emit an explicit 100 when `processedCount === totalGroups`.
+**Status:** open
+
+### [S4-09] low — services/chats/ChatMemberRepository.ts:13-52 (`upsertChatMember`) via GroupMembershipService.ts:55-95
+**What:** `upsertChatMember` issues `chat.findUnique` + (maybe `chat.create` + re-`findUnique`) +
+`identity.findUnique` + `chatMember.upsert` — 3–5 statements per member — and
+`GroupMembershipService.syncGroupMembers` calls it in a `for` loop with `await` per participant (yield
+every 5).
+**Why it's a bug:** performance on the live path (`groups.update` / metadata refresh for a large group):
+a 500-member group is ~2000 sequential statements. The batch sync path (`MembershipSyncHandler`) already
+does this set-based; the live path does not. Not incorrect, just slow and lock-hungry while other worker
+writes are queued.
+**Fix idea:** give `syncGroupMembers` the same batched pre-fetch + `bulkUpsertChatMembers` treatment as
+`MembershipSyncHandler`.
+**Status:** open
 
 ## Slice 5 — Contacts
 
-_none yet_
+Files read: ContactService.ts, ContactNameResolver.ts, IdentityReconciliationService.ts,
+LidPnLinker.ts, ProfileSyncService.ts, AliasRepository.ts, IdentityRepository.ts,
+LidMapRepository.ts, ContactCache.ts, JidStrategies.ts, prisma/schema.prisma (Identity/
+IdentityAlias/Message/Reaction/ChatMember relations), + cross-refs: historySync.ts,
+services/whatsapp/HistorySyncManager.ts (finishSync), workers/whatsapp/services/
+WorkerHistorySyncManager.ts.
+Not deep-read (thin / interfaces only): I*.ts interface files, index.ts.
+
+### [S5-01] med — services/contacts/IdentityReconciliationService.ts:90-158 (`deduplicateIdentities` merge body)
+**What:** The 6-step stub→keep merge (re-point aliases, re-point messages, merge ChatMember
+rows, merge Reaction rows, enrich survivor, delete stub) runs as ~a dozen independent
+`await this.prisma.*` calls with **no enclosing `prisma.$transaction`**. The `try/catch`
+only does `skipped++` and logs.
+**Why it's a bug:** if any step after step 1 throws — lock contention, an FK/unique
+conflict, or (per [S3-03]) a concurrent history-sync write inserting a new `Message`/
+`Reaction` with `senderId = stubId` between step 2 and step 6 — the merge aborts
+half-applied: the stub's aliases and/or messages are already re-pointed to `keepId`, but
+the stub `Identity` row is never deleted (step 6 skipped). Result is a dangling alias-less
+`Identity` stub plus a partially-merged person. The method's docstring claims "fully
+idempotent / safe to call multiple times", but a re-run won't find the stub again (it now
+has no LID alias / no pushName-matching rows) so the orphan is never collected. `stub.delete`
+in step 6 can itself throw P2003 if a concurrent write re-added a child row, making the
+partial state the *common* failure mode under the concurrency window [S3-03] describes.
+**Fix idea:** wrap steps 1-6 for each stub in a single `prisma.$transaction([...])` (or
+interactive tx) so a failure rolls back to the pre-merge state; keep the per-stub
+`try/catch` outside the tx for the `skipped++` bookkeeping.
+**Status:** open
+
+### [S5-02] med — services/contacts/ContactCache.ts:5,26 + IdentityReconciliationService.ts (no cache signal) vs services/whatsapp/HistorySyncManager.ts:186
+**What:** After `deduplicateIdentities()` the **worker** process calls
+`contactService.clearCaches()` (WorkerHistorySyncManager.ts:183 / HistorySyncManager.ts:186),
+but the dedup only runs in the worker and only the worker's `ContactCache` is cleared. The
+**main** process has its own `ContactService`/`ContactCache` instance whose
+`identityIdCache` (`Map<jid, number>`, never TTL'd, only cleared by `clearCaches`) is
+populated continuously during sync by `PersistenceSubscriber` → `upsertContact` /
+`getIdentityIdByJid` for events forwarded from the worker. Nothing tells the main process
+to clear its cache when the worker merges identities.
+**Why it's a bug:** every stub `Identity` the worker deletes during post-sync dedup leaves
+the main process caching `lidJid → stubId` for a row that no longer exists. Subsequent
+main-process `identityRepository.updateIdentity(stubId, …)` (e.g. from a live
+`contacts.update` or `group participants` event, or ProfileSyncService writing a
+`profilePictureUrl`) throws Prisma P2025 (unhandled in several call sites — see
+ProfileSyncService.ts:88 `.catch` logs, but ContactService.createOrUpdateIdentity /
+registerMe do not); `findIdentityById(stubId)` returns `null`, so name resolution falls
+back to the bare phone number for that contact. Persists until app restart or the next
+full history sync.
+**Fix idea:** emit a "identities-deduplicated" signal from the worker to the main process
+(via the event bus / IPC) after `deduplicateIdentities`, and have the main process call
+`contactService.clearCaches()` on it; or make `deduplicateIdentities` itself return the
+set of merged stub ids so callers can do a targeted cache eviction in both processes.
+**Status:** open
+
+### [S5-03] low — services/contacts/LidPnLinker.ts:40-81 (`linkLidAndPn` relational sync)
+**What:** Classic check-then-act with no transaction: `findIdentityByPhoneNumber(cleanPn)` /
+alias lookups, then one of `createIdentity({ phoneNumber: cleanPn })` (line 77) or
+`updateIdentity(identityId, { phoneNumber: cleanPn })` (line 73). Neither write handles the
+`phoneNumber` unique-constraint violation (P2002) the way
+`ContactService.createOrUpdateIdentity` does.
+**Why it's a bug:** `linkLidAndPn` is invoked concurrently from multiple fire-and-forget
+paths — `ContactNameResolver` tier-3 (`runtime.cache`), `IdentityReconciliationService.
+reconcileLidPnFromJids`, `SyncContactsHandler.processLidPnMappings`, `registerMe`'s lidMap
+path — often for the same PN in the same tick during sync. Two racers that both observe
+"no PN identity, no LID alias" both hit the `create`, and the loser rejects with P2002;
+the `updateIdentity` branch rejects the same way if another identity grabbed `cleanPn`
+first. All current callers `.catch()` and only log, so the effect is a silently dropped
+link that round (the LID stays unlinked until re-encountered) — and dropped links are
+exactly what `deduplicateIdentities` then has to clean up.
+**Fix idea:** catch P2002 and fall back to re-reading the now-existing identity (mirror
+`ContactService.createOrUpdateIdentity`), or route all identity creation through a single
+`upsert` on `phoneNumber`.
+**Status:** open
+
+### [S5-04] low — services/contacts/ContactNameResolver.ts:105-113 (`batchResolveNames` tier-3)
+**What:** When a `@lid` JID is resolved to a PN via the signal runtime cache, the code
+comments "Re-check aliases just in case PN is known" and does
+`aliases.find(a => a.jid === pn)` — but `aliases` was only fetched for the *requested*
+JID list, which does not contain the just-discovered `pn`. It never queries the DB /
+`repository.findIdentityAliases([pn])`.
+**Why it's a bug:** if the discovered PN belongs to a known saved contact (has a
+`displayName`), that name is still not used — the JID renders as the bare number
+(`pn.split('@')[0]`). It only self-heals on a *later* `batchResolveNames` call, after the
+fire-and-forget `linkLidAndPn` has created the LID alias. First render after a fresh LID
+sighting is wrong.
+**Fix idea:** in the tier-3 branch, do a targeted `repository.findIdentityAliases([pn])`
+(or reuse the batched query by adding discovered PNs to the chunk in a second pass) before
+falling back to the raw number.
+**Status:** open
+
+### [S5-05] low — services/contacts/ProfileSyncService.ts:7,45 (`imageCache`)
+**What:** `private imageCache = new Map<string, string>()` is an unbounded, never-evicted
+per-instance map; entries are only ever added (line 45), never removed, and `clearCaches`
+on `ContactService` does not touch it. Negative results (fetch returned no URL / threw)
+are not cached.
+**Why it's a bug:** (1) slow memory growth over a long-running session proportional to the
+number of distinct contacts/groups whose full-res avatar is ever viewed; stale URLs are
+served for the session lifetime even after the contact changes their picture (only
+`forceRefresh` bypasses, and nothing invalidates on `contacts.update`). (2) every lookup
+for a contact with no avatar (`item-not-found`) re-hits `sock.profilePictureUrl` over the
+socket on each call — no negative caching, unlike the DB-backed preview path.
+**Fix idea:** bound the map (LRU / max size) or key it into the existing
+`ContactCache.clear()` lifecycle; cache a sentinel for "no picture" with a short TTL.
+**Status:** open
 
 ## Slice 6 — AI
 
