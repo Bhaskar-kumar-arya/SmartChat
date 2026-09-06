@@ -63,6 +63,48 @@ const FILENAME_SCRIPT = 'smartscript.js';
 const SCRIPT_LINE_OFFSET = -1;
 const MSG_NO_RETURN_VALUE = '(script completed with no return value)';
 
+/**
+ * Bootstrap that runs *inside* the vm context. It receives the host bridge
+ * callbacks only as function parameters (closure-scoped) — never as reachable
+ * globals — so user script code cannot walk `.constructor.constructor` from an
+ * injected host function back into the main realm (`return process` / `require`).
+ * Everything the script can see (`console`, the tool globals) is built here from
+ * the context's own intrinsics and only forwards JSON-serialisable primitives
+ * across the boundary.
+ */
+const CONTEXT_BOOTSTRAP = `
+"use strict";
+const __B = __bridge__;
+const __names = __toolNames__;
+try { Error.prepareStackTrace = undefined; } catch (e) {}
+// The sandbox global object is created in the host realm, so its inherited
+// \`constructor\` is the *host* Object (→ host Function → host \`process\`/\`require\`).
+// Pin it to this context's Object so \`x.constructor.constructor\` cannot escape.
+try {
+  Object.defineProperty(globalThis, 'constructor', {
+    value: Object, writable: true, configurable: true, enumerable: false
+  });
+} catch (e) {}
+globalThis.console = {
+  log:   function () { __B('log', JSON.stringify({ level: 'log',   msg: Array.prototype.map.call(arguments, String).join(' ') })); },
+  warn:  function () { __B('log', JSON.stringify({ level: 'warn',  msg: Array.prototype.map.call(arguments, String).join(' ') })); },
+  error: function () { __B('log', JSON.stringify({ level: 'error', msg: Array.prototype.map.call(arguments, String).join(' ') })); },
+};
+async function __callTool(name, args) {
+  let argJson;
+  try { argJson = JSON.stringify(args === undefined ? {} : args); }
+  catch (e) { throw new Error('Tool arguments for "' + name + '" are not JSON-serialisable'); }
+  const raw = await __B('tool', JSON.stringify({ name: name, args: argJson }));
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch (e) { return raw; }
+  if (parsed && parsed.__scriptError__ === true) { throw new Error(String(parsed.message)); }
+  return parsed;
+}
+for (let i = 0; i < __names.length; i++) {
+  (function (n) { globalThis[n] = function (args) { return __callTool(n, args); }; })(__names[i]);
+}
+`;
+
 // ── Tool ───────────────────────────────────────────────────────────────────────
 
 export class ExecuteScriptTool implements AITool {
@@ -121,7 +163,12 @@ export class ExecuteScriptTool implements AITool {
     const logs: string[] = [];
     let toolCallCount = 0;
 
-    const sandbox = this.buildSandbox(
+    const context = vm.createContext(
+      {},
+      { codeGeneration: { strings: true, wasm: false } }
+    );
+
+    const bridge = this.buildBridge(
       logs,
       () => toolCallCount,
       () => {
@@ -129,8 +176,27 @@ export class ExecuteScriptTool implements AITool {
       },
       ctx
     );
+    const toolNames = this.toolRegistry
+      .getAllTools()
+      .map(t => t.name)
+      .filter(n => n !== this.name);
 
-    const context = vm.createContext(sandbox);
+    try {
+      const installer = vm.compileFunction(CONTEXT_BOOTSTRAP, ['__bridge__', '__toolNames__'], {
+        parsingContext: context
+      });
+      installer(bridge, toolNames);
+    } catch (bootErr: unknown) {
+      const bootErrMsg = bootErr instanceof Error ? bootErr.message : String(bootErr);
+      return {
+        text: JSON.stringify(
+          { explanation, success: false, error: `Sandbox init failed: ${bootErrMsg}`, logs, toolCallCount },
+          null,
+          2
+        ),
+        citations: ctx?.citationEmitter?.getEntries()
+      };
+    }
 
     // Wrap script in an async IIFE so top-level 'await' and 'return' work
     const wrapped = `(async function __smartscript__() {\n${script}\n})()`;
@@ -189,71 +255,76 @@ export class ExecuteScriptTool implements AITool {
     };
   }
 
-  private buildSandbox(
+  /**
+   * The single host-realm callback handed to the in-context bootstrap. It is
+   * passed as a closure-scoped parameter (never exposed as a sandbox global), so
+   * user script code has no path from it back to the host realm. It accepts and
+   * returns only strings — no host objects cross the boundary.
+   *
+   * NOTE: `vm` is a soft boundary, not a jail. This design removes the trivial
+   * `constructor.constructor` / injected-global escapes; a determined attacker
+   * with advanced stack-trace tricks may still reach the host. The tool remains
+   * `requiresPermission = true` and must not be exposed on unauthenticated
+   * surfaces (see the HTTP tools controller).
+   */
+  private buildBridge(
     logs: string[],
     getCallCount: () => number,
     incrementCallCount: () => void,
     ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext
-  ): Record<string, unknown> {
-    const sandbox: Record<string, unknown> = {
-      // Safe JS built-ins only
-      Promise,
-      JSON,
-      Math,
-      Date,
-      Array,
-      Object,
-      String,
-      Number,
-      Boolean,
-      Set,
-      Map,
-      parseInt,
-      parseFloat,
-      isNaN,
-      isFinite,
-      console: {
-        log: (...a: unknown[]) => logs.push('[log] ' + a.map(String).join(' ')),
-        warn: (...a: unknown[]) => logs.push('[warn] ' + a.map(String).join(' ')),
-        error: (...a: unknown[]) => logs.push('[error] ' + a.map(String).join(' ')),
-      },
-      // Explicitly block dangerous globals
-      require: undefined,
-      process: undefined,
-      global: undefined,
-      globalThis: undefined,
-      Buffer: undefined,
-      __dirname: undefined,
-      __filename: undefined,
+  ): (op: string, payloadJson: string) => Promise<string> {
+    return async (op: string, payloadJson: string): Promise<string> => {
+      if (op === 'log') {
+        try {
+          const { level, msg } = JSON.parse(payloadJson) as { level: string; msg: string };
+          logs.push(`[${level}] ${msg}`);
+        } catch {
+          /* ignore malformed log payloads */
+        }
+        return '{}';
+      }
+
+      if (op !== 'tool') return JSON.stringify({ __scriptError__: true, message: `Unknown bridge op: ${op}` });
+
+      let name: string;
+      let toolArgs: Record<string, unknown>;
+      try {
+        const payload = JSON.parse(payloadJson) as { name: string; args: string };
+        name = payload.name;
+        toolArgs = JSON.parse(payload.args) as Record<string, unknown>;
+      } catch {
+        return JSON.stringify({ __scriptError__: true, message: 'Malformed tool call payload' });
+      }
+
+      if (name === this.name) {
+        return JSON.stringify({ __scriptError__: true, message: 'Recursive executeScript is not allowed' });
+      }
+      const tool = this.toolRegistry.getTool(name);
+      if (!tool) {
+        return JSON.stringify({ __scriptError__: true, message: `Unknown tool: ${name}` });
+      }
+      if (getCallCount() >= MAX_TOOL_CALLS) {
+        return JSON.stringify({
+          __scriptError__: true,
+          message: `Tool call limit (${MAX_TOOL_CALLS}) reached. Script halted to prevent runaway execution.`
+        });
+      }
+      incrementCallCount();
+      logs.push(`[tool:${name}] call #${getCallCount()}`);
+
+      try {
+        const result = await tool.execute(toolArgs, ctx);
+        // Tools already return a JSON string in `.text`; forward it verbatim so
+        // the in-context JSON.parse reconstructs it with the context's own realm.
+        if (result && typeof result.text === 'string') return result.text;
+        return JSON.stringify(result ?? null);
+      } catch (err: unknown) {
+        return JSON.stringify({
+          __scriptError__: true,
+          message: err instanceof Error ? err.message : String(err)
+        });
+      }
     };
-
-    // Inject each registered tool as an async global (except ourselves)
-    for (const tool of this.toolRegistry.getAllTools()) {
-      if (tool.name === this.name) continue;
-
-      sandbox[tool.name] = async (toolArgs: unknown) => {
-        if (getCallCount() >= MAX_TOOL_CALLS) {
-          throw new Error(
-            `[ExecuteScriptTool] Tool call limit (${MAX_TOOL_CALLS}) reached. Script halted to prevent runaway execution.`
-          );
-        }
-        incrementCallCount();
-        logs.push(`[tool:${tool.name}] call #${getCallCount()}`);
-        const result = await tool.execute(toolArgs as Record<string, unknown>, ctx);
-        
-        // Unwrap ToolResult for the script environment if it's a JSON string
-        if (result && typeof result.text === 'string') {
-          try {
-            return JSON.parse(result.text);
-          } catch {
-            return result.text;
-          }
-        }
-        return result;
-      };
-    }
-
-    return sandbox;
   }
 
   private compileScript(wrappedScript: string): vm.Script {

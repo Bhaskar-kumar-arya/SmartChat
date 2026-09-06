@@ -1602,7 +1602,25 @@ read) that the user waves through is arbitrary RCE in the main process.
 **Fix idea:** don't rely on `vm` for isolation — run scripts in a real worker/`child_process` with no
 `require`, a frozen minimal global, and an explicit RPC channel for tool calls; or drop the
 "sandbox" framing and gate the tool far more strictly.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — `ExecuteScriptTool` rewritten: the vm context
+is created from a bare `{}` with **no host intrinsics injected**; tool functions +
+`console` are built by an in-context bootstrap (`vm.compileFunction` with
+`parsingContext`) that receives the single host `bridge` callback **only as a
+closure-scoped parameter**, never as a reachable global. Bridge accepts/returns
+only strings (JSON-marshalled), so no host object crosses the boundary. Bootstrap
+also pins `globalThis.constructor` to the context's `Object` (the sandbox global's
+inherited `constructor` was the *host* Object → host Function → `process`), killing
+the documented `x.constructor.constructor('return process')()` escape.
+Regression test `src/main/tests/tools/ExecuteScriptTool.test.ts` exercises the real
+`vm` path: constructor-chain escape attempts now resolve to `undefined`/throw;
+`require`/`Buffer`/`process`/`global` are undefined in-script; tool calls + error
+propagation + console capture still work. typecheck clean; ai-assistant +
+PluginHost.builtin integration suites green. `vm` remains a soft boundary — noted
+in code that advanced stack-trace tricks may still escape and the tool must stay
+off unauthenticated surfaces (see S11-01). Not manually run in the app: the unit
+test drives the actual runtime `vm` sandbox, not a mock. S12-04 (orphaned script
+after timeout) is a separate finding, not addressed here.
 
 ### [S12-04] med — tools/ExecuteScriptTool.ts:161-178, 266-279
 **What:** `runScriptWithTimeout` is a `Promise.race` against a `setTimeout`. On timeout it rejects

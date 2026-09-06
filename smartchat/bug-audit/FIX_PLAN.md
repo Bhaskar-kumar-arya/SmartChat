@@ -78,7 +78,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 
 | Finding | File | What | Status |
 |---|---|---|---|
-| S12-03 | `tools/ExecuteScriptTool.ts:198-256` | `vm` "sandbox" trivially escapes to host RCE | TODO |
+| S12-03 | `tools/ExecuteScriptTool.ts:198-256` | `vm` "sandbox" trivially escapes to host RCE | DONE — no host intrinsics/functions on context global; bridge is closure-only; `constructor` chain escape closed + regression test |
 | S11-01 | `services/apiServer/controllers/ToolsController.ts:41-48` | HTTP `/api/tools/execute` bypasses tool permission model | TODO |
 | S8-01 | `plugins/PluginLoader.ts` + `ipc/contributionIpc.ts` | plugin loader / contribution IPC issue | TODO |
 
