@@ -15,9 +15,9 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 4 | Chats & sync | DONE (9 findings) | 2026-09-06 | 0 crit / 0 high / 4 med / 5 low; S4-01 = group hydration aborts remaining batches on concurrent-write conflict; S4-02 = chat-list pagination returns dup/overflow rows. I*.ts interfaces lightly covered |
 | 5 | Contacts | DONE (5 findings) | 2026-09-06 | 0 crit / 0 high / 2 med / 3 low; identity merge tx gap + cross-process cache staleness. I*.ts interfaces lightly covered |
 | 6 | AI (providers, mentions, citations) | DONE (11 findings) | 2026-09-06 | 1 crit / 0 high / 7 med / 3 low. Deep-read AIService, providers/*, AIKeyService, FSKeyStorage, AIChatSessionService, AIChatExportService, AIToolService, mentions/*, citations/*. Light: prompts/* (SystemPromptContent, protocol strategies), ToolDefinitionFormatter |
-| 7 | Kernel API modules & router | IN PROGRESS | 2026-09-06 | |
+| 7 | Kernel API modules & router | DONE (9 findings) | 2026-09-06 | 0 crit / 1 high / 4 med / 4 low. S7-01 = resource-scope enforced inconsistently across kernel API (bypass by unscoped action / omitted jid). Deep-read all Kernel*Module business logic; router/BaseKernelModule/Events perm paths deferred to slice 8 |
 | 8 | Kernel plugins, contributions, permissions | DONE (10 findings) | 2026-09-06 | 0 crit / 1 high / 6 med / 3 low. Deep-read PluginLoader, PluginHost, PluginRegistry, PermissionStore, ContributionRegistry, PluginManifest, KernelEventsModule, KernelMessagesModule (perm paths), KernelAPIRouter, BaseKernelModule, contributionIpc, channels/{Direct,Worker}PluginChannel, pluginProtocol. Light: other Kernel*Module perm checks, I*.ts |
-| 9 | Kernel storage, channels, ipc, ui | IN PROGRESS | 2026-09-06 | |
+| 9 | Kernel storage, channels, ipc, ui | DONE (10 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 4 low. Deep-read PrismaPluginStorageRepository, {Direct,Worker}PluginChannel, overlayIpc, panelIpc, contributionIpc, OverlayHost, PanelHost. S9-01/S9-02 = panel event IPC bypasses bus-accessor + permission checks. Light: I*.ts interfaces |
 | 10 | App IPC & auth | TODO | — | trust boundary |
 | 11 | apiServer, search, notification, calls, audio | TODO | — | HTTP surface = apiServer |
 | 12 | SDK, tools, data wipe, domain, db, protocol | TODO | — | DataWipeService = data-loss risk |
@@ -28,9 +28,9 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | Severity | Count |
 |----------|-------|
 | crit | 1 |
-| high | 2 |
-| med  | 33 |
-| low  | 25 |
+| high | 3 |
+| med  | 37 |
+| low  | 29 |
 
 ---
 
@@ -744,7 +744,146 @@ don't unload while a prediction against it is outstanding.
 
 ## Slice 7 — Kernel API modules & router
 
-_none yet_
+Files read: KernelAPIRouter.ts, IKernelAPIRouter.ts, KernelBootstrapper.ts,
+api-modules/{IKernelModule,KernelErrors,BaseKernelModule,KernelChatsModule,KernelContactsModule,
+KernelMessagesModule,KernelAIModule,KernelStorageModule,KernelUIModule,KernelLogModule,
+KernelEventsModule}.ts, permissions/PermissionStore.ts (isResourceAllowed semantics),
+services/ai/AIToolService.ts (ToolRegistry.registerTool). KernelAPIRouter / BaseKernelModule /
+KernelEventsModule / KernelMessagesModule permission paths already covered by slice 8; this slice
+focused on per-action business logic + resource-scope consistency.
+
+### [S7-01] high — api-modules/KernelMessagesModule.ts:89-108,132-172 + KernelChatsModule.ts:23-28 + KernelContactsModule.ts:33-42 + KernelEventsModule.ts:70-89
+**What:** `requireResourceScope` (per-jid allow/deny list from `PermissionStore`) is enforced
+inconsistently across the kernel API. Several actions that operate on a chat's data never call it,
+or only call it behind an optional `if (jid)`:
+- `KernelMessagesModule` `edit` / `forward` — resource scope checked only `if (jid)`; a plugin that
+  simply omits the optional `jid` field edits/forwards **any** message in the DB by global
+  `messageId`, and `forward` then delivers it to arbitrary `targetJids`.
+- `KernelMessagesModule` `downloadMedia` / `getReceipts` — take only `messageId`, never call
+  `requireResourceScope` at all. A plugin whose `messages:read` scope is restricted to chat A can
+  pull media bytes / read receipts for messages in chat B.
+- `KernelChatsModule` `getList` — no `requireResourceScope`; a plugin scoped to one chat still gets
+  the full chat list (names, last-message preview text) for every chat.
+- `KernelContactsModule` `batchGetByJids` — no per-jid scope check, unlike `getByJid` right above
+  it which does enforce it. Pass arbitrary jids → resolve names for contacts outside the allow-list.
+- `KernelEventsModule` `subscribe` — capability `events:<event>` is checked but there is no
+  resource-scope filter on the payloads, so a plugin restricted to chat A receives `messages.upsert`
+  / `chats.update` / receipts for **all** chats (sanitized but complete).
+**Why it's a bug:** `PermissionStore.isResourceAllowed` returns `true` when no scope is set, so a
+scope only matters if the user configured one — and when they do (e.g. "this OTP plugin may only
+read the CodeTantra chat"), the restriction is trivially bypassed by choosing the unscoped action
+or dropping the optional jid. The whole point of per-resource scoping (limiting an untrusted 3rd
+-party plugin to a subset of chats) is defeated. Silent — the plugin just gets the data.
+**Fix idea:** make every data-bearing action resolve and check the owning jid: for message-id-only
+actions, look the message up and scope on its `remoteJid` before acting; require `jid` (not
+optional) on `edit`/`forward`; scope `getList`/`batchGetByJids` results by filtering to allowed
+resources; filter event payloads per subscription scope (or document that `events:*` is all-or
+-nothing and gate it harder).
+**Status:** open
+
+### [S7-02] med — api-modules/KernelMessagesModule.ts:64-87 (`sendMedia`)
+**What:** `filePath` comes straight from the plugin payload and is passed to
+`messageActionService.sendMediaMessageWorkflow(sock, jid, filePath, …)`, which reads that path off
+disk and uploads it. No validation that the path is inside a plugin-owned / sanctioned directory.
+**Why it's a bug:** a plugin with only `messages:send` scoped to a chat **it controls** can set
+`filePath` to any file the app process can read — `provider_keys.json`, the SQLite DB, the
+permissions file, `~/.ssh/id_rsa`, arbitrary user documents — and exfiltrate it by sending it as
+media to its own chat / a chat the attacker owns. `messages:send` is a much lower bar than
+"read any local file".
+**Fix idea:** restrict `sendMedia` source paths to a per-plugin staging dir (or a path the user
+explicitly picked via a dialog), resolve+normalize and verify containment before reading.
+**Status:** open
+
+### [S7-03] med — api-modules/KernelAIModule.ts:44-92 (session actions)
+**What:** `createSession` / `listSessions` / `getSession` / `renameSession` / `deleteSession` gate
+only on the `ai:chat` capability. There is no notion of which sessions belong to which plugin (the
+service is keyed by session `id` only), and no resource scope.
+**Why it's a bug:** any plugin holding `ai:chat` (needed just to call the model) can
+`listSessions` to enumerate every AI chat the user has had in the main app UI, `getSession` to read
+their full contents, `renameSession`, or `deleteSession` to wipe them all. Cross-tenant read of
+private user data + data loss, from a capability that looks like "may talk to the LLM".
+**Fix idea:** tag sessions with an owner (`pluginId` or `'user'`) and scope all session actions to
+the caller's own sessions; or split "manage sessions" into its own capability that builtins get and
+3rd-party plugins do not.
+**Status:** open
+
+### [S7-04] med — api-modules/KernelAIModule.ts:106-155 (`registerTool`) + services/ai/AIToolService.ts:10-12
+**What:** `registerTool` does `toolRegistry.registerTool(tool)` → `this.tools.set(tool.name, tool)`
+— last writer wins, no name-collision check, no namespacing by plugin. Nothing ever removes the
+tool (no `unregisterTool` in `IToolRegistry`, no call on plugin unload).
+**Why it's a bug:** (1) A plugin with `ai:tools:register` can register a tool named `read_messages`,
+`execute_script`, `query_database`, … and **shadow the builtin** of that name (registered earlier
+by `AIToolInitializer`). The user's own AI assistant then silently invokes the plugin's
+implementation — arbitrary code / data interception under a trusted tool name. (2) Tools registered
+by a plugin persist in the registry after the plugin is unloaded/uninstalled (leak + stale
+`execute` closure that calls a dead channel → every future call returns the "channel is not
+available" error string to the model).
+**Fix idea:** reject registration of a name that already exists (or namespace plugin tools as
+`<pluginId>/<name>`); add `unregisterTool` and call it from `PluginHost.unload`.
+**Status:** open
+
+### [S7-05] med — api-modules/KernelUIModule.ts:89-99 (`overlay:send`, `overlay:close`)
+**What:** Unlike `showOverlay` (`ui:overlay`) and the panel actions (`ui:panel` + pluginId-scoped),
+the `overlay:send` and `overlay:close` cases call **no `requireCapability`** and pass only the
+caller-supplied `overlayId` to `overlayHost.sendToOverlay` / `closeOverlay` — no check that the
+overlay belongs to the calling plugin.
+**Why it's a bug:** any loaded plugin, including one with zero granted capabilities, can push
+arbitrary `event`/`data` into another plugin's overlay webview (spoof messages the overlay's own UI
+trusts as coming from its kernel side) or close another plugin's overlay at will. Cross-plugin UI
+tampering across a trust boundary.
+**Fix idea:** require `ui:overlay`, and have `OverlayHost` verify the `overlayId` was created by the
+same `pluginId` before routing.
+**Status:** open
+
+### [S7-06] low — api-modules/KernelAIModule.ts:94-104 (`callTool`)
+**What:** `callTool` checks `ai:tools:call` + resource scope on the tool **name**, then runs
+`tool.execute(args)` with the plugin's raw args. The builtin tools (`read_messages`,
+`query_database`, `execute_script`, `message_action`, `chat_action`) run with full app privilege and
+do no per-caller chat scoping.
+**Why it's a bug:** a plugin granted `ai:tools:call` for e.g. `query_database` can run arbitrary
+read SQL over the whole message DB, and `message_action` / `chat_action` / `execute_script` give
+write/exec — completely sidestepping the `messages:*` / `chats:*` capability + resource-scope
+system that the rest of the module enforces. Effectively `ai:tools:call` on the wrong tool is a
+privilege-escalation grant.
+**Fix idea:** treat the powerful builtins as not plugin-callable (allow-list which tools
+`callTool` may reach), or run them with the caller's resource scope applied.
+**Status:** open
+
+### [S7-07] low — api-modules/KernelLogModule.ts:11-30
+**What:** No `requireCapability` (any plugin can log), and `data` is `JSON.stringify`'d into the log
+line with no size cap or depth guard; `logLevel` can be spoofed via the payload.
+**Why it's a bug:** a noisy/malicious plugin can flood the main-process console / log file
+(disk-fill, log-rotation churn, obscuring real errors) and `JSON.stringify` on a huge or cyclic
+`data` array throws inside `handle` (cyclic) or spikes memory (huge). Minor, but it is an
+unauthenticated entry point.
+**Fix idea:** gate on a `log` capability (or rate-limit per plugin), cap serialized length, wrap
+the stringify in try/catch.
+**Status:** open
+
+### [S7-08] low — api-modules/BaseKernelModule.ts:40-47 (`serialize`) + KernelEventsModule.ts:111-135 (`sanitizeForPlugin`)
+**What:** `serialize` does `JSON.parse(JSON.stringify(data, replacer))` and `sanitizeForPlugin`
+recurses over every key with no depth limit and no visited-set.
+**Why it's a bug:** a Baileys/event payload (or a plugin-supplied object echoed back) containing a
+circular reference makes `serialize` throw `TypeError: Converting circular structure to JSON`
+(surfaces to the plugin as `INTERNAL_ERROR`, and for event delivery the throw is inside the bus
+handler), and a deeply nested structure makes `sanitizeForPlugin` blow the stack and crash the
+main process. Both currently rely on WA payloads happening to be acyclic and shallow.
+**Fix idea:** add a `seen` WeakSet + max-depth cutoff to `sanitizeForPlugin`; guard `serialize`
+with try/catch and a depth/size bound.
+**Status:** open
+
+### [S7-09] low — api-modules/KernelChatsModule.ts:31-44 etc. (payload destructuring before validation)
+**What:** Many actions do `const { jid } = payload as { jid: string }` before any check. When a
+plugin sends `null`/omitted payload this throws `TypeError: Cannot destructure property 'jid' of
+'payload' as it is null`, caught by the router as a generic `INTERNAL_ERROR`; when it sends
+`{ jid: 123 }` the wrong type flows into `requireResourceScope` / service calls unchecked.
+**Why it's a bug:** no input validation at the trust boundary — malformed IPC/plugin payloads
+produce confusing `INTERNAL_ERROR`s instead of `BAD_REQUEST`, and non-string `jid`/`messageId`
+values reach SQL/service layers. Low impact (mostly DX / error clarity) but it is the IPC trust
+boundary.
+**Fix idea:** validate payload shape per action (zod/assert) and return a `BAD_REQUEST`
+`KernelError` on mismatch.
+**Status:** open
 
 ## Slice 8 — Kernel plugins, contributions, permissions
 
@@ -905,7 +1044,149 @@ longer present; namespace plugin tool names by `pluginId` or reject duplicates l
 
 ## Slice 9 — Kernel storage, channels, ipc, ui
 
-_none yet_
+Files read: storage/PrismaPluginStorageRepository.ts, channels/{IPluginChannel,DirectPluginChannel,
+WorkerPluginChannel}.ts, ipc/{overlayIpc,panelIpc,contributionIpc}.ts, ui/{OverlayHost,PanelHost,
+IOverlayHost,IPanelHost}.ts, + cross-refs: KernelBootstrapper.ts (wiring, lines 100-160),
+contributionIpc snapshot/ai-tool sync. channels/{Direct,Worker}PluginChannel + contributionIpc were
+also lightly covered in slice 8.
+
+### [S9-01] med — kernel/ipc/panelIpc.ts:17-21,55 + KernelBootstrapper.ts:122
+**What:** `registerPanelIpcHandlers(panelHost, router, getBus?.() ?? null)` passes the **resolved**
+bus value at bootstrap time. `KernelEventsModule` by contrast is given the `getBus` *function*
+(KernelBootstrapper.ts:113) so it always sees the current bus.
+**Why it's a bug:** two failure modes. (1) The WhatsApp bus is created lazily on `connect()`; if
+bootstrap runs before the first connect, `getBus()` returns `null`, so `waEventBus` is `null`
+forever and `eventsSubscribeHandler` permanently returns `{ ok: false }` — panel plugins can never
+subscribe to WhatsApp events. (2) Even if a bus exists at bootstrap, `WhatsAppConnectionManager.connect()`
+does `currentBus.removeAllListeners(); currentBus = eventBusFactory()` on every reconnect (same
+mechanism as [S3-01]). `panelIpc` still holds the old bus, so after any reconnect every panel event
+subscription is dead (`.on` was on a discarded bus) and `eventsUnsubscribeHandler`/`panelClosedHandler`
+call `.off` on the wrong bus. Silent.
+**Fix idea:** pass `getBus` (the accessor) into `registerPanelIpcHandlers` and resolve it inside each
+handler; or keep one stable bus instance across reconnects.
+**Status:** open
+
+### [S9-02] med — kernel/ipc/panelIpc.ts:49-78 (`eventsSubscribeHandler`)
+**What:** The handler resolves `pluginId` from `panelId` purely to check the panel is registered,
+then does `waEventBus.on(eventName as any, handler)` for **any** `eventName` string the renderer
+passes. There is no `permissions.assertPermission(pluginId, 'events:<eventName>')` (or equivalent)
+check — unlike `KernelEventsModule.subscribe`, which gates every WA event subscription on a declared
+permission (slice 8).
+**Why it's a bug:** trust-boundary / permission bypass. A panel plugin (or a compromised panel
+webview) can subscribe to sensitive WhatsApp bus events (`message:received`, `messages.upsert`,
+presence, receipts, …) that it never declared in its manifest and that the permission system would
+otherwise deny, simply by calling `kernel:panel:events:subscribe` over IPC. Payloads are forwarded
+verbatim to the panel via `smartchat:event`.
+**Fix idea:** run the same permission check the kernel events module uses before `waEventBus.on`;
+reject unknown/undeclared event names.
+**Status:** open
+
+### [S9-03] med — kernel/ipc/panelIpc.ts:49-78,94-104 (subscription lifecycle)
+**What:** A panel event subscription is only cleaned up by an explicit `kernel:panel:events:unsubscribe`
+or `kernel:panel:closed` IPC message from the renderer. There is no `event.sender.once('destroyed', …)`
+hook.
+**Why it's a bug:** if a panel's webContents/webview is torn down without sending `kernel:panel:closed`
+(navigation, crash, renderer bug, window close), the `handler` stays registered on `waEventBus`
+forever. `handler` guards with `event.sender.isDestroyed()` so there's no crash, but listeners
+accumulate on the bus across panel open/close churn → `MaxListenersExceededWarning`, steadily growing
+per-event work, and retained closures over dead `WebContents`. `registerPanelIpcHandlers`' own
+teardown clears them, but that only runs on full kernel shutdown.
+**Fix idea:** on subscribe, attach `event.sender.once('destroyed', () => cleanup all subs for that
+sender)`; track subs by `webContents.id` as well as `panelId`.
+**Status:** open
+
+### [S9-04] med — kernel/channels/WorkerPluginChannel.ts:90-99 & DirectPluginChannel.ts:29-49
+**What:** `sendRequestToPlugin` creates a pending entry in `pendingRequests` and posts the message,
+with **no timeout**. The promise only settles on a matching `KernelResponse`, on `destroy()`, or (for
+`DirectPluginChannel`) if the synchronous handler throws.
+**Why it's a bug:** a plugin that never replies to a kernel→plugin request (crashed mid-handler,
+threw asynchronously after the sync portion, dropped the message, infinite loop) leaves the kernel
+call hung forever and the `pendingRequests` entry leaks permanently. Real callers: `contributionIpc`
+AI-tool execution (`plugin.channel.sendRequestToPlugin({ type: 'contribution:execute:ai-tool' })` —
+`AIToolService` awaits this with no outer timeout), overlay event relays. A single misbehaving plugin
+can wedge an AI tool call (and any user turn waiting on it) indefinitely.
+**Fix idea:** attach a per-request timeout that rejects with a `PLUGIN_TIMEOUT` error and deletes the
+pending entry; document the ceiling.
+**Status:** open
+
+### [S9-05] med — kernel/ui/OverlayHost.ts:24-34,55-84,102-114 + kernel/ipc/overlayIpc.ts
+**What:** (1) `showModal` returns a promise that is *only* ever resolved by a renderer
+`kernel:ui:modal:resolve` IPC; there is no timeout, no reject path, and no cleanup when the main
+window is missing/destroyed (it just `console.warn`s and leaves the promise pending + the
+`pendingModals` entry leaked). (2) `showOverlay` in `mode: 'handle'` stores a `pendingOverlays` entry
+with no resolve/reject; nothing removes it if the renderer never dismisses (window closed, overlay
+webview crash). Because `showOverlay` starts with `if (this.hasActiveOverlayForPlugin(pluginId))
+throw 'OVERLAY_ALREADY_OPEN'`, a single leaked entry **permanently blocks that plugin from ever
+opening another overlay** until app restart.
+**Why it's a bug:** plugin API calls (`kernel.ui.showModal` / `showOverlay`) hang forever or become
+permanently unavailable on any renderer-side failure, with no error surfaced. `OverlayHost` has no
+dispose that rejects outstanding modals/overlays on kernel teardown either.
+**Fix idea:** add timeouts + reject-on-window-destroyed for modals; track handle-mode overlays with a
+renderer `destroyed`/close signal and evict on it; reject all pending on dispose.
+**Status:** open
+
+### [S9-06] med — kernel/ui/PanelHost.ts:11-24,52-58 + KernelBootstrapper.ts:124-148
+**What:** `panelHost.deregisterPlugin(pluginId)` is never called in production (grep: only tests).
+`syncPanels` runs on every `registry.onChange` and only ever *adds* panels; `registerPanel` dedups by
+`(pluginId, contributionId)` and returns the **existing** `panelId` if found.
+**Why it's a bug:** (1) On plugin unload, its `PanelDescriptor`s stay in the map. `getPluginId(panelId)`
+keeps resolving, so `kernel:panel:api` / `kernel:panel:events:subscribe` still accept calls routed at
+an unloaded plugin (downstream `host.getPlugin` returns undefined → confusing errors rather than a
+clean "not found"). (2) On plugin *reload* with a changed `panel` path in the manifest, `registerPanel`
+returns the stale `panelId` bound to the **old `panelPath`**, so the renderer keeps loading the old
+panel entry point. (3) Slow map growth across reload churn.
+**Fix idea:** call `panelHost.deregisterPlugin` from the plugin unload path (PluginHost/loader), and
+have `syncPanels` reconcile removals; or key `registerPanel` on `panelPath` too so a changed path
+re-registers.
+**Status:** open
+
+### [S9-07] low — kernel/ipc/overlayIpc.ts:5-31 + panelIpc.ts (sender not correlated)
+**What:** `kernel:ui:modal:resolve`, `kernel:ui:overlay:submit`/`event`/`dismiss`, and
+`kernel:panel:events:*` handlers act on the `modalId` / `overlayId` / `panelId` in the payload
+without checking the message came from the webContents that owns that modal/overlay/panel.
+**Why it's a bug:** any frame that can reach these IPC channels (a plugin panel/overlay webview, a
+compromised renderer) can resolve or submit data into *another* plugin's pending modal/overlay by
+guessing/observing its id (`randomUUID`, but ids are handed to renderers and logged). The receiving
+plugin treats the injected value as trusted user input. Blast radius limited by the ids being
+UUIDs and the renderer being semi-trusted, but the ownership check is absent.
+**Fix idea:** record the owning `webContents.id` when a modal/overlay is shown and verify
+`event.sender.id` matches on resolve/submit.
+**Status:** open
+
+### [S9-08] low — kernel/ipc/contributionIpc.ts:55-90,163-193
+**What:** (1) `syncAiTools` registers an `ai-tool` for every contribution but nothing ever
+*unregisters* tools when a plugin unloads/reloads — `toolRegistry.getTool(name)` stays populated, so
+a stale tool remains callable and just returns `"Plugin <id> is not loaded"` to the model. A reload
+that renames/removes the tool leaves the old one. (2) The teardown calls
+`ipcMain.removeHandler('extension:getLog')` but the handler was registered as `'extension:get-log'`
+(line 172) — so on kernel teardown that handler is never removed (double-register throws on a
+subsequent bootstrap).
+**Why it's a bug:** stale AI tools pollute the model's tool list and waste turns; the channel-name
+typo makes kernel teardown/re-init leak an IPC handler.
+**Fix idea:** track registered tool names per plugin and remove on unload; fix the string to
+`'extension:get-log'`.
+**Status:** open
+
+### [S9-09] low — kernel/ui/PanelHost.ts:35-45 (`getPanel` fallback)
+**What:** `getPanel(panelId)` first tries `panels.get(panelId)`, then **falls back to returning the
+first descriptor whose `contributionId === panelId`**. `getPluginId` is built on this.
+**Why it's a bug:** if two plugins register panels with the same `contributionId` (e.g. both use
+`"settings"` or `"main"`), a lookup by that bare contributionId resolves to whichever plugin's panel
+happens to iterate first in the `Map`, so `kernel:panel:api` can route a panel request to the wrong
+plugin. The fallback exists so callers can pass a contributionId instead of a UUID, but it makes the
+identifier non-unique.
+**Fix idea:** drop the contributionId fallback (require the real `panelId`), or scope it by plugin.
+**Status:** open
+
+### [S9-10] low — kernel/storage/PrismaPluginStorageRepository.ts:29-45
+**What:** `delete` wraps the Prisma call in `try { … } catch {}` with a comment "Ignore if not
+found" — but it swallows **every** error (DB locked, disk I/O, connection lost), not just P2025.
+`set`/`clear` have no value-size or key-count limits.
+**Why it's a bug:** a failed `delete` (transient lock during heavy sync) is reported to the plugin as
+success, so the plugin believes a key was removed when it still exists. Separately, a plugin can
+write arbitrarily large values / unbounded keys into the shared `extensionKV` table with no quota.
+**Fix idea:** only swallow the not-found error code; add a max value size and per-plugin key cap.
+**Status:** open
 
 ## Slice 10 — App IPC & auth
 
