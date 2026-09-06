@@ -17,7 +17,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 6 | AI (providers, mentions, citations) | DONE (11 findings) | 2026-09-06 | 1 crit / 0 high / 7 med / 3 low. Deep-read AIService, providers/*, AIKeyService, FSKeyStorage, AIChatSessionService, AIChatExportService, AIToolService, mentions/*, citations/*. Light: prompts/* (SystemPromptContent, protocol strategies), ToolDefinitionFormatter |
 | 7 | Kernel API modules & router | IN PROGRESS | 2026-09-06 | |
 | 8 | Kernel plugins, contributions, permissions | DONE (10 findings) | 2026-09-06 | 0 crit / 1 high / 6 med / 3 low. Deep-read PluginLoader, PluginHost, PluginRegistry, PermissionStore, ContributionRegistry, PluginManifest, KernelEventsModule, KernelMessagesModule (perm paths), KernelAPIRouter, BaseKernelModule, contributionIpc, channels/{Direct,Worker}PluginChannel, pluginProtocol. Light: other Kernel*Module perm checks, I*.ts |
-| 9 | Kernel storage, channels, ipc, ui | TODO | — | |
+| 9 | Kernel storage, channels, ipc, ui | IN PROGRESS | 2026-09-06 | |
 | 10 | App IPC & auth | TODO | — | trust boundary |
 | 11 | apiServer, search, notification, calls, audio | TODO | — | HTTP surface = apiServer |
 | 12 | SDK, tools, data wipe, domain, db, protocol | TODO | — | DataWipeService = data-loss risk |
