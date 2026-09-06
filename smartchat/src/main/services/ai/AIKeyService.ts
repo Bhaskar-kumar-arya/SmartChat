@@ -4,12 +4,16 @@ import { IKeyStorage } from './IKeyStorage';
 export class AIKeyService implements IAIKeyService {
   private keys: ProviderKeys;
 
-  // Ultimate out-of-the-box hardcoded fallbacks
+  // No hardcoded API keys are shipped. Keys must come from the environment
+  // (GEMINI_API_KEY / GROQ_API_KEY / MISTRAL_API_KEY / DEEPSEEK_API_KEY) or be
+  // supplied by the user and persisted locally via saveKey().
+  // (Historically live keys were committed here — audit S6-01. Those keys must
+  // be revoked/rotated at the provider; removing them from source is not enough.)
   private static readonly DEFAULTS: ProviderKeys = {
-    gemini: 'AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0',
-    groq: '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',
-    mistral: 'JqcJs0EukbZsMlpP4XYO3anDyNmzftQp',
-    deepseek: 'sk-a96018659be1476485d5043356483922'
+    gemini: '',
+    groq: '',
+    mistral: '',
+    deepseek: ''
   };
 
   constructor(private readonly storage: IKeyStorage) {

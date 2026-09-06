@@ -19,12 +19,18 @@ describe('AIKeyService', () => {
     process.env = originalEnv
   })
 
-  it('loads default keys if storage and env are empty', () => {
+  // Regression: audit S6-01 — no live API keys may be baked into the source.
+  it('ships no hardcoded keys when storage and env are empty', () => {
     delete process.env.GEMINI_API_KEY
+    delete process.env.GROQ_API_KEY
+    delete process.env.MISTRAL_API_KEY
+    delete process.env.DEEPSEEK_API_KEY
     service = new AIKeyService(storage)
     const keys = service.getKeys()
-    expect(keys.gemini).toBeDefined()
-    expect(keys.groq).toBeDefined()
+    expect(keys.gemini).toBe('')
+    expect(keys.groq).toBe('')
+    expect(keys.mistral).toBe('')
+    expect(keys.deepseek).toBe('')
   })
 
   it('overrides defaults with env variables', () => {
