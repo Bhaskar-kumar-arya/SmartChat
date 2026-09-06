@@ -41,6 +41,28 @@ describe('ChatListEnricher', () => {
     enricher = new ChatListEnricher(chatRepo, messageRepo, reactionRepo, contactService, formatterRegistry)
   })
 
+  it('S4-02: injected community siblings are flagged outOfWindow, page rows are not', async () => {
+    chatRepo.findChatsPaginated.mockResolvedValue([
+      { jid: 'sub1@g.us', type: 'GROUP', unreadCount: 0, muteExpiration: 0n, community: { jid: 'comm@g.us' } } as any
+    ])
+    chatRepo.findChatsByCommunityJids.mockResolvedValue([
+      { jid: 'sub1@g.us', type: 'GROUP', unreadCount: 0, muteExpiration: 0n, community: { jid: 'comm@g.us' } } as any,
+      { jid: 'comm@g.us', type: 'COMMUNITY', unreadCount: 0, muteExpiration: 0n } as any,
+      { jid: 'sub2@g.us', type: 'GROUP', unreadCount: 0, muteExpiration: 0n, community: { jid: 'comm@g.us' } } as any
+    ])
+    messageRepo.findLastMessage.mockResolvedValue(null)
+    reactionRepo.findLastReaction.mockResolvedValue(null)
+
+    const res = await enricher.getChatList(1, 50)
+
+    const byJid = Object.fromEntries(res.map(r => [r.jid, r]))
+    expect(byJid['sub1@g.us'].outOfWindow).toBeFalsy()   // on the page
+    expect(byJid['comm@g.us'].outOfWindow).toBe(true)     // pulled in for grouping
+    expect(byJid['sub2@g.us'].outOfWindow).toBe(true)
+    // sub1 is not duplicated by the community fetch
+    expect(res.filter(r => r.jid === 'sub1@g.us')).toHaveLength(1)
+  })
+
   it('getChatByJid returns null if chat not found', async () => {
     chatRepo.findChatsByJidsWithCommunity.mockResolvedValue([])
     const res = await enricher.getChatByJid('test@s.whatsapp.net')

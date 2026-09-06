@@ -21,4 +21,11 @@ export interface ChatListEntry {
   lastMessageReactionText?: string | null
   source?: 'whatsapp' | 'extension'
   extensionId?: string
+  /**
+   * True when this entry was pulled in only to complete a community grouping
+   * (a root/sibling of a chat on the requested page) and does NOT belong to the
+   * requested pagination window. Consumers must exclude these from end-of-list
+   * ("did we get a full page?") accounting.
+   */
+  outOfWindow?: boolean
 }

@@ -238,6 +238,41 @@ export class SyncMessagesHandler {
   }
 
   /**
+   * Resolve a whole batch's worth of sender/reactor JIDs into `identityCache` up
+   * front, replacing thousands of strictly-sequential per-message round-trips
+   * (upsertContact → getIdentityIdByJid) with two batched queries + one parallel
+   * create pass for genuinely-new participants.
+   */
+  private async _prefetchIdentityIds(
+    jids: string[],
+    identityCache: Map<string, number>
+  ): Promise<void> {
+    if (jids.length === 0) return
+
+    // 1. One batched read for identities that already exist.
+    const known = await this.contactService.batchGetIdentityIds(jids)
+    for (const [jid, id] of known) identityCache.set(jid, id)
+
+    // 2. Create the genuinely-new participants (in parallel), then one more
+    //    batched read to pick up their new ids.
+    const missing = jids.filter(j => !identityCache.has(j))
+    if (missing.length === 0) return
+
+    await Promise.all(
+      missing.map(j =>
+        this.contactService
+          .upsertContact({ id: j })
+          .catch((err: unknown) =>
+            console.error('[SyncMessagesHandler] Failed to upsert participant contact:', err)
+          )
+      )
+    )
+
+    const resolved = await this.contactService.batchGetIdentityIds(missing)
+    for (const [jid, id] of resolved) identityCache.set(jid, id)
+  }
+
+  /**
    * Parse one batch of raw proto messages into typed rows + collect reactions.
    * Pure CPU work — no DB calls.
    */
@@ -250,6 +285,14 @@ export class SyncMessagesHandler {
     const messageRows: SyncMessageRow[] = []
     const pendingReactions: PendingReaction[] = []
 
+    // ── Pass 1: pure-CPU parse + collect every sender/reactor JID in the batch ──
+    const parsedList: Array<{
+      mTyped: BaileysWebMessageInfo
+      remoteJid: string
+      parsed: NonNullable<ReturnType<SyncMessagesHandler['_parseMessageProperties']>>
+    }> = []
+    const jidsToResolve = new Set<string>()
+
     for (const m of batch) {
       const mTyped = m as unknown as BaileysWebMessageInfo
       const remoteJid = cleanJid(String(mTyped.key?.remoteJid ?? ''))
@@ -258,6 +301,30 @@ export class SyncMessagesHandler {
       const parsed = this._parseMessageProperties(mTyped, remoteJid)
       if (!parsed) continue
 
+      parsedList.push({ mTyped, remoteJid, parsed })
+
+      if (!parsed.fromMe && parsed.participant && !identityCache.has(parsed.participant)) {
+        jidsToResolve.add(parsed.participant)
+      }
+
+      const reactions = mTyped.reactions
+      if (reactions && reactions.length > 0) {
+        for (const r of reactions) {
+          if (!r.text || !r.key) continue
+          let raw: string | null | undefined =
+            r.key.participant ?? (r.key.remoteJid?.endsWith('@g.us') ? null : r.key.remoteJid)
+          if (r.key.fromMe && meJid) raw = meJid
+          const rj = raw ? cleanJid(raw) : null
+          if (rj && !identityCache.has(rj)) jidsToResolve.add(rj)
+        }
+      }
+    }
+
+    // Bulk-resolve everything the batch needs in a couple of queries.
+    await this._prefetchIdentityIds(Array.from(jidsToResolve), identityCache)
+
+    // ── Pass 2: build rows (sender lookups now hit the warmed cache) ──
+    for (const { mTyped, remoteJid, parsed } of parsedList) {
       const senderId = await this._resolveSenderId(parsed.participant, parsed.fromMe, identityCache)
 
       // Collect nested reactions embedded on the message

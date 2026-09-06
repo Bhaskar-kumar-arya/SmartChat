@@ -51,14 +51,25 @@ describe('ChatService', () => {
 
   it('upsertChat basic fields', async () => {
     await service.upsertChat('test@s.whatsapp.net', {
-      unreadCount: 5,
       name: 'Test Chat',
     })
-    
-    // unreadCount > 0 is intentionally ignored in upsertChat to prevent doubling
+
     expect(chatRepo.upsertChat).toHaveBeenCalledWith('test@s.whatsapp.net', expect.objectContaining({
       name: 'Test Chat'
     }))
+  })
+
+  it('S4-04: upsertChat persists a concrete non-zero unreadCount (marked-unread from another device)', async () => {
+    await service.upsertChat('test@s.whatsapp.net', { unreadCount: 5 })
+    expect(chatRepo.upsertChat).toHaveBeenCalledWith('test@s.whatsapp.net', expect.objectContaining({
+      unreadCount: 5
+    }))
+  })
+
+  it('S4-04: upsertChat ignores the WhatsApp "unknown" sentinel (-1)', async () => {
+    await service.upsertChat('test@s.whatsapp.net', { unreadCount: -1, name: 'X' })
+    const arg = chatRepo.upsertChat.mock.calls[0][1] as Record<string, unknown>
+    expect(arg).not.toHaveProperty('unreadCount')
   })
 
   it('markRead updates unread count to 0', async () => {

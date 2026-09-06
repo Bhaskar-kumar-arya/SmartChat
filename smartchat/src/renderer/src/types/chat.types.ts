@@ -22,6 +22,12 @@ export interface ChatItem {
   lastMessageTargetType?: string | null
   lastMessageTargetText?: string | null
   lastMessageReactionText?: string | null
+  /**
+   * Set when the backend pulled this chat in only to complete a community
+   * grouping — it is outside the requested pagination window and must not count
+   * toward "did we receive a full page?".
+   */
+  outOfWindow?: boolean
 }
 
 export interface SelectedContext {

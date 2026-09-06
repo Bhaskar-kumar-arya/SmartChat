@@ -60,7 +60,11 @@ export const useChats = (activeJid: string | null) => {
     try {
       const pageSize = 50
       const data = await api.getChats(pageToLoad, pageSize)
-      if (data.length < pageSize) {
+      // Community roots/siblings the backend injects for grouping are flagged
+      // `outOfWindow` and don't belong to this page — exclude them when deciding
+      // whether a full page came back.
+      const inWindowCount = data.filter(c => !c.outOfWindow).length
+      if (inWindowCount < pageSize) {
         setHasMore(false)
       } else {
         setHasMore(true)

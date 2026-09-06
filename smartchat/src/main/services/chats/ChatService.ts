@@ -39,8 +39,12 @@ export class ChatService implements IChatService {
       communityId?: number | null
     } = {}
 
-    if (typeof update.unreadCount === 'number' && update.unreadCount === 0) {
-      data.unreadCount = 0
+    // Persist any concrete unread count from chats.update / chats.upsert — this is
+    // how WhatsApp propagates "marked unread on another device" and the
+    // authoritative count after a multi-device reconciliation. WhatsApp uses -1
+    // for "unknown"; only that is ignored.
+    if (typeof update.unreadCount === 'number' && update.unreadCount >= 0) {
+      data.unreadCount = update.unreadCount
     }
     if (update.pinned !== undefined) {
       data.pinned = update.pinned === null ? 0 : Number(update.pinned)

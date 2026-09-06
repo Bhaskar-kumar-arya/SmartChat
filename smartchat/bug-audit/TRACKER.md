@@ -473,8 +473,11 @@ future full re-sync. Silent (one `console.error`).
 create/update repo methods tolerate pre-existing rows (filter against a fresh existence check inside the
 same tick, or catch P2002/P2025 and fall back to per-row upsert like `ReactionRepository` does).
 **Status:** open
-
-### [S4-02] med — services/chats/ChatListEnricher.ts:22-52 (`getChatList`)
+**Fix status:** fixed in Batch D (slice 4) — `GroupHydrationService.hydrateGroups` now wraps
+`await this.hydrateBatch(batchGroups)` in a per-batch try/catch that logs the failing batch index and
+continues; a P2002/P2025 from one racing batch no longer skips hydration for every group after it.
+Test: `GroupHydrationService.test.ts` +1 (first batch rejects → second batch still runs
+syncChats/syncMemberships, `hydrateGroups` resolves). typecheck clean; main services suite 231 pass. — services/chats/ChatListEnricher.ts:22-52 (`getChatList`)
 **What:** After fetching exactly `pageSize` chats (`findChatsPaginated(skip, take)`), the method appends
 **every** chat returned by `findChatsByCommunityJids(...)` for any community touched by the page — with
 no limit and no relation to the `skip`/`take` window — then enriches and returns the whole set.
@@ -489,8 +492,17 @@ rows shift nothing — pagination cannot be reasoned about.
 list and dedupe by jid across the already-emitted set / track a cursor; never return rows outside the
 requested window from a paginated call.
 **Status:** open
-
-### [S4-03] med — services/sync/SyncMessagesHandler.ts:253-291 (`_parseBatch`) + 216-238 (`_resolveSenderId`)
+**Fix status:** partially fixed in Batch D (slice 4). `ChatListEnricher.getChatList` now keeps the
+paginated window rows and the injected community roots/siblings in separate arrays; injected rows are
+flagged `outOfWindow: true` on the returned `ChatListEntry` (new optional field). The renderer
+(`useChats.loadChats`) now computes the has-more signal from **in-window** rows only
+(`data.filter(c => !c.outOfWindow).length < pageSize`), fixing the corrupted end-of-list detection and
+page overlap (bug #3). Duplicate-jid-across-pages (bug #2) was already defended in the renderer's
+append path (`filter(c => !existingJids.has(c.jid))`) and the injection still de-dupes within a page.
+**Not addressed** (deferred as a follow-up refactor, like S2-02): the 60× enrichment cost when a large
+community is touched — a proper fix moves community grouping to a renderer-side on-demand fetch or a
+cursor-based API. Tests: `ChatListEnricher.test.ts` +1 (outOfWindow flagging + no dup). typecheck +
+renderer suite (319) clean. — services/sync/SyncMessagesHandler.ts:253-291 (`_parseBatch`) + 216-238 (`_resolveSenderId`)
 **What:** `_parseBatch` loops over the 200-message batch and does `await this._resolveSenderId(...)` for
 every message serially. For a never-before-seen participant `_resolveSenderId` runs
 `await contactService.upsertContact({ id })` **then** `await contactService.getIdentityIdByJid(id)` — two
@@ -507,8 +519,15 @@ merge/dedup between the two awaits can make the second call return an id that is
 upsert + one bulk `batchGetIdentityIds`, then resolve from the map with no per-message awaits (the
 `MembershipSyncHandler` batch pattern).
 **Status:** open
-
-### [S4-04] med — services/chats/ChatService.ts:42-44 (`upsertChat`)
+**Fix status:** fixed in Batch D (slice 4) — `_parseBatch` is now two passes: pass 1 is pure-CPU parse
+that also collects every distinct sender + nested-reaction-reactor JID not already cached; a new
+`_prefetchIdentityIds` then does **one** `batchGetIdentityIds` for the known ones, a parallel
+`upsertContact` pass for the genuinely-new ones, and **one** more `batchGetIdentityIds` to pick up
+their ids — all into `identityCache`. Pass 2 builds the rows with `_resolveSenderId` now hitting the
+warm cache (the old per-message upsert→get fallback remains only for the rare create-failed JID). Two
+DB reads per batch instead of up to ~2×200 sequential round-trips. Test: new
+`services/sync/SyncMessagesHandler.test.ts` (batched reads regardless of message count; only new
+participants upserted, once; no per-message getIdentityIdByJid; correct senderId mapping). — services/chats/ChatService.ts:42-44 (`upsertChat`)
 **What:** `if (typeof update.unreadCount === 'number' && update.unreadCount === 0) data.unreadCount = 0`
 — the only unread value this handler will ever persist is `0`. Any `chats.update` / `chats.upsert`
 carrying `unreadCount > 0` is dropped.
@@ -520,6 +539,13 @@ path. There is no comment saying non-zero is intentionally owned elsewhere.
 **Fix idea:** persist `unreadCount` whenever it is a number `>= 0` (WhatsApp uses `-1` for "unknown" —
 skip only that), or document why non-zero is deliberately ignored.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 4) — `ChatService.upsertChat` now persists `unreadCount`
+whenever it is a number `>= 0` (the WhatsApp `-1` "unknown" sentinel is still skipped). "Marked unread
+on another device" and post-multi-device-reconciliation counts now land in the DB and show after a
+reload. (The renderer live-update path still only honours `unreadCount === 0` for an already-loaded
+chat — left as-is to avoid a stale `chats.update` stomping a freshly-incremented local count; the
+authoritative value is picked up on next `getChatList`.) Tests: `ChatService.test.ts` — existing
+"ignored" assertion updated, +2 (non-zero persisted, `-1` ignored).
 
 ### [S4-05] low — services/sync/SyncMessagesHandler.ts:73, 96, 108 (`importedMessages`)
 **What:** `importedMessages` is typed `Message[]` but is filled with `push(...(standardMessages as unknown

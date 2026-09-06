@@ -98,7 +98,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | 1 — WhatsApp worker & socket | 5 | DONE (2026-09-06) — S1-01/02/04/05 fixed, S1-03 wontfix (not a bug) |
 | 2 — Message pipeline | 6 | DONE (2026-09-06) — S2-01..06 all fixed (S2-02 UI-retry deferred as follow-up feature) |
 | 3 — WhatsApp service & subscribers | 2 | DONE (2026-09-06) — S3-02 (unpause only on wa-sync-complete) + S3-03 (safety timer covers between-chunk inactivity only; finishSync deferred while a chunk writes) fixed. FIX_PLAN's "3" was a miscount — slice 3 has 2 med. |
-| 4 — Chats & sync | 4 | TODO |
+| 4 — Chats & sync | 4 | DONE (2026-09-06) — S4-01 (per-batch try/catch), S4-03 (batched identity prefetch), S4-04 (persist unreadCount>=0) fixed; S4-02 partial (outOfWindow flag fixes pagination signal; 60× enrichment refactor deferred) |
 | 5 — Contacts | 2 | TODO |
 | 6 — AI | 7 | TODO |
 | 7 — Kernel API modules & router | 4 | TODO |

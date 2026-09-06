@@ -21,12 +21,12 @@ export class ChatListEnricher implements IChatListEnricher {
    */
   async getChatList(page: number = 1, pageSize: number = 50): Promise<ChatListEntry[]> {
     const skip = (page - 1) * pageSize
-    const chats = await this.chatRepository.findChatsPaginated(skip, pageSize)
-    
-    const fetchedJids = new Set(chats.map(c => c.jid))
+    const windowChats = await this.chatRepository.findChatsPaginated(skip, pageSize)
+
+    const fetchedJids = new Set(windowChats.map(c => c.jid))
     const communityJids = new Set<string>()
 
-    for (const chat of chats) {
+    for (const chat of windowChats) {
       if (chat.type === 'COMMUNITY') {
         communityJids.add(chat.jid)
       } else if (chat.type !== 'COMMUNITY' && chat.community?.jid) {
@@ -34,19 +34,28 @@ export class ChatListEnricher implements IChatListEnricher {
       }
     }
 
+    // Community roots/siblings pulled in so the renderer can build the hierarchy
+    // even when only one member chat landed on this page. These are NOT part of
+    // the requested pagination window — they are flagged `outOfWindow` so the
+    // caller doesn't count them toward "was this a full page?" (which previously
+    // corrupted the has-more signal and made pages overlap unpredictably).
+    const siblingChats: typeof windowChats = []
     if (communityJids.size > 0) {
       const communityChats = await this.chatRepository.findChatsByCommunityJids(Array.from(communityJids))
       for (const cc of communityChats) {
         if (!fetchedJids.has(cc.jid)) {
-          chats.push(cc)
+          siblingChats.push(cc)
           fetchedJids.add(cc.jid)
         }
       }
     }
 
-    const enriched = await Promise.all(
-      chats.map(chat => this.enrichSingleChat(chat))
-    )
+    const enriched = await Promise.all([
+      ...windowChats.map(chat => this.enrichSingleChat(chat)),
+      ...siblingChats.map(chat =>
+        this.enrichSingleChat(chat).then(e => ({ ...e, outOfWindow: true }))
+      )
+    ])
 
     return enriched as ChatListEntry[]
   }

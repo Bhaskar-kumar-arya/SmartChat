@@ -33,7 +33,18 @@ export class GroupHydrationService implements IGroupHydrationService {
         batchGroups[k] = groups[k]
       }
 
-      await this.hydrateBatch(batchGroups)
+      try {
+        await this.hydrateBatch(batchGroups)
+      } catch (err) {
+        // A live worker write (contacts.upsert / group event) interleaving at a
+        // yield point can race a batch's read-then-createMany/$transaction and
+        // raise P2002/P2025. One bad batch must not abort hydration for every
+        // remaining group — log and carry on.
+        console.error(
+          `[GroupHydration] Batch ${Math.floor(i / BATCH_SIZE)} failed, continuing with remaining groups:`,
+          err
+        )
+      }
 
       processedCount += batchKeys.length
       if (onProgress) {
