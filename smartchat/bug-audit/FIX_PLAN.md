@@ -96,7 +96,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | Slice | Med count | Status |
 |---|---|---|
 | 1 — WhatsApp worker & socket | 5 | DONE (2026-09-06) — S1-01/02/04/05 fixed, S1-03 wontfix (not a bug) |
-| 2 — Message pipeline | 6 | TODO |
+| 2 — Message pipeline | 6 | DONE (2026-09-06) — S2-01..06 all fixed (S2-02 UI-retry deferred as follow-up feature) |
 | 3 — WhatsApp service & subscribers | 3 | TODO |
 | 4 — Chats & sync | 4 | TODO |
 | 5 — Contacts | 2 | TODO |

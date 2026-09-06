@@ -47,6 +47,29 @@ describe('MediaService', () => {
     expect(true).toBe(true) // Should not throw
   })
 
+  it('S2-04: leftover in-flight downloads do not drive activeDownloadsCount negative', async () => {
+    let releaseDownload: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { releaseDownload = resolve })
+    vi.spyOn(service, 'downloadAndCacheMedia').mockImplementation(async () => {
+      await gate
+      return { id: 'x' } as never
+    })
+
+    ;(service as any).queueFavoriteStickerDownload('m1', {})
+    ;(service as any).queueFavoriteStickerDownload('m2', {})
+    expect((service as any).activeDownloadsCount).toBe(2)
+
+    // Sync teardown clears the queue and zeroes the counter mid-flight.
+    service.clearFavoriteStickerQueue()
+    expect((service as any).activeDownloadsCount).toBe(0)
+
+    releaseDownload()
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect((service as any).activeDownloadsCount).toBe(0)
+  })
+
   it('downloadAndCacheMedia invokes sock.updateMediaMessage on 404 primary failure', async () => {
     const rawMsg = {
       imageMessage: {

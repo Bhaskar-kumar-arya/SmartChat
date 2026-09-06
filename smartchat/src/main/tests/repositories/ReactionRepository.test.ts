@@ -73,6 +73,42 @@ describe('ReactionRepository', () => {
     expect(reactions[0].text).toBe('🥶')
   })
 
+  it('should not let a stale reaction event clobber a newer stored one (S2-05)', async () => {
+    await prisma.identity.create({ data: { id: 1, phoneNumber: 'u1@s.whatsapp.net' } })
+    await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
+    await prisma.message.create({ data: { id: 'm1', chatJid: dummyChat, fromMe: false, timestamp: 10n, messageType: 'conversation', content: '{}' } })
+
+    // Live reaction at t=200
+    await repository.upsertReaction('m1', 1, '❤️', 200n)
+
+    // Out-of-order history-sync delivery of an older reaction (t=100) — must be ignored
+    await repository.upsertReaction('m1', 1, '👍', 100n)
+    let reactions = await prisma.reaction.findMany({ where: { messageId: 'm1' } })
+    expect(reactions[0].text).toBe('❤️')
+    expect(reactions[0].timestamp).toBe(200n)
+
+    // Out-of-order older *removal* (t=150) — must not resurrect-delete the newer reaction
+    await repository.upsertReaction('m1', 1, '', 150n)
+    reactions = await prisma.reaction.findMany({ where: { messageId: 'm1' } })
+    expect(reactions.length).toBe(1)
+    expect(reactions[0].text).toBe('❤️')
+  })
+
+  it('bulkSyncReactions should not roll back a newer stored reaction (S2-05)', async () => {
+    await prisma.identity.create({ data: { id: 2, phoneNumber: 'u2@s.whatsapp.net' } })
+    await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
+    await prisma.message.create({ data: { id: 'm2', chatJid: dummyChat, fromMe: false, timestamp: 10n, messageType: 'conversation', content: '{}' } })
+
+    await repository.upsertReaction('m2', 2, '🔥', 500n)
+
+    await repository.bulkSyncReactions([{ targetId: 'm2', reactorId: 2, emoji: '😀', timestamp: 100n }], new Set())
+
+    const reactions = await prisma.reaction.findMany({ where: { messageId: 'm2' } })
+    expect(reactions).toHaveLength(1)
+    expect(reactions[0].text).toBe('🔥')
+    expect(reactions[0].timestamp).toBe(500n)
+  })
+
   it('should find last reaction for chat', async () => {
     await prisma.identity.create({ data: { id: 4, phoneNumber: 'u4@s.whatsapp.net', displayName: 'User 4' } })
     await prisma.chat.create({ data: { jid: 'chat2@g.us', type: 'GROUP' } })

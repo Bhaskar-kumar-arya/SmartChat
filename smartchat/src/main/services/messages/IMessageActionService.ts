@@ -29,7 +29,12 @@ export interface IMessageActionService {
     messageId: string,
     targetJids: string[],
     jid?: string
-  ): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }>
+  ): Promise<{
+    success: boolean
+    detail: string
+    results: Array<{ jid: string; messageId: string }>
+    failures: Array<{ jid: string; error: string }>
+  }>
 
   reactToMessage(
     sock: IMessageActionSocket,

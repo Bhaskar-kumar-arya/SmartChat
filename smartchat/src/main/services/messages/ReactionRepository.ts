@@ -14,6 +14,20 @@ export class ReactionRepository implements IReactionRepository {
     emoji: string | null,
     timestamp: bigint
   ): Promise<void> {
+    // Reaction events arrive out of order (history sync can deliver an old
+    // reaction/removal after a newer live one). Never let a stale event clobber
+    // a newer stored reaction or resurrect one that was already removed later.
+    const existing = await this.prisma.reaction
+      .findUnique({
+        where: { messageId_senderId: { messageId, senderId: reactorId } },
+        select: { timestamp: true }
+      })
+      .catch(() => null)
+
+    if (existing && existing.timestamp > timestamp) {
+      return
+    }
+
     if (!emoji) {
       await this.prisma.reaction
         .deleteMany({ where: { messageId, senderId: reactorId } })
@@ -116,9 +130,26 @@ export class ReactionRepository implements IReactionRepository {
       for (const ident of foundIdentities) existingReactorIds.add(ident.id)
     }
 
-    const valid = unique.filter(
+    let valid = unique.filter(
       r => existingMessageIds.has(r.targetId) && existingReactorIds.has(r.reactorId)
     )
+    if (valid.length === 0) return
+
+    // Drop any incoming reaction that is older than the one already stored for
+    // the same (message, reactor) — a history-sync batch must not roll a live
+    // reaction back to a stale state.
+    const storedReactions = await this.prisma.reaction.findMany({
+      where: { messageId: { in: Array.from(new Set(valid.map(r => r.targetId))) } },
+      select: { messageId: true, senderId: true, timestamp: true }
+    })
+    if (storedReactions.length > 0) {
+      const storedTs = new Map<string, bigint>()
+      for (const s of storedReactions) storedTs.set(`${s.messageId}_${s.senderId}`, s.timestamp)
+      valid = valid.filter(r => {
+        const existingTs = storedTs.get(`${r.targetId}_${r.reactorId}`)
+        return existingTs === undefined || r.timestamp >= existingTs
+      })
+    }
     if (valid.length === 0) return
 
     const ops = valid.map(r =>

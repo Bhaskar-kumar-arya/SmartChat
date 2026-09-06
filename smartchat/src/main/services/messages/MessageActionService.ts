@@ -216,7 +216,7 @@ export class MessageActionService implements IMessageActionService {
   /**
    * Forwards a message to one or more destination JIDs/LIDs.
    */
-  async forwardMessage(sock: IMessageActionSocket, messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }> {
+  async forwardMessage(sock: IMessageActionSocket, messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }>; failures: Array<{ jid: string; error: string }> }> {
     const dbMsg = await this.messageQueryRepository.findMessageById(messageId);
     if (!dbMsg) {
       throw new Error(`Message with ID ${messageId} not found in database`);
@@ -237,15 +237,34 @@ export class MessageActionService implements IMessageActionService {
 
     const destinations = this.getForwardDestinations(targetJids, jid);
     const results: { jid: string; messageId: string }[] = [];
+    const failures: { jid: string; error: string }[] = [];
     for (const destJid of destinations) {
-      const res = await this.forwardToDestination(sock, messageId, waMessage, destJid);
-      results.push(res);
+      try {
+        const res = await this.forwardToDestination(sock, messageId, waMessage, destJid);
+        results.push(res);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`[MessageActionService] Failed to forward ${messageId} to ${destJid}:`, errMsg);
+        failures.push({ jid: destJid, error: errMsg });
+      }
+    }
+
+    // Every destination failed — surface it as an error (preserves the previous
+    // reject-on-failure contract for the all-or-nothing case).
+    if (results.length === 0 && failures.length > 0) {
+      throw new Error(
+        `Failed to forward message ${messageId} to any of ${failures.length} destination(s): ${failures.map(f => `${f.jid} (${f.error})`).join('; ')}`
+      );
     }
 
     return {
-      success: true,
-      detail: `Message ${messageId} successfully forwarded to ${destinations.length} destination(s)`,
-      results
+      success: failures.length === 0,
+      detail:
+        failures.length === 0
+          ? `Message ${messageId} successfully forwarded to ${results.length} destination(s)`
+          : `Message ${messageId} forwarded to ${results.length} of ${destinations.length} destination(s); ${failures.length} failed`,
+      results,
+      failures
     };
   }
 

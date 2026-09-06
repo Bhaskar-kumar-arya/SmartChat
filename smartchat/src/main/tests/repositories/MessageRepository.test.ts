@@ -225,6 +225,47 @@ describe('MessageRepository', () => {
     expect(parsed.extendedTextMessage?.contextInfo?.quotedMessage?.conversation).toBe('question?')
   })
 
+  it('should not regress delivery status on a re-delivered upsert (S2-01)', async () => {
+    await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
+
+    await prisma.message.create({
+      data: {
+        id: 'stat1', chatJid: dummyChat, fromMe: true, timestamp: 100n,
+        messageType: 'conversation', content: JSON.stringify({ conversation: 'hi' }),
+        textContent: 'hi', status: 'READ'
+      }
+    })
+
+    // Baileys re-emits messages.upsert with no status → mapBaileysStatus → 'SENT'
+    await repository.upsertMessage({
+      id: 'stat1', chatJid: dummyChat, fromMe: true, senderId: null, participant: null,
+      timestamp: 100n, messageType: 'conversation', content: JSON.stringify({ conversation: 'hi' }),
+      textContent: 'hi', isDeleted: false, isEdited: false, status: 'SENT'
+    })
+
+    const msg = await prisma.message.findUnique({ where: { id: 'stat1' } })
+    expect(msg?.status).toBe('READ')
+  })
+
+  it('should still allow forward status progression on upsert (S2-01)', async () => {
+    await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
+    await prisma.message.create({
+      data: {
+        id: 'stat2', chatJid: dummyChat, fromMe: true, timestamp: 100n,
+        messageType: 'conversation', content: '{}', textContent: 'x', status: 'PENDING'
+      }
+    })
+
+    await repository.upsertMessage({
+      id: 'stat2', chatJid: dummyChat, fromMe: true, senderId: null, participant: null,
+      timestamp: 100n, messageType: 'conversation', content: '{}', textContent: 'x',
+      isDeleted: false, isEdited: false, status: 'DELIVERED'
+    })
+
+    const msg = await prisma.message.findUnique({ where: { id: 'stat2' } })
+    expect(msg?.status).toBe('DELIVERED')
+  })
+
   it('should mark message as deleted', async () => {
     await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
     await prisma.message.create({

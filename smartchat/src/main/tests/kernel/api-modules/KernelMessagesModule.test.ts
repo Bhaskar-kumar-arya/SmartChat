@@ -304,7 +304,8 @@ describe('KernelMessagesModule', () => {
     vi.mocked(mockMessageActionService.forwardMessage).mockResolvedValue({
       success: true,
       detail: 'Forwarded',
-      results: [{ jid: '456@s.whatsapp.net', messageId: 'msg-fwd-1' }]
+      results: [{ jid: '456@s.whatsapp.net', messageId: 'msg-fwd-1' }],
+      failures: []
     })
 
     const result = await module.handle('plugin-a', 'kernel:messages:forward', {
@@ -322,7 +323,8 @@ describe('KernelMessagesModule', () => {
     expect(result).toEqual({
       success: true,
       detail: 'Forwarded',
-      results: [{ jid: '456@s.whatsapp.net', messageId: 'msg-fwd-1' }]
+      results: [{ jid: '456@s.whatsapp.net', messageId: 'msg-fwd-1' }],
+      failures: []
     })
   })
 

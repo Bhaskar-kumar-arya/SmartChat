@@ -54,6 +54,31 @@ describe('MessageSenderService', () => {
     )
   })
 
+  describe('send failure → FAILED status (S2-02)', () => {
+    const flush = () => new Promise((r) => setTimeout(r, 0))
+
+    it('marks the optimistic message FAILED and emits status-updated when the background send rejects', async () => {
+      sock.sendMessage = vi.fn().mockRejectedValue(new Error('socket offline'))
+
+      const enriched = await service.sendMessageWorkflow(sock, 'target@s.whatsapp.net', 'Hello')
+      // optimistic PENDING row returned to caller immediately
+      expect(enriched.id).toBeDefined()
+
+      await flush()
+      await flush()
+
+      const failedUpsert = messageRepo.upsertMessage.mock.calls
+        .map((c: any[]) => c[0])
+        .find((m: any) => m.status === 'FAILED')
+      expect(failedUpsert).toBeDefined()
+
+      expect(getBus().emit).toHaveBeenCalledWith(
+        'message:status-updated',
+        expect.objectContaining({ status: 'FAILED', chatJid: 'target@s.whatsapp.net' })
+      )
+    })
+  })
+
   describe('Reply Context (buildQuotedContextInfo)', () => {
     it('preserves reply context when quoting another user in a DM', async () => {
       contactService.resolveLidFromJid.mockImplementation(async (j: string) => j)

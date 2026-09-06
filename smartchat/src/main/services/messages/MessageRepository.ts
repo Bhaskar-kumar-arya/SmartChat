@@ -4,6 +4,21 @@ import { IMessageRepository, MessageUpsertData } from './IMessageRepository'
 import { DBMessageWithSender } from '../../domain/db.types'
 
 /**
+ * Monotonic ordering of message delivery states. A later `messages.upsert`
+ * re-delivery of an already-stored message must never drag its status back
+ * *below* what receipts (owned by ReceiptService) have already advanced it to.
+ * `PENDING`/`FAILED` share rank 0 (both mean "not acknowledged by the server").
+ */
+const MESSAGE_STATUS_RANK: Record<string, number> = {
+  FAILED: 0,
+  PENDING: 0,
+  SENT: 1,
+  DELIVERED: 2,
+  READ: 3,
+  PLAYED: 4
+}
+
+/**
  * MessageRepository — Single Responsibility: all Prisma/database write/mutation
  * operations related to the `Message` table.
  */
@@ -22,7 +37,7 @@ export class MessageRepository implements IMessageRepository {
     // Preserve existing content, messageType, and textContent if incoming is empty/unknown
     const existing = await this.prisma.message.findUnique({
       where: { id: data.id },
-      select: { content: true, messageType: true, textContent: true }
+      select: { content: true, messageType: true, textContent: true, status: true }
     })
 
     if (existing) {
@@ -54,6 +69,19 @@ export class MessageRepository implements IMessageRepository {
     }
 
     const { id, ...rest } = data
+
+    // Never regress delivery status: a re-delivered `messages.upsert` computes
+    // `status` from `msg.status` (often undefined → 'SENT'), which would clobber
+    // a DELIVERED/READ state that ReceiptService already advanced it to.
+    let statusToStore = rest.status
+    if (statusToStore && existing?.status) {
+      const existingRank = MESSAGE_STATUS_RANK[existing.status] ?? -1
+      const incomingRank = MESSAGE_STATUS_RANK[statusToStore] ?? -1
+      if (incomingRank < existingRank) {
+        statusToStore = existing.status
+      }
+    }
+
     const saved = await this.prisma.message
       .upsert({
         where: { id },
@@ -64,7 +92,7 @@ export class MessageRepository implements IMessageRepository {
           timestamp: rest.timestamp,
           senderId: rest.senderId,
           participant: rest.participant,
-          status: rest.status,
+          status: statusToStore,
           ...(rest.isDeleted ? { isDeleted: true } : {}),
           ...(rest.isEdited !== undefined ? { isEdited: rest.isEdited } : {})
         },

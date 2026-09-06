@@ -142,6 +142,12 @@ to `SENT` — read / double-tick state regresses in the UI until (if ever) anoth
 **Fix idea:** in the update branch, only lower→higher status transitions, or omit `status` from
 `update` entirely and let `ReceiptService` own it; or read existing status and `Math.max` the level.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 2) — `upsertMessage` now selects the existing `status`,
+ranks it via a module-level `MESSAGE_STATUS_RANK` (FAILED/PENDING 0 · SENT 1 · DELIVERED 2 · READ 3 ·
+PLAYED 4), and keeps the stored status when the incoming rank is lower. Forward transitions
+(PENDING→SENT/DELIVERED/READ) and new-message creates are unaffected. Test:
+`repositories/MessageRepository.test.ts` (+2: no-regress READ→SENT re-delivery, still allow
+PENDING→DELIVERED). typecheck clean; full suite 901 pass / 5 baseline-failure files unchanged.
 
 ### [S2-02] med — MessageSenderService.ts:226-253 (text) & 341-392 (media)
 **What:** The optimistic pending row is persisted with `status: 'PENDING'` and emitted to the UI,
@@ -155,6 +161,12 @@ this service). Silent outbound message loss.
 manual-retry path and/or a startup outbox re-send. (Check slice 3 for any existing pending re-send
 before fixing.)
 **Status:** open
+**Fix status:** fixed in Batch D (slice 2) — both send workflows' background-send `catch` now call
+`markSendFailed(pendingMsg)`, which upserts the row to `status: 'FAILED'` (monotonic guard from S2-01
+permits PENDING→FAILED, both rank 0) and emits `message:status-updated {status:'FAILED'}`. Renderer
+`MessageStatusTick` gained a `FAILED` case (red alert-circle, "Not sent"). Manual-retry / startup
+outbox re-send **not** implemented — scoped as a separate feature; noted as follow-up. Test:
+`services/MessageSenderService.test.ts` (background send reject → FAILED upsert + event).
 
 ### [S2-03] med — MessageVectorRepository.ts:17-22 (`searchVectorMatch`)
 **What:** The `messageId IN (...)` restriction is only applied when
@@ -167,6 +179,13 @@ scope/leak issue depending on why the caller restricted it. Failure is silent (n
 **Fix idea:** for large candidate sets, chunk the `IN` list (or stage IDs into a temp table and
 JOIN), never silently drop the filter. If it is purely a perf guard, still enforce it.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 2) — `searchVectorMatch` extracted the raw query into
+`runVectorMatch(vec, ids?)` and now: no candidates → one unfiltered query; ≤900 candidates → one
+filtered query; >900 → one filtered KNN query per 900-id chunk, results merged, re-sorted by
+distance, sliced to K=30 (each chunk's true nearest-K is a superset of any global nearest-K member
+from it, so the merge is correct). The `messageId IN (...)` filter is never dropped. Test:
+`repositories/MessageVectorRepository.test.ts` (new — filter always present, chunk param cap ≤901,
+full coverage of candidates, merged top-K sorted). Fixes the S11-07 deepSearch scope leak too.
 
 ### [S2-04] med — MediaService.ts:154-158 (`clearFavoriteStickerQueue`)
 **What:** Sets `activeDownloadsCount = 0` and `isProcessingQueue = false` unconditionally while
@@ -179,6 +198,11 @@ unbounded parallel media downloads. Called on sync teardown / pause churn.
 **Fix idea:** track in-flight promises and settle them in `clear()`, or guard the decrement with
 `Math.max(0, ...)` plus a generation token so stale `.finally` callbacks are ignored.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 2) — mirrors the S1-04 fix in `WorkerMediaService`: added a
+`queueGeneration` counter bumped by `clearFavoriteStickerQueue`; each in-flight download captures the
+generation at start and its `.finally` no-ops when the generation changed; decrement also guarded
+with `Math.max(0, …)`. Test: `services/MediaService.test.ts` "S2-04: leftover in-flight downloads do
+not drive activeDownloadsCount negative".
 
 ### [S2-05] med — ReactionRepository.ts:26-34 (`upsertReaction`) & 124-146 (`bulkSyncReactions`)
 **What:** `upsert` overwrites `text` + `timestamp` with whatever was processed last, with no check
@@ -193,6 +217,14 @@ reactions do not.
 `incoming.timestamp >= existing.timestamp`; for removals, only delete if the delete event is newer
 than the stored reaction.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 2) — `upsertReaction` now reads the stored reaction's
+timestamp first and returns early (no update, no delete) when `existing.timestamp > incoming` — so a
+stale reaction cannot clobber a newer one and a stale removal cannot delete a newer reaction. Local
+user actions (`MessageActionService.updateReactionDb`) always stamp `Date.now()` so they still win.
+`bulkSyncReactions` additionally fetches stored timestamps for the batch's (message,reactor) pairs
+and filters out any incoming reaction older than what's stored. Test:
+`repositories/ReactionRepository.test.ts` (+2: stale live event + stale removal ignored; bulk sync
+doesn't roll back a newer stored reaction).
 
 ### [S2-06] med — MessageActionService.ts:238-243 (`forwardMessage`)
 **What:** `for (const destJid of destinations) { await this.forwardToDestination(...) ; results.push(res) }`
@@ -204,6 +236,13 @@ received the message. A naive retry re-forwards duplicates to those chats.
 **Fix idea:** collect per-destination `{ jid, ok, error }`, never abort the loop on one failure,
 and return partial success.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 2) — the forward loop wraps each `forwardToDestination` in
+try/catch, collecting a `failures: Array<{jid, error}>` alongside `results`; the loop never aborts.
+Return type gained `failures`; `success` is now `failures.length === 0` and `detail` reports the
+partial count. If **every** destination fails the method still throws (preserves the reject-on-total-
+failure contract). `IMessageActionService` + the `KernelMessagesModule` test mock updated. Test:
+`services/MessageActionService.test.ts` (+2: one dest fails → other two still forwarded + reported;
+all fail → throws).
 
 ### [S2-07] low — MediaService.ts:39-55, 292-322 (`resolveMediaType` / `downloadAndCacheMedia`)
 **What:** main-process twin of [S1-03]. For `templateMessage` media, `resolveMediaType` synthesizes

@@ -248,11 +248,31 @@ export class MessageSenderService implements IMessageSenderService {
           console.error('[MessageSenderService] Failed to emit message:status-updated:', err)
         })
       })
-      .catch((err: unknown) => {
+      .catch(async (err: unknown) => {
         console.error('[MessageSenderService] Background send failed for message:', msgId, err)
+        await this.markSendFailed(pendingMsg)
       })
 
     return enriched
+  }
+
+  /**
+   * Transition an optimistic PENDING message to FAILED and notify the UI so it
+   * no longer shows an indefinite "sending" spinner when the socket send rejects.
+   */
+  private async markSendFailed(pendingMsg: ProcessedMessage): Promise<void> {
+    try {
+      await this.messageRepository.upsertMessage({ ...pendingMsg, status: 'FAILED' })
+    } catch (err) {
+      console.error('[MessageSenderService] Failed to mark message FAILED:', pendingMsg.id, err)
+    }
+    this.getBus()?.emit('message:status-updated', {
+      id: pendingMsg.id,
+      chatJid: pendingMsg.chatJid,
+      status: 'FAILED'
+    }).catch((err) => {
+      console.error('[MessageSenderService] Failed to emit FAILED status update:', err)
+    })
   }
 
   async sendMediaMessageWorkflow(
@@ -376,6 +396,7 @@ export class MessageSenderService implements IMessageSenderService {
 
       } catch (err) {
         console.error('[MessageSenderService] Background media send failed:', err)
+        await this.markSendFailed(pendingMsg)
       } finally {
         if (isTempFile) {
           try {

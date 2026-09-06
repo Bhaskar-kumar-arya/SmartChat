@@ -132,6 +132,11 @@ export class MediaService implements IMediaService {
   private concurrencyLimit = 2
   private isProcessingQueue = false
   private queuePaused = false
+  // Bumped every time the queue is cleared. In-flight downloads started under an
+  // older generation must not touch the shared counter when they settle,
+  // otherwise `clearFavoriteStickerQueue` (which zeroes the counter) lets their
+  // `.finally` drive it negative and silently raise the concurrency cap.
+  private queueGeneration = 0
 
   constructor(
     private readonly messageRepository: IMessageCompoundRepository,
@@ -155,6 +160,7 @@ export class MediaService implements IMediaService {
     this.favoriteStickerQueue = []
     this.activeDownloadsCount = 0
     this.isProcessingQueue = false
+    this.queueGeneration++
   }
 
   private queueFavoriteStickerDownload(msgId: string, sock: IMediaSocket): void {
@@ -180,12 +186,16 @@ export class MediaService implements IMediaService {
         if (!item) continue
 
         this.activeDownloadsCount++
+        const startedGeneration = this.queueGeneration
         this.downloadAndCacheMedia(item.msgId, item.sock)
           .catch((err) => {
             console.error(`[MediaService] Background download of favorite sticker failed for msg ${item.msgId}:`, err)
           })
           .finally(() => {
-            this.activeDownloadsCount--
+            // Ignore stale callbacks from a queue generation that was already
+            // cleared — the counter was reset to 0 by clearFavoriteStickerQueue.
+            if (startedGeneration !== this.queueGeneration) return
+            this.activeDownloadsCount = Math.max(0, this.activeDownloadsCount - 1)
             this.processQueue().catch((err) => {
               console.error('[MediaService] Error running processQueue in finally block:', err)
             })
