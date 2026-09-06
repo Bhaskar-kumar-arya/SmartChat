@@ -12,7 +12,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 1 | WhatsApp worker & socket | DONE (8 findings) | 2026-09-06 | 0 crit / 0 high / 5 med / 3 low |
 | 2 | Message pipeline | DONE (12 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 6 low; peripheral formatters + ffmpeg paths lightly covered |
 | 3 | WhatsApp service & subscribers | DONE (6 findings) | 2026-09-06 | 1 high / 3 med / 2 low; S3-01 = plugin subs lost on bus rebuild. type files + BaileysPatcher lightly covered |
-| 4 | Chats & sync | TODO | — | |
+| 4 | Chats & sync | IN PROGRESS | 2026-09-06 | |
 | 5 | Contacts | TODO | — | |
 | 6 | AI (providers, mentions, citations) | TODO | — | ~45 files; may need 2 sessions |
 | 7 | Kernel API modules & router | TODO | — | |
