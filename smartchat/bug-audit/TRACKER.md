@@ -19,7 +19,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 8 | Kernel plugins, contributions, permissions | DONE (10 findings) | 2026-09-06 | 0 crit / 1 high / 6 med / 3 low. Deep-read PluginLoader, PluginHost, PluginRegistry, PermissionStore, ContributionRegistry, PluginManifest, KernelEventsModule, KernelMessagesModule (perm paths), KernelAPIRouter, BaseKernelModule, contributionIpc, channels/{Direct,Worker}PluginChannel, pluginProtocol. Light: other Kernel*Module perm checks, I*.ts |
 | 9 | Kernel storage, channels, ipc, ui | DONE (10 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 4 low. Deep-read PrismaPluginStorageRepository, {Direct,Worker}PluginChannel, overlayIpc, panelIpc, contributionIpc, OverlayHost, PanelHost. S9-01/S9-02 = panel event IPC bypasses bus-accessor + permission checks. Light: I*.ts interfaces |
 | 10 | App IPC & auth | DONE (10 findings) | 2026-09-06 | 1 crit / 1 high / 4 med / 4 low. S10-01 = swallowed authState read error → hasCreds()=false → wipeAllData on a logged-in user (data loss). S10-02 = silent Signal keystore tx failure. Deep-read auth.ts, ipcHandlers.ts, services/auth/*, ServiceContainer.ts; ipc/*.types.ts trivial |
-| 11 | apiServer, search, notification, calls, audio | IN PROGRESS | 2026-09-06 | HTTP surface = apiServer |
+| 11 | apiServer, search, notification, calls, audio | DONE (14 findings) | 2026-09-06 | 0 crit / 1 high / 7 med / 6 low. S11-01 = HTTP /api/tools/execute bypasses the tool permission model (ExecuteScript/SQL/send over a static-token localhost API). S11-02 = APIConfigProvider clobbers ai_preferences.json on a transient read error. S11-03 = embedding worker crash never rejects pending jobs → index queue stalls forever. Light: I*.ts interfaces |
 | 12 | SDK, tools, data wipe, domain, db, protocol | TODO | — | DataWipeService = data-loss risk |
 | 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
 
@@ -28,9 +28,9 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | Severity | Count |
 |----------|-------|
 | crit | 2 |
-| high | 4 |
-| med  | 47 |
-| low  | 37 |
+| high | 5 |
+| med  | 54 |
+| low  | 43 |
 
 ---
 
@@ -1333,7 +1333,195 @@ recreation; surface init failure rather than swallowing it.
 
 ## Slice 11 — apiServer, search, notification, calls, audio
 
-_none yet_
+Files read: apiServer/{APIServer,Router,APIConfigProvider}.ts,
+apiServer/controllers/{ChatsController,ToolsController,StatusController,helpers}.ts,
+search/{EmbeddingService,EmbeddingWorkerManager,VectorSyncService,SearchService}.ts,
+calls/{CallService,CallRepository}.ts,
+notification/{NotificationService,ElectronNotificationProvider,TrayService}.ts,
+audio/AudioTranscoderService.ts. Cross-refs: tools/*Tool.ts (requiresPermission),
+renderer/useAIStream.ts (permission prompt), MessageVectorRepository (S2-03).
+Light: I*.ts interfaces, index.ts.
+
+### [S11-01] high — services/apiServer/controllers/ToolsController.ts:41-48
+**What:** `POST /api/tools/execute` looks up the tool and calls `tool.execute(data.arguments || {})`
+directly, with **no permission enforcement**. The `requiresPermission` flag is surfaced by
+`GET /api/tools` (line 26) but never checked here. The permission model is enforced only in the
+renderer (`useAIStream.ts:139` prompts the user for any tool whose `requiresPermission !== false`);
+the HTTP path bypasses it entirely.
+**Why it's a bug:** every dangerous tool is `requiresPermission = true` — `ExecuteScriptTool`
+(arbitrary code execution), `QueryDatabaseTool` (arbitrary SQL), `SendMessageTool` /
+`MessageActionTool` / `ChatActionTool` (send/modify messages as the user). Any local process (or
+anything that obtains the token) can invoke all of them over `http://127.0.0.1:3003` with a static
+bearer token — no prompt, no audit, no rate limit. The token lives in plaintext
+`ai_preferences.json`. Combined with the wildcard CORS (`Access-Control-Allow-Origin: *`) and no
+Host/Origin validation in `Router.handle`, a DNS-rebinding page could also reach the endpoint (still
+gated by the token, so the primary exposure is other local programs). `ExecuteScriptTool` over HTTP
+is effectively unauthenticated-to-the-user RCE.
+**Fix idea:** reject (or require an explicit config opt-in per tool) any tool with
+`requiresPermission === true` on the HTTP surface; at minimum log every execution and gate script/SQL
+tools behind a separate capability.
+**Status:** open
+
+### [S11-02] med — services/apiServer/APIConfigProvider.ts:13-20, 32-44
+**What:** `loadOrCreateConfig` reads `ai_preferences.json`, and on any read/parse error the `catch`
+just logs and leaves `config = {}`. It then proceeds: if no valid `externalApiToken` is found (true
+for `{}`), it generates one and `fs.writeFileSync(preferencesPath, JSON.stringify(config …))` —
+writing back the **empty** object plus only `externalApiPort`/`externalApiToken`.
+**Why it's a bug:** a transient read failure or a momentarily-corrupt/locked `ai_preferences.json`
+(the same file `NotificationService`-style read-modify-write and the renderer both touch) causes the
+API server constructor to **overwrite the user's entire AI preferences file** — model selection,
+provider settings, everything — with a 2-key stub. Data loss triggered by a recoverable error.
+**Fix idea:** on parse/read failure, abort token generation and do not write; only persist when the
+file was successfully parsed (or missing entirely). Merge into the parsed object, never a `{}`.
+**Status:** open
+
+### [S11-03] med — services/search/EmbeddingWorkerManager.ts:96-101, 119-142
+**What:** When the embedding worker emits `error` (global) or `exit`, the handlers null
+`this.worker`/`this.initPromise` and log, but **never reject the entries in `pendingJobs`**. Any
+`embed()` promise in flight when the worker dies stays pending forever, and its `updateActiveState`
+is never decremented. `handleWorkerMessage` likewise drops an `embed_done` with a missing
+`payload.vector` without resolving/deleting the job.
+**Why it's a bug:** `EmbeddingService.processQueue` does `const vector = await this.embed(text)` in
+its drain loop; a worker crash (OOM during a large batch, native model load failure) leaves that
+await hanging, so `isProcessingQueue` stays `true` and **the entire index queue stalls permanently**
+— no new message is ever embedded until app restart. `activeJobs` stuck `>0` also keeps the
+"embedding active" state latched, which other subsystems use to gate work. Deep search silently
+degrades (`deepSearch` catch returns `[]`).
+**Fix idea:** on `error`/`exit`, iterate `pendingJobs` and `reject(new Error('worker exited'))` each,
+clear the map, reset `activeJobs`; add a per-job timeout; treat a vectorless `embed_done` as a
+rejection.
+**Status:** open
+
+### [S11-04] med — services/search/EmbeddingService.ts:88-115 (`processQueue`) & 117-166 (`indexAll`)
+**What:** Both loops check `this.isPaused` only once, at entry. `processQueue`'s `while
+(this.indexQueue.length > 0)` and `indexAll`'s `for (const m of pending)` never re-check it, so a
+`setPaused(true)` that arrives mid-drain has no effect until the current queue/batch is exhausted.
+**Why it's a bug:** `setPaused(true)` is the mechanism used to stop embedding work while a WhatsApp
+history sync is ingesting (see S3-02/S3-03). If a large queue or `indexAll` is already draining when
+sync starts, embedding keeps running full-tilt (CPU/GPU + `upsertVector` +
+`delete/insertIntoVecMessages` DB writes) concurrently with the heavy sync writes for the entire
+duration — exactly the contention the pause is meant to prevent.
+**Fix idea:** check `this.isPaused` at the top of each loop iteration and break/yield (re-enqueue the
+current item for `processQueue`), resuming from `setPaused(false)` → `processQueue()`.
+**Status:** open
+
+### [S11-05] med — services/calls/CallRepository.ts:36-43 (`upsertCallLog` update branch)
+**What:** The `update` branch unconditionally overwrites `status` and `timestamp` with the incoming
+values — no check that the new event is newer or represents a forward state transition.
+**Why it's a bug:** Baileys re-delivers queued `call` events on reconnect (missed calls while
+offline), and call state progresses offer → accept/reject/timeout/miss. A re-delivered stale `offer`
+arriving after the call already resolved clobbers a terminal `status` back to a non-terminal one and
+regresses `timestamp` (which S3-06 already notes is stamped with `Date.now()` at receipt, not call
+time). Call history shows wrong state/time. Same non-monotonic-write class as S2-01 (message status)
+and S2-05 (reactions); `ReceiptService` guards this for messages, calls have no guard.
+**Fix idea:** in the update branch, only apply when `entry.timestamp >= existing.timestamp` and the
+status transition is forward (define an ordering); otherwise keep the stored row.
+**Status:** open
+
+### [S11-06] med — services/audio/AudioTranscoderService.ts:51-55 (`transcodeToWAPtt` error path)
+**What:** On any ffmpeg `error` the promise resolves with **`inputPath`** (the original file) and
+never rejects. The input is the raw recording (e.g. WebM); the contract is to return a
+WhatsApp-compliant Ogg/Opus PTT.
+**Why it's a bug:** the caller cannot tell success from failure — it sends the untranscoded WebM to
+WhatsApp as a voice note, producing an unplayable / rejected PTT for the recipient with no error
+surfaced to the sender. Also the partially-written `outPath` from the failed run is left in `tempDir`
+(no cleanup), and concurrent transcodes of same-basename inputs collide on `converted_<name>`.
+**Fix idea:** `reject(err)` on error so the caller can fail the send or fall back explicitly; clean
+up a partial `outPath`; make the output name unique.
+**Status:** open
+
+### [S11-07] med — services/search/SearchService.ts:146-166 (`deepSearch`) + MessageVectorRepository (S2-03)
+**What:** `deepSearch` computes `candidateIds` from the chat/date filters and passes them to
+`messageVectorRepository.searchVectorMatch`. Per S2-03 that repo silently drops the `messageId IN
+(...)` restriction when `candidateIds.length >= 2000`, running an unscoped global vector MATCH.
+**Why it's a bug:** this is the concrete caller that makes S2-03 a correctness/scope problem: a user
+running a deep (semantic) search restricted to specific chats (`filters.jids`) or a date range gets,
+whenever the prefilter matches ≥2000 messages, semantic hits from **every chat in the database** —
+results leak outside the chats the user scoped the search to, with no indication the filter was
+ignored.
+**Fix idea:** fix S2-03 (chunk the `IN` list / temp-table join, never drop the filter); until then,
+have `deepSearch` post-filter `scoredResults` against `candidateIds` when it supplied them.
+**Status:** open
+
+### [S11-08] med — services/apiServer/controllers/helpers.ts:3-16 (`readRequestBody`)
+**What:** Accumulates the request body with `body += chunk.toString()` and no maximum size. Also
+`chunk.toString()` decodes each chunk independently as UTF-8, so a multi-byte character split across
+two TCP chunks is corrupted.
+**Why it's a bug:** (1) `POST /api/tools/execute` and `/api/messages/send` will buffer an
+arbitrarily large body entirely in the main process's memory before `JSON.parse` — a single large
+(or slow-loris streamed) request can OOM / stall the Electron main process. No timeout either.
+(2) UTF-8 boundary corruption silently mangles message text / tool arguments containing non-ASCII
+(emoji, non-Latin scripts) when the payload spans chunks.
+**Fix idea:** cap total bytes (e.g. 1–5 MB) and destroy the socket past the limit; collect `Buffer`
+chunks and `Buffer.concat(...).toString('utf-8')` once; add an idle timeout.
+**Status:** open
+
+### [S11-09] low — services/apiServer/APIServer.ts:64 (auth middleware)
+**What:** Token check is `reqToken !== this.token` — a short-circuiting, non-constant-time string
+comparison.
+**Why it's a bug:** timing side-channel on token verification. Low in practice (loopback-only bind,
+128-bit random token, Node string compare noise), but it is the single auth gate for an API that
+(per S11-01) can execute scripts and send messages.
+**Fix idea:** `crypto.timingSafeEqual` over fixed-length buffers (hash both sides first to equalize
+length).
+**Status:** open
+
+### [S11-10] low — services/notification/NotificationService.ts:82, 168-178
+**What:** (1) `notify()` calls `this.readPreferences()` → `fs.existsSync` + `fs.readFileSync` +
+`JSON.parse` synchronously on the **main process** for every single notification. (2)
+`getIconFromUrl` does an unbounded `fetch(url)` with no timeout, size cap, or content-type check, and
+no caching — every notification with a `profilePicUrl` re-downloads the avatar.
+**Why it's a bug:** during a burst (busy group, catch-up after reconnect) the synchronous preference
+read blocks the UI thread once per message; the un-timed avatar fetch can hang the notification path
+on a slow/hostile URL and wastes bandwidth re-fetching the same image.
+**Fix idea:** cache preferences in memory and invalidate on `setPreferences`/file-watch; add
+timeout + max-bytes + an LRU cache to `getIconFromUrl`.
+**Status:** open
+
+### [S11-11] low — services/search/VectorSyncService.ts:14-28
+**What:** (1) `deleteFromVecMessages` then `insertIntoVecMessages` are two separate awaits, not a
+transaction — a failure between them drops the row from the `vec` virtual table while leaving the
+source vector (self-heals only on the next full `sync()`). (2) A `v.vector` that parses to a
+non-array (object, number, `null`) skips the `Array.isArray` dimension check and is fed straight into
+`insertIntoVecMessages`, inserting a malformed vector.
+**Fix idea:** wrap delete+insert per row in a transaction (or use the `upsertVector` path); treat
+non-array parsed vectors as stale and delete them like the dimension-mismatch case.
+**Status:** open
+
+### [S11-12] low — services/notification/ElectronNotificationProvider.ts:12-44 & NotificationService.ts:133-139
+**What:** `activeNotifications` entries are removed only on `'click'` or `'close'`. Platforms that
+auto-dismiss a toast without firing `'close'` (some Windows/Linux configurations) leave the
+`Notification` object referenced in the `Set` forever. Separately, `send`'s `options.icon` is typed
+`string` but `NotificationService` passes a `NativeImage`.
+**Why it's a bug:** slow unbounded memory growth over a long session proportional to notification
+count; the type mismatch is a latent break if the provider is swapped for one that assumes a string
+path.
+**Fix idea:** also delete on a `'show'`+timeout or on `'failed'`; fix the `icon` type to
+`string | NativeImage`.
+**Status:** open
+
+### [S11-13] low — services/apiServer/APIServer.ts:42-53 + Router.ts:44-46
+**What:** CORS is `Access-Control-Allow-Origin: *` for all routes, and `Router.handle` never
+validates the `Host`/`Origin` header (it only uses `req.headers.host` to build a URL).
+**Why it's a bug:** enables DNS-rebinding attempts against the loopback server and lets any web
+origin issue requests. The bearer-token requirement is the only thing preventing exploitation, so
+this is defense-in-depth rather than an open hole — but for an API that can run scripts (S11-01) the
+wildcard is inappropriate.
+**Fix idea:** drop the wildcard (echo only `null`/localhost origins, or omit CORS entirely for a
+local IPC API); reject requests whose `Host` is not `127.0.0.1:<port>`/`localhost:<port>`.
+**Status:** open
+
+### [S11-14] low — services/apiServer/APIServer.ts:87-100, 126-135 (`start` / error paths)
+**What:** `start()` calls `this.server.listen(this.port, ...)` with no `'error'` listener on the
+server, and `handleUnhandledError` unconditionally does `res.writeHead(500)` even when a middleware
+already sent headers.
+**Why it's a bug:** an `EADDRINUSE` (port already taken — the config default 3003 is a common port,
+or a second app instance) emits an unhandled `'error'` on the server and crashes the main process
+instead of surfacing a friendly failure. A throw from a route handler after the response started
+triggers `ERR_HTTP_HEADERS_SENT` inside the `.catch`, which is itself unhandled.
+**Fix idea:** attach `server.on('error', …)` (handle `EADDRINUSE` gracefully); in
+`handleUnhandledError` check `res.headersSent` before writing.
+**Status:** open
 
 ## Slice 12 — SDK, tools, data wipe, domain, db, protocol
 
