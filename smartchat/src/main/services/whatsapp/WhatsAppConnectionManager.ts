@@ -65,8 +65,18 @@ export class WhatsAppConnectionManager {
       this.currentBus = null
     }
 
-    // Clean up orphan data if not logged in
-    const existingCreds = await this.authSettingsService.hasCreds()
+    // Clean up orphan data if not logged in.
+    // `hasCreds()` can throw on a transient DB failure (lock contention with the
+    // worker, I/O). We must fail CLOSED here: an errored read is NOT proof the
+    // user is logged out, and the branch below wipes the entire local database.
+    // On error, assume creds exist and skip the wipe — a genuinely logged-out
+    // user still gets the QR flow once the read succeeds.
+    let existingCreds = true
+    try {
+      existingCreds = await this.authSettingsService.hasCreds()
+    } catch (err) {
+      console.error('[WhatsAppConnectionManager] hasCreds() failed — assuming creds exist, skipping wipe:', err)
+    }
     if (!existingCreds) {
       this.isFreshLogin = true
       await this.authSettingsService.clearHistorySyncCompleted().catch((err) => {

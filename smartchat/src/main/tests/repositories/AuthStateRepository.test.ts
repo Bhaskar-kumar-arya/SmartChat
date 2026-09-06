@@ -37,6 +37,17 @@ describe('AuthStateRepository', () => {
     expect(val).toBeNull()
   })
 
+  // Regression: audit S10-01 — a failed query must throw, not resolve to null.
+  it('rethrows when the underlying query fails (does not return null)', async () => {
+    const failing = {
+      authState: {
+        findUnique: () => Promise.reject(new Error('database is locked'))
+      }
+    } as unknown as PrismaClient
+    const repo = new AuthStateRepository(failing)
+    await expect(repo.getValue('creds')).rejects.toThrow('database is locked')
+  })
+
   it('should delete auth state', async () => {
     await repository.setValue('del-key', 'data')
     await repository.deleteValue('del-key')

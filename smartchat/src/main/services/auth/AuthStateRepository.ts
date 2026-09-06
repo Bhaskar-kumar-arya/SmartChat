@@ -16,10 +16,15 @@ export class AuthStateRepository implements IAuthStateRepository {
       const row = await this.prisma.authState.findUnique({
         where: { id: key }
       })
+      // `findUnique` resolves to `null` for a genuinely absent row — that is the
+      // only case we report as "no value". A thrown error means the query
+      // failed (DB locked, I/O, adapter): we must NOT swallow it into `null`,
+      // because callers like `hasCreds()` would then treat a logged-in user as
+      // logged-out and wipe their data. Fail closed — rethrow.
       return row?.data ?? null
     } catch (err: unknown) {
       console.error(`[AuthStateRepository] Failed to getValue for key ${key}:`, err)
-      return null
+      throw err
     }
   }
 

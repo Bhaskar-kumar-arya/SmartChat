@@ -41,8 +41,25 @@ describe('AuthSettingsService', () => {
   it('hasCreds returns true if creds exist', async () => {
     repo.getValue.mockResolvedValue('creds-data')
     expect(await service.hasCreds()).toBe(true)
-    
+
     repo.getValue.mockResolvedValue(null)
     expect(await service.hasCreds()).toBe(false)
+  })
+
+  // Regression: audit S10-01 — a transient DB read failure must NOT be
+  // swallowed into "no creds", which caused a logged-in user's data wipe.
+  it('hasCreds propagates a read failure instead of returning false', async () => {
+    repo.getValue.mockRejectedValue(new Error('database is locked'))
+    await expect(service.hasCreds()).rejects.toThrow('database is locked')
+  })
+
+  it('getHistorySyncCompleted fails closed to true on a read error', async () => {
+    repo.getValue.mockRejectedValue(new Error('database is locked'))
+    expect(await service.getHistorySyncCompleted()).toBe(true)
+  })
+
+  it('getSyncFullHistory fails closed to false on a read error', async () => {
+    repo.getValue.mockRejectedValue(new Error('database is locked'))
+    expect(await service.getSyncFullHistory()).toBe(false)
   })
 })

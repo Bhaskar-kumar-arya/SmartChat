@@ -102,7 +102,15 @@ export class WorkerConnectionManager {
     const repos = this.repos!
     const prisma = this.prisma!
 
-    const existingCreds = await repos.authSettingsService.hasCreds()
+    // Fail closed: a thrown error from hasCreds() (transient DB lock / I/O) is
+    // NOT proof the user is logged out, and the branch below wipes the entire
+    // local database. On error, assume creds exist and skip the wipe.
+    let existingCreds = true
+    try {
+      existingCreds = await repos.authSettingsService.hasCreds()
+    } catch (err) {
+      console.error('[WhatsAppWorker] hasCreds() failed — assuming creds exist, skipping wipe:', err)
+    }
     if (!existingCreds) {
       this.isFreshLogin = true
       await repos.authSettingsService.clearHistorySyncCompleted().catch((err) => {
