@@ -15,7 +15,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 4 | Chats & sync | DONE (9 findings) | 2026-09-06 | 0 crit / 0 high / 4 med / 5 low; S4-01 = group hydration aborts remaining batches on concurrent-write conflict; S4-02 = chat-list pagination returns dup/overflow rows. I*.ts interfaces lightly covered |
 | 5 | Contacts | DONE (5 findings) | 2026-09-06 | 0 crit / 0 high / 2 med / 3 low; identity merge tx gap + cross-process cache staleness. I*.ts interfaces lightly covered |
 | 6 | AI (providers, mentions, citations) | DONE (11 findings) | 2026-09-06 | 1 crit / 0 high / 7 med / 3 low. Deep-read AIService, providers/*, AIKeyService, FSKeyStorage, AIChatSessionService, AIChatExportService, AIToolService, mentions/*, citations/*. Light: prompts/* (SystemPromptContent, protocol strategies), ToolDefinitionFormatter |
-| 7 | Kernel API modules & router | TODO | — | |
+| 7 | Kernel API modules & router | IN PROGRESS | 2026-09-06 | |
 | 8 | Kernel plugins, contributions, permissions | TODO | — | |
 | 9 | Kernel storage, channels, ipc, ui | TODO | — | |
 | 10 | App IPC & auth | TODO | — | trust boundary |
