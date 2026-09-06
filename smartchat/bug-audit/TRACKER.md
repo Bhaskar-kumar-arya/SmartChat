@@ -11,7 +11,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |---|-------|--------|--------------|-------|
 | 1 | WhatsApp worker & socket | DONE (8 findings) | 2026-09-06 | 0 crit / 0 high / 5 med / 3 low |
 | 2 | Message pipeline | DONE (12 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 6 low; peripheral formatters + ffmpeg paths lightly covered |
-| 3 | WhatsApp service & subscribers | TODO | — | recent OTP relay + queue-subscriptions fix |
+| 3 | WhatsApp service & subscribers | IN PROGRESS | 2026-09-06 | recent OTP relay + queue-subscriptions fix |
 | 4 | Chats & sync | TODO | — | |
 | 5 | Contacts | TODO | — | |
 | 6 | AI (providers, mentions, citations) | TODO | — | ~45 files; may need 2 sessions |
