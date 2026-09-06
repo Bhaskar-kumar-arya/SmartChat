@@ -21,7 +21,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 10 | App IPC & auth | DONE (10 findings) | 2026-09-06 | 1 crit / 1 high / 4 med / 4 low. S10-01 = swallowed authState read error → hasCreds()=false → wipeAllData on a logged-in user (data loss). S10-02 = silent Signal keystore tx failure. Deep-read auth.ts, ipcHandlers.ts, services/auth/*, ServiceContainer.ts; ipc/*.types.ts trivial |
 | 11 | apiServer, search, notification, calls, audio | DONE (14 findings) | 2026-09-06 | 0 crit / 1 high / 7 med / 6 low. S11-01 = HTTP /api/tools/execute bypasses the tool permission model (ExecuteScript/SQL/send over a static-token localhost API). S11-02 = APIConfigProvider clobbers ai_preferences.json on a transient read error. S11-03 = embedding worker crash never rejects pending jobs → index queue stalls forever. Light: I*.ts interfaces |
 | 12 | SDK, tools, data wipe, domain, db, protocol | DONE (14 findings) | 2026-09-06 | 1 crit / 2 high / 6 med / 5 low. S12-01 = `app://local/<abs>` arbitrary file read (LFI "fix" was a no-op). S12-03 = executeScript vm "sandbox" trivially escapes to host RCE. S12-05 = DataWipeService partial-wipe swallowed + reported success. Light: sdk/{events,contributions,context,overlay}.ts, domain/*.types.ts. manifest.main/id traversal already S8-xx |
-| 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
+| 13 | Cross-cutting pass | IN PROGRESS | 2026-09-06 | event flow / tx boundaries / startup-shutdown seams + light-coverage sweep |
 
 ## Summary counts
 
