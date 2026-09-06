@@ -64,6 +64,7 @@ describe('KernelChatsModule', () => {
 
   it('allows getList when chats:read capability is granted', async () => {
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
     vi.mocked(mockChatService.getChatList).mockResolvedValue([
       { jid: '123@s.whatsapp.net', name: 'Alice', unreadCount: 0, timestamp: 12345n } as any
     ])
@@ -74,6 +75,21 @@ describe('KernelChatsModule', () => {
     expect(result).toEqual([
       expect.objectContaining({ jid: '123@s.whatsapp.net', name: 'Alice' })
     ])
+  })
+
+  it('S7-01: getList filters out chats outside the plugin scope', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+      (_p, _c, resource) => resource === 'allowed@s.whatsapp.net'
+    )
+    vi.mocked(mockChatService.getChatList).mockResolvedValue([
+      { jid: 'allowed@s.whatsapp.net', name: 'Alice' } as any,
+      { jid: 'secret@s.whatsapp.net', name: 'Secret' } as any
+    ])
+
+    const result = (await module.handle('plugin-a', 'kernel:chats:getList', {})) as any[]
+
+    expect(result.map((c) => c.jid)).toEqual(['allowed@s.whatsapp.net'])
   })
 
   it('denies getById when resource is not allowed', async () => {

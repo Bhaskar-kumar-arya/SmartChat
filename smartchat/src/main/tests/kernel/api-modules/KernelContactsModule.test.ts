@@ -67,6 +67,7 @@ describe('KernelContactsModule', () => {
 
   it('allows batchGetByJids when contacts:read is granted', async () => {
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
     const map = new Map<string, string>([['123@s.whatsapp.net', 'Alice']])
     vi.mocked(mockContactService.batchResolveNames).mockResolvedValue(map)
 
@@ -77,6 +78,22 @@ describe('KernelContactsModule', () => {
     expect(mockPermissions.hasCapability).toHaveBeenCalledWith('plugin-a', 'contacts:read')
     expect(mockContactService.batchResolveNames).toHaveBeenCalledWith(['123@s.whatsapp.net'])
     expect(result).toEqual([{ jid: '123@s.whatsapp.net', name: 'Alice' }])
+  })
+
+  it('S7-01: batchGetByJids resolves only jids inside the plugin scope', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+      (_p, _c, resource) => resource === 'allowed@s.whatsapp.net'
+    )
+    vi.mocked(mockContactService.batchResolveNames).mockResolvedValue(
+      new Map<string, string>([['allowed@s.whatsapp.net', 'Alice']])
+    )
+
+    await module.handle('plugin-a', 'kernel:contacts:batchGetByJids', {
+      jids: ['allowed@s.whatsapp.net', 'stranger@s.whatsapp.net']
+    })
+
+    expect(mockContactService.batchResolveNames).toHaveBeenCalledWith(['allowed@s.whatsapp.net'])
   })
 
   it('allows getMe when contacts:read is granted', async () => {

@@ -381,4 +381,89 @@ describe('KernelMessagesModule', () => {
     expect(mockFavoriteStickerService.getFavoriteStickers).toHaveBeenCalled()
     expect(listRes).toEqual([{ id: 'st-1', fileName: 'cat.webp' }])
   })
+
+  describe('S7-01: message-id-only actions scope on the real owning chat', () => {
+    const lookup = { findMessageById: vi.fn() }
+
+    function moduleWithLookup() {
+      return new KernelMessagesModule(
+        mockPermissions,
+        mockMessageQueryService,
+        mockMessageActionService,
+        () => ({ sendMessage: vi.fn() } as any),
+        { downloadAndCacheMedia: vi.fn().mockResolvedValue({ id: 'm', content: '{}' }) } as any,
+        () => '/data',
+        { getMessageReceipts: vi.fn().mockResolvedValue([]) } as any,
+        undefined,
+        lookup
+      )
+    }
+
+    beforeEach(() => {
+      lookup.findMessageById.mockReset()
+      vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    })
+
+    it('downloadMedia is denied for a message in a chat outside the plugin scope', async () => {
+      lookup.findMessageById.mockResolvedValue({ chatJid: 'private@s.whatsapp.net' })
+      vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+        (_p, _c, resource) => resource === 'allowed@s.whatsapp.net'
+      )
+
+      await expect(
+        moduleWithLookup().handle('plugin-a', 'kernel:messages:downloadMedia', { messageId: 'msg-x' })
+      ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+      expect(mockPermissions.isResourceAllowed).toHaveBeenCalledWith(
+        'plugin-a',
+        'messages:read',
+        'private@s.whatsapp.net'
+      )
+    })
+
+    it('edit ignores a spoofed jid and scopes on the message\'s real chat', async () => {
+      lookup.findMessageById.mockResolvedValue({ chatJid: 'private@s.whatsapp.net' })
+      vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+        (_p, _c, resource) => resource === 'allowed@s.whatsapp.net'
+      )
+
+      await expect(
+        moduleWithLookup().handle('plugin-a', 'kernel:messages:edit', {
+          messageId: 'msg-x',
+          newText: 'x',
+          jid: 'allowed@s.whatsapp.net'
+        })
+      ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    })
+
+    it('forward also enforces scope on every destination jid', async () => {
+      lookup.findMessageById.mockResolvedValue({ chatJid: 'allowed@s.whatsapp.net' })
+      vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+        (_p, _c, resource) => resource === 'allowed@s.whatsapp.net'
+      )
+
+      await expect(
+        moduleWithLookup().handle('plugin-a', 'kernel:messages:forward', {
+          messageId: 'msg-x',
+          targetJids: ['allowed@s.whatsapp.net', 'stranger@s.whatsapp.net']
+        })
+      ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    })
+
+    it('getReceipts is allowed when the message belongs to an allowed chat', async () => {
+      lookup.findMessageById.mockResolvedValue({ chatJid: 'allowed@s.whatsapp.net' })
+      vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+
+      await expect(
+        moduleWithLookup().handle('plugin-a', 'kernel:messages:getReceipts', { messageId: 'msg-x' })
+      ).resolves.toEqual([])
+    })
+
+    it('throws NOT_FOUND when the message does not exist and no jid was given', async () => {
+      lookup.findMessageById.mockResolvedValue(null)
+
+      await expect(
+        moduleWithLookup().handle('plugin-a', 'kernel:messages:downloadMedia', { messageId: 'ghost' })
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    })
+  })
 })

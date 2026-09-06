@@ -51,6 +51,19 @@ export class KernelEventsModule extends BaseKernelModule {
     const handler: AsyncHandler<any> = async (_data: any) => {
       const channel = this.getChannel?.(pluginId)
       if (channel) {
+        // Best-effort per-chat scope filter: if the payload names a single chat
+        // and the plugin's events scope denies it, drop the event. Payloads with
+        // no single resolvable chat jid (bulk contact/group updates, connection
+        // state) are not filtered — `events:<event>` / `events:*` are
+        // all-or-nothing for those. (S7-01)
+        const chatJid = extractChatJid(_data)
+        if (
+          chatJid &&
+          (!this.permissions.isResourceAllowed(pluginId, `events:${String(event)}`, chatJid) ||
+            !this.permissions.isResourceAllowed(pluginId, 'events:*', chatJid))
+        ) {
+          return
+        }
         const sanitizedData = sanitizeForPlugin(_data)
         channel.sendToPlugin({
           id: `evt:${String(event)}:${Date.now()}:${Math.random().toString(36).substring(2, 7)}`,
@@ -118,6 +131,17 @@ export class KernelEventsModule extends BaseKernelModule {
         throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
+}
+
+/** Extract a single owning chat jid from a WA event payload, if it has one. */
+function extractChatJid(val: unknown): string | undefined {
+  if (!val || typeof val !== 'object') return undefined
+  const o = val as Record<string, any>
+  const direct = o.chatJid ?? o.remoteJid ?? o.jid
+  if (typeof direct === 'string' && direct.includes('@')) return direct
+  const keyJid = o.key?.remoteJid
+  if (typeof keyJid === 'string' && keyJid.includes('@')) return keyJid
+  return undefined
 }
 
 function sanitizeForPlugin(val: unknown): unknown {

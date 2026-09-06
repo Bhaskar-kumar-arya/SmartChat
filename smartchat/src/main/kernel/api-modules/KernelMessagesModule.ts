@@ -8,6 +8,11 @@ import { IReceiptService } from '../../services/whatsapp/IReceiptService'
 import { IFavoriteStickerService } from '../../services/messages/IFavoriteStickerService'
 import { KernelError, KernelNotFoundError } from './KernelErrors'
 
+/** Minimal message → owning-chat lookup (satisfied by IMessageQueryRepository). */
+export interface IMessageOwnerLookup {
+  findMessageById(id: string): Promise<{ chatJid: string } | null>
+}
+
 export class KernelMessagesModule extends BaseKernelModule {
   readonly namespace = 'kernel:messages'
 
@@ -19,9 +24,39 @@ export class KernelMessagesModule extends BaseKernelModule {
     private readonly mediaService?: IMediaService,
     private readonly getUserDataPath?: () => string,
     private readonly receiptService?: IReceiptService,
-    private readonly favoriteStickerService?: IFavoriteStickerService
+    private readonly favoriteStickerService?: IFavoriteStickerService,
+    private readonly messageOwnerLookup?: IMessageOwnerLookup
   ) {
     super(permissions)
+  }
+
+  /**
+   * Resolve the chat a message actually belongs to and enforce resource scope
+   * against THAT jid — a plugin must not be able to act on a message outside
+   * its allow-list by omitting the optional `jid` or passing one it does own
+   * alongside a `messageId` from another chat. (S7-01)
+   */
+  private async requireMessageScope(
+    pluginId: string,
+    capability: string,
+    messageId: string,
+    providedJid?: string
+  ): Promise<void> {
+    let ownerJid = providedJid
+    const found = await this.messageOwnerLookup?.findMessageById(messageId)
+    if (found?.chatJid) {
+      // Authoritative: scope on the message's real chat.
+      ownerJid = found.chatJid
+    } else if (found === null && !providedJid) {
+      // Lookup ran and the message genuinely does not exist.
+      throw new KernelNotFoundError(`Message '${messageId}' not found`)
+    }
+    if (ownerJid) {
+      this.requireResourceScope(pluginId, capability, ownerJid)
+    }
+    // else: no owner lookup wired and no jid supplied — nothing to scope on.
+    // In production the lookup is always injected, so a scoped plugin cannot
+    // reach this branch; unscoped plugins are unaffected either way.
   }
 
   async handle(pluginId: string, type: string, payload: unknown): Promise<unknown> {
@@ -89,9 +124,7 @@ export class KernelMessagesModule extends BaseKernelModule {
       case 'edit': {
         const { messageId, newText, jid } = payload as { messageId: string; newText: string; jid?: string }
         this.requireCapability(pluginId, 'messages:send')
-        if (jid) {
-          this.requireResourceScope(pluginId, 'messages:send', jid)
-        }
+        await this.requireMessageScope(pluginId, 'messages:send', messageId, jid)
         const sock = this.getSocketOrThrow()
         const msg = await this.messageActionService.editMessage(sock, messageId, newText, jid)
         return this.serialize(msg)
@@ -100,8 +133,11 @@ export class KernelMessagesModule extends BaseKernelModule {
       case 'forward': {
         const { messageId, targetJids, jid } = payload as { messageId: string; targetJids: string[]; jid?: string }
         this.requireCapability(pluginId, 'messages:send')
-        if (jid) {
-          this.requireResourceScope(pluginId, 'messages:send', jid)
+        // Scope on the source message's real chat...
+        await this.requireMessageScope(pluginId, 'messages:send', messageId, jid)
+        // ...and on every destination — forwarding delivers the message there.
+        for (const targetJid of targetJids || []) {
+          this.requireResourceScope(pluginId, 'messages:send', targetJid)
         }
         const sock = this.getSocketOrThrow()
         return await this.messageActionService.forwardMessage(sock, messageId, targetJids, jid)
@@ -132,6 +168,7 @@ export class KernelMessagesModule extends BaseKernelModule {
       case 'downloadMedia': {
         const { messageId } = payload as { messageId: string }
         this.requireCapability(pluginId, 'messages:read')
+        await this.requireMessageScope(pluginId, 'messages:read', messageId)
         const sock = this.getSocketOrThrow()
         if (!this.mediaService) {
           throw new KernelError('INTERNAL_ERROR', 'MediaService is not available in KernelMessagesModule')
@@ -164,6 +201,7 @@ export class KernelMessagesModule extends BaseKernelModule {
       case 'getReceipts': {
         const { messageId } = payload as { messageId: string }
         this.requireCapability(pluginId, 'messages:read')
+        await this.requireMessageScope(pluginId, 'messages:read', messageId)
         if (!this.receiptService) {
           throw new KernelError('INTERNAL_ERROR', 'ReceiptService is not available in KernelMessagesModule')
         }
@@ -174,6 +212,7 @@ export class KernelMessagesModule extends BaseKernelModule {
       case 'addFavoriteSticker': {
         const { messageId } = payload as { messageId: string }
         this.requireCapability(pluginId, 'messages:write')
+        await this.requireMessageScope(pluginId, 'messages:write', messageId)
         if (!this.favoriteStickerService) {
           throw new KernelError('INTERNAL_ERROR', 'FavoriteStickerService is not available in KernelMessagesModule')
         }

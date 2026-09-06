@@ -24,7 +24,13 @@ export class KernelChatsModule extends BaseKernelModule {
         this.requireCapability(pluginId, 'chats:read')
         const { page = 1, limit = 50 } = (payload as { page?: number; limit?: number }) || {}
         const list = await this.chatService.getChatList(page, limit)
-        return this.serialize(list)
+        // Filter to the plugin's allowed chats — a scoped plugin must not see
+        // names / last-message previews for chats outside its allow-list.
+        // isResourceAllowed() is default-allow, so unscoped plugins are unaffected. (S7-01)
+        const scoped = list.filter(
+          (chat) => !chat?.jid || this.permissions.isResourceAllowed(pluginId, 'chats:read', chat.jid)
+        )
+        return this.serialize(scoped)
       }
 
       case 'getById': {

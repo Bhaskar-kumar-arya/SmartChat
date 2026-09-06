@@ -33,7 +33,13 @@ export class KernelContactsModule extends BaseKernelModule {
       case 'batchGetByJids': {
         const { jids } = payload as { jids: string[] }
         this.requireCapability(pluginId, 'contacts:read')
-        const nameMap = await this.contactService.batchResolveNames(jids || [])
+        // Per-jid scope check, mirroring getByJid — drop jids outside the
+        // allow-list before resolving. Default-allow, so unscoped plugins are
+        // unaffected. (S7-01)
+        const allowedJids = (jids || []).filter((jid) =>
+          this.permissions.isResourceAllowed(pluginId, 'contacts:read', jid)
+        )
+        const nameMap = await this.contactService.batchResolveNames(allowedJids)
         const results: Array<{ jid: string; name: string }> = []
         for (const [jid, name] of nameMap.entries()) {
           results.push({ jid, name })

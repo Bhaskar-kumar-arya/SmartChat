@@ -796,6 +796,26 @@ optional) on `edit`/`forward`; scope `getList`/`batchGetByJids` results by filte
 resources; filter event payloads per subscription scope (or document that `events:*` is all-or
 -nothing and gate it harder).
 **Status:** open
+**Fix status:** fixed in `main` (S7-01 commit).
+- `KernelMessagesModule`: new `requireMessageScope()` helper resolves a message's real `chatJid`
+  via an injected `IMessageOwnerLookup` (= `services.messageQueryRepository`, wired in
+  `KernelBootstrapper`) and scopes on THAT — so omitting/spoofing the optional `jid` no longer
+  helps. Applied to `edit`, `forward`, `downloadMedia`, `getReceipts`, `addFavoriteSticker`.
+  `forward` additionally scope-checks every `targetJids` entry. Message genuinely missing (lookup
+  returns null) + no jid → `NOT_FOUND`. (Lookup absent + no jid = no check, but the lookup is
+  always wired in production, so a scoped plugin can't hit that path.)
+- `KernelChatsModule.getList`: result filtered by `isResourceAllowed(pluginId,'chats:read',jid)`.
+- `KernelContactsModule.batchGetByJids`: input jids filtered to allowed before resolving names
+  (mirrors `getByJid`).
+- `KernelEventsModule`: emit-time best-effort per-chat filter — `extractChatJid()` pulls a single
+  `chatJid`/`remoteJid`/`jid`/`key.remoteJid` from the payload and drops the event if the plugin's
+  `events:<event>` **or** `events:*` scope denies it. Payloads with no single chat jid (bulk
+  contact/group updates, connection state) are **not** filtered — documented as all-or-nothing.
+All checks are default-allow (`isResourceAllowed` returns true with no scope set), so unscoped
+plugins are unaffected. Tests: +8 across the 4 module test files (deny via real chat, spoofed-jid
+ignored, per-destination forward check, list/batch filtering, event drop, NOT_FOUND). Full main
+suite: 881 pass, 5 pre-existing baseline failures unchanged. typecheck clean. Not manually run
+in-app (needs a scoped 3rd-party plugin configured in Settings).
 
 ### [S7-02] med — api-modules/KernelMessagesModule.ts:64-87 (`sendMedia`)
 **What:** `filePath` comes straight from the plugin payload and is passed to

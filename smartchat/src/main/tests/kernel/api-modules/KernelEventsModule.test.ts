@@ -178,6 +178,38 @@ describe('KernelEventsModule', () => {
     )
   })
 
+  it('S7-01: drops an event whose chat jid is outside the plugin scope', async () => {
+    const mockChannel = {
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    }
+    const eventsModule = new KernelEventsModule(
+      mockPermissions,
+      mockBus,
+      vi.fn().mockReturnValue(mockChannel)
+    )
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+      (_p, _c, resource) => resource === 'allowed@s.whatsapp.net'
+    )
+
+    let busHandler: ((data: any) => Promise<void>) | null = null
+    vi.mocked(mockBus.on).mockImplementation((evt, fn) => {
+      if (evt === 'message:incoming') busHandler = fn as any
+      return mockBus
+    })
+
+    await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+
+    await busHandler!({ chatJid: 'secret@s.whatsapp.net', textContent: 'hi' })
+    expect(mockChannel.sendToPlugin).not.toHaveBeenCalled()
+
+    await busHandler!({ chatJid: 'allowed@s.whatsapp.net', textContent: 'hi' })
+    expect(mockChannel.sendToPlugin).toHaveBeenCalledTimes(1)
+  })
+
   it('sanitizes event payloads containing sock objects, functions, and bigints', async () => {
     const mockChannel = {
       sendToPlugin: vi.fn(),
@@ -188,6 +220,7 @@ describe('KernelEventsModule', () => {
     const getChannel = vi.fn().mockReturnValue(mockChannel)
     const eventsModule = new KernelEventsModule(mockPermissions, mockBus, getChannel)
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
 
     let busHandler: ((data: any) => Promise<void>) | null = null
     vi.mocked(mockBus.on).mockImplementation((evt, fn) => {
