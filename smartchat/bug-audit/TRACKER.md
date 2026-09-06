@@ -20,7 +20,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 9 | Kernel storage, channels, ipc, ui | DONE (10 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 4 low. Deep-read PrismaPluginStorageRepository, {Direct,Worker}PluginChannel, overlayIpc, panelIpc, contributionIpc, OverlayHost, PanelHost. S9-01/S9-02 = panel event IPC bypasses bus-accessor + permission checks. Light: I*.ts interfaces |
 | 10 | App IPC & auth | DONE (10 findings) | 2026-09-06 | 1 crit / 1 high / 4 med / 4 low. S10-01 = swallowed authState read error → hasCreds()=false → wipeAllData on a logged-in user (data loss). S10-02 = silent Signal keystore tx failure. Deep-read auth.ts, ipcHandlers.ts, services/auth/*, ServiceContainer.ts; ipc/*.types.ts trivial |
 | 11 | apiServer, search, notification, calls, audio | DONE (14 findings) | 2026-09-06 | 0 crit / 1 high / 7 med / 6 low. S11-01 = HTTP /api/tools/execute bypasses the tool permission model (ExecuteScript/SQL/send over a static-token localhost API). S11-02 = APIConfigProvider clobbers ai_preferences.json on a transient read error. S11-03 = embedding worker crash never rejects pending jobs → index queue stalls forever. Light: I*.ts interfaces |
-| 12 | SDK, tools, data wipe, domain, db, protocol | TODO | — | DataWipeService = data-loss risk |
+| 12 | SDK, tools, data wipe, domain, db, protocol | IN PROGRESS | 2026-09-06 | DataWipeService = data-loss risk |
 | 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
 
 ## Summary counts
