@@ -748,7 +748,160 @@ _none yet_
 
 ## Slice 8 — Kernel plugins, contributions, permissions
 
-_none yet_
+Files read: plugins/{PluginLoader,PluginHost,PluginRegistry,PluginManifest,PluginContext}.ts,
+permissions/PermissionStore.ts, contributions/{ContributionRegistry,ContributionPoints,WhenCondition}.ts,
+kernel/{KernelAPIRouter,KernelBootstrapper}.ts, api-modules/{BaseKernelModule,KernelEventsModule,
+KernelMessagesModule}.ts, ipc/contributionIpc.ts, channels/{DirectPluginChannel,WorkerPluginChannel}.ts,
+protocol/pluginProtocol.ts. Light: other Kernel*Module permission paths, I*.ts interfaces.
+
+### [S8-01] high — plugins/PluginLoader.ts:39, 49-54, 57, 73 + ipc/contributionIpc.ts:135-161
+**What:** `manifest.id` and the IPC-supplied `id` / `scextPath` are used to build filesystem paths
+with no validation. `validateManifest` only checks `typeof id === 'string'` and non-empty — never
+that it is a safe path segment. `install` does `path.join(this.baseDir, manifest.id)` then
+`mkdirSync` + `zip.extractAllTo(pluginDir, true)`; `uninstall(id)` does
+`fs.rmSync(path.join(this.baseDir, id), { recursive: true, force: true })`; `load(id)` joins
+`manifest.main` onto the plugin dir and does `new Worker(entryPath)`. The `extension:uninstall`,
+`extension:install`, `extension:reload` IPC handlers pass the renderer-supplied `id` / path straight
+through.
+**Why it's a bug:** trust-boundary / path traversal. A crafted plugin package with
+`"id": "../../../../<anything>"` (or an `extension:uninstall` IPC call with such an `id` from a
+compromised/buggy renderer or a plugin that can reach the channel) makes `fs.rmSync(..., {recursive:
+true, force: true})` **recursively delete an arbitrary directory** outside the extensions folder —
+data loss. The same traversal in `install` writes extracted zip contents anywhere on disk, and
+`manifest.main` traversal lets the loaded Worker execute an arbitrary `.js` file already on disk.
+adm-zip 0.6.0's `extractAllTo` is also historically weak against `../` zip entries (Zip-Slip), and
+there is no post-extract containment check.
+**Fix idea:** validate `id` against `/^[a-z0-9][a-z0-9._-]*$/` (reject `..`, path separators) in
+`validateManifest`; `path.resolve` the target and assert it stays within `baseDir` before any
+mkdir/rm/extract; validate `manifest.main` resolves inside the plugin dir; enumerate zip entries and
+reject any whose resolved path escapes `pluginDir`.
+**Status:** open
+
+### [S8-02] med — api-modules/KernelMessagesModule.ts:100-108 (`forward`)
+**What:** `forward` calls `requireCapability(pluginId, 'messages:send')` and then
+`requireResourceScope(pluginId, 'messages:send', jid)` **only for the source `jid`** (and only when
+the caller supplies it). The `targetJids` array — the chats the message is actually sent to — is
+never passed through `requireResourceScope`.
+**Why it's a bug:** resource-scope bypass. A plugin whose `messages:send` capability is scoped
+(`scope.allow`) to a single chat can forward any message it can name to **arbitrary JIDs** —
+`forward(messageId, ['victim@s.whatsapp.net', ...])` — completely defeating the per-chat send
+restriction the user configured. `send` / `sendMedia` / `react` correctly scope-check their
+destination; `forward` does not.
+**Fix idea:** iterate `targetJids` and call `requireResourceScope(pluginId, 'messages:send', t)` for
+each before dispatching.
+**Status:** open
+
+### [S8-03] med — api-modules/KernelMessagesModule.ts:89-98, 100-108 (`edit`, `forward`)
+**What:** Both actions guard the resource scope with `if (jid) { this.requireResourceScope(...) }`.
+`jid` is an *optional* caller-supplied field, so a plugin simply omits it and the scope check is
+skipped entirely; the underlying `editMessage(sock, messageId, newText, undefined)` /
+`forwardMessage(sock, messageId, targetJids, undefined)` still run.
+**Why it's a bug:** a scoped plugin can edit (rewrite the text of) or forward **any message by id**,
+regardless of which chat it belongs to, by not telling the kernel which chat it is. The capability
+check passes (`messages:send` granted) and the scope check is silently bypassed. Scope enforcement
+should be mandatory, not opt-in via a field the caller controls.
+**Fix idea:** resolve the message's real chat JID server-side (from the message row) and scope-check
+against that; never make a security check conditional on an optional request field.
+**Status:** open
+
+### [S8-04] med — api-modules/KernelMessagesModule.ts:132-162 (`downloadMedia`), 164-172 (`getReceipts`)
+**What:** `downloadMedia` and `getReceipts` check only `requireCapability(pluginId, 'messages:read')`
+— no `requireResourceScope`. They take a bare `messageId` and return the media bytes / file path /
+full enriched message content, or the read receipts, for **any** message in the database.
+**Why it's a bug:** a plugin whose `messages:read` is scoped to chat A can enumerate or guess message
+ids and pull media and message content (`message: enriched` includes the decrypted `content` JSON)
+and per-recipient receipts from chat B, C, … — cross-chat data exfiltration that the resource scope
+was meant to prevent. `getMessages` / `getMessagesAroundId` scope-check by jid; the id-addressed
+reads don't.
+**Fix idea:** look up the message's chat JID and `requireResourceScope(pluginId, 'messages:read',
+chatJid)` before returning anything.
+**Status:** open
+
+### [S8-05] med — permissions/PermissionStore.ts:108-134 (`loadFromDisk` / `saveToDisk`)
+**What:** Permissions are persisted with a single non-atomic `writeFileSync` of the whole JSON blob.
+`loadFromDisk` does `this.storageData = JSON.parse(raw)` and on **any** throw (`catch`) resets to
+`{ plugins: {} }` with only a `console.error`.
+**Why it's a bug:** fail-open security config. A crash/power-loss during `saveToDisk` (which fires on
+every `setCapability` / `setScope`), or any partial/corrupt write, leaves an unparseable file; on the
+next launch every user-configured **denial** (`granted:false`) and every resource `scope` is silently
+discarded, so every plugin regains all capabilities its manifest declares (which default to
+`granted:true` in `hasCapability`). The user is never told their plugin restrictions were wiped.
+**Fix idea:** write to a temp file + atomic rename; on parse failure preserve a `.corrupt` copy and
+surface an error / keep last-known-good rather than resetting to allow-all.
+**Status:** open
+
+### [S8-06] med — api-modules/KernelEventsModule.ts (no unload hook) + plugins/PluginHost.ts:433-462 (`unload`)
+**What:** `PluginHost.unload` unregisters contributions, destroys the channel, unregisters from the
+plugin registry and drops handlers — but nothing calls `KernelEventsModule` to remove that plugin's
+WA-event-bus subscriptions. The handlers registered via `bus.on(event, handler)` in `registerOnBus`
+stay attached to the live bus; `pluginSubscriptions` keeps its entry forever (there is no
+`onPluginUnloaded` / `removePlugin` method).
+**Why it's a bug:** resource leak on every plugin unload / reload / uninstall. The orphaned bus
+handler keeps firing for the life of the bus, doing `sanitizeForPlugin(data)` (a full recursive deep
+clone of every WhatsApp event payload) and then `this.getChannel?.(pluginId)` → `undefined` → no-op.
+Over repeated reloads (dev loop, `extension:reload`) these accumulate, multiplying per-event work.
+`reload` re-adds a fresh handler that only de-dups if the same `KernelEventsModule` instance still
+holds the stale `pluginSubscriptions` entry (it does), but across a bus rebuild (see [S3-01]) they
+are pure garbage. Also `pendingSubscriptions` entries are never removed on `unsubscribe`, so a
+sub→unsub before the bus connects still subscribes on connect.
+**Fix idea:** add `KernelEventsModule.removePlugin(pluginId)` that `bus.off`s every handler in that
+plugin's map and deletes the map + any `pendingSubscriptions` entries; call it from `PluginHost.unload`.
+**Status:** open
+
+### [S8-07] med — plugins/PluginHost.ts:445-451 (`unload`, worker plugins)
+**What:** For a non-builtin plugin, `unload` does
+`metadata.channel.sendToPlugin({ type: 'plugin:deactivate' })` and then, on the very next lines,
+`metadata.channel.destroy()` — which for `WorkerPluginChannel` synchronously calls
+`this.worker.terminate()`. There is no `await` / ack between the deactivate message and termination.
+**Why it's a bug:** the `plugin:deactivate` message is `postMessage`d but the worker thread is
+terminated before it can dequeue and process it, so the plugin's `onDeactivate` / cleanup handler
+never runs. Any teardown the plugin needs to do — flush `ctx.storage`, close network connections,
+persist state, clear external resources — is skipped on every unload / reload / uninstall / app
+shutdown (`KernelBootstrapper.dispose` loops `host.unload`). Silent partial-state / lost-write on
+teardown.
+**Fix idea:** send `plugin:deactivate`, await a response (or a bounded timeout) from the worker, then
+`destroy()`. Mirror the builtin path which `await builtin.deactivate()` before destroying.
+**Status:** open
+
+### [S8-08] low — permissions/PermissionStore.ts:23-35, 102-106 (no shape validation after load)
+**What:** `loadFromDisk` accepts whatever `JSON.parse` returns. If the file parses to a valid JSON
+value of the wrong shape (`null`, `[]`, `{}` without a `plugins` key — e.g. hand-edited, or written
+by a future/older version), `this.storageData.plugins` is `undefined`.
+**Why it's a bug:** `hasCapability` then evaluates `this.storageData.plugins[pluginId]?.capabilities`
+→ `TypeError: Cannot read properties of undefined (reading '<pluginId>')`, which propagates as an
+`INTERNAL_ERROR` out of `requireCapability` for **every** gated kernel call — all plugin API access
+is dead until the file is fixed or deleted. `ensurePluginRecord` / `setCapability` throw the same
+way, so the store can't self-heal either.
+**Fix idea:** after parse, validate the shape and coerce to `{ plugins: {} }` when
+`parsed?.plugins` is not a plain object.
+**Status:** open
+
+### [S8-09] low — plugins/PluginHost.ts:291-299 (`ctx.scheduler.setTimeout`) + 292-306
+**What:** `scheduler.setTimeout` returns `() => clearInterval(id)` (should be `clearTimeout`), and
+`scheduler.setInterval` / `setTimeout` / `onCron` register timers and cron handlers that are **never
+tracked against the plugin**. `PluginHost.unload` does not clear them.
+**Why it's a bug:** resource leak for builtin plugins (these ctx methods are only wired for the
+in-process `registerBuiltin` path). A builtin that schedules a repeating interval and is later
+unloaded / reloaded keeps the old interval firing forever against a dead context; `onCron` handlers
+stay in `eventHandlers` after unload. `clearInterval` on a timeout handle happens to work in Node but
+is wrong and breaks if the return is ever used cross-runtime.
+**Fix idea:** track every timer id / cron registration per plugin and clear them in `unload`; use
+`clearTimeout` for `setTimeout`.
+**Status:** open
+
+### [S8-10] low — ipc/contributionIpc.ts:55-90 (`syncAiTools`) + plugins/PluginHost.ts:453-461
+**What:** `syncAiTools` registers a plugin's `ai-tool` contributions into the shared `toolRegistry`
+and only skips if `toolRegistry.getTool(name)` already exists — it never *removes* a tool when the
+plugin is unloaded. `ContributionRegistry.unregisterAll(pluginId)` drops the contribution entry but
+the `toolRegistry` entry (with its `execute` closure capturing `contrib.pluginId`) stays.
+**Why it's a bug:** after a plugin is unloaded/uninstalled its AI tools remain callable by the model;
+`execute` then hits `host.getPlugin(contrib.pluginId)` → not loaded → returns
+`{ text: 'Plugin ... is not loaded' }` on every invocation instead of the tool disappearing. Also a
+name collision: if two plugins declare the same tool `name`, the second is silently ignored
+(`getTool` short-circuit) with no warning. Stale/again-loaded plugins can't update a tool's schema.
+**Fix idea:** on `registry.onChange` diff the `ai-tool` set and `toolRegistry.unregister` names no
+longer present; namespace plugin tool names by `pluginId` or reject duplicates loudly.
+**Status:** open
 
 ## Slice 9 — Kernel storage, channels, ipc, ui
 
