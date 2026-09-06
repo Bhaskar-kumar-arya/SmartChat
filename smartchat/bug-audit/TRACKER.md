@@ -29,8 +29,8 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |----------|-------|
 | crit | 1 |
 | high | 3 |
-| med  | 37 |
-| low  | 29 |
+| med  | 43 |
+| low  | 33 |
 
 ---
 
