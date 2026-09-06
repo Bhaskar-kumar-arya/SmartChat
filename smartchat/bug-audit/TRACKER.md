@@ -18,7 +18,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 7 | Kernel API modules & router | DONE (9 findings) | 2026-09-06 | 0 crit / 1 high / 4 med / 4 low. S7-01 = resource-scope enforced inconsistently across kernel API (bypass by unscoped action / omitted jid). Deep-read all Kernel*Module business logic; router/BaseKernelModule/Events perm paths deferred to slice 8 |
 | 8 | Kernel plugins, contributions, permissions | DONE (10 findings) | 2026-09-06 | 0 crit / 1 high / 6 med / 3 low. Deep-read PluginLoader, PluginHost, PluginRegistry, PermissionStore, ContributionRegistry, PluginManifest, KernelEventsModule, KernelMessagesModule (perm paths), KernelAPIRouter, BaseKernelModule, contributionIpc, channels/{Direct,Worker}PluginChannel, pluginProtocol. Light: other Kernel*Module perm checks, I*.ts |
 | 9 | Kernel storage, channels, ipc, ui | DONE (10 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 4 low. Deep-read PrismaPluginStorageRepository, {Direct,Worker}PluginChannel, overlayIpc, panelIpc, contributionIpc, OverlayHost, PanelHost. S9-01/S9-02 = panel event IPC bypasses bus-accessor + permission checks. Light: I*.ts interfaces |
-| 10 | App IPC & auth | IN PROGRESS | 2026-09-06 | trust boundary |
+| 10 | App IPC & auth | DONE (10 findings) | 2026-09-06 | 1 crit / 1 high / 4 med / 4 low. S10-01 = swallowed authState read error → hasCreds()=false → wipeAllData on a logged-in user (data loss). S10-02 = silent Signal keystore tx failure. Deep-read auth.ts, ipcHandlers.ts, services/auth/*, ServiceContainer.ts; ipc/*.types.ts trivial |
 | 11 | apiServer, search, notification, calls, audio | IN PROGRESS | 2026-09-06 | HTTP surface = apiServer |
 | 12 | SDK, tools, data wipe, domain, db, protocol | TODO | — | DataWipeService = data-loss risk |
 | 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
@@ -27,10 +27,10 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 
 | Severity | Count |
 |----------|-------|
-| crit | 1 |
-| high | 3 |
-| med  | 43 |
-| low  | 33 |
+| crit | 2 |
+| high | 4 |
+| med  | 47 |
+| low  | 37 |
 
 ---
 
@@ -1190,7 +1190,146 @@ write arbitrarily large values / unbounded keys into the shared `extensionKV` ta
 
 ## Slice 10 — App IPC & auth
 
-_none yet_
+Files read: auth.ts, ipcHandlers.ts, ipc/{types,message.types,chat.types,reaction.types}.ts,
+services/auth/{AuthSettingsService,AuthStateRepository,IAuthSettingsService,IAuthStateRepository}.ts,
+ServiceContainer.ts, + cross-refs: src/preload/index.ts, index.ts (protocol/window/handler wiring),
+services/whatsapp/WhatsAppConnectionManager.ts (connect flow), services/ai/IToolRegistry.ts,
+services/apiServer/controllers/ToolsController.ts.
+
+### [S10-01] crit — services/auth/AuthStateRepository.ts:14-24 (`getValue`) → WhatsAppConnectionManager.ts:69-80
+**What:** `getValue` wraps `prisma.authState.findUnique` in `try/catch` that **returns `null` on any
+error** (DB locked, I/O, adapter hiccup). `AuthSettingsService.hasCreds()` is just
+`getValue('creds') !== null`, so a transient read failure makes `hasCreds()` return `false`.
+`WhatsAppConnectionManager.connect()` then treats the user as logged-out: sets `isFreshLogin = true`,
+clears `history_sync_completed`, and — if `chatRepository.countChats() > 0` — calls
+`this.dataWipeService.wipeAllData()`.
+**Why it's a bug:** `connect()` runs on every launch and on every reconnect (settings change,
+re-login, worker restart). SQLite lock contention is expected here — WAL + `busy_timeout = 5000`,
+and the WhatsApp worker writes the same DB file concurrently during sync. A single `creds` read that
+times out or errors while `countChats()` happens to succeed (>0) triggers a **full wipe of a
+logged-in user's local database** (chats, messages, media rows, contacts) — permanent local data
+loss — with only a `console.error` from the swallowed catch. The swallow converts a retryable error
+into a destructive false negative.
+**Fix idea:** `getValue` must distinguish "row absent" (return null) from "query failed" (throw or
+return a sentinel); `hasCreds()` / the wipe path in `connect()` must fail closed (skip wipe, retry)
+on error, never treat an errored read as "no creds".
+**Status:** open
+
+### [S10-02] high — auth.ts:223-257 (`baseKeyStore.set`)
+**What:** All Signal key mutations (pre-keys, sessions, sender-keys, app-state-sync keys) are
+aggregated into one `prisma.$transaction(ops)` whose failure is caught and reduced to
+`console.error('[AuthState] Batch keystore transaction failed:', err)` — the method still resolves
+normally.
+**Why it's a bug:** Baileys calls `keys.set(...)` after it has already used / advertised those keys
+(ratchet advanced, pre-keys marked uploaded to the server). If the transaction fails (lock
+contention with the worker, disk error) the new key material is silently lost while Baileys and the
+server believe it was persisted. After the next restart the local ratchet state is stale: affected
+conversations show "Waiting for this message" / undecryptable messages, and pre-key reuse/desync can
+require a full re-link to recover. No error surfaces to Baileys or the user.
+**Fix idea:** propagate the failure to the caller (let Baileys retry / abort), or retry the
+transaction with backoff; at minimum emit a hard error that forces a reconnect rather than
+continuing as if the keys were stored.
+**Status:** open
+
+### [S10-03] med — auth.ts:179-205 (`readData`) + 207-208 (`creds` bootstrap)
+**What:** `readData` catches every error and returns `null`. `const creds = (await readData("creds"))
+|| initAuthCreds()` — so a failed read of the `creds` row yields a **brand-new credential set**.
+**Why it's a bug:** twin of [S10-01] at the Baileys layer. A transient DB error while loading
+`creds` at startup makes the socket start as an unregistered client: it generates fresh keys, shows
+a QR, and the first `saveCreds()` **overwrites the real stored creds** with the new identity —
+the existing WhatsApp link is destroyed by a read hiccup, not by an actual logout. Likewise a
+transient error in the keystore `get` path returns `null` for real keys, causing spurious
+decryption failures for that session.
+**Fix idea:** on read error, throw so startup aborts/retries instead of silently minting a new
+identity; only fall back to `initAuthCreds()` when the row is genuinely absent.
+**Status:** open
+
+### [S10-04] med — ipcHandlers.ts:152-165 (`save-temp-file`) & 167-178 (`download-url-to-temp`)
+**What:** Both handlers do `const filePath = join(tempDir, fileName)` with `fileName` taken verbatim
+from the renderer argument — no `path.basename`, no containment check.
+**Why it's a bug:** a `fileName` of `..\\..\\..\\Users\\me\\AppData\\Roaming\\smartchat\\dev.db` (or
+any traversal / absolute path — `join` lets `..` segments escape, and a rooted path replaces the
+base) causes `fs.writeFileSync` to write attacker-controlled bytes anywhere the process can write:
+overwrite the SQLite DB, the plugin-permissions JSON, auto-start scripts, etc. The renderer is the
+trust boundary here (rendered message content, AI output, plugin-influenced UI can reach these
+channels), and `download-url-to-temp` additionally lets the page pick both the bytes (any URL) and
+the destination.
+**Fix idea:** `const safe = path.basename(fileName)` and verify `path.resolve(tempDir, safe)` is
+still inside `tempDir` before writing; reject otherwise.
+**Status:** open
+
+### [S10-05] med — ipcHandlers.ts:312-321 (`execute-tool`) + services/ai/IToolRegistry.ts:17
+**What:** `execute-tool` looks up the tool and calls `tool.execute(args, ctx)` with no check of
+`tool.requiresPermission`. Grep shows `requiresPermission` is **only ever read to display it**
+(`get-ai-tools`, `ToolsController`) — there is no enforcement anywhere in the backend.
+**Why it's a bug:** any code running in the renderer can invoke `window.api.executeTool('<name>',
+args)` directly and run a permission-gated tool (send messages, mutate chats, filesystem-touching
+tools) without the user's per-call approval — the approval gate exists only in renderer UI and is
+trivially bypassed by injected/rendered content or a buggy component. The flag gives a false
+impression that the backend enforces it.
+**Fix idea:** enforce `requiresPermission` in the `execute-tool` handler (and the apiServer path) —
+prompt / check a granted-permission store in the main process before `tool.execute`.
+**Status:** open
+
+### [S10-06] med — ipcHandlers.ts:230-235 (`logout`) + all handlers (no sender validation)
+**What:** `logout` runs `sock.logout()` then `services.dataWipeService.wipeAllData()` on receipt of
+a bare IPC message, with no confirmation token and no `event.senderFrame` / URL check. No handler in
+`ipcHandlers.ts` validates the sender frame.
+**Why it's a bug:** a single `ipcRenderer.invoke('logout')` from anywhere with bridge access
+destroys all local data and unlinks the device. Combined with [S10-07] (generic `electronAPI`
+exposure) and any sub-frame / webview / injected script in the renderer, this is a one-call
+destructive action across the trust boundary. Electron's own guidance is to validate
+`event.senderFrame` on privileged channels.
+**Fix idea:** gate destructive channels (`logout`, `clear-vectors`, wipe-adjacent) behind an
+explicit main-process confirmation dialog and/or validate `event.senderFrame.url` against the app
+origin on every handler.
+**Status:** open
+
+### [S10-07] low — src/preload/index.ts:421-427
+**What:** The preload exposes both the curated `api` object **and** `@electron-toolkit/preload`'s
+`electronAPI` (`contextBridge.exposeInMainWorld('electron', electronAPI)`), which provides a generic
+`ipcRenderer` with `invoke`/`send`/`on`/`removeAllListeners` for arbitrary channel names.
+**Why it's a bug:** the curated `api` whitelist is defeated — renderer code can reach every
+`ipcMain.handle` channel in the app (kernel plugin channels, `execute-tool`, `logout`, overlay/panel
+IPC) regardless of what `api` chooses to surface. It also lets renderer code subscribe to / spoof
+internal event channels. Widens the blast radius of every other trust-boundary finding.
+**Fix idea:** don't expose the generic `electronAPI` in the main renderer preload; expose only the
+explicit typed methods the renderer needs.
+**Status:** open
+
+### [S10-08] low — auth.ts:194-205 (`writeData`) + 264-266 (`saveCreds`)
+**What:** `writeData` catches upsert errors and only `console.error`s; `saveCreds` returns
+`writeData(creds, "creds")`, which resolves successfully even when the write failed.
+**Why it's a bug:** Baileys awaits `saveCreds()` after `creds.update` and proceeds as if creds are
+durable. A failed write (lock, disk full) is invisible: on next launch the pairing / registration
+step or key-id counters are stale, and the client may need re-linking. Swallowed-error →
+"told the caller ok".
+**Fix idea:** let `writeData` reject and `saveCreds` propagate; Baileys will retry on its schedule.
+**Status:** open
+
+### [S10-09] low — ipcHandlers.ts:250-254 (`set-sync-full-history`)
+**What:** Handler calls `waConnectionManager.connect()` as a floating promise (no `await`, no
+`.catch`) then immediately `return true`. Duplicate of [S3-04]; recorded here because the call site
+is in this slice's scope.
+**Why it's a bug:** a rejection in `connect()` (see [S10-01] paths, `wipeAllData`,
+`getHistorySyncCompleted`) is an unhandled rejection; the renderer is told the setting change
+succeeded and a reconnect is underway while the connection may be left half-torn-down (old bus
+already `removeAllListeners()`'d).
+**Fix idea:** `await` + try/catch, return real success/failure to the renderer.
+**Status:** open
+
+### [S10-10] low — auth.ts:124-173 (`initVectorDb`)
+**What:** On a detected dimension mismatch the self-heal does
+`DROP TABLE IF EXISTS vec_messages` and recreates it; the whole function body is also wrapped in a
+`try/catch` that only `console.error`s.
+**Why it's a bug:** the drop silently discards every stored embedding (the `vec_messages` virtual
+table) with no signal to the user or to `VectorSyncService`; recovery depends on a later
+`vecCount < prismaCount` check happening and `MessageVector` still holding the source rows. If the
+outer catch fires earlier, vector search is silently degraded/broken for the session with no
+surfaced error.
+**Fix idea:** log the drop as a warning the UI can show, and explicitly trigger a full re-sync after
+recreation; surface init failure rather than swallowing it.
+**Status:** open
 
 ## Slice 11 — apiServer, search, notification, calls, audio
 
