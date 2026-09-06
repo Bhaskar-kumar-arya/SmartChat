@@ -922,7 +922,27 @@ there is no post-extract containment check.
 `validateManifest`; `path.resolve` the target and assert it stays within `baseDir` before any
 mkdir/rm/extract; validate `manifest.main` resolves inside the plugin dir; enumerate zip entries and
 reject any whose resolved path escapes `pluginDir`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit>. `validateManifest` (`kernel/plugins/PluginManifest.ts`)
+now rejects any `id` that contains `..` or fails `/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/`
+(reverse-DNS ids like `com.smartchat.foo-bar` still pass), and any `main` that is
+absolute or contains `..`. `PluginLoader` gained `resolveWithin(...segments)` which
+`path.resolve`s under `baseDir` and throws `ManifestValidationError` if the result
+escapes — used in `install` (pluginDir), `uninstall(id)` (was a silent
+`fs.rmSync(recursive,force)` on an unvalidated renderer-supplied id → arbitrary
+directory deletion), `load(id)` (pluginDir) and for `manifest.main` (Worker entry
+path). `install` also enumerates zip entries and rejects any whose resolved path
+escapes `pluginDir` *before* extracting (adm-zip's `extractAllTo` does no such
+check). The IPC handlers in `contributionIpc.ts` (`extension:install/uninstall/
+reload`) pass their args straight into these loader methods, so the loader-level
+guard covers the IPC surface too. Regression tests in
+`tests/kernel/plugins/PluginLoader.test.ts`: traversal `id` in a package is
+rejected and no dir is created; `uninstall('../../victim')` throws and leaves the
+target intact; `validateManifest` rejects `..`/separator in `id` and `..` in
+`main`. typecheck clean; kernel/plugins suite + codetantra-otp-relay +
+test-all-features e2e green. (Zip-Slip end-to-end not unit-tested — adm-zip's
+writer sanitizes `../` on `addFile`, so a raw-crafted archive would be needed; the
+containment loop is in place regardless.) Not manually run in the app.
 
 ### [S8-02] med — api-modules/KernelMessagesModule.ts:100-108 (`forward`)
 **What:** `forward` calls `requireCapability(pluginId, 'messages:send')` and then

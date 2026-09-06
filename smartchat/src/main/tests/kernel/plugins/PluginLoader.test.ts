@@ -4,7 +4,7 @@ import * as path from 'path'
 import * as os from 'os'
 import AdmZip from 'adm-zip'
 import { PluginLoader } from '../../../kernel/plugins/PluginLoader'
-import { ApiVersionError } from '../../../kernel/plugins/PluginManifest'
+import { ApiVersionError, ManifestValidationError, validateManifest } from '../../../kernel/plugins/PluginManifest'
 
 describe('PluginLoader', () => {
   let tmpDir: string
@@ -90,6 +90,53 @@ describe('PluginLoader', () => {
 
     expect(installed).toHaveLength(1)
     expect(installed[0].id).toBe('com.acme.valid')
+  })
+
+  it('install() rejects a manifest whose id is a path traversal (S8-01)', async () => {
+    const zip = new AdmZip()
+    const evil = {
+      id: '../../../../evil',
+      name: 'Evil',
+      version: '1.0.0',
+      apiVersion: '2',
+      main: 'index.js',
+      permissions: [],
+      contributions: {}
+    }
+    zip.addFile('manifest.json', Buffer.from(JSON.stringify(evil)))
+    zip.addFile('index.js', Buffer.from('//'))
+    const zipPath = path.join(tmpDir, 'evil.scext')
+    zip.writeZip(zipPath)
+
+    await expect(loader.install(zipPath)).rejects.toThrow(ManifestValidationError)
+    expect(fs.existsSync(path.join(tmpDir, '..', '..', '..', '..', 'evil'))).toBe(false)
+  })
+
+  it('uninstall() with a traversal id throws instead of deleting an arbitrary directory (S8-01)', async () => {
+    const victim = fs.mkdtempSync(path.join(os.tmpdir(), 'sc-victim-'))
+    fs.writeFileSync(path.join(victim, 'important.txt'), 'keep me')
+    try {
+      const rel = path.relative(tmpDir, victim).split(path.sep).join('/')
+      await expect(loader.uninstall(rel)).rejects.toThrow(ManifestValidationError)
+      expect(fs.existsSync(path.join(victim, 'important.txt'))).toBe(true)
+    } finally {
+      fs.rmSync(victim, { recursive: true, force: true })
+    }
+  })
+
+  it('validateManifest rejects traversal in id and main', () => {
+    const base = {
+      name: 'X',
+      version: '1.0.0',
+      apiVersion: '2',
+      permissions: [],
+      contributions: {}
+    }
+    expect(() => validateManifest({ ...base, id: 'ok.plugin', main: '../x.js' })).toThrow(ManifestValidationError)
+    expect(() => validateManifest({ ...base, id: 'a/b', main: 'index.js' })).toThrow(ManifestValidationError)
+    expect(() => validateManifest({ ...base, id: '..', main: 'index.js' })).toThrow(ManifestValidationError)
+    // reverse-DNS ids still accepted
+    expect(validateManifest({ ...base, id: 'com.smartchat.foo-bar', main: 'index.js' }).id).toBe('com.smartchat.foo-bar')
   })
 
   it('uninstall() removes the plugin directory', async () => {

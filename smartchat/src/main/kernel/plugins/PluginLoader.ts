@@ -14,6 +14,23 @@ export class PluginLoader implements IPluginLoader {
     }
   }
 
+  /**
+   * Resolve `segments` under `baseDir` and assert the result cannot escape it.
+   * Guards every mkdir/rm/extract/Worker path against traversal in a
+   * renderer-supplied `id` / `scextPath` or a crafted `manifest.id` /
+   * `manifest.main` (see audit S8-01).
+   */
+  private resolveWithin(...segments: string[]): string {
+    const base = path.resolve(this.baseDir)
+    const target = path.resolve(base, ...segments)
+    if (target !== base && !target.startsWith(base + path.sep)) {
+      throw new ManifestValidationError(
+        `Path "${segments.join('/')}" resolves outside the plugin directory`
+      )
+    }
+    return target
+  }
+
   async install(scextPath: string): Promise<PluginManifest> {
     if (!fs.existsSync(scextPath)) {
       throw new ManifestValidationError(`Plugin package not found at ${scextPath}`)
@@ -36,7 +53,19 @@ export class PluginLoader implements IPluginLoader {
 
     const manifest = validateManifest(manifestRaw)
 
-    const pluginDir = path.join(this.baseDir, manifest.id)
+    const pluginDir = this.resolveWithin(manifest.id)
+
+    // Zip-Slip: reject any archive entry that would land outside pluginDir
+    // before writing anything (adm-zip's extractAllTo does not check).
+    for (const entry of zipEntries) {
+      const dest = path.resolve(pluginDir, entry.entryName)
+      if (dest !== pluginDir && !dest.startsWith(pluginDir + path.sep)) {
+        throw new ManifestValidationError(
+          `Plugin package contains an entry that escapes its directory: ${entry.entryName}`
+        )
+      }
+    }
+
     if (!fs.existsSync(pluginDir)) {
       fs.mkdirSync(pluginDir, { recursive: true })
     }
@@ -47,14 +76,14 @@ export class PluginLoader implements IPluginLoader {
   }
 
   async uninstall(id: string): Promise<void> {
-    const pluginDir = path.join(this.baseDir, id)
+    const pluginDir = this.resolveWithin(id)
     if (fs.existsSync(pluginDir)) {
       fs.rmSync(pluginDir, { recursive: true, force: true })
     }
   }
 
   async load(id: string): Promise<{ manifest: PluginManifest; channel: IPluginChannel }> {
-    const pluginDir = path.join(this.baseDir, id)
+    const pluginDir = this.resolveWithin(id)
     const manifestPath = path.join(pluginDir, 'manifest.json')
 
     if (!fs.existsSync(manifestPath)) {
@@ -70,7 +99,7 @@ export class PluginLoader implements IPluginLoader {
 
     const manifest = validateManifest(manifestRaw)
 
-    const entryPath = path.join(pluginDir, manifest.main)
+    const entryPath = this.resolveWithin(id, manifest.main)
     if (!fs.existsSync(entryPath)) {
       throw new ManifestValidationError(`Plugin entry point not found at ${entryPath}`)
     }

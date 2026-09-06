@@ -1,5 +1,9 @@
+import * as path from 'path'
 import { WhenCondition } from '../contributions/WhenCondition'
 import { SubMenuItemDeclaration } from '../contributions/SubMenuItemDeclaration'
+
+/** A plugin id is used verbatim as a filesystem directory name — keep it to a safe segment. */
+const PLUGIN_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
 export interface SlashCommand {
   name: string
@@ -70,6 +74,11 @@ export function validateManifest(raw: unknown): PluginManifest {
   if (!obj.id || typeof obj.id !== 'string') {
     throw new ManifestValidationError('Missing or invalid "id"')
   }
+  if (obj.id.includes('..') || !PLUGIN_ID_RE.test(obj.id)) {
+    throw new ManifestValidationError(
+      'Invalid "id": must match [a-zA-Z0-9._-], start alphanumeric, and cannot contain ".." or path separators'
+    )
+  }
   if (!obj.name || typeof obj.name !== 'string') {
     throw new ManifestValidationError('Missing or invalid "name"')
   }
@@ -78,6 +87,11 @@ export function validateManifest(raw: unknown): PluginManifest {
   }
   if (!obj.main || typeof obj.main !== 'string') {
     throw new ManifestValidationError('Missing or invalid "main"')
+  }
+  if (obj.main.includes('..') || path.isAbsolute(obj.main) || /^[/\\]/.test(obj.main)) {
+    throw new ManifestValidationError(
+      'Invalid "main": must be a relative path inside the plugin directory (no "..", no absolute paths)'
+    )
   }
   if (!Array.isArray(obj.permissions)) {
     throw new ManifestValidationError('Permissions must be an array')
