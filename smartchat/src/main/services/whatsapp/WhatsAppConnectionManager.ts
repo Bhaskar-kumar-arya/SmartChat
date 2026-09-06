@@ -86,7 +86,14 @@ export class WhatsAppConnectionManager {
       const orphanChats = await this.chatRepository.countChats()
       if (orphanChats > 0) {
         console.log(`[Cleanup] No auth creds but found ${orphanChats} orphan chats — wiping stale data`)
-        await this.dataWipeService.wipeAllData()
+        try {
+          await this.dataWipeService.wipeAllData()
+        } catch (err) {
+          // wipeAllData now throws on a partial wipe. Abort the connect rather
+          // than starting the worker against a half-emptied database.
+          console.error('[Cleanup] wipeAllData failed — aborting connect to avoid a partial-wipe state:', err)
+          return
+        }
       }
     }
 

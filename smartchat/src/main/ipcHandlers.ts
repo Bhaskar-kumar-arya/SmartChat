@@ -243,6 +243,8 @@ function registerAuthAndProfileHandlers(
   ipcMain.handle('logout', async () => {
     const sock = getSock()
     if (sock) await sock.logout().catch((err: unknown) => { console.warn('[IPC] sock.logout failed:', err) })
+    // wipeAllData throws on a partial wipe — let it reject so the renderer keeps
+    // the user on the current screen instead of reloading into a half-wiped DB.
     await services.dataWipeService.wipeAllData()
     return true
   })

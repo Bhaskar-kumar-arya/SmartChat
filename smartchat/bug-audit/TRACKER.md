@@ -1684,6 +1684,18 @@ no-op if issued inside an implicit/Prisma-wrapped transaction, so the OFF may no
 **Fix idea:** wrap the whole wipe in one `prisma.$transaction`, restore `foreign_keys = ON` in a
 `finally`, propagate failure to the caller, and only `wipeAllFolders()` after the DB wipe committed.
 **Status:** open
+**Fix status:** fixed in `main` (S12-05 commit) — `DataWipeService` refactored: both
+`wipeAllData` / `wipeUserDataOnly` now delegate to one `wipeTables(extraFilter)` that runs every
+per-table `DELETE` inside a single `prisma.$transaction([...])` (partial wipe rolls back),
+toggles `PRAGMA foreign_keys` OFF before / ON in a `finally` (survives a throw), and re-throws
+on failure. `wipeAllFolders()` only runs after the tx commits. Callers updated:
+`WhatsAppConnectionManager.connect()` catches + `return`s (aborts connect, no partial-wipe start);
+`ipcHandlers` `logout` lets it reject so the renderer's existing try/catch keeps the user on-screen
+instead of `window.location.reload()`-ing into a half-wiped DB. Tests: `DataWipeService.test.ts`
++2 cases — DELETEs handed to `$transaction` as an array; a failing DELETE → `rejects.toThrow`,
+`PRAGMA foreign_keys = ON` still called, folders not wiped. 210/210 service tests pass, typecheck
+clean. Not manually run in-app (logout wipes the dev DB) — logic is transaction-level + unit-covered.
+Worker's private `wipeAllData` copy (workerConnectionManager.ts:196) is a separate finding (S1-02).
 
 ### [S12-06] med — auth.ts:94-98 & workers/whatsapp/whatsapp.worker.ts:31-37
 **What:** `schema-migrations.ts` is documented to treat a failed migration as "a startup-blocking
