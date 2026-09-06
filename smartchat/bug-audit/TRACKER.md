@@ -10,7 +10,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | # | Slice | Status | Last touched | Notes |
 |---|-------|--------|--------------|-------|
 | 1 | WhatsApp worker & socket | DONE (8 findings) | 2026-09-06 | 0 crit / 0 high / 5 med / 3 low |
-| 2 | Message pipeline | IN PROGRESS | 2026-09-06 | largest slice (~55 files); may need 2 sessions |
+| 2 | Message pipeline | DONE (12 findings) | 2026-09-06 | 0 crit / 0 high / 6 med / 6 low; peripheral formatters + ffmpeg paths lightly covered |
 | 3 | WhatsApp service & subscribers | TODO | — | recent OTP relay + queue-subscriptions fix |
 | 4 | Chats & sync | TODO | — | |
 | 5 | Contacts | TODO | — | |
@@ -29,8 +29,8 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |----------|-------|
 | crit | 0 |
 | high | 0 |
-| med  | 5 |
-| low  | 3 |
+| med  | 11 |
+| low  | 9 |
 
 ---
 
@@ -90,7 +90,148 @@ Files read: whatsapp.worker.ts, routing/workerCommandRouter.ts, socket/{workerCo
 
 ## Slice 2 — Message pipeline
 
-_none yet_
+Files read: MessageService.ts, MessageParser.ts, MessageRepository.ts, MessageQueryRepository.ts,
+MessageEnricher.ts, MessageIdentityResolver.ts, MessageActionService.ts, MessageSenderService.ts,
+MediaService.ts, MediaHelper.ts, MessageVectorRepository.ts, ReactionRepository.ts,
+ReceiptRepository.ts (+ ReceiptService.ts for context), FavoriteStickerService.ts,
+StickerMetadataService.ts, processors/{Standard,Reaction,Protocol,Secret}MessageProcessor.ts,
+formatters/{MessageFormatterRegistry,index,Conversation,Poll}.ts, tools/ReadMessagesTool.ts (SQL path).
+Not fully audited (peripheral / thin): remaining formatters (Image/Video/Sticker/Document/Audio/
+Contact/Location/Reaction), StickerMetadataService deep ffmpeg paths.
+
+### [S2-01] med — MessageRepository.ts:59-70 (`upsertMessage` update branch)
+**What:** The `update` payload always sets `status: rest.status`. For a `messages.upsert`
+re-delivery of an already-stored outbound message, `StandardMessageProcessor` computes
+`status = mapBaileysStatus(context.msg.status)` and `mapBaileysStatus(undefined) === 'SENT'`.
+**Why it's a bug:** Baileys re-emits `messages.upsert` for the same message on reconnect / notify
+vs append. If the message had already progressed to `DELIVERED`/`READ` via `ReceiptService`
+(which carefully enforces monotonic transitions with `statusMap`), this upsert clobbers it back
+to `SENT` — read / double-tick state regresses in the UI until (if ever) another receipt arrives.
+`upsertMessage` bypasses the monotonic guard that every other status writer respects.
+**Fix idea:** in the update branch, only lower→higher status transitions, or omit `status` from
+`update` entirely and let `ReceiptService` own it; or read existing status and `Math.max` the level.
+**Status:** open
+
+### [S2-02] med — MessageSenderService.ts:226-253 (text) & 341-392 (media)
+**What:** The optimistic pending row is persisted with `status: 'PENDING'` and emitted to the UI,
+then `sock.sendMessage(...)` runs as a background promise whose `.catch` only `console.error`s.
+**Why it's a bug:** if the send rejects (offline, rate-limited, bad JID, socket mid-reconnect),
+there is no transition to a `FAILED` status, no event to the UI, and no retry/outbox. The message
+sits at `PENDING` in the DB and as a spinner in the UI forever; the user believes it is "sending"
+when WhatsApp never received it. On next app start nothing re-sends it (no pending-outbox scan in
+this service). Silent outbound message loss.
+**Fix idea:** on send failure, set status `FAILED` and emit `message:status-updated`; add a
+manual-retry path and/or a startup outbox re-send. (Check slice 3 for any existing pending re-send
+before fixing.)
+**Status:** open
+
+### [S2-03] med — MessageVectorRepository.ts:17-22 (`searchVectorMatch`)
+**What:** The `messageId IN (...)` restriction is only applied when
+`candidateIds.length > 0 && candidateIds.length < 2000`. At exactly 2000+ candidate IDs the
+`filterSql` stays `''` and the query runs an unrestricted global vector MATCH.
+**Why it's a bug:** the caller passes `candidateIds` to scope the semantic search (e.g. to a
+keyword-prefiltered or permission-limited set). Once that set grows past 2000 the scope is silently
+dropped and the search returns matches from *all* chats/messages — wrong results, and a potential
+scope/leak issue depending on why the caller restricted it. Failure is silent (no log, no error).
+**Fix idea:** for large candidate sets, chunk the `IN` list (or stage IDs into a temp table and
+JOIN), never silently drop the filter. If it is purely a perf guard, still enforce it.
+**Status:** open
+
+### [S2-04] med — MediaService.ts:154-158 (`clearFavoriteStickerQueue`)
+**What:** Sets `activeDownloadsCount = 0` and `isProcessingQueue = false` unconditionally while
+in-flight `downloadAndCacheMedia` promises from `processQueue` are still running.
+**Why it's a bug:** main-process twin of [S1-04]. Each leftover download's `.finally` runs
+`this.activeDownloadsCount--`, driving the counter negative. Thereafter
+`activeDownloadsCount >= concurrencyLimit` only trips after `limit + N` concurrent downloads, so
+the concurrency cap is silently raised for the rest of the session (once per leftover), causing
+unbounded parallel media downloads. Called on sync teardown / pause churn.
+**Fix idea:** track in-flight promises and settle them in `clear()`, or guard the decrement with
+`Math.max(0, ...)` plus a generation token so stale `.finally` callbacks are ignored.
+**Status:** open
+
+### [S2-05] med — ReactionRepository.ts:26-34 (`upsertReaction`) & 124-146 (`bulkSyncReactions`)
+**What:** `upsert` overwrites `text` + `timestamp` with whatever was processed last, with no check
+that the incoming `timestamp` is newer than the stored row.
+**Why it's a bug:** reaction events arrive out of order — history sync can deliver an old reaction
+(or an old *removal*) after a newer live one; `bulkSyncReactions` dedups by timestamp *within its
+batch* but then still unconditionally upserts over DB rows that may be newer than the batch. Result:
+a stale reaction clobbers the current one, or a resurrected reaction reappears after removal (lost
+update / timestamp-vs-sequence confusion). `ReceiptService` guards this class of transition;
+reactions do not.
+**Fix idea:** in `upsert`, add `where`/conditional so `update` only applies when
+`incoming.timestamp >= existing.timestamp`; for removals, only delete if the delete event is newer
+than the stored reaction.
+**Status:** open
+
+### [S2-06] med — MessageActionService.ts:238-243 (`forwardMessage`)
+**What:** `for (const destJid of destinations) { await this.forwardToDestination(...) ; results.push(res) }`
+— any destination that throws aborts the loop and the whole method rejects; `results` (successful
+forwards so far) is discarded.
+**Why it's a bug:** forwarding to N chats where chat #k fails (blocked, invalid JID, transient
+socket error) surfaces only an error to the caller with no indication that chats 1..k-1 already
+received the message. A naive retry re-forwards duplicates to those chats.
+**Fix idea:** collect per-destination `{ jid, ok, error }`, never abort the loop on one failure,
+and return partial success.
+**Status:** open
+
+### [S2-07] low — MediaService.ts:39-55, 292-322 (`resolveMediaType` / `downloadAndCacheMedia`)
+**What:** main-process twin of [S1-03]. For `templateMessage` media, `resolveMediaType` synthesizes
+a fresh `target` object; `mediaMsg` then points at that throwaway node (not into `rawMessage`).
+`downloadAndCacheMedia` sets `mediaMsg.localURI` and persists `JSON.stringify(rawMessage)`.
+**Why it's a bug:** for template-wrapped media the `localURI` never lands in `rawMessage`, so the
+stored `content` never gains a cache URI. Every open re-runs the full download and the renderer has
+no `app://media/...` to resolve.
+**Fix idea:** write the resolved node back into the real message tree before persisting.
+**Status:** open
+
+### [S2-08] low — MediaService.ts:95-99 & FavoriteStickerService.ts:202-206 (`ensureBuffer`)
+**What:** twin of [S1-07]. `if (/^[0-9a-fA-F]+$/.test(val) && val.length % 2 === 0) hex else base64`.
+**Why it's a bug:** a base64 `mediaKey` round-tripped through JSON that happens to be all-`[0-9a-f]`
+and even length is decoded as hex → corrupt key → AES-GCM failure that looks like a "bad key".
+**Fix idea:** carry an explicit encoding tag, or try base64 first and fall back to hex only on
+invalid base64.
+**Status:** open
+
+### [S2-09] low — FavoriteStickerService.ts:254-262 (`syncFavoriteSticker`)
+**What:** twin of [S1-06]. The `favoriteSticker` row is upserted unconditionally even when
+`downloadSuccess === false`.
+**Why it's a bug:** an app-state sync for a favorite whose media can't be downloaded (expired CDN,
+no socket) still creates a DB favorite whose `fileName` has no file on disk; `getFavoriteStickers`
+then returns `app://favourites/<fileName>` that 404s, with no self-heal.
+**Fix idea:** only persist when the file exists, or store a `pending` flag and retry on next sync.
+**Status:** open
+
+### [S2-10] low — MessageRepository.ts:304-322 (`bulkSyncMessages`)
+**What:** `insertNewMessages(...)` then `updateExistingMessages(...)` run as two independent
+statement groups (each its own `$transaction` at best, and `createMany` is not transactional with
+the update pass). No single transaction spans the batch.
+**Why it's a bug:** if the insert pass succeeds and the update pass throws (lock, constraint), the
+history-sync batch is half-applied — new rows in, existing rows not refreshed — and the caller is
+told nothing (both paths swallow errors to `console.error`).
+**Fix idea:** wrap the whole batch in one `prisma.$transaction`, or at least propagate failure so
+the sync can retry the batch.
+**Status:** open
+
+### [S2-11] low — tools/ReadMessagesTool.ts:212-228 (`getMessagesBySql`)
+**What:** SQL mode enforces read-only (`validateSqlQuery`) but applies no row cap. JID mode clamps
+to `LIMIT_MAX_MESSAGE` (20000); SQL mode does not.
+**Why it's a bug:** an LLM-generated `SELECT id FROM Message` (no LIMIT) loads every message ID,
+then `findMessagesByIds` hydrates and the formatter renders all of them — large memory spike / slow
+tool call / oversized model context on big histories.
+**Fix idea:** append/enforce a `LIMIT` (wrap the query as a subquery) or cap `msgIds` length before hydrating.
+**Status:** open
+
+### [S2-12] low — MediaService.ts:482-496 (`openFile`) via ipcHandlers `open-file`
+**What:** `fileName = decodeURIComponent(localURI.split('/').pop() || '')` — the split on `/` happens
+*before* `decodeURIComponent`, so a `localURI` containing `%2f`-encoded separators
+(`app://media/..%2f..%2fpath`) survives `.pop()` as one segment, then decodes to `../../path`, and
+`join(userData, 'media', '../../path')` escapes the media directory into `shell.openPath`.
+**Why it's a bug:** the renderer passes an arbitrary string over the `open-file` IPC channel with no
+validation; a compromised/buggy renderer or injected content can open an arbitrary local file in the
+OS default handler. Limited blast radius (open only, existsSync-gated) but a real trust-boundary gap.
+**Fix idea:** decode first, then `path.basename()`, and verify the resolved path stays within the
+media dir before `openPath`.
+**Status:** open
 
 ## Slice 3 — WhatsApp service & subscribers
 
