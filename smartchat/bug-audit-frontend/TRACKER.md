@@ -17,11 +17,11 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F5 | Message view & rendering | DONE (14 findings) | 2026-09-07 | 1 high, 5 med, 8 low — markdown link XSS, template-button URL scheme, pagination lock-up, reaction self-JID |
 | F6 | Message input & composition | DONE (14 findings) | 2026-09-07 | 1 high, 6 med, 7 low — voice note mis-delivery on chat switch, mouse mention pick broken, stale mentions |
-| F7 | Search UI | TODO | — | search-as-you-type out-of-order responses |
+| F7 | Search UI | DONE (8 findings) | 2026-09-08 | 1 high, 3 med, 4 low — ChatSearchSidebar out-of-order responses, date-range timezone/inclusive-end |
 | F8 | AI chat UI | IN PROGRESS | 2026-09-08 | streaming abort/race, citation markdown XSS |
 | F9 | Extensions / plugins UI | IN PROGRESS | 2026-09-08 | webview sandbox, plugin-supplied content |
 | F10 | Overlays & modals | TODO | — | focus trap, portal cleanup, scroll lock |
-| F11 | Common components & utils | TODO | — | |
+| F11 | Common components & utils | IN PROGRESS | 2026-09-08 | |
 | F12 | Cross-cutting pass | TODO | — | do only after F1–F11 |
 
 ## Summary counts
