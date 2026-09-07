@@ -852,7 +852,123 @@ ignore stale resolutions.
 **Status:** open
 
 ## Slice F7 — Search UI
-_none yet_
+
+Files audited: `components/chat/{ChatSearchSidebar,SearchFiltersPanel,SearchResultsPanel}.tsx`,
+`utils/messagePreview.ts`, `components/chat/hooks/useSearch.ts` (+ tests), and the
+consumer `ChatList.tsx` (search state wiring, lines 58-95, 306-380). Snippet /
+name / query strings are all rendered as React text nodes (auto-escaped) — no XSS
+in the search UI. `useSearch` itself correctly guards stale resolutions with an
+`ignored` flag; its `filters`-by-reference dep is already logged as F3-09.
+
+### [F7-01] high — src/renderer/src/components/chat/ChatSearchSidebar.tsx:40-63
+**What:** the in-chat search-sidebar debounce effect fires
+`const data = await api.searchAll(query, 'normal', filters)` then
+`setResults(data.messages || [])` with **no stale-request guard**. The effect
+cleanup only `clearTimeout(timer)` — it cannot cancel a `searchAll` call that has
+already started. Unlike `useSearch.ts` (which has an `ignored` flag), this
+component has none.
+**Why it's a bug:** type `a` (debounce fires, request A in flight), then within
+300 ms type `ab` (request B fires). If A resolves after B — common on a large
+history or deep index — `setResults` overwrites B's results with A's, so the
+panel shows matches for `a` while the input says `ab`. `highlightMatch` then
+uses the *current* `query` (`ab`) and highlights nothing / the wrong span.
+Same effect on rapid `fromDate`/`toDate`/`activeJid` changes. This is the
+checklist's headline "search-as-you-type out-of-order responses" case.
+**Fix idea:** add `let ignored = false` in the effect, set it in cleanup, and
+gate `setResults`/`setIsSearching` on `!ignored` (mirror `useSearch.ts`), or
+capture a request-seq ref.
+**Status:** open
+
+### [F7-02] med — src/renderer/src/components/chat/ChatSearchSidebar.tsx:46-49 & SearchFiltersPanel.tsx:149,156
+**What:** date-input values (`YYYY-MM-DD`) are converted with
+`new Date(fromDate).toISOString()` / `new Date(e.target.value).toISOString()`.
+`new Date("2026-01-15")` is parsed as **UTC midnight**, and `toDate` is sent as
+that same instant (start of the day), not end-of-day.
+**Why it's a bug:** (a) the `toDate` bound is exclusive of almost the entire
+selected end day — pick "15th to 15th" and you get zero results; pick a range
+ending today and today's messages are all missed. (b) For users east of UTC
+(e.g. IST) the `fromDate` UTC-midnight bound is the previous evening local, so
+the range is off by up to a day at both ends.
+**Fix idea:** build the bounds from local time — `fromDate` → local 00:00:00,
+`toDate` → local 23:59:59.999 — before `toISOString()`.
+**Status:** open
+
+### [F7-03] med — src/renderer/src/components/chat/ChatSearchSidebar.tsx:65-81 & SearchFiltersPanel.tsx:50-63
+**What:** `setQuickRange` computes `from`/`to` with local-time mutators
+(`setHours(0,0,0,0)`, `setDate(-7)`, …) then `ChatSearchSidebar` does
+`from.toISOString().split('T')[0]` to feed the `type=date` inputs.
+**Why it's a bug:** for a positive UTC offset, local midnight today converts to
+*yesterday's* date in UTC, so the "Today" chip populates `fromDate` with
+yesterday and "Last 7d" with an 8-day span; combined with F7-02 the actual query
+window is wrong by a day. `SearchFiltersPanel` passes the raw ISO through
+without the `.split` but still anchors "today" at local-midnight→UTC.
+**Fix idea:** format the date parts from local getters
+(`` `${y}-${pad(m)}-${pad(d)}` ``) rather than round-tripping through
+`toISOString()`.
+**Status:** open
+
+### [F7-04] med — src/renderer/src/components/chat/ChatList.tsx:319-320, 362 (+ SearchFiltersPanel clear paths)
+**What:** every "clear" path in `SearchFiltersPanel` sets keys to `undefined`
+rather than deleting them — `onFiltersChange({ ...filters, jids: undefined })`,
+`{ ...filters, fromDate: undefined, toDate: undefined }`. `ChatList`'s
+filter-toggle "active" state is `showFilters || Object.keys(filters).length > 0`.
+**Why it's a bug:** after the user adds then clears all filters, `filters` is
+`{ jids: undefined, fromDate: undefined, toDate: undefined }` — `Object.keys`
+length 3 — so the filter button stays lit as if filters were active, with no way
+to reset it short of never having touched filters. `useSearch`'s `filters` dep
+also churns a new object on each of these no-op clears.
+**Fix idea:** delete keys instead of assigning `undefined` (or compute "active"
+from `filters.jids?.length || filters.fromDate || filters.toDate`).
+**Status:** open
+
+### [F7-05] low — src/renderer/src/components/chat/SearchFiltersPanel.tsx:131
+**What:** `checked={filters.jids?.includes(chat.jid)}` evaluates to `undefined`
+whenever `filters.jids` is unset (the default "All chats" state).
+**Why it's a bug:** a React checkbox with `checked={undefined}` is treated as
+uncontrolled → dev-console warning "changing an uncontrolled input to controlled"
+the first time any chat is selected, and the box can briefly retain a
+browser-set state out of sync with `filters`.
+**Fix idea:** `checked={!!filters.jids?.includes(chat.jid)}`.
+**Status:** open
+
+### [F7-06] low — src/renderer/src/components/chat/SearchFiltersPanel.tsx:23-48, 87-140
+**What:** the chat-select dropdown (`showChatDropdown`) has no outside-click /
+`Escape` close handler and no cleanup; and `filteredDropdownChats` is
+`.slice(0, 100)`, while `selectAllFiltered` maps over that same sliced array.
+**Why it's a bug:** (a) the dropdown can only be dismissed by clicking its own
+toggle again; clicking into the results or elsewhere leaves it open, overlaying
+content. (b) With >100 matching chats, "Select All" silently selects only the
+first 100 and the user gets no indication the rest were skipped.
+**Fix idea:** add a `mousedown` outside-click listener (removed on unmount) +
+`Escape`; either raise/remove the 100 cap for select-all or surface the count.
+**Status:** open
+
+### [F7-07] low — src/renderer/src/components/chat/SearchResultsPanel.tsx:133,135 & 105,107
+**What:** message rows use `key={`msg-${item.messageId}`}` and call
+`onSelectChat(item.jid, item.name, item.messageId)`; `SearchResultItem.messageId`
+is optional. Deep/semantic results or chat-type rows without a `messageId`
+produce `key="msg-undefined"` (collisions when >1) and a jump target of
+`undefined`.
+**Why it's a bug:** duplicate keys → React reuses the wrong row (wrong snippet /
+score shown, lost highlight); clicking such a row opens the chat but
+`jumpToMessage(undefined)` no-ops or throws downstream with no feedback.
+**Fix idea:** filter out message results lacking `messageId`, or fall back to a
+composite key (`msg-${item.jid}-${idx}`) and skip the jump when `messageId` is
+absent.
+**Status:** open
+
+### [F7-08] low — src/renderer/src/components/chat/ChatSearchSidebar.tsx:29-63, 104
+**What:** the debounce effect has no `mounted` guard and the component is
+`if (!isOpen) return null` (kept mounted by the parent). On a real unmount (chat
+close / layout swap) with a `searchAll` in flight, `setResults`/`setIsSearching`
+fire after unmount. Also on `activeJid` change the previous chat's `results`
+stay rendered (scoped to the old jid) until the new request resolves.
+**Why it's a bug:** setState-after-unmount warning (same class as F2-03/F5-13);
+and a brief window where the sidebar shows another chat's search hits with the
+new chat's header.
+**Fix idea:** reuse the F7-01 `ignored` flag for the unmount guard; clear
+`results` synchronously when `activeJid` changes.
+**Status:** open
 
 ## Slice F8 — AI chat UI
 _none yet_
