@@ -88,6 +88,12 @@ jobs:
         env:
           # Disable code-signing — unsigned build, notarize is already false
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Override electron-builder.yml's electronDownload.mirror (npmmirror).
+          # npmmirror only hosts the Electron runtime — it does NOT host
+          # electron-builder tool binaries (dmg-builder, nsis, etc.), so we
+          # point both mirrors to GitHub official releases for CI.
+          ELECTRON_MIRROR: "https://github.com/electron/electron/releases/download/v"
+          ELECTRON_BUILDER_BINARIES_MIRROR: "https://github.com/electron-userland/electron-builder-binaries/releases/download/"
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
 
       # ── 9. Upload .dmg as a GitHub Actions artifact ────────────────────────
