@@ -13,7 +13,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 1 | WhatsApp worker & socket | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
 | 2 | Message pipeline | IN PROGRESS | 2026-09-07 | |
 | 3 | WhatsApp service & subscribers | IN PROGRESS | 2026-09-07 | |
-| 4 | Chats & sync | TODO | — | |
+| 4 | Chats & sync | IN PROGRESS | 2026-09-07 | |
 | 5 | Contacts | TODO | — | |
 | 6 | AI (providers, mentions, citations, prompts) | TODO | — | |
 | 7 | Kernel API modules & router | TODO | — | |
