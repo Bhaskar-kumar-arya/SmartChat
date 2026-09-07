@@ -20,7 +20,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F7 | Search UI | DONE (8 findings) | 2026-09-08 | 1 high, 3 med, 4 low — ChatSearchSidebar out-of-order responses, date-range timezone/inclusive-end |
 | F8 | AI chat UI | IN PROGRESS | 2026-09-08 | streaming abort/race, citation markdown XSS |
 | F9 | Extensions / plugins UI | IN PROGRESS | 2026-09-08 | webview sandbox, plugin-supplied content |
-| F10 | Overlays & modals | TODO | — | focus trap, portal cleanup, scroll lock |
+| F10 | Overlays & modals | DONE (13 findings) | 2026-09-08 | 6 med, 7 low — webview insecure-content pref, send/receive cross-wiring, no Escape/focus-trap on common modals, required-checkbox validation gap, optimistic-toggle no-revert |
 | F11 | Common components & utils | IN PROGRESS | 2026-09-08 | |
 | F12 | Cross-cutting pass | TODO | — | do only after F1–F11 |
 
@@ -977,7 +977,171 @@ _none yet_
 _none yet_
 
 ## Slice F10 — Overlays & modals
-_none yet_
+
+Files audited: `components/overlays/{ModalPortal,OverlayShell,FormModal,ConfirmModal,AlertModal}.tsx`,
+`components/common/{ConfirmModal,SettingsModal}.tsx`, `preload/overlay-preload.ts`
+(+ tests `tests/components/{ModalPortal.test,overlays/ModalPortal.test,overlays/OverlayShell.test}.tsx`).
+Cross-checked `services/api.service.ts` (`resolveModal`/`overlay*`) and `modals.css`.
+`ProfilePicOverlay` and other `common/**` overlays belong to F11.
+F1-03 (overlay-preload wildcard `postMessage` + send/receive cross-wiring) is the
+preload-side record; F10-02 is its renderer-side companion.
+
+### [F10-01] med — src/renderer/src/components/overlays/OverlayShell.tsx:191
+**What:** the plugin `<webview>` is configured
+`webpreferences="allowrunninginsecurecontent=yes, contextIsolation=yes"` with no
+explicit `sandbox` / `nodeintegration=no` / `nodeIntegrationInSubFrames=no`, and
+loads `plugin://<pluginId>/…` content into a **persistent** partition
+(`persist:plugin-<pluginId>`).
+**Why it's a bug:** `allowrunninginsecurecontent=yes` lets third-party plugin
+panel code pull and execute mixed/insecure (`http:`) sub-resources inside the
+overlay — an unnecessary weakening for untrusted plugin UIs. Relying on Electron
+defaults for the rest (nodeIntegration off, sandbox) instead of stating them
+means a future Electron/tooling default change silently widens plugin privilege.
+**Fix idea:** drop `allowrunninginsecurecontent`; set `sandbox=yes`,
+`nodeintegration=no`, `nodeIntegrationInSubFrames=no`, `webSecurity` on
+explicitly. Add a CSP for the `plugin://` protocol.
+**Status:** open
+
+### [F10-02] med — src/renderer/src/components/overlays/OverlayShell.tsx:99-110
+**What:** on every inbound `api.onOverlaySend` payload the shell calls
+`webview.send('smartchat:receive', payloadData)` **and**
+`webview.send('smartchat:send', payloadData)` — the same payload on both channel
+names. `preload/overlay-preload.ts:45-53` compounds it: each of the
+`smartchat:send` and `smartchat:receive` IPC handlers re-`postMessage`s the
+payload under *both* channel names (with target origin `'*'`).
+**Why it's a bug:** a guest that listens on `smartchat:send` for its own outbound
+traffic also receives host→guest inbound data (and vice versa); every inbound
+event is delivered twice. A plugin can't distinguish direction, and idempotency
+bugs in plugin handlers get triggered by the duplicate.
+**Fix idea:** send host→guest only on `smartchat:receive`; keep `smartchat:send`
+guest→host only; remove the cross-posting in the preload.
+**Status:** open
+
+### [F10-03] med — src/renderer/src/components/overlays/OverlayShell.tsx:76-79
+**What:** the `did-fail-load` handler only `console.error`s.
+**Why it's a bug:** if the plugin panel URL 404s, the preload path is wrong, or
+the panel throws during load, the user is left staring at an empty overlay shell
+(header + close button, blank body) with no error message and no auto-dismiss —
+looks like a hung app. No retry affordance.
+**Fix idea:** on `did-fail-load` (main frame) render an inline error state in the
+body with a retry/close button, or auto-`onClose` after surfacing a toast.
+**Status:** open
+
+### [F10-04] med — src/renderer/src/components/overlays/FormModal.tsx:44-51
+**What:** required-field validation flags a field only when its value is
+`undefined | null | ''`. A required `checkbox` whose value is `false` (unchecked)
+is not flagged.
+**Why it's a bug:** a plugin form with a required consent checkbox ("I agree to
+…") can be submitted unchecked — `handleSubmit` passes and `onSubmit(formValues)`
+fires with the box `false`. The plugin author's `required: true` is silently
+ignored for the one field type where it matters most.
+**Fix idea:** special-case `field.type === 'checkbox'` → require `val === true`;
+also treat `radio` with no option selected explicitly.
+**Status:** open
+
+### [F10-05] med — src/renderer/src/components/common/ConfirmModal.tsx:26 & src/renderer/src/components/common/SettingsModal.tsx:52
+**What:** neither modal has an `Escape` handler, focus trap, focus restore to the
+opener, or `role="dialog"` / `aria-modal`. They close on backdrop click or an
+explicit button only. (The `overlays/*` modals at least get `Escape` via
+`ModalPortal`.)
+**Why it's a bug:** these are the app's own confirm dialogs (logout, delete
+chat/extension, clear data) and the Settings panel. A keyboard-only user cannot
+dismiss them with `Escape`, Tab moves focus into the still-present app behind the
+backdrop, and on close focus is not returned to the control that opened the
+dialog — it lands on `<body>`.
+**Fix idea:** a shared modal primitive (the one F5-14 also asks for): portal +
+`Escape` + focus trap + `aria-modal="true"` + focus save/restore. Route the
+`overlays/*` set and these two through it.
+**Status:** open
+
+### [F10-06] med — src/renderer/src/components/common/SettingsModal.tsx:41-49
+**What:** `handleToggle` does `setPrefs(updated)` optimistically, then
+`await api.setNotificationPreferences(updated)`; the `catch` only `console.error`s
+— it never reverts `prefs`.
+**Why it's a bug:** if the IPC save rejects (backend error, disk failure), the
+checkbox stays in its new position but the preference was not persisted. The user
+believes "Launch on startup" / "Desktop notifications" is set; after restart it
+is back to the old value with no warning.
+**Fix idea:** snapshot the previous value, revert `setPrefs` on `catch`, and show
+an inline "couldn't save" message.
+**Status:** open
+
+### [F10-07] low — overlays/* + common/{ConfirmModal,SettingsModal} (modals.css:2)
+**What:** no modal locks body scroll or `aria-hidden`/`inert`s the app root while
+open. `.modal-overlay` is `position: fixed` but does not stop wheel events
+reaching the content behind it.
+**Why it's a bug:** with a modal open the chat list / message view behind the
+backdrop still scrolls on mouse-wheel and every element behind is still in the Tab
+order, so focus and scroll leak to the obscured UI.
+**Fix idea:** on mount add `overflow:hidden` to `document.body` (restore on
+unmount) and `inert` / `aria-hidden` the `#root` sibling; centralize in the
+shared primitive from F10-05.
+**Status:** open
+
+### [F10-08] low — src/renderer/src/components/common/SettingsModal.tsx:25-37
+**What:** the `getNotificationPreferences` effect (`[isOpen, api]`) has no
+mounted/abort guard, and `loading` is only ever set to `false`, never reset to
+`true` on a subsequent open.
+**Why it's a bug:** (a) closing the modal (or a route unmount) before the IPC
+resolves calls `setPrefs`/`setLoading` after unmount → React warning (same class
+as F2-03 / F5-13). (b) On the 2nd+ open the `loading` gate is already `false`, so
+the modal shows the previous session's `prefs` for a beat before the refetch
+lands instead of a spinner.
+**Fix idea:** `let alive = true` cleanup guard; `setLoading(true)` at the top of
+the `isOpen` branch.
+**Status:** open
+
+### [F10-09] low — src/renderer/src/components/common/SettingsModal.tsx:106-115
+**What:** if `activeTab` holds a plugin settings-page id and that page later
+disappears from `pluginSettingsPages` (plugin disabled/unloaded while the modal is
+open), `activePage` is `undefined` and the body renders `null`.
+**Why it's a bug:** the Settings modal shows only the header and the "Done" button
+with an empty body — no content, no fallback to the "general" tab.
+**Fix idea:** in an effect, if `activeTab !== 'general'` and no matching page
+exists, `setActiveTab('general')`.
+**Status:** open
+
+### [F10-10] low — src/renderer/src/components/overlays/ModalPortal.tsx:48-51
+**What:** `handleResolve` calls `api.resolveModal(modalId, data)` fire-and-forget
+(no `await`, no `.catch`); the modal is removed from local state first.
+**Why it's a bug:** if the IPC rejects it's an unhandled promise rejection, and
+the main-side modal promise that a plugin is `await`ing may hang forever while the
+renderer has already torn the dialog down — the plugin flow stalls with no error.
+**Fix idea:** `.catch(console.error)` at minimum; ideally keep the modal until the
+resolve round-trips or surface the failure.
+**Status:** open
+
+### [F10-11] low — src/renderer/src/components/overlays/ModalPortal.tsx:128-144 vs :57-78
+**What:** the tier1 `.modal-overlay` is rendered *before* the webview
+`OverlayShell`s in the portal fragment, so a tier2 webview backdrop stacks on top
+of an open tier1 modal — but the `Escape` handler resolves the tier1 modal first
+(`modals.length > 0` branch wins).
+**Why it's a bug:** when both are open, a click lands on the webview overlay
+(front-most in the DOM) while `Escape` closes the tier1 modal behind it —
+inconsistent "which dialog is active".
+**Fix idea:** enforce one policy: either block new tier1 modals while a webview
+overlay is up, or make `Escape` act on whichever overlay is visually top-most.
+**Status:** open
+
+### [F10-12] low — src/renderer/src/components/overlays/ModalPortal.tsx:25-29
+**What:** `onModalShow` appends each `ModalRequest` with no dedupe on `modalId`.
+**Why it's a bug:** a backend re-send of the same request (retry / double-emit)
+stacks a duplicate modal in `modals`. It self-heals on resolve (the filter
+removes all rows with that id), but the user briefly sees two identical dialogs
+and only the top one is interactive.
+**Fix idea:** `setModals(prev => prev.some(m => m.modalId === req.modalId) ? prev
+: [...prev, req])`.
+**Status:** open
+
+### [F10-13] low — src/renderer/src/components/overlays/OverlayShell.tsx:26,175-195
+**What:** `width` / `height` come straight from the plugin's `request` (defaults
+480×360) and are applied as the webview body dimensions with no validation that
+they are sane positive numbers.
+**Why it's a bug:** a plugin passing a negative / absurd size produces a broken
+or zero-size overlay body. Contained by `maxWidth/maxHeight: 90vw/90vh` on the
+container so it can't cover the whole screen — cosmetic / robustness only.
+**Fix idea:** clamp to a `[min, maxViewport]` range before applying.
+**Status:** open
 
 ## Slice F11 — Common components & utils
 _none yet_
