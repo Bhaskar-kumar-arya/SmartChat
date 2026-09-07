@@ -15,8 +15,8 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F2 | App shell, providers, contributions | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F3 | Chat data hooks (backend event sync) | DONE (11 findings) | 2026-09-07 | 1 high, 6 med, 4 low — async races, presence expiry/JID, hierarchy orphans |
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
-| F5 | Message view & rendering | IN PROGRESS | 2026-09-07 | check markdown / media URL / keys / virtualization |
-| F6 | Message input & composition | IN PROGRESS | 2026-09-07 | mentions, file queue, audio recorder |
+| F5 | Message view & rendering | DONE (14 findings) | 2026-09-07 | 1 high, 5 med, 8 low — markdown link XSS, template-button URL scheme, pagination lock-up, reaction self-JID |
+| F6 | Message input & composition | DONE (14 findings) | 2026-09-07 | 1 high, 6 med, 7 low — voice note mis-delivery on chat switch, mouse mention pick broken, stale mentions |
 | F7 | Search UI | TODO | — | search-as-you-type out-of-order responses |
 | F8 | AI chat UI | TODO | — | streaming abort/race, citation markdown XSS |
 | F9 | Extensions / plugins UI | TODO | — | webview sandbox, plugin-supplied content |
@@ -463,10 +463,393 @@ synchronously) rather than relying on state; or debounce `handleScroll`.
 **Status:** open
 
 ## Slice F5 — Message view & rendering
-_none yet_
+
+Files audited: `MessageView.tsx`, `MessageItem.tsx`, `MessageInfoModal.tsx`,
+`ReactionsDisplay.tsx`, `messages/{TextMessage,MediaMessages,AudioMessage,TemplateMessage,SystemMessage}.tsx`,
+`messages/system-stubs/SystemStubRegistry.tsx`, `common/{MessageStatusTick,WaveformPlayer}.tsx`.
+
+### [F5-01] high — src/renderer/src/components/chat/messages/TextMessage.tsx:106
+**What:** `<ReactMarkdown urlTransform={(url) => url} …>` overrides react-markdown
+10's `defaultUrlTransform` with an identity function, disabling all URL
+sanitization. The custom `a` renderer then emits
+`<a href={href} target="_blank" rel="noopener noreferrer">` for any href that
+isn't `mention:` / `https://emoji.local/`.
+**Why it's a bug:** message text is attacker-controlled (any WhatsApp contact /
+group member / business template body — `TemplateMessage` also routes `mainBody`
+through this component). A message containing `[tap](javascript:…)` or
+`[x](data:text/html,…)` now renders a live link; clicking it runs script in the
+renderer origin (or navigates it). `defaultUrlTransform` exists precisely to
+strip `javascript:`/`data:`/`vbscript:`. Raw HTML is still escaped (no
+`rehype-raw`), so links are the vector.
+**Fix idea:** don't use identity. Wrap `defaultUrlTransform` (import from
+`react-markdown`) and only additionally allow the `mention:` scheme (and the
+`https://emoji.local/` host) that the preprocessors rely on; keep its
+`javascript:`/`data:` stripping for everything else.
+**Status:** open
+
+### [F5-02] med — src/renderer/src/components/chat/messages/TemplateMessage.tsx:152-155
+**What:** URL / call template buttons do `window.open(button.payload, '_blank', …)`
+/ `window.open(\`tel:${button.payload}\`)` with no scheme validation. `payload`
+comes straight from `b.urlButton.url` / `params.url` / `params.phone_number` in
+the (business- or spam-authored) template message.
+**Why it's a bug:** a template button labelled "View order" can carry
+`javascript:…`, `file:///…`, or another scheme as its URL; the user taps a
+normal-looking button and the renderer opens it. `tel:` interpolation is also
+unescaped.
+**Fix idea:** only open `payload` if `/^https?:$/` (parse with `new URL`);
+render other schemes as inert text. Encode the phone number for `tel:`.
+**Status:** open
+
+### [F5-03] med — src/renderer/src/components/chat/MessageView.tsx:124-144
+**What:** `handleScroll` sets `isLoadingRef.current = true` / `setLoadingMore(true)`
+then `const count = await onLoadMore()`. Those flags are only cleared again
+(a) here when `!count || count === 0`, or (b) in the `[messages]` effect at
+:114-121 *if* `loadingMore` is true when `messages` next changes.
+**Why it's a bug:** if `onLoadMore()` rejects (backend error) the `await` throws
+out of the async scroll handler — unhandled rejection — and `isLoadingRef`
+stays `true`, so **upward pagination is permanently dead for that chat** until
+remount. Same lock-up if it resolves with `count > 0` but the prepend is a
+no-op (all fetched messages were duplicates already in state) — `messages`
+reference doesn't change, the :114 effect never runs, `loadingMore` stays true.
+**Fix idea:** wrap in `try/finally` that always clears both flags; reconcile
+against an actual length delta rather than the returned count.
+**Status:** open
+
+### [F5-04] med — src/renderer/src/components/chat/MessageView.tsx:52-62
+**What:** the "reset pagination on chat switch" effect only does
+`setHasMore(true)` / `isInitialRenderForChat.current = true` when
+`messages.length <= 50`.
+**Why it's a bug:** open chat A, scroll up so `hasMore` becomes `false` (or just
+load a few pages), then jump to a message in chat B via search/context so B
+mounts with a >50-message window. The `firstId !== prevMessageId.current` branch
+is taken but the `<= 50` guard fails, so B inherits A's `hasMore === false` —
+the user cannot load older messages in B — and `isInitialRenderForChat` isn't
+re-armed so the initial scroll-to-bottom/position is also skipped.
+**Fix idea:** key the reset on the chat jid actually changing (pass it as a
+prop) rather than on `messages[0].id` + a length heuristic.
+**Status:** open
+
+### [F5-05] med — src/renderer/src/components/chat/MessageItem.tsx:282-286
+**What:** `isMeReaction` returns `senderId.split('@')[0] === myJid.split('@')[0]`
+— it does not strip a `:device` suffix, unlike `isQuotedMe` two dozen lines
+later which does `.split('@')[0].split(':')[0]`.
+**Why it's a bug:** if a reaction's `senderId` arrives as
+`123456:7@s.whatsapp.net` (device-suffixed, as reaction/receipt JIDs often are)
+it won't match `myJid`, so `handleReactClick` doesn't find your existing
+reaction and calls `reactMessage(jid, id, emoji)` again instead of clearing it
+with `''` — your own reaction can't be toggled off from the quick bar, and the
+"active" highlight on your emoji is wrong.
+**Fix idea:** normalize both sides with the shared `isSameJid` / strip `:device`
+before comparing (same helper F3-07 recommends).
+**Status:** open
+
+### [F5-06] med — src/renderer/src/components/chat/MessageView.tsx:209-229
+**What:** `messages.map` renders `<MessageItem>` directly with no error boundary
+anywhere in the subtree (`MessageItem` catches only `JSON.parse` of
+`msg.content`).
+**Why it's a bug:** any throw inside a message renderer — a media component, a
+KaTeX/markdown edge case in `TextMessage`, `getThumbnailData`'s `btoa`, a
+malformed `templateMessage` shape — unmounts the whole `MessageView` and leaves
+the conversation pane blank with no recovery but an app reload. One bad message
+takes out the entire chat.
+**Fix idea:** wrap each row (or the list) in an error boundary that renders a
+"couldn't display this message" placeholder and keeps the rest of the list.
+**Status:** open
+
+### [F5-07] low — src/renderer/src/components/chat/MessageView.tsx:253-255
+**What:** `ReactionDetailsModal` does
+`(message.reactions || []).sort((a, b) => parseInt(b.timestamp) - parseInt(a.timestamp))`
+inside a `useMemo` — `Array.prototype.sort` mutates `message.reactions` in place.
+**Why it's a bug:** the modal reorders the reaction array that lives on the
+shared message object. `ReactionsDisplay` (and the `has-reactions` / emoji-slice
+rendering in the bubble) then sees a different order, and any memo/identity
+check that assumed a stable array is affected. Also `parseInt` on an undefined/
+non-numeric `timestamp` yields `NaN` and an unstable sort.
+**Fix idea:** copy first (`[...(message.reactions ?? [])].sort(…)`); guard the
+timestamp parse.
+**Status:** open
+
+### [F5-08] low — src/renderer/src/components/common/WaveformPlayer.tsx:27,77-131 & src/renderer/src/components/chat/messages/SystemMessage.tsx:48-60
+**What:** both components hardcode light-theme colors inline — WaveformPlayer:
+`waveColor: 'rgba(0,0,0,0.2)'`, `progressColor: '#333'` (non-ptt), time text
+`#888`, speed pill `background:'#f0f2f5'` / `color:'#54656f'`; SystemMessage
+bubble: `background:'rgba(0,0,0,0.05)'`, `color:'#666'`, dark borders.
+**Why it's a bug:** in dark theme the system-message text (`#666` on a dark
+surface) and the waveform/speed-pill are very low contrast / near-invisible.
+**Fix idea:** move these to CSS classes driven by the theme tokens the rest of
+the app uses (`--wa-*`), or `currentColor`.
+**Status:** open
+
+### [F5-09] low — src/renderer/src/components/common/WaveformPlayer.tsx:22-68
+**What:** (a) no coordination between players — starting one voice note doesn't
+pause any other that is playing (WhatsApp does; `onPlay`/`onPause` props exist
+but `AudioMessage` never passes them). (b) `playbackSpeed` is component state;
+when the `useEffect` recreates the `WaveSurfer` instance (url change) the new
+instance defaults to 1× while the pill still shows the old "1.5×"/"2×".
+(c) effect deps are `[url, isPtt]` — `peaks` / `preDuration` changes are ignored.
+**Fix idea:** lift a "currently playing player" ref/context; re-apply
+`setPlaybackRate(playbackSpeed)` on `ready`; include the render inputs in deps.
+**Status:** open
+
+### [F5-10] low — src/renderer/src/components/chat/MessageView.tsx:95-111
+**What:** the target-highlight effect returns a cleanup for the outer 120ms
+`setTimeout` only; the inner `setTimeout(() => setHighlightedId(null), 2500)` is
+never tracked or cleared.
+**Why it's a bug:** if `MessageView` unmounts (chat switch / close) within 2.5s
+of a jump, `setHighlightedId` fires after unmount (React warning). If a second
+jump happens within 2.5s, the first run's timer clears the *new* highlight
+early.
+**Fix idea:** store both timer ids and clear them in the cleanup.
+**Status:** open
+
+### [F5-11] low — src/renderer/src/components/chat/messages/MediaMessages.tsx:204-208 (with MessageItem.tsx:303)
+**What:** `StickerMessage`'s auto-download `useEffect` has
+`[localURI, isDownloading, onDownload, downloadFailed]` deps; `onDownload` is
+`handleDownload` from `MessageItem`, which is a plain function re-created on
+every render (not `useCallback`).
+**Why it's a bug:** the effect re-runs on every `MessageItem` render. It's
+currently saved by the `!localURI && !isDownloading && !downloadFailed` guard,
+but it's a fragile pattern — any change that makes the guard momentarily true
+during a render storm re-triggers a download.
+**Fix idea:** `useCallback` the media handlers in `MessageItem`; gate the
+auto-download with a `useRef` "already tried" flag.
+**Status:** open
+
+### [F5-12] low — src/renderer/src/components/chat/messages/TemplateMessage.tsx:160
+**What:** the quick-reply handler sends `button.text` (the display label) as the
+outgoing message; the parsed `button.payload` (the `id` / quick-reply payload)
+is discarded.
+**Why it's a bug:** interactive/business flows key their next step on the reply
+*id*, not the visible label (which can be localized or duplicated across
+buttons). The bot may not recognize the response.
+**Fix idea:** send the payload/id when present (API permitting), or send text
+plus the id.
+**Status:** open
+
+### [F5-13] low — src/renderer/src/components/chat/MessageItem.tsx:232-234, 257-266
+**What:** `useEffect(() => { api.getMyJid().then(setMyJid)… }, [])` and
+`handleShowInfo` (`await api.getMessageReceipts` → `setReceipts`/`setShowInfo`)
+have no is-mounted guard.
+**Why it's a bug:** fast chat switching unmounts rows with these IPC calls in
+flight → setState-after-unmount warnings (same class as F2-03). `myJid` also
+refetched per message row instead of shared.
+**Fix idea:** mounted flag / AbortController; lift `myJid` to a context.
+**Status:** open
+
+### [F5-14] low — src/renderer/src/components/chat/MessageInfoModal.tsx:11 & MessageView.tsx:257 (ReactionDetailsModal)
+**What:** both modals close on backdrop click only — no `Escape` handler, no
+focus trap, no focus restore to the opener, no `role="dialog"`/`aria-modal`.
+**Why it's a bug:** keyboard-only users can open the message-info / reactions
+modal from the dropdown but cannot dismiss it with `Escape`, and focus is left
+behind the overlay. (F10 owns overlay policy; noted here as these live in F5.)
+**Fix idea:** shared modal primitive with focus-trap + `Escape`, as F10 will
+define.
+**Status:** open
 
 ## Slice F6 — Message input & composition
-_none yet_
+
+Files audited: `components/chat/{MessageInput,MentionMenu,MultiFilePreview,DragDropOverlay}.tsx`,
+`hooks/{useMentions,useMentionSession,useMultiFileQueue,useDragAndDrop,useAudioRecorder,useGiphy}.ts`,
+`components/picker/EmojiStickerGifPicker.tsx`, `utils/{editorUtils,mentionUtils}.ts`.
+Consumer `ChatLayout.tsx` cross-checked for the real send / staging / drag paths.
+(`useMentionSession` + `mentionUtils` are only used by the AI input `AISmartInput.tsx`,
+not the WhatsApp composer — the WA composer uses `useMentions`.)
+
+### [F6-01] high — src/renderer/src/components/chat/MessageInput.tsx:85-91 + hooks/useAudioRecorder.ts (whole hook)
+**What:** `useAudioRecorder()` holds recording state with no knowledge of
+`activeJid`. `MessageInput`'s `activeJid` effect (:85-91) clears the text editor
+but never calls `cancelRecording()`. `handleSendVoice` sends via
+`onSendMedia(filePath, '', [])` which `ChatLayout` routes to
+`sendMediaMessage(..., replyingTo?.id)` against **the currently active chat**.
+**Why it's a bug:** start a voice recording in chat A, switch to chat B while it
+records (or while the recorded blob is staged waiting for the send/trash choice),
+press send → the voice note is delivered to chat B. Same class as the F3
+out-of-order bugs but here it's a straight mis-delivery of user content to the
+wrong conversation, with no way to undo. The stale recorder UI also overlays B's
+composer (B can't type until the recording is trashed).
+**Fix idea:** in the `activeJid` effect call `cancelRecording()` (and close any
+staged blob); or key `useAudioRecorder` state by jid; snapshot the jid at
+record-start and pass it explicitly to the send.
+**Status:** open
+
+### [F6-02] med — src/renderer/src/components/chat/MentionMenu.tsx:57-62 + MessageInput.tsx:181-205
+**What:** mention rows are `<div … onClick={() => onSelect(p)}>` with no
+`onMouseDown` / `preventDefault`. `handleSelectParticipant` then reads the caret
+with `getCaretCharacterOffsetWithin(editor)` and bails unless
+`textBeforeCursor.lastIndexOf('@') !== -1`.
+**Why it's a bug:** clicking a mention with the mouse first blurs the
+`contenteditable` (mousedown moves focus to the menu div), so by the time
+`onClick` runs the selection is no longer inside the editor →
+`getCaretCharacterOffsetWithin` returns 0 → `lastAtPos === -1` → the branch is
+skipped and **nothing is inserted and no mention is registered**. Mouse users
+cannot pick a mention at all; only the keyboard (ArrowUp/Down + Enter, which
+keeps focus in the editor) works.
+**Fix idea:** add `onMouseDown={e => e.preventDefault()}` to the mention rows so
+the editor keeps focus/selection; or capture the caret offset on editor
+`blur`/`input` and use `lastCaretOffsetRef` as the fallback.
+**Status:** open
+
+### [F6-03] med — src/renderer/src/hooks/useMentions.ts:20,42-67
+**What:** `mentionedJids` is a `Set` that only ever grows (via `addMention`); it
+is cleared only by `clearMentions()` (on successful send) or the `activeJid`
+effect. `handleInputChange` recomputes the menu but never reconciles the set
+against the text that is actually present.
+**Why it's a bug:** type `@alice`, pick her, then backspace the whole `@alice`
+token out (or edit it away) and send — `alice`'s JID is still in `mentionedJids`
+and is passed to `onSend`, so the backend sends her a mention notification for a
+message that doesn't mention her. Mention A, delete it, mention B → both A and B
+are notified. `useMentionSession` (the AI input) does proper backspace/removeChip
+reconciliation; `useMentions` has none.
+**Fix idea:** on every `handleInputChange`, rebuild the mention set from the
+`@<number>` tokens still present in the text (intersect with known participants),
+or drop a JID when its token is no longer found.
+**Status:** open
+
+### [F6-04] med — src/renderer/src/hooks/useAudioRecorder.ts:94-102
+**What:** `updateVisualizer` calls `setVisualizerData(<32-element array>)` on every
+`requestAnimationFrame` (~60 Hz) for the entire duration of the recording, with a
+fresh array each time.
+**Why it's a bug:** the whole `MessageInput` subtree (and anything else consuming
+the hook) re-renders ~60 times per second while recording — a sustained
+re-render storm for what is a small 20-bar visualizer that could tolerate ~15
+fps. On lower-end machines the composer visibly janks during recording.
+**Fix idea:** throttle the state push (e.g. update every 3rd–4th frame or on a
+~66 ms timer), and/or write the data into a ref that the visualizer reads via its
+own rAF, keeping React out of the loop.
+**Status:** open
+
+### [F6-05] med — src/renderer/src/components/chat/MessageInput.tsx:483
+**What:** the send/mic button does `onClick={text.trim() ? handleSend : startRecording}`.
+`startRecording` (from `useAudioRecorder`) `await navigator.mediaDevices.getUserMedia`
+and **re-throws** on failure; the onClick handler does not `.catch`.
+**Why it's a bug:** if the user has denied microphone permission (or no input
+device), clicking the mic button produces an unhandled promise rejection and
+**zero UI feedback** — the button just appears dead. The user has no way to learn
+that permission is the problem.
+**Fix idea:** wrap the call, and on `NotAllowedError` / `NotFoundError` show a
+toast / inline hint ("Microphone access is blocked — enable it in settings").
+**Status:** open
+
+### [F6-06] med — src/renderer/src/hooks/useDragAndDrop.ts:36-47
+**What:** `dragCounter` is incremented on `dragenter` and decremented on
+`dragleave`; `isDraggingOver` only clears when the counter returns to 0.
+**Why it's a bug:** if a drag ends without a balancing `dragleave` on the tracked
+element — drag leaves the window, drag cancelled with `Esc`, or a `dragend`
+without `dragleave` — the counter stays > 0 and the full-screen `DragDropOverlay`
+("Drop files here") stays stuck over the chat, blocking clicks on the composer
+and message list until the user does another full enter→leave cycle.
+**Fix idea:** also reset `dragCounter.current = 0` / `setIsDraggingOver(false)` on
+a `window` `dragend`/`drop` and on `mouseleave` of the document, or use a short
+"no dragover seen recently" timeout to auto-clear.
+**Status:** open
+
+### [F6-07] med — src/renderer/src/components/picker/EmojiStickerGifPicker.tsx:136-140,262-263
+**What:** `api.getFavoriteStickers().then(setFavoriteStickers)` runs in an effect
+keyed on `[activeTab]` and again in the favorites pack-button `onClick`, neither
+with a mounted guard.
+**Why it's a bug:** (a) switching to the sticker tab and closing the picker
+before `getFavoriteStickers` resolves → `setFavoriteStickers` on an unmounted
+component (React warning, wasted work) — the picker is unmounted on click-outside
+and on `activeJid` change. (b) The line-70 effect (`[selectedPackIndex, activeTab]`)
+also calls `fetchGiphy(searchQuery, 'stickers')` with a lying dep array (missing
+`searchQuery`, `fetchGiphy`), so it fetches with a stale query and double-fetches
+alongside the line-53 debounce effect.
+**Fix idea:** add an `alive` flag to the favorites fetch; consolidate the two
+GIPHY-sticker trigger effects into one with honest deps.
+**Status:** open
+
+### [F6-08] low — src/renderer/src/components/picker/EmojiStickerGifPicker.tsx:104
+**What:** `handleStickerClick` does `stickerUrl.replace('.gif', '.webp')` to force
+a WhatsApp-native sticker.
+**Why it's a bug:** `String.replace` with a string arg replaces only the first
+occurrence and does nothing if `.gif` isn't literally present (URL already
+`.webp`, `.gif` only in a query param, extension in different case, or a
+CDN path without an extension). A non-matching URL is then downloaded as-is and
+`downloadUrlToTemp`'d into a `*.webp` filename — a mislabelled file that WhatsApp
+may reject or send as a document.
+**Fix idea:** replace only a trailing `/\.gif(\?|$)/i`, or derive the webp URL
+from the sticker object's typed fields like `handleGiphyStickerClick` does.
+**Status:** open
+
+### [F6-09] low — src/renderer/src/hooks/useGiphy.ts:3
+**What:** a GIPHY API key is hard-coded as the fallback when
+`VITE_GIPHY_API_KEY` is unset (`'5Gf9Jd9uS7N9xI5U8H7vFjXy4H9mN8Z1'`), committed
+to the repo.
+**Why it's a bug:** the key is shipped in the renderer bundle for every build
+that doesn't set the env var; if it's a real key it's now public and rate-limits
+/ can be abused against the owner's account, and if it's a throwaway the GIF/
+sticker tabs silently 401 for every user who didn't configure `.env` (the error
+UI blames the user's missing `.env`).
+**Fix idea:** no fallback — when the env var is missing, render a clear
+"GIF search not configured" state instead of calling GIPHY with a dead key.
+**Status:** open
+
+### [F6-10] low — src/renderer/src/hooks/useMultiFileQueue.ts:23 + components/chat/MultiFilePreview.tsx:113
+**What:** the queue silently caps at `maxFiles` (default 30) inside the `setStagedFiles`
+reducer (`break` out of the loop), and `MultiFilePreview` independently
+hard-codes `files.length < 30` to show the "add more" button.
+**Why it's a bug:** (a) dropping/selecting 40 files stages the first 30 with no
+message telling the user 10 were dropped. (b) The `30` is duplicated — changing
+`useMultiFileQueue(maxFiles)` at the call site would not update the preview's
+gate, so the "+" button and the actual accept limit can disagree.
+**Fix idea:** return a `maxFiles` / `droppedCount` from the hook; have
+`MultiFilePreview` gate on `files.length < maxFiles`; surface a toast when files
+are dropped over the limit.
+**Status:** open
+
+### [F6-11] low — src/renderer/src/components/chat/MentionMenu.tsx:31-51
+**What:** the `keydown` effect depends on `[filtered, selectedIndex, onSelect, onClose]`.
+`onSelect` (`handleSelectParticipant`) and `onClose` (`() => handleInputChange(text, 0)`)
+are re-created on every `MessageInput` render, and `MessageInput` re-renders on
+every keystroke.
+**Why it's a bug:** while the mention menu is open, the `window` `keydown`
+listener is removed and re-added on every keystroke / parent re-render — churn,
+and a small window where a keypress can land between removal and re-add.
+`filtered.length === 0` also still registers the listener (early `return null` is
+after the hooks), and `(prev ± 1) % 0` → `NaN` selectedIndex.
+**Fix idea:** wrap `handleSelectParticipant` / the close handler in `useCallback`;
+guard the arrow-key math when `filtered.length === 0`.
+**Status:** open
+
+### [F6-12] low — src/renderer/src/components/chat/MessageInput.tsx:173-179,264-281
+**What:** `handleSelectGif` / `handleSelectSticker` / `handleSendVoice` call
+`onSendMedia(filePath, '', …)` with no reply id awareness at this layer, and none
+of them clear `replyingTo`.
+**Why it's a bug:** `ChatLayout.handleSendMediaMessage` does pass `replyingTo?.id`,
+so a GIF/sticker/voice note sent while a reply is staged is correctly sent as a
+reply — but the `replyingTo` banner is never cleared afterward (only the
+text-send and multi-file paths call `setReplyingTo(null)`), so the next plain
+message is unexpectedly also a reply to the same message.
+**Fix idea:** clear the reply state in the media/voice/gif/sticker send paths too
+(lift a single `onSent` callback that resets reply + input).
+**Status:** open
+
+### [F6-13] low — src/renderer/src/utils/editorUtils.ts:56-73,78-94 (via MessageInput.handleEditorInput)
+**What:** `handleEditorInput` runs `hasRawEmojis(editor)` on every `input` event
+and, when true, does a full `editor.innerHTML = convertTextToHtml(plainText)` +
+`setCaretPosition`. `hasRawEmojis` / `getEditableText` / `getCaretCharacterOffsetWithin`
+each walk the whole DOM subtree and `emojiRegex()` is re-compiled on every call.
+**Why it's a bug:** for a long message with many emoji, every keystroke does
+several full-subtree walks plus an `innerHTML` reparse and manual caret
+restoration — perceptible input lag on large messages, and the caret-offset
+restoration (plain-text offset counting an emoji `img` as `data-emoji.length`
+chars) can drift, jumping the cursor mid-typing.
+**Fix idea:** only re-render when a raw emoji was actually just inserted (diff the
+last input), hoist the `emojiRegex()` instances to module scope, and debounce the
+HTML re-sync.
+**Status:** open
+
+### [F6-14] low — src/renderer/src/components/chat/EmojiStickerGifPicker.tsx:53-67 & useGiphy.ts:11-44
+**What:** GIPHY search has a 500 ms debounce but no request-sequencing; `fetchGiphy`
+just `setGifs(json.data)` whenever a response lands.
+**Why it's a bug:** two searches in flight (slow network, or the trending→search
+transition) can resolve out of order, leaving the grid showing results for a
+previous query. `loading` (`giphyLoading || localLoading`) is also a single flag
+shared by search and by download, so clicking a GIF shows the full-panel spinner
+over the whole grid.
+**Fix idea:** capture a request id / `AbortController` per `fetchGiphy` call and
+ignore stale resolutions.
+**Status:** open
 
 ## Slice F7 — Search UI
 _none yet_
