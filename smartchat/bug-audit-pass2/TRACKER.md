@@ -20,7 +20,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 8 | Kernel plugins, contributions, permissions | DONE (7 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 4 low |
 | 9 | Kernel storage, channels, ipc, ui | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 10 | App IPC & auth | DONE (7 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 4 low |
-| 11 | apiServer, search, notification, calls, audio | IN PROGRESS | 2026-09-07 | |
+| 11 | apiServer, search, notification, calls, audio | DONE (10 findings) | 2026-09-07 | 0 crit, 1 high, 2 med, 7 low |
 | 12 | SDK, tools, data wipe, domain, db, protocol | IN PROGRESS | 2026-09-07 | |
 | 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
 
@@ -1017,7 +1017,174 @@ confirmation. The permission flag is effectively advisory.
 **Status:** open
 
 ## Slice 11 — apiServer, search, notification, calls, audio
-_none yet_
+
+### [P2-S11-01] high — src/main/workers/embedding/embedding.worker.ts:20-43
+**What:** The embedding worker is a stub. The real `@xenova/transformers`
+pipeline (`init` loads the model, `embed` runs feature-extraction) is entirely
+commented out (lines 44-106); the live code path replies to every `embed`
+message with `new Array(768).fill(0)` — a zero vector — and treats `init` /
+`setModel` as no-ops.
+**Why it's a bug:** this is the shipped worker (`electron.vite.config.ts:12`
+builds it; `ServiceContainer.ts:218` loads `embedding.worker.js`). Consequences:
+(a) `SearchService.deepSearch` ("deep"/semantic search) is non-functional —
+every message vector is the identical zero vector, so `vector MATCH` distances
+are all equal and results come back in arbitrary order regardless of the query;
+(b) `EmbeddingService.indexMessage` / `indexAll` / `VectorSyncService.sync`
+persist thousands of identical zero vectors into `MessageVector` + `vec_messages`
+(wasted storage + write I/O on every live message and every history-sync batch);
+(c) because `indexAll` permanently skips ids already in `MessageVector`
+(EmbeddingService.ts:136), once the store is full of zero vectors it stays that
+way even after a real worker is restored — needs a manual `clearAllVectors` +
+re-index. No error is logged anywhere; the feature silently does nothing useful.
+**Fix idea:** restore the real pipeline implementation (or wire a maintained
+embedding backend), and gate `deepSearch` / bulk indexing behind a "model ready"
+check so it degrades visibly instead of writing zero vectors.
+**Status:** open
+
+### [P2-S11-02] med — src/main/services/messages/MessageVectorRepository.ts:45-65
+**What:** `runVectorMatch` issues `SELECT ... FROM vec_messages WHERE vector
+MATCH ? AND messageId IN (?,?,…) AND k = 30`. sqlite-vec's `k=`/`MATCH` KNN
+returns the *k* global nearest rows and then the ordinary `WHERE` predicates
+(`messageId IN (...)`) filter that result set — the `IN` list does not constrain
+which rows the KNN scan considers.
+**Why it's a bug:** for a scoped deep search (`SearchService.deepSearch` with
+`filters.jids` / date range → `candidateIds`), the KNN picks the 30 nearest rows
+across the *entire* store and then drops any not in the candidate set, so a
+chat-/date-filtered semantic search routinely returns far fewer than 30 hits
+(often 0) even when many in-scope messages are semantically relevant — they just
+aren't in the global top-30. The chunk-merge path's stated invariant ("each
+chunk's true nearest-K is a superset of any global nearest-K member from that
+chunk") also relies on the `IN` filter constraining the scan, which it does not:
+every chunk returns the same global top-30 ∩ chunk, so messages ranked >30
+globally are unreachable no matter how the candidate set is partitioned.
+**Fix idea:** raise `k` substantially (or make it adaptive) when a candidate
+filter is present, or pre-join: materialise the candidate ids into a temp
+table / use sqlite-vec metadata-column filtering so the KNN scan itself is
+scoped. (Currently masked by P2-S11-01 — all distances equal — but a real bug
+the moment embeddings work.)
+**Status:** open
+
+### [P2-S11-03] med — src/main/services/search/SearchService.ts:63-98
+**What:** The chat half of `searchAll` calls `chatRepository.findChats(filters?.jids)`
+— which returns **every** chat row (no text filter, no limit) — then filters in
+JS with `name.toLowerCase().includes(q)`, then `Promise.all`-maps the matches
+issuing one `messageRepository.findLastMessage(chat.jid)` query per match.
+**Why it's a bug:** `search-all` IPC is invoked on the renderer's search box
+(per keystroke, debounced). For an install with thousands of chats this loads
+the full chat table into the main process and runs a linear scan on every
+search; a broad query ("a") that matches hundreds of chats then fires hundreds
+of `findLastMessage` queries in one burst (N+1) — main-thread + DB pressure that
+grows with account age, for a result set the UI caps at a screenful.
+**Fix idea:** push the name/jid `LIKE` filter and a `LIMIT` into the repository
+query, and fetch last-messages in a single `WHERE chatJid IN (...)` grouped
+query (or join) instead of per-chat.
+**Status:** open
+
+### [P2-S11-04] low — src/main/services/calls/CallRepository.ts:52-67
+**What:** `upsertCallLog`'s `create()` is wrapped in `try { … } catch { await
+this.upsertCallLog(entry) }` — a bare catch that assumes any failure is a lost
+insert race and retries by recursing.
+**Why it's a bug:** if `create()` fails for any other reason (DB locked / busy,
+FK violation, malformed data, disk full) there is no such row on the retry
+either, so the recursion repeats immediately with no delay and no attempt
+ceiling → tight infinite loop / stack overflow on the main thread, triggered by
+a single inbound `call` event. Even the intended race case busy-loops until the
+competing transaction commits.
+**Fix idea:** only retry on the Prisma unique-constraint code (`P2002`), cap
+retries, and rethrow/log anything else.
+**Status:** open
+
+### [P2-S11-05] low — src/main/services/notification/NotificationService.ts:82,182-200
+**What:** `notify()` calls `this.readPreferences()` first thing, which does
+`fs.existsSync` + `fs.readFileSync` + `JSON.parse` of
+`notification_preferences.json` synchronously on the main thread. Every code
+path that shows a message notification hits disk synchronously.
+**Why it's a bug:** notifications fire on the message-receive hot path; during a
+burst of inbound messages (group activity, catch-up after reconnect) this is one
+synchronous stat+read+parse per message on the Electron main thread. The prefs
+file is tiny but the syscalls still serialize against everything else on the
+main loop.
+**Fix idea:** read prefs once, cache in memory, invalidate on
+`setPreferences` / an fs.watch; `initPreferences` already holds the only writer.
+**Status:** open
+
+### [P2-S11-06] low — src/main/services/notification/NotificationService.ts:154-178
+**What:** `getIconFromUrl(options.profilePicUrl)` does a bare `fetch(url)` from
+the main process with no timeout, no redirect/scheme/host restriction, and
+`Buffer.from(await response.arrayBuffer())` buffers the whole body before
+`nativeImage.createFromBuffer`. There is also no caching — every notification
+re-fetches the avatar.
+**Why it's a bug:** same class as P2-S10-05. `profilePicUrl` is WhatsApp-CDN
+data flowing from sync/enrichment; a wrong/hostile value makes the main process
+fetch an arbitrary URL (localhost/LAN SSRF from a context with no origin
+constraints) and read an unbounded response into a main-process Buffer. Benign
+case still costs a full network round-trip per notification for an image that
+rarely changes, and the URL is often already expired (see P2-S5-05) → broken
+notification icon.
+**Fix idea:** restrict to `https:`, add an `AbortSignal` timeout and a byte
+cap, and reuse the `ProfileSyncService` image cache / a stored local path
+instead of refetching.
+**Status:** open
+
+### [P2-S11-07] low — src/main/services/notification/ElectronNotificationProvider.ts:6,25-44
+**What:** `activeNotifications` is a `Set<Notification>` that entries are added
+to on `send()` and removed from only in the `click` and `close` handlers.
+**Why it's a bug:** on platforms/situations where a `Notification` is dismissed
+by the OS without emitting `close` (or auto-times-out silently — behaviour
+varies by OS and notification-center settings), its entry is never removed. For
+a long-lived app that shows many notifications this is a slow unbounded leak of
+`Notification` objects (and their retained `onClick` closures, which capture
+`getMainWindow`).
+**Fix idea:** also delete on the `failed` event and on a `show`+timeout
+fallback, or drop the Set entirely (it isn't read anywhere — nothing dedupes or
+closes via it).
+**Status:** open
+
+### [P2-S11-08] low — src/main/services/notification/NotificationService.ts:25-48
+**What:** On first launch (no `notification_preferences.json` yet) `initPreferences`
+writes `launchOnStartup: true` and, when packaged, immediately calls
+`app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] })`.
+**Why it's a bug:** the app registers itself as a hidden auto-start entry in the
+OS before the user has opened settings or consented — a "run on login" default
+applied silently at install time. Uninstalling the setting requires the user to
+discover the toggle.
+**Fix idea:** default `launchOnStartup` to `false`, or defer the
+`setLoginItemSettings` call until the user visits notification settings /
+completes onboarding.
+**Status:** open
+
+### [P2-S11-09] low — src/main/services/audio/AudioTranscoderService.ts:34-66
+**What:** `transcodeToWAPtt` wraps `ffmpeg(...)` in a Promise that only settles
+on the `end` or `error` events. There is no timeout and no `.kill()` path.
+**Why it's a bug:** if the bundled ffmpeg hangs (corrupt/edge-case input,
+stalled pipe) neither event fires — the returned Promise stays pending forever,
+so `MessageSenderService.sendMediaMessageWorkflow`'s `await` for a voice message
+never returns (the send silently wedges) and the ffmpeg child process is left
+running/orphaned.
+**Fix idea:** add a watchdog timer that calls `command.kill('SIGKILL')` and
+rejects after N seconds; keep a handle to the `ffmpeg` command so it can be
+aborted.
+**Status:** open
+
+### [P2-S11-10] low — src/main/services/apiServer/APIServer.ts:42-45,56-69 / APIConfigProvider.ts:37-38
+**What:** (a) The API replies `Access-Control-Allow-Origin: *` to every request,
+so any web page the user visits can issue cross-origin requests to
+`http://127.0.0.1:<port>` and read the responses — the static bearer token in
+`ai_preferences.json` is the sole gate, and the token check
+`reqToken !== this.token` is a non-constant-time string compare. (b)
+`APIConfigProvider` takes `config.externalApiPort` from the prefs file with no
+range/type sanity check beyond `typeof === 'number'` (NaN, 0, negative, >65535,
+float all pass through to `server.listen`).
+**Why it's a bug:** localhost binding + required token keeps this low, but `ACAO:*`
+on a credential-bearing localhost API is an unnecessary widening (a page that
+ever learns the token — e.g. via another XSS/log leak — gets full API access
+from the browser), and the non-constant-time compare is a (weak, network-noisy)
+timing oracle. The unvalidated port can make `start()` throw on an out-of-range
+value and leave the API silently down.
+**Fix idea:** echo back a specific allowed origin (or drop CORS entirely — local
+clients don't need it), use `crypto.timingSafeEqual` for the token, and clamp /
+validate the configured port.
+**Status:** open
 
 ## Slice 12 — SDK, tools, data wipe, domain, db, protocol
 _none yet_
