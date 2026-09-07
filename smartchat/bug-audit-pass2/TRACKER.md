@@ -18,7 +18,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 6 | AI (providers, mentions, citations, prompts) | IN PROGRESS | 2026-09-07 | |
 | 7 | Kernel API modules & router | IN PROGRESS | 2026-09-07 | |
 | 8 | Kernel plugins, contributions, permissions | IN PROGRESS | 2026-09-07 | |
-| 9 | Kernel storage, channels, ipc, ui | IN PROGRESS | 2026-09-07 | |
+| 9 | Kernel storage, channels, ipc, ui | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 10 | App IPC & auth | IN PROGRESS | 2026-09-07 | |
 | 11 | apiServer, search, notification, calls, audio | TODO | — | |
 | 12 | SDK, tools, data wipe, domain, db, protocol | TODO | — | |
@@ -397,7 +397,105 @@ _none yet_
 _none yet_
 
 ## Slice 9 — Kernel storage, channels, ipc, ui
-_none yet_
+
+### [P2-S9-01] med — src/main/kernel/ipc/contributionIpc.ts:55-90, 174-181
+**What:** `syncAiTools()` registers every declarative `ai-tool` contribution into
+`toolRegistry`, but nothing ever *unregisters* them. `registry.onChange` only calls
+`syncAiTools()` again, which is add-only (`if (toolRegistry.getTool(contrib.name)) continue`).
+The teardown function returned by `registerContributionIpcHandlers` also never removes
+these tools.
+**Why it's a bug:** when a plugin is unloaded/uninstalled/reloaded, its `ai-tool`
+contributions are removed from the `ContributionRegistry`, but the corresponding entries
+stay in `toolRegistry` forever. The AI then still sees the tool; invoking it hits
+`host.getPlugin(contrib.pluginId)` → `null` and returns the string
+`"Plugin <id> is not loaded"` as a tool result instead of the tool being gone. A reload
+with a changed schema/description keeps the *old* schema (the name-collision `continue`
+skips the update). Two plugins declaring the same tool `name` — first one wins silently
+and the second can never register. Contrast `KernelAIModule.ts:34`, which *does* call
+`toolRegistry.unregisterTool?.(name)` for API-registered tools on unload.
+**Fix idea:** track tool names registered per plugin and unregister them on
+`registry.onChange` when the contribution is gone (and in the teardown fn); namespace the
+registered name by `pluginId` to avoid cross-plugin squatting.
+**Status:** open
+
+### [P2-S9-02] med — src/main/kernel/ui/PanelHost.ts:41-55
+**What:** `getPanel(panelId)` first does a direct `panels.get(panelId)` (keyed by random
+UUID) but then **falls back** to returning the first descriptor whose
+`contributionId === panelId`. `getPluginId` is built on `getPanel`, and
+`panelIpc.panelApiHandler` / `eventsSubscribeHandler` derive the acting `pluginId` from
+`panelHost.getPluginId(req.panelId)` and pass it straight into `router.handle(pluginId, …)`
+(and the event-permission gate).
+**Why it's a bug:** `contributionId` is author-chosen and not unique across plugins (e.g.
+two plugins each with a `settings-page` id `"main"` or `"settings"`). A panel page that
+sends `{ panelId: "settings" }` over `kernel:panel:api` instead of its UUID resolves to
+whichever plugin's descriptor iterates first in the `Map`, so its kernel-API calls run
+under **another plugin's identity and permission set**. The UUID indirection that is
+supposed to bind a panel to its owner is bypassable by passing the shared contribution id.
+**Fix idea:** drop the `contributionId` fallback in `getPanel` (callers that legitimately
+have only a contributionId should use `findPanel(pluginId, contributionId)` with an
+explicit pluginId), or keep a separate `contributionId → panelId` index that is only used
+where the pluginId is already known.
+**Status:** open
+
+### [P2-S9-03] low — src/main/kernel/ipc/contributionIpc.ts:172 vs 192
+**What:** Handler is registered as `ipcMain.handle('extension:get-log', …)` but the
+teardown function calls `ipcMain.removeHandler('extension:getLog')` (camelCase, wrong
+channel name).
+**Why it's a bug:** `extension:get-log` is never removed on kernel teardown. Any code path
+that disposes and re-initializes the kernel contribution IPC in the same process (test
+harness, plugin-system reload) then hits Electron's "Attempted to register a second
+handler for 'extension:get-log'" throw, or leaks the stale closure.
+**Fix idea:** use the literal `'extension:get-log'` in `removeHandler`.
+**Status:** open
+
+### [P2-S9-04] low — src/main/kernel/channels/DirectPluginChannel.ts:46-71 vs src/main/kernel/channels/WorkerPluginChannel.ts:99-114
+**What:** The two `IBidirectionalPluginChannel` implementations disagree on the failure
+contract of `sendRequestToPlugin`. `DirectPluginChannel` returns a **resolved**
+`KernelResponse` with `ok:false` when the channel is destroyed; `WorkerPluginChannel`
+returns `Promise.reject(new Error('Channel destroyed'))`. On timeout, *both* `reject` with
+a plain `Error` (not a `KernelResponse`).
+**Why it's a bug:** callers written against one impl break on the other.
+`contributionIpc.syncAiTools`'s `execute` does `const res = await
+plugin.channel.sendRequestToPlugin(...)` then `if (res.ok)` — for a worker-backed plugin
+that is slow/destroyed this throws out of the tool executor instead of returning the clean
+`{ text: "Error: …" }` it returns for a direct-channel plugin. Any `.ok` access on a
+timeout also NPEs since the promise rejected rather than resolving a response object.
+**Fix idea:** make both impls resolve a `KernelResponse` (`ok:false`, `error.code`
+`CHANNEL_DESTROYED` / `PLUGIN_TIMEOUT`) for all non-exceptional failures, or document and
+enforce reject-based errors in both.
+**Status:** open
+
+### [P2-S9-05] low — src/main/kernel/channels/WorkerPluginChannel.ts:39-50
+**What:** `assertSerializable` walks the payload with unbounded recursion over
+`Object.keys`, and only rejects `function` / `symbol`.
+**Why it's a bug:** (a) a payload containing a cycle (or just a very deep structure)
+recurses until a `RangeError: Maximum call stack size exceeded` is thrown from
+`sendToPlugin` / `sendResponseToPlugin` on the kernel's hot path, rather than a clean
+"non-serializable" error; the same cycle would also throw inside `postMessage`, so the
+guard adds a second, worse failure mode. (b) Many non-structured-cloneable values pass the
+check and then throw later at `postMessage` anyway (class instances with methods on the
+prototype are fine, but e.g. a live `MessagePort`/`WeakMap`/DOM-ish object slips the
+`typeof === 'object'` branch). The guard gives false confidence.
+**Fix idea:** track visited objects (WeakSet) and cap depth; or drop the hand-rolled check
+and rely on a single `try/structuredClone(payload)` probe with a wrapped error.
+**Status:** open
+
+### [P2-S9-06] low — src/main/kernel/ipc/panelIpc.ts:150-168, src/main/kernel/ui/PanelHost.ts:58-64
+**What:** `eventsSubscribeHandler` registers a fresh `sender.once('destroyed', …)` listener
+on the panel's `webContents` on **every** event subscription (one per `eventName`). And
+when a plugin is unloaded, `PanelHost.deregisterPlugin` drops the descriptors but nothing
+tells `panelIpc` to drop that plugin's live `panelSubscriptions`.
+**Why it's a bug:** (a) a panel subscribing to several events accumulates N identical
+`destroyed` listeners on one `webContents`, tripping Node's `MaxListenersExceededWarning`
+and doing redundant `removeSubscriptionsWhere` sweeps. (b) After a plugin unload, its
+panel's bus subscriptions keep running: the handler keeps calling
+`event.sender.send('smartchat:event', …)` (and holding the bus `on` registration) until the
+webContents is independently destroyed — a listener/handle leak and events delivered to a
+panel whose plugin is gone.
+**Fix idea:** register the `destroyed` cleanup once per `senderId` (guard on a `Set`), and
+have plugin unload / `deregisterPlugin` call into the `PanelIpcRegistration` to
+`removeSubscriptionsWhere(s => s.pluginId === id)`.
+**Status:** open
 
 ## Slice 10 — App IPC & auth
 _none yet_
