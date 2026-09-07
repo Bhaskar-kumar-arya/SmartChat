@@ -22,18 +22,30 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F9 | Extensions / plugins UI | DONE (12 findings) | 2026-09-08 | 4 med, 8 low — plugin webview unsandboxed + no will-navigate lock, all sidebar-panel webviews mounted at once, stale panel theme after toggle, extension-chat history race; plugin content rendered as text (no XSS sink) |
 | F10 | Overlays & modals | DONE (13 findings) | 2026-09-08 | 6 med, 7 low — webview insecure-content pref, send/receive cross-wiring, no Escape/focus-trap on common modals, required-checkbox validation gap, optimistic-toggle no-revert |
 | F11 | Common components & utils | DONE (8 findings) | 2026-09-08 | 1 high, 2 med, 5 low — plugin SVG XSS, stale avatar on chat switch, isSameJid LID/PN collision |
-| F12 | Cross-cutting pass | IN PROGRESS | 2026-09-08 | do only after F1–F11 |
+| F12 | Cross-cutting pass | DONE (8 findings) | 2026-09-08 | 1 crit, 1 high, 4 med, 2 low — no error boundary anywhere (crit), navigation-via-window-event bus loses intents (high), tree-wide unguarded await→setState + fetch-clobbers-events patterns, no error-surface primitive |
 
 ## Summary counts
 
+Reconciled 2026-09-08 after all slices F1–F12 complete. 121 findings total.
+
 | Severity | Count |
 |----------|-------|
-| crit | 0 |
-| high | 0 |
-| med  | 0 |
-| low  | 0 |
+| crit | 1 |
+| high | 8 |
+| med  | 48 |
+| low  | 64 |
 
-_(per-slice counts in the status table; reconcile totals here after F1–F11)_
+Per-slice: F1 (0/1/2/3), F2 (0/0/2/5), F3 (0/1/6/4), F4 (0/0/2/5),
+F5 (0/1/5/8), F6 (0/1/6/7), F7 (0/1/3/4), F8 (0/1/6/6), F9 (0/0/4/8),
+F10 (0/0/6/7), F11 (0/1/2/5), F12 (1/1/4/2) — columns crit/high/med/low.
+
+**crit:** F12-01 (no error boundary — blank-screen app crash).
+**high:** F1-01 (`window.electron` full ipcRenderer + env exposure),
+F3-01 (useMessages out-of-order response), F5-01 (TextMessage markdown link
+XSS — identity `urlTransform`), F6-01 (voice note delivered to wrong chat on
+switch), F7-01 (ChatSearchSidebar out-of-order responses), F8-01 (no stream
+abort on AI session switch — answer lost), F11-01 (PluginIcon raw-SVG XSS),
+F12-02 (navigation window-event bus drops intents).
 
 ## Baseline (record before fix phase)
 
@@ -1626,4 +1638,152 @@ asset scheme; block bare `http:`.
 **Status:** open
 
 ## Slice F12 — Cross-cutting pass
-_none yet_
+
+Tree-wide pass over `src/renderer/src/**` + `src/preload/**` for systemic issues
+that span files rather than living in one component: error-boundary coverage,
+the unmount-after-async pattern, initial-fetch-vs-live-event ordering, global
+subscription ownership, app-wide error surfacing, navigation plumbing, and
+polling behaviour. Individual instances are logged under F1–F11; the findings
+here record the *pattern* and the app-level gap, and add the genuinely
+cross-cutting bugs (F12-01 root boundary, F12-02 navigation event bus).
+
+### [F12-01] crit — src/renderer/src/main.tsx:10-18 (whole renderer tree)
+**What:** There is **no error boundary anywhere in the renderer** — a repo-wide
+grep for `ErrorBoundary` / `componentDidCatch` / `getDerivedStateFromError`
+returns nothing. `main.tsx` renders `<App/>` bare inside `APIProvider` /
+`ContributionProvider`.
+**Why it's a bug:** any render-time throw anywhere in the tree unmounts the
+entire app and leaves a permanent blank white window — the only recovery is
+killing and relaunching. Concrete triggers already found in this audit:
+`sortChats`/`useChatHierarchy` `BigInt("…")` on a malformed timestamp (F3-10),
+`DEFAULT_AVATAR_COLORS[negative]` (F11-04), any throw in a message renderer
+(F5-06), a KaTeX/markdown edge case in an AI bubble (F8-07), `PluginIcon`
+regex/DOM work on a hostile manifest. Several of these recur on every reload if
+the bad data is persisted, so the app is bricked until the row/session is
+manually purged. F5-06 / F8-07 noted the missing local boundary; F12 records
+that there is also no top-level safety net.
+**Fix idea:** add a root `<ErrorBoundary>` in `main.tsx` with a full-screen
+"Something went wrong — Reload" fallback (calls `window.location.reload()`), plus
+nested boundaries around (a) each `MessageView` row / the message list, (b) each
+AI bubble / the AI list, (c) `SidebarPluginMainStage` / panel webviews, so one
+bad item degrades to a placeholder instead of taking the pane.
+**Status:** open
+
+### [F12-02] high — src/renderer/src/hooks/useChatNavigation.ts:10-29 & src/renderer/src/components/chat/ChatLayout.tsx:157-178
+**What:** cross-component navigation ("go to chat" / "go to message" from AI
+citations, `useCitationActions`, search, etc.) is implemented by
+`window.dispatchEvent(new CustomEvent('smartchat:open-chat', …))`. The **only**
+listener is a `useEffect` inside `ChatLayout`.
+**Why it's a bug:** the event is fire-and-forget with no buffering, and the
+listener is not always there to catch it:
+(a) `ChatLayout` is only mounted when `appState === 'ready'` (`App.tsx:132`) — a
+navigation dispatched during QR/sync/`connected` (e.g. a notification click, or a
+citation action in an AI chat opened before sync finished) is silently dropped.
+(b) The listener effect's dep array is `[handleSelectChat, activeJid,
+jumpToMessage]`; `activeJid` changes on **every chat switch**, so the listener is
+removed and re-added constantly — an event dispatched in that teardown/re-add gap
+is lost.
+(c) No dedupe: two dispatches for the same target (double-click a citation) run
+the open + jump logic twice.
+This is the same effect flagged for lying deps in F4-04; F12 records the
+architectural problem — using an unbuffered global DOM event as the app's
+navigation bus.
+**Fix idea:** route navigation through a context/provider method (or a tiny
+event bus that retains the last unhandled intent and replays it when a listener
+mounts). Keep the listener effect stable (read `activeJid` from a ref).
+**Status:** open
+
+### [F12-03] med — tree-wide: "await IPC → setState" with no is-mounted / still-current guard is the dominant data-loading pattern
+**What:** the same unguarded shape — `const x = await api.getSomething(id);
+setState(x)` with no check that the component is still mounted and `id` is still
+the active one, and no `AbortController` — appears in ~15 independent hooks/
+components: `App.tsx:27` (F2-03), `ContributionContext` initial fetch,
+`useMessages` (F3-01/F3-02), `useChats` (F3-03/F3-04), `MessageItem` (F5-13),
+`ChatSearchSidebar` (F7-01/F7-08), `CitationPill`/`useCitation` (F8-04/F8-05),
+`useExtensionChat` (F9-03), `useExtensionLog` (F9-06), `useExtensionManager`
+(F9-10), `SettingsModal` (F10-08), `ProfilePicture` (F11-02).
+**Why it's a bug:** collectively this is the single largest source of
+setState-after-unmount warnings and out-of-order-response bugs in the app (wrong
+chat's messages / avatar / search results shown after fast switching). Each site
+re-implements — or forgets — the guard.
+**Fix idea:** add one shared primitive (`useIsMounted()` and/or
+`useLiveQuery(fetchFn, deps, { key })` that ignores stale/late resolutions) and
+migrate these call sites to it; make it the reviewed default for any new IPC
+read.
+**Status:** open
+
+### [F12-04] med — tree-wide: initial-fetch replaces state and clobbers live events that arrived during the fetch window
+**What:** repeated pattern — an effect both subscribes to an `onX` push event
+**and** fires `getX().then(data => setState(data))` where the `.then` does a full
+**replace**. A push handled between subscribe and the fetch resolving is
+overwritten by the slower fetch. Instances: `ContributionContext:15-38` (F2-02),
+`useChats.loadChats` (F3-04), `useExtensionChat` history load (F9-03b),
+`AIChatSidebar` options/tools load (F8-12).
+**Why it's a bug:** on startup / panel-open the UI briefly shows a fresh
+update (new message, unread bump, contribution, pushed extension message) and
+then reverts to the pre-event snapshot until the next event — or drops the
+event entirely if none follows.
+**Fix idea:** standard ordering — subscribe first, buffer events until the
+initial load resolves, then merge by id (never blind-replace); or treat the
+fetch as lowest priority and skip it if any event already applied.
+**Status:** open
+
+### [F12-05] med — subscription/timer-owning hooks are instantiated per-consumer instead of lifted, so IPC listeners and intervals are duplicated
+**What:** hooks that each open their own `window.api.on*` subscription and/or
+`setInterval` are called from multiple simultaneously-mounted components:
+`usePresence()` in both `ChatLayout` and `ChatList` (F3-11) — two
+`onPresenceUpdate` listeners + two 2s intervals + two divergent `presences`
+maps; `useExtensionManager()` in `ChatLayout` and `ExtensionManager` (and the
+list is re-fetched by each); `useContributions`/snapshot consumers are fine
+(context) but the pattern isn't applied consistently.
+**Why it's a bug:** constant duplicated IPC traffic and timers for the life of
+the app, and the independent state copies can visibly disagree during an
+expiry/refresh tick.
+**Fix idea:** lift the genuinely global ones (presence, extension-manager list)
+into context providers with a single subscription/interval; keep per-view hooks
+only for view-local state.
+**Status:** open
+
+### [F12-06] med — no user-visible error surface in the entire renderer; failed IPC is swallowed with `console.error`
+**What:** there is no toast / snackbar / notification primitive anywhere in
+`src/renderer`. Every failed user-initiated action is handled by
+`.catch(console.error)` (or an unhandled rejection): `App.handleSetSyncFullHistory`
+(F2-01), `MessageView.onLoadMore` (F5-03), `useAIStream.abort` (F8-03),
+`SettingsModal.handleToggle` (F10-06, also no revert), `ModalPortal.handleResolve`
+(F10-10), `ExtensionManager` install (F9-09), `useExtensionChat.send` (F9-05),
+`ChatLayout.setActiveChat`, the media-send paths, etc.
+**Why it's a bug:** when IPC fails the user gets zero feedback — the UI silently
+stays stuck ("Generating QR…" forever), stale (toggle shows a value that wasn't
+saved), or does nothing (send button appears dead). Devtools-only errors are
+invisible in a packaged build.
+**Fix idea:** add a minimal toast/error-surface context and a convention that
+every user-triggered async action reports failure through it; pair with the
+per-action fixes (revert optimistic state, clear stuck flags).
+**Status:** open
+
+### [F12-07] low — src/renderer/src/main.tsx:11 — `<StrictMode>` double-invoke makes the F1–F11 missing-cleanup effects behave differently in dev vs prod
+**What:** the app is wrapped in `<StrictMode>`, which in dev mounts→unmounts→
+remounts every component once. Effects that return no cleanup, or remove a
+different function reference than they added (F1-05, F4-01, F4-02, F5-10, F6-*,
+F8-02, useSidebarResize, …), double-register or leak on that dev remount.
+**Why it's a bug:** not a production defect by itself, but it means the dev
+environment used to manually verify streaming / webview / focus / chat-switch
+fixes (per `FIX_PLAN.md`) shows subtly different behaviour (double IPC fires,
+doubled listeners) than the shipped app — fix verification is unreliable until
+the individual cleanups are correct.
+**Fix idea:** informational — fixing the individual F1–F11 cleanup findings
+resolves it; keep StrictMode.
+**Status:** open
+
+### [F12-08] low — polling hooks use fixed-cadence `setInterval` + full-payload refetch and never pause when the window is hidden
+**What:** `useExtensionLog` (2s, refetches the whole log string — F9-06),
+`usePresence` (2s expiry sweep), `useAudioRecorder` (rAF-ish timer),
+`useAIStream` typing interval all run regardless of `document.hidden` /
+window-minimised state.
+**Why it's a bug:** a backgrounded SmartChat keeps doing IPC round-trips and
+React re-renders every 2s indefinitely; the extension-log poll also re-sends and
+re-renders the full `<pre>` even when nothing changed.
+**Fix idea:** gate polling on `document.visibilityState === 'visible'` (listen
+for `visibilitychange`); have the backend push log deltas / an mtime instead of
+full-poll.
+**Status:** open

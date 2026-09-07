@@ -53,16 +53,40 @@ the backend low findings, user's call.
 Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 
 ### Batch A — crit (security / data loss / app crash) — fix individually
-_populate from TRACKER after audit_
+
+| ID | Summary | Status |
+|---|---|---|
+| F12-01 | No error boundary anywhere → any render throw blanks the app | TODO |
 
 ### Batch B — high — fix individually
-_populate from TRACKER after audit_
 
-### Batch C — med — batch per slice
+| ID | Summary | Status |
+|---|---|---|
+| F1-01 | `window.electron` exposes full ipcRenderer + `process.env` | TODO |
+| F3-01 | useMessages out-of-order response overwrites active chat | TODO |
+| F5-01 | TextMessage markdown identity `urlTransform` → `javascript:`/`data:` link XSS | TODO |
+| F6-01 | Voice note delivered to wrong chat after switch mid-record | TODO |
+| F7-01 | ChatSearchSidebar out-of-order search responses | TODO |
+| F8-01 | No stream abort on AI session switch → streamed answer lost | TODO |
+| F11-01 | PluginIcon injects raw plugin SVG via dangerouslySetInnerHTML | TODO |
+| F12-02 | Navigation via unbuffered `smartchat:open-chat` window event drops intents | TODO |
+
+### Batch C — med — batch per slice (48 total)
 
 | Slice | Med count | Status |
 |---|---|---|
-| F1–F12 | _tbd_ | TODO |
+| F1 | 2 | TODO |
+| F2 | 2 | TODO |
+| F3 | 6 | TODO |
+| F4 | 2 | TODO |
+| F5 | 5 | TODO |
+| F6 | 6 | TODO |
+| F7 | 3 | TODO |
+| F8 | 6 | TODO |
+| F9 | 4 | TODO |
+| F10 | 6 | TODO |
+| F11 | 2 | TODO |
+| F12 | 4 | TODO |
 
 ### Batch D — low — triage or WONTFIX wholesale
 _decision pending_
