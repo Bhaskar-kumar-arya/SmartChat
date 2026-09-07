@@ -22,7 +22,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 10 | App IPC & auth | DONE (7 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 4 low |
 | 11 | apiServer, search, notification, calls, audio | DONE (10 findings) | 2026-09-07 | 0 crit, 1 high, 2 med, 7 low |
 | 12 | SDK, tools, data wipe, domain, db, protocol | DONE (11 findings) | 2026-09-07 | 0 crit, 0 high, 4 med, 7 low |
-| 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
+| 13 | Cross-cutting pass | IN PROGRESS | 2026-09-07 | do only after 1–12 |
 
 ## Summary counts
 
