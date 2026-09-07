@@ -1,5 +1,10 @@
 # SmartChat Backend Bug Audit
 
+> **Status:** COMPLETE and fixed — see `TRACKER.md` / `FIX_PLAN.md`. A second,
+> fully independent full-depth audit of this same backend lives at
+> `../bug-audit-pass2/` (separate audit, its own docs — no need to read this
+> one to work on that).
+
 A partitioned, multi-session audit of the SmartChat **backend** (`src/main/**`,
 `packages/sdk/**`). The codebase is too large to audit in one session, so work is
 split into slices. Each session audits one slice and records findings.
