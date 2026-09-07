@@ -12,8 +12,8 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |---|-------|--------|--------------|-------|
 | 1 | WhatsApp worker & socket | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
 | 2 | Message pipeline | IN PROGRESS | 2026-09-07 | |
-| 3 | WhatsApp service & subscribers | IN PROGRESS | 2026-09-07 | |
-| 4 | Chats & sync | IN PROGRESS | 2026-09-07 | |
+| 3 | WhatsApp service & subscribers | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
+| 4 | Chats & sync | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 5 | Contacts | TODO | — | |
 | 6 | AI (providers, mentions, citations, prompts) | TODO | — | |
 | 7 | Kernel API modules & router | TODO | — | |
@@ -30,8 +30,8 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |----------|-------|
 | crit | 0 |
 | high | 0 |
-| med  | 2 |
-| low  | 3 |
+| med  | 6 |
+| low  | 10 |
 
 ---
 
@@ -103,13 +103,209 @@ the process and favorite-sticker downloads from live messages silently never run
 **Status:** open
 
 ## Slice 2 — Message pipeline
-_none yet_
+
+### [P2-S2-01] med — src/main/services/messages/processors/StandardMessageProcessor.ts:42-46
+**What:** Messages are indexed into the semantic-search vector store exactly once,
+at first `messages.upsert`, using whatever `textContent` the pipeline produced at
+that moment. Ciphertext messages are indexed with the literal placeholder
+`"Waiting for this message. This may take a while."` (set in
+MessageService.ts:163 / MessageParser.ts:85). Neither `decryptMessageInDb`
+(MessageService.ts:222 → MessageRepository.decryptMessage) nor `editMessageInDb` /
+MessageActionService.editMessage re-index the message.
+**Why it's a bug:** `EmbeddingService.indexAll` (EmbeddingService.ts:131-136)
+skips any id already present in `messageVector`, so once the placeholder / stale
+text is indexed it is permanent. Result: (a) undecryptable-then-decrypted
+messages (secret messages, poll results, delayed retries) are never searchable by
+their real content; (b) the vector index is polluted with dozens of identical
+"Waiting for this message" placeholder vectors that match unrelated queries;
+(c) edited messages keep their pre-edit text in semantic search forever.
+**Fix idea:** on decrypt/edit, call `embeddingService.indexMessage` again
+(upsertVector already replaces), or delete the stale vector so `indexAll` re-does
+it. Skip indexing `ciphertext` / `system` message types entirely.
+**Status:** open
+
+### [P2-S2-02] med — src/main/services/messages/MessageQueryRepository.ts:240-257
+**What:** `findMessagesFromTimestamp` runs `SELECT id FROM Message WHERE chatJid = ?
+AND timestamp >= ? ORDER BY timestamp ASC` with **no LIMIT** on the "target →
+newest" half.
+**Why it's a bug:** `MessageService.getMessagesAroundId` (MessageService.ts:445-488)
+is the "jump to this message" path used when opening a search hit / quoted-message
+link. If the target message is old (e.g. a search result from a year ago in an
+active group), this loads every message from that point to now, then
+`Promise.all`-enriches each one (JSON.parse of `content`, context-info resolution,
+reaction grouping). For a busy chat that is tens of thousands of rows in one IPC
+call — main-thread stall and a huge payload, where the UI only needs a screenful.
+**Fix idea:** cap the forward fetch (e.g. `LIMIT 200`) and page forward from the
+renderer, or fetch a window around the timestamp instead of an open range.
+**Status:** open
+
+### [P2-S2-03] med — src/main/services/messages/MediaService.ts:492-506
+**What:** `openFile(localURI)` derives the on-disk name with
+`decodeURIComponent(localURI.split('/').pop() || '')` and then
+`join(app.getPath('userData'), 'media', fileName)` + `shell.openPath`. Splitting on
+`/` only: a value containing back-slashes (`app://media/..\..\..\Desktop\x.lnk`)
+survives as the "file name" and, on Windows, `join` happily walks out of the media
+dir.
+**Why it's a bug:** `localURI` reaches this method from the renderer over IPC. A
+crafted or buggy caller (or a plugin with media-open permission) can get the app
+to `shell.openPath` an arbitrary file outside the media cache — e.g. launch an
+executable/`.lnk` the attacker dropped elsewhere.
+**Fix idea:** `path.basename(fileName)` after decode, reject names containing
+separators / `..`, and verify the resolved path stays under the media dir
+(`resolved.startsWith(mediaDir + sep)`).
+**Status:** open
+
+### [P2-S2-04] low — src/main/services/messages/processors/ReactionMessageProcessor.ts:22-30
+**What:** For a `fromMe` reaction that arrives via `messages.upsert`, `reactorId`
+starts as `context.senderId` (always `null` for fromMe — MessageService only
+resolves `senderId` when `!key.fromMe`) and is only overwritten if
+`findMeIdentity()` already returns a row. If the "me" identity has not been
+persisted yet, `reactorId` stays `null` and the `targetId && reactorId !== null`
+guard drops the reaction silently.
+**Why it's a bug:** early in a fresh login (before contacts/identity sync
+completes) the user's own reactions are lost and never reconciled. The returned
+`ProcessedMessage.senderId` is also left `null` even when a me-identity exists,
+because only the local `reactorId` var is updated.
+**Fix idea:** fall back to `resolveMeSenderId(sock)` (as
+MessageService.resolveReactorIdForReaction does) and set `senderId` on the result.
+**Status:** open
+
+### [P2-S2-05] low — src/main/services/messages/MessageService.ts:557-587
+**What:** `processReaction` only persists the reaction `if (reactorId)`, but the
+`reaction:processed` event is emitted unconditionally right after.
+**Why it's a bug:** when the reactor identity can't be resolved, the renderer is
+told a reaction happened and renders it, but nothing is stored — it vanishes on
+the next chat reload / re-enrich, and reaction counts diverge between sessions.
+**Fix idea:** skip the emit (or emit a distinct "unresolved" shape) when no row
+was written.
+**Status:** open
+
+### [P2-S2-06] low — src/main/services/messages/MediaHelper.ts:74-109 / FavoriteStickerService.ts:39-64
+**What:** `getSafeMediaFileName` builds the cache filename from `fileSha256` as
+lowercase **hex** for Buffer/`{type:'Buffer'}`/array shapes, but for a **string**
+shape it uses the string as-is (base64, only regex-sanitised). `FavoriteStickerService`
+and `MediaService.extractStickerSha` independently re-derive the hash in yet other
+encodings (base64 for the DB key).
+**Why it's a bug:** the encodings only coincidentally agree because persisted
+`content` currently always serialises `fileSha256` as `{type:'Buffer',data:[…]}`.
+Any path that ever hands this code a base64/hex *string* sha (e.g. content that
+went through a Buffer-aware reviver, or a synced stub) produces a different
+filename for the same sticker → duplicate downloads and missed favorite auto-copy
+/ dedup.
+**Fix idea:** normalise every sha to one canonical encoding (hex) in a single
+helper and use it everywhere (filename, DB key, lookup).
+**Status:** open
+
+### [P2-S2-07] low — src/main/services/messages/MessageQueryRepository.ts:157-159
+**What:** `queryMessageIdsBySql` executes caller-supplied SQL via
+`$queryRawUnsafe` with no internal enforcement that the statement is read-only,
+despite the doc-comment "Executes a read-only query".
+**Why it's a bug:** the only current caller (`ReadMessagesTool.getMessagesBySql`)
+validates with a SELECT/WITH prefix check + forbidden-keyword regex, so today it's
+safe, but the guarantee lives entirely in the caller. Any future caller (another
+tool, a plugin-facing endpoint) that trusts the method name gets an unguarded
+arbitrary-SQL sink against the message DB.
+**Fix idea:** enforce the read-only check inside the repository method too
+(reject non-SELECT/WITH, or run under a read-only DB connection).
+**Status:** open
+
+### [P2-S2-08] low — src/main/services/messages/StickerMetadataService.ts:25-129
+**What:** `processAndAddMetadata` writes `processed_*` and `final_*` webp files
+into `<userData>/temp_stickers`. The caller
+(MessageSenderService.sendMediaMessageWorkflow) deletes the returned `final_*`
+only when the whole send path set `isTempFile`; if `processAndAddMetadata` itself
+throws after creating a temp file (e.g. `WebP.Image().load` fails on the ffmpeg
+output), nothing cleans it up, and the directory is never swept at startup.
+**Why it's a bug:** every failed sticker send leaks a temp file; over time
+`temp_stickers` grows unbounded.
+**Fix idea:** wrap in try/finally that removes intermediates on any exit, and
+sweep the temp dir on app start.
+**Status:** open
 
 ## Slice 3 — WhatsApp service & subscribers
 _none yet_
 
 ## Slice 4 — Chats & sync
-_none yet_
+
+### [P2-S4-01] med — src/main/services/sync/SyncRepository.ts:89-98, 177-186, 203-214, 286-296, 46-64
+**What:** Every bulk *update* path wraps per-row `prisma.*.update()` calls in a single
+`prisma.$transaction(ops)` — `bulkUpdateChats`, `bulkUpdateIdentities`,
+`bulkUpdateIdentityAliases`, `bulkUpsertChatMembers` (update branch),
+`bulkUpdateCommunityAnnounces`.
+**Why it's a bug:** if any one target row is gone by the time the transaction runs, the
+`update` raises P2025 and the whole transaction rolls back — every other update in the
+batch is silently lost. This is not hypothetical during group hydration:
+`GroupHydrationService.hydrateBatch` runs these across `setImmediate` yield points and its
+own catch comment states that concurrent `contacts.upsert` / live group events "interleaving
+at a yield point can race a batch's read-then-…/$transaction and raise P2002/P2025". A
+concurrent contact-merge deleting one merged `Identity` therefore discards that batch's
+entire alias re-point, member role, and phone-number backfill set, not just the stale row.
+**Fix idea:** use `updateMany` where possible, or run the ops individually each with its own
+`.catch()` so one missing row can't roll back the rest; or re-filter ids against a fresh
+existence read immediately before the write.
+**Status:** open
+
+### [P2-S4-02] med — src/main/services/chats/sync/ChatSyncHandler.ts:63-66 vs src/main/services/sync/SyncChatsHandler.ts:107-113
+**What:** The two history/hydration chat-sync paths normalize `muteExpiration` differently.
+`SyncChatsHandler` (chats payload) converts ms→seconds (`muteVal > 10000000000n ? /1000n`)
+before storing; `ChatSyncHandler` (group-metadata hydration) stores `raw.muteExpiration`
+verbatim with no ms→seconds guard.
+**Why it's a bug:** `ChatService.isChatMuted` interprets the stored value as **seconds**
+(`expiration * 1000 > Date.now()`). If group metadata ever delivers a millisecond mute
+expiration for a group, that group is treated as muted ~1000× further into the future than
+intended (effectively muted forever), and the two code paths disagree on the same field.
+**Fix idea:** extract the ms→seconds normalization into one shared helper and use it in both
+handlers (and in `ChatService.upsertChat`).
+**Status:** open
+
+### [P2-S4-03] low — src/main/services/sync/SyncChatsHandler.ts:131, src/main/services/sync/SyncContactsHandler.ts:124
+**What:** `processChats` returns `chats.length` and `processContacts` returns
+`contacts.length`, not the number of rows actually processed. Both `continue` past entries
+with no `.id`; `processContacts` also skips bare-LID contacts.
+**Why it's a bug:** `handleHistorySync` logs these and returns them as `chatCount` /
+`contactCount`, which `HistorySyncManager` surfaces as sync stats — inflated whenever the
+payload carries id-less or bare-LID entries (common in `contacts`).
+**Fix idea:** return the local `count` (or a separate processed counter).
+**Status:** open
+
+### [P2-S4-04] low — src/main/services/chats/ChatListEnricher.ts:24, 33, src/main/services/sync/SyncMessagesHandler.ts:337-342
+**What:** A chat that appears only in the history-sync `messages[]` array (not `chats[]`)
+is created via `chatRepository.upsertChat(remoteJid, {})`, leaving `Chat.timestamp = 0n`.
+`ChatListEnricher.getChatList` orders and paginates purely on `Chat.timestamp`
+(`findChatsPaginated` → `orderBy [{pinned desc},{timestamp desc}]`).
+**Why it's a bug:** such chats sort to the very bottom of the chat list and can fall off the
+visible page, even though `enrichSingleChat` fetches `findLastMessage` separately and shows a
+recent preview + time. Only self-corrects once a live message updates the timestamp.
+**Fix idea:** in `SyncMessagesHandler._parseBatch`, upsert the chat with the message
+timestamp (max seen) instead of `{}`.
+**Status:** open
+
+### [P2-S4-05] low — src/main/services/sync/SyncMessagesHandler.ts:366-388
+**What:** `_extractInlineReaction` for a `fromMe` inline `reactionMessage` sets
+`reactorId = msg.senderId` and only overrides with `meIdentityId` when that is non-null.
+`msg.senderId` is null for `fromMe` rows (`_resolveSenderId` returns null when `fromMe`).
+**Why it's a bug:** when the logged-in user's identity id can't be resolved
+(`meIdentityId === null`, e.g. very early sync before self-contact exists), the guard
+`if (emoji && reactorId)` fails and the user's own history-synced reactions are silently
+dropped.
+**Fix idea:** resolve/create the self identity before processing, or skip-and-retry these
+rows rather than discarding.
+**Status:** open
+
+### [P2-S4-06] low — src/main/services/sync/SyncMessagesHandler.ts:96, 99-102; src/main/services/messages/ReactionRepository.ts:94-97
+**What:** `importedMessages.push(...(standardMessages as unknown as Message[]))` — the
+returned array is typed `Message[]` but holds pre-persistence `SyncMessageRow` objects, and
+only `reactionMessage` rows are filtered out, not rows that `bulkSyncMessages` found already
+in the DB. Separately, `bulkSyncReactions`'s second param `_currentBatchIds` is entirely
+unused (its doc comment still claims batch-id matching), yet `processMessages` builds a fresh
+`new Set(messageRows.map(m => m.id))` every batch to pass it.
+**Why it's a bug:** `downloadFavoriteStickersFromSync` re-queries and re-queues favorite
+sticker downloads for already-synced stickers on every overlapping history chunk; and the
+`Message[]` type is a lie (missing real columns/defaults) that will bite any future consumer.
+Dead param + stale contract + wasted per-batch Set allocation.
+**Fix idea:** return only genuinely-inserted rows (have `bulkSyncMessages` report them), fix
+the type, and drop the unused `_currentBatchIds` param + its call-site Set.
+**Status:** open
 
 ## Slice 5 — Contacts
 _none yet_
