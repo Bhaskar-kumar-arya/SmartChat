@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { DirectPluginChannel } from '../../../kernel/channels/DirectPluginChannel'
+import { DirectPluginChannel, PLUGIN_REQUEST_TIMEOUT_MS } from '../../../kernel/channels/DirectPluginChannel'
 import { KernelRequest, KernelResponse } from '../../../kernel/channels/IPluginChannel'
 
 describe('DirectPluginChannel', () => {
@@ -92,5 +92,38 @@ describe('DirectPluginChannel', () => {
 
     expect(receivedResponses.length).toBe(1)
     expect(receivedResponses[0].id).toBe(correlationId)
+  })
+
+  // S9-04
+  it('rejects sendRequestToPlugin with PLUGIN_TIMEOUT when the plugin never replies', async () => {
+    vi.useFakeTimers()
+    try {
+      const channel = new DirectPluginChannel()
+      // Handler resolves its sync portion but never calls sendResponseToPlugin.
+      channel.onKernelRequest(async () => {})
+
+      const pending = channel.sendRequestToPlugin({ id: 'r-hang', type: 'contribution:execute:ai-tool', payload: {} })
+      const assertion = expect(pending).rejects.toThrow(/PLUGIN_TIMEOUT/)
+      await vi.advanceTimersByTimeAsync(PLUGIN_REQUEST_TIMEOUT_MS + 1)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears the timeout once a response arrives', async () => {
+    vi.useFakeTimers()
+    try {
+      const channel = new DirectPluginChannel()
+      channel.onKernelRequest(async (msg) => {
+        channel.sendResponseToPlugin({ id: msg.id, ok: true, payload: 'done' })
+      })
+      const res = await channel.sendRequestToPlugin({ id: 'r-ok', type: 't', payload: {} })
+      expect(res).toMatchObject({ id: 'r-ok', ok: true })
+      // No unhandled rejection after the would-be timeout window.
+      await vi.advanceTimersByTimeAsync(PLUGIN_REQUEST_TIMEOUT_MS + 1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

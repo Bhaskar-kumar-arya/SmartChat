@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { IPanelHost } from '../ui/IPanelHost'
 import { IKernelAPIRouter } from '../IKernelAPIRouter'
 import { IWAEventBus } from '../../services/whatsapp/IWAEventBus'
+import { IPermissionStore } from '../permissions/IPermissionStore'
 import { KernelError } from '../api-modules/KernelErrors'
 
 function serializeError(err: unknown): { code: string; message: string } {
@@ -14,12 +15,69 @@ function serializeError(err: unknown): { code: string; message: string } {
   return { code: 'INTERNAL_ERROR', message: String(err) }
 }
 
+type BusArg = IWAEventBus | (() => IWAEventBus | null) | null | undefined
+
+interface PanelSubscription {
+  pluginId: string
+  panelId: string
+  eventName: string
+  senderId: number | null
+  handler: (payload: unknown) => void
+  /** Detach `handler` from whichever bus it is currently attached to. */
+  detach: () => void
+  /** Re-point `handler` at a freshly created bus (reconnect). */
+  rebind: (bus: IWAEventBus) => void
+}
+
+export interface PanelIpcRegistration {
+  dispose: () => void
+  /**
+   * Call when a fresh WAEventBus becomes available (WhatsApp connect/reconnect).
+   * `connect()` swaps in a brand-new bus instance on every reconnect, so every
+   * live panel subscription must be re-attached to it or panel event delivery
+   * silently dies after the first reconnect. (S9-01)
+   */
+  onBusConnected: (bus: IWAEventBus) => void
+}
+
 export function registerPanelIpcHandlers(
   panelHost: IPanelHost,
   router: IKernelAPIRouter,
-  waEventBus?: IWAEventBus | null
-): () => void {
-  const panelSubscriptions = new Map<string, () => void>()
+  getBus?: BusArg,
+  permissions?: IPermissionStore
+): PanelIpcRegistration {
+  const panelSubscriptions = new Map<string, PanelSubscription>()
+
+  const resolveBus = (): IWAEventBus | null => {
+    if (typeof getBus === 'function') return getBus()
+    return getBus ?? null
+  }
+
+  const hasEventPermission = (pluginId: string, eventName: string): boolean => {
+    // No permission store wired (tests/legacy) → don't gate.
+    if (!permissions) return true
+    return (
+      permissions.hasCapability(pluginId, `events:${eventName}`) ||
+      permissions.hasCapability(pluginId, 'events:*')
+    )
+  }
+
+  const removeSubscription = (subKey: string): void => {
+    const sub = panelSubscriptions.get(subKey)
+    if (sub) {
+      sub.detach()
+      panelSubscriptions.delete(subKey)
+    }
+  }
+
+  const removeSubscriptionsWhere = (pred: (sub: PanelSubscription) => boolean): void => {
+    for (const [key, sub] of Array.from(panelSubscriptions.entries())) {
+      if (pred(sub)) {
+        sub.detach()
+        panelSubscriptions.delete(key)
+      }
+    }
+  }
 
   const panelApiHandler = async (
     _event: unknown,
@@ -50,17 +108,30 @@ export function registerPanelIpcHandlers(
     event: { sender: { isDestroyed: () => boolean; send: (channel: string, ...args: unknown[]) => void } },
     req: { panelId: string; eventName: string }
   ) => {
+    const sender = event.sender as unknown as {
+      id?: number
+      once?: (ev: string, cb: () => void) => void
+    }
     const { panelId, eventName } = req || {}
     const pluginId = panelHost.getPluginId(panelId)
-    if (!pluginId || !waEventBus) {
-      return { ok: false }
+    if (!pluginId || !eventName) {
+      return { ok: false, error: { code: 'PANEL_NOT_FOUND', message: `Panel '${panelId}' is not registered` } }
+    }
+
+    // Same permission gate the kernel events module applies (S9-02): a panel
+    // must not be able to subscribe to WhatsApp bus events it never declared.
+    if (!hasEventPermission(pluginId, eventName)) {
+      return {
+        ok: false,
+        error: {
+          code: 'PERMISSION_DENIED',
+          message: `Panel plugin '${pluginId}' lacks permission for event '${eventName}'`
+        }
+      }
     }
 
     const subKey = `${panelId}:${eventName}`
-    const existing = panelSubscriptions.get(subKey)
-    if (existing) {
-      existing()
-    }
+    removeSubscription(subKey)
 
     const handler = (payload: unknown) => {
       if (!event.sender.isDestroyed()) {
@@ -68,12 +139,34 @@ export function registerPanelIpcHandlers(
       }
     }
 
-    waEventBus.on(eventName as any, handler as any)
-    const cleanup = () => {
-      waEventBus.off(eventName as any, handler as any)
+    let currentBus: IWAEventBus | null = null
+    const attachTo = (bus: IWAEventBus | null) => {
+      if (currentBus) currentBus.off(eventName as any, handler as any)
+      currentBus = bus
+      if (bus) bus.on(eventName as any, handler as any)
+    }
+    attachTo(resolveBus())
+
+    const sub: PanelSubscription = {
+      pluginId,
+      panelId,
+      eventName,
+      senderId: typeof sender.id === 'number' ? sender.id : null,
+      handler,
+      detach: () => attachTo(null),
+      rebind: (bus: IWAEventBus) => attachTo(bus)
+    }
+    panelSubscriptions.set(subKey, sub)
+
+    // Clean up if the panel's webContents is torn down without a
+    // kernel:panel:closed / unsubscribe message (navigation, crash). (S9-03)
+    if (typeof sender.once === 'function' && sub.senderId != null) {
+      const senderId = sub.senderId
+      sender.once('destroyed', () => {
+        removeSubscriptionsWhere((s) => s.senderId === senderId)
+      })
     }
 
-    panelSubscriptions.set(subKey, cleanup)
     return { ok: true }
   }
 
@@ -82,25 +175,13 @@ export function registerPanelIpcHandlers(
     req: { panelId: string; eventName: string }
   ) => {
     const { panelId, eventName } = req || {}
-    const subKey = `${panelId}:${eventName}`
-    const unsub = panelSubscriptions.get(subKey)
-    if (unsub) {
-      unsub()
-      panelSubscriptions.delete(subKey)
-    }
+    removeSubscription(`${panelId}:${eventName}`)
   }
-
 
   const panelClosedHandler = (_event: unknown, req: { panelId: string }) => {
     const { panelId } = req || {}
     if (!panelId) return
-    const prefix = `${panelId}:`
-    for (const [key, unsub] of Array.from(panelSubscriptions.entries())) {
-      if (key.startsWith(prefix)) {
-        unsub()
-        panelSubscriptions.delete(key)
-      }
-    }
+    removeSubscriptionsWhere((s) => s.panelId === panelId)
   }
 
   if (typeof ipcMain.handle === 'function') {
@@ -112,20 +193,25 @@ export function registerPanelIpcHandlers(
     ipcMain.on('kernel:panel:closed', panelClosedHandler)
   }
 
-  return () => {
-    if (typeof ipcMain.removeHandler === 'function') {
-      ipcMain.removeHandler('kernel:panel:api')
-      ipcMain.removeHandler('kernel:panel:events:subscribe')
+  return {
+    onBusConnected: (bus: IWAEventBus) => {
+      for (const sub of panelSubscriptions.values()) {
+        sub.rebind(bus)
+      }
+    },
+    dispose: () => {
+      if (typeof ipcMain.removeHandler === 'function') {
+        ipcMain.removeHandler('kernel:panel:api')
+        ipcMain.removeHandler('kernel:panel:events:subscribe')
+      }
+      if (typeof ipcMain.removeListener === 'function') {
+        ipcMain.removeListener('kernel:panel:events:unsubscribe', eventsUnsubscribeHandler as any)
+        ipcMain.removeListener('kernel:panel:closed', panelClosedHandler as any)
+      }
+      for (const sub of panelSubscriptions.values()) {
+        sub.detach()
+      }
+      panelSubscriptions.clear()
     }
-    if (typeof ipcMain.removeListener === 'function') {
-      ipcMain.removeListener('kernel:panel:events:unsubscribe', eventsUnsubscribeHandler as any)
-      ipcMain.removeListener('kernel:panel:closed', panelClosedHandler as any)
-    }
-    for (const unsub of panelSubscriptions.values()) {
-      unsub()
-    }
-    panelSubscriptions.clear()
   }
 }
-
-

@@ -103,7 +103,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | 6 — AI | 7 | DONE (2026-09-06) — S6-02 ('ai' role → assistant in Groq/Mistral/DeepSeek), S6-03 (maxTurns cap 25 + abort between turns), S6-04 (Gemini abortSignal threaded), S6-05 (empty-name skip + replacer fn + boundary), S6-06 (escapeXml on all strategy interpolations), S6-07 (citation persist createMany→per-row upsert fallback), S6-08 (userData path + corrupt-file backup+throw + atomic write) |
 | 7 — Kernel API modules & router | 4 | DONE (2026-09-06) — S7-02 (sendMedia path containment), S7-03 (ai:sessions capability split), S7-04 (tool-name conflict reject + unregister on unload), S7-05 (overlay:send/close require ui:overlay + ownership) |
 | 8 — Kernel plugins/contributions/permissions | 6 | DONE (2026-09-06) — S8-02/03/04 already fixed by b42bff6 (S7-01); S8-05 (atomic write + fail-closed on corrupt), S8-06 (KernelEventsModule.removePlugin unload hook), S8-07 (await worker deactivate ack before destroy) |
-| 9 — Kernel storage/channels/ipc/ui | 6 | TODO |
+| 9 — Kernel storage/channels/ipc/ui | 6 | DONE (2026-09-07) — S9-01 (panelIpc lazy getBus + onBusConnected re-attach wired in index.ts), S9-02 (panel event subscribe permission-gated), S9-03 (webContents 'destroyed' cleanup), S9-04 (30s PLUGIN_TIMEOUT on both plugin channels' sendRequestToPlugin), S9-05 (OverlayHost: reject on missing window + pending-timeout eviction + dispose()), S9-06 (panelHost.deregisterPlugin on unload + changed-panelPath re-register) |
 | 10 — App IPC & auth | 4 | TODO |
 | 11 — apiServer/search/notification/calls/audio | 7 | TODO |
 | 12 — SDK/tools/data wipe/domain/db/protocol | 6 | TODO |

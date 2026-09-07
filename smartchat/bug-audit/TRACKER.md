@@ -1355,7 +1355,12 @@ subscription is dead (`.on` was on a discarded bus) and `eventsUnsubscribeHandle
 call `.off` on the wrong bus. Silent.
 **Fix idea:** pass `getBus` (the accessor) into `registerPanelIpcHandlers` and resolve it inside each
 handler; or keep one stable bus instance across reconnects.
-**Status:** open
+**Status:** fixed in Batch D slice 9 — `registerPanelIpcHandlers` now takes the `getBus` accessor
+(resolved lazily per subscribe) and returns `{ dispose, onBusConnected }`. `KernelBootstrapper`
+surfaces `onBusConnected` on `BootResult`; `index.ts` calls it from the same `waConnectionManager.onBusCreated`
+hook that feeds `KernelEventsModule.onBusConnected` (incl. the pre-boot buffered-bus replay), so every
+live panel subscription is re-attached to the fresh bus on each reconnect. Regression test in
+`panelIpc.test.ts` ("re-attaches live subscriptions to a freshly created bus").
 
 ### [S9-02] med — kernel/ipc/panelIpc.ts:49-78 (`eventsSubscribeHandler`)
 **What:** The handler resolves `pluginId` from `panelId` purely to check the panel is registered,
@@ -1370,7 +1375,11 @@ otherwise deny, simply by calling `kernel:panel:events:subscribe` over IPC. Payl
 verbatim to the panel via `smartchat:event`.
 **Fix idea:** run the same permission check the kernel events module uses before `waEventBus.on`;
 reject unknown/undeclared event names.
-**Status:** open
+**Status:** fixed in Batch D slice 9 — `eventsSubscribeHandler` now runs the same
+`hasCapability('events:<name>') || hasCapability('events:*')` gate `KernelEventsModule.subscribe` uses
+(permission store threaded through `KernelBootstrapper`); denied subscribe returns
+`{ ok: false, error: { code: 'PERMISSION_DENIED' } }` and never touches the bus. Regression tests in
+`panelIpc.test.ts`.
 
 ### [S9-03] med — kernel/ipc/panelIpc.ts:49-78,94-104 (subscription lifecycle)
 **What:** A panel event subscription is only cleaned up by an explicit `kernel:panel:events:unsubscribe`
@@ -1384,7 +1393,10 @@ per-event work, and retained closures over dead `WebContents`. `registerPanelIpc
 teardown clears them, but that only runs on full kernel shutdown.
 **Fix idea:** on subscribe, attach `event.sender.once('destroyed', () => cleanup all subs for that
 sender)`; track subs by `webContents.id` as well as `panelId`.
-**Status:** open
+**Status:** fixed in Batch D slice 9 — each subscription records `event.sender.id`; on subscribe we
+attach `sender.once('destroyed', …)` that detaches every subscription for that `senderId`. Bus
+attach/detach is now centralised in a per-sub `detach()`/`rebind()` pair. Regression test in
+`panelIpc.test.ts` ("cleans up subscriptions when the panel webContents is destroyed").
 
 ### [S9-04] med — kernel/channels/WorkerPluginChannel.ts:90-99 & DirectPluginChannel.ts:29-49
 **What:** `sendRequestToPlugin` creates a pending entry in `pendingRequests` and posts the message,
@@ -1398,7 +1410,11 @@ AI-tool execution (`plugin.channel.sendRequestToPlugin({ type: 'contribution:exe
 can wedge an AI tool call (and any user turn waiting on it) indefinitely.
 **Fix idea:** attach a per-request timeout that rejects with a `PLUGIN_TIMEOUT` error and deletes the
 pending entry; document the ceiling.
-**Status:** open
+**Status:** fixed in Batch D slice 9 — both `WorkerPluginChannel` and `DirectPluginChannel`
+`sendRequestToPlugin` (and `DirectPluginChannel.requestFromPlugin`) now arm an unref'd
+`PLUGIN_REQUEST_TIMEOUT_MS` (30s, exported) timer that deletes the pending entry and rejects with a
+`PLUGIN_TIMEOUT` error; the timer is cleared on response and on `destroy()`. Regression tests in
+`WorkerPluginChannel.test.ts` + `DirectPluginChannel.test.ts`.
 
 ### [S9-05] med — kernel/ui/OverlayHost.ts:24-34,55-84,102-114 + kernel/ipc/overlayIpc.ts
 **What:** (1) `showModal` returns a promise that is *only* ever resolved by a renderer
@@ -1414,7 +1430,12 @@ permanently unavailable on any renderer-side failure, with no error surfaced. `O
 dispose that rejects outstanding modals/overlays on kernel teardown either.
 **Fix idea:** add timeouts + reject-on-window-destroyed for modals; track handle-mode overlays with a
 renderer `destroyed`/close signal and evict on it; reject all pending on dispose.
-**Status:** open
+**Status:** fixed in Batch D slice 9 — `showModal`/`showOverlay` now reject synchronously with
+`WINDOW_UNAVAILABLE` when the main window is missing/destroyed; every pending modal & overlay (incl.
+handle-mode) arms an unref'd `OVERLAY_PENDING_TIMEOUT_MS` (5min) timer that evicts the entry (rejecting
+promise-mode with `*_TIMEOUT`) so a leaked handle-mode entry can no longer permanently block the
+plugin; new `dispose()` (called from `KernelBootstrapper` teardown) rejects all outstanding with
+`KERNEL_DISPOSED`. Regression tests in `OverlayHost.test.ts`.
 
 ### [S9-06] med — kernel/ui/PanelHost.ts:11-24,52-58 + KernelBootstrapper.ts:124-148
 **What:** `panelHost.deregisterPlugin(pluginId)` is never called in production (grep: only tests).
@@ -1429,7 +1450,11 @@ panel entry point. (3) Slow map growth across reload churn.
 **Fix idea:** call `panelHost.deregisterPlugin` from the plugin unload path (PluginHost/loader), and
 have `syncPanels` reconcile removals; or key `registerPanel` on `panelPath` too so a changed path
 re-registers.
-**Status:** open
+**Status:** fixed in Batch D slice 9 — the `PluginHost` unload callback in `KernelBootstrapper` now
+also calls `panelHost.deregisterPlugin(pluginId)` (alongside the existing events/AI cleanup), so
+stale `panelId`s stop resolving on unload. `PanelHost.registerPanel` now replaces the descriptor
+in-place when the same `(pluginId, contributionId)` re-registers with a changed `panelPath`/`type`
+(reload with a changed manifest `panel` path). Regression test in `PanelHost.test.ts`.
 
 ### [S9-07] low — kernel/ipc/overlayIpc.ts:5-31 + panelIpc.ts (sender not correlated)
 **What:** `kernel:ui:modal:resolve`, `kernel:ui:overlay:submit`/`event`/`dismiss`, and

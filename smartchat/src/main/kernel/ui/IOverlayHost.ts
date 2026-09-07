@@ -31,4 +31,6 @@ export interface IOverlayHost {
   onOverlaySubmit(overlayId: string, data: unknown): void
   onOverlayEvent(overlayId: string, event: string, data: unknown): void
   onOverlayDismiss(overlayId: string): void
+  /** Reject every outstanding modal/overlay promise on kernel teardown. (S9-05) */
+  dispose?(): void
 }

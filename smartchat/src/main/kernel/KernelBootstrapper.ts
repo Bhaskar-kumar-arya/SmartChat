@@ -56,6 +56,8 @@ export interface BootResult {
   permissions: PermissionStore
   panelHost: PanelHost
   eventsModule: KernelEventsModule
+  /** Re-attach panel IPC event subscriptions to a freshly created WA bus (S9-01). */
+  onBusConnected: (bus: IWAEventBus) => void
   dispose: () => Promise<void>
 }
 
@@ -120,7 +122,8 @@ export class KernelBootstrapper {
 
     const panelHost = new PanelHost(getMainWindow)
 
-    const unbindPanelIpc = registerPanelIpcHandlers(panelHost, router, getBus?.() ?? null)
+    const panelIpc = registerPanelIpcHandlers(panelHost, router, getBus ?? null, permissions)
+    const unbindPanelIpc = panelIpc.dispose
 
     const syncPanels = () => {
       for (const p of registry.getAll('sidebar-panel')) {
@@ -173,6 +176,9 @@ export class KernelBootstrapper {
       // subscriptions (S8-06) and remove any AI tools it registered (S7-04).
       eventsModule.removePlugin(pluginId)
       aiModule.removePlugin(pluginId)
+      // Drop the plugin's panel descriptors so stale panelIds stop resolving
+      // and a reload with a changed panel path re-registers cleanly. (S9-06)
+      panelHost.deregisterPlugin(pluginId)
     })
 
     const builtins = [
@@ -196,6 +202,7 @@ export class KernelBootstrapper {
     const dispose = async () => {
       unbindOverlayIpc()
       unbindPanelIpc()
+      overlayHost.dispose()
       const loaded = host.listLoaded()
       for (const id of loaded) {
         await host.unload(id)
@@ -211,6 +218,7 @@ export class KernelBootstrapper {
       permissions,
       panelHost,
       eventsModule,
+      onBusConnected: panelIpc.onBusConnected,
       dispose
     }
   }

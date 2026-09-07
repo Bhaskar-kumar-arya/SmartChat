@@ -1,11 +1,29 @@
 import { IBidirectionalPluginChannel, KernelRequest, KernelResponse } from './IPluginChannel'
 
+/** Ceiling for a kernel→plugin request; see WorkerPluginChannel. (S9-04) */
+export const PLUGIN_REQUEST_TIMEOUT_MS = 30_000
+
+interface PendingEntry {
+  resolve: (res: KernelResponse) => void
+  reject: (err: Error) => void
+  timer?: ReturnType<typeof setTimeout>
+}
+
 export class DirectPluginChannel implements IBidirectionalPluginChannel {
   private pluginRequestHandler: ((msg: KernelRequest) => Promise<void>) | null = null
   private kernelRequestHandler: ((msg: KernelRequest) => Promise<void>) | null = null
   private kernelResponseHandler: ((msg: KernelResponse) => void) | null = null
-  private pendingRequests = new Map<string, { resolve: (res: KernelResponse) => void; reject: (err: Error) => void }>()
+  private pendingRequests = new Map<string, PendingEntry>()
   private isDestroyed = false
+
+  private settlePending(id: string): PendingEntry | undefined {
+    const pending = this.pendingRequests.get(id)
+    if (pending) {
+      this.pendingRequests.delete(id)
+      if (pending.timer) clearTimeout(pending.timer)
+    }
+    return pending
+  }
 
   sendToPlugin(msg: KernelRequest): void {
     if (this.isDestroyed) return
@@ -16,9 +34,8 @@ export class DirectPluginChannel implements IBidirectionalPluginChannel {
 
   sendResponseToPlugin(msg: KernelResponse): void {
     if (this.isDestroyed) return
-    const pending = this.pendingRequests.get(msg.id)
+    const pending = this.settlePending(msg.id)
     if (pending) {
-      this.pendingRequests.delete(msg.id)
       pending.resolve(msg)
     }
     if (this.kernelResponseHandler) {
@@ -31,14 +48,19 @@ export class DirectPluginChannel implements IBidirectionalPluginChannel {
       return { id: msg.id, ok: false, error: { code: 'INTERNAL_ERROR', message: 'Channel destroyed' } }
     }
     return new Promise<KernelResponse>((resolve, reject) => {
-      this.pendingRequests.set(msg.id, { resolve, reject })
+      const timer = setTimeout(() => {
+        if (this.settlePending(msg.id)) {
+          reject(new Error(`PLUGIN_TIMEOUT: plugin did not respond to '${msg.type}' within ${PLUGIN_REQUEST_TIMEOUT_MS}ms`))
+        }
+      }, PLUGIN_REQUEST_TIMEOUT_MS)
+      if (typeof timer.unref === 'function') timer.unref()
+      this.pendingRequests.set(msg.id, { resolve, reject, timer })
       if (this.kernelRequestHandler) {
         this.kernelRequestHandler(msg).catch((err) => {
-          this.pendingRequests.delete(msg.id)
-          reject(err)
+          if (this.settlePending(msg.id)) reject(err)
         })
       } else {
-        this.pendingRequests.delete(msg.id)
+        this.settlePending(msg.id)
         resolve({
           id: msg.id,
           ok: false,
@@ -55,6 +77,7 @@ export class DirectPluginChannel implements IBidirectionalPluginChannel {
   destroy(): void {
     this.isDestroyed = true
     for (const pending of this.pendingRequests.values()) {
+      if (pending.timer) clearTimeout(pending.timer)
       pending.reject(new Error('Channel destroyed'))
     }
     this.pendingRequests.clear()
@@ -76,14 +99,19 @@ export class DirectPluginChannel implements IBidirectionalPluginChannel {
       return { id: msg.id, ok: false, error: { code: 'INTERNAL_ERROR', message: 'Channel destroyed' } }
     }
     return new Promise<KernelResponse>((resolve, reject) => {
-      this.pendingRequests.set(msg.id, { resolve, reject })
+      const timer = setTimeout(() => {
+        if (this.settlePending(msg.id)) {
+          reject(new Error(`PLUGIN_TIMEOUT: no response to '${msg.type}' within ${PLUGIN_REQUEST_TIMEOUT_MS}ms`))
+        }
+      }, PLUGIN_REQUEST_TIMEOUT_MS)
+      if (typeof timer.unref === 'function') timer.unref()
+      this.pendingRequests.set(msg.id, { resolve, reject, timer })
       if (this.pluginRequestHandler) {
         this.pluginRequestHandler(msg).catch((err) => {
-          this.pendingRequests.delete(msg.id)
-          reject(err)
+          if (this.settlePending(msg.id)) reject(err)
         })
       } else {
-        this.pendingRequests.delete(msg.id)
+        this.settlePending(msg.id)
         resolve({
           id: msg.id,
           ok: false,

@@ -48,6 +48,26 @@ describe('PanelHost', () => {
     expect(id1).toBe(id2)
   })
 
+  // S9-06
+  it('re-points the descriptor when the same contribution re-registers with a changed panel path', () => {
+    const id1 = panelHost.registerPanel({
+      contributionId: 'sidebar-1',
+      pluginId: 'com.acme.plugin',
+      panelPath: 'panels/old.html',
+      type: 'sidebar'
+    })
+
+    const id2 = panelHost.registerPanel({
+      contributionId: 'sidebar-1',
+      pluginId: 'com.acme.plugin',
+      panelPath: 'panels/new.html',
+      type: 'sidebar'
+    })
+
+    expect(id2).toBe(id1)
+    expect(panelHost.getPanel(id1)?.panelPath).toBe('panels/new.html')
+  })
+
   it('finds panel by pluginId and contributionId', () => {
     const panelId = panelHost.registerPanel({
       contributionId: 'settings-1',

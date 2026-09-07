@@ -92,6 +92,9 @@ let isQuitting = false
 // onBusCreated callback synchronously and buffer the latest bus here until the
 // module is ready, so cold-start plugin WhatsApp subscriptions are not lost. (S13-01)
 let kernelEventsModule: { onBusConnected(bus: IWAEventBus): void } | null = null
+// Panel IPC event subscriptions must also be re-attached to a fresh bus on every
+// reconnect, or panel plugins stop receiving WhatsApp events. (S9-01)
+let panelIpcOnBusConnected: ((bus: IWAEventBus) => void) | null = null
 let bufferedWaBus: IWAEventBus | null = null
 
 const getSock = () => waConnectionManager?.getSocket() || null
@@ -224,8 +227,10 @@ app.whenReady().then(() => {
     // point the buffer at it and replay any bus that was created before boot
     // finished. (S13-01)
     kernelEventsModule = bootResult.eventsModule
+    panelIpcOnBusConnected = bootResult.onBusConnected
     if (bufferedWaBus) {
       bootResult.eventsModule.onBusConnected(bufferedWaBus)
+      bootResult.onBusConnected(bufferedWaBus)
       bufferedWaBus = null
     }
   }).catch((err) => logMain('[Main] Failed to boot microkernel', err))
@@ -255,6 +260,7 @@ app.whenReady().then(() => {
   waConnectionManager.onBusCreated((bus) => {
     if (kernelEventsModule) {
       kernelEventsModule.onBusConnected(bus)
+      panelIpcOnBusConnected?.(bus)
     } else {
       bufferedWaBus = bus
     }

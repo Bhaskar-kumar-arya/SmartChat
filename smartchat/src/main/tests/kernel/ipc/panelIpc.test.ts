@@ -164,9 +164,82 @@ describe('panelIpc', () => {
   })
 
 
+  // S9-02
+  it('rejects subscribe for an event the panel plugin lacks permission for', async () => {
+    const permissions = { hasCapability: vi.fn().mockReturnValue(false) }
+    registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus, permissions as any)
+
+    const result = await (ipcMain as unknown as { _invokeHandle: Function })._invokeHandle(
+      'kernel:panel:events:subscribe',
+      { sender: { isDestroyed: () => false, send: vi.fn() } },
+      { panelId: 'panel-1', eventName: 'message:received' }
+    )
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'PERMISSION_DENIED' } })
+    expect(mockEventBus.on).not.toHaveBeenCalled()
+  })
+
+  it('allows subscribe when events:* is granted', async () => {
+    const permissions = { hasCapability: vi.fn((_p: string, cap: string) => cap === 'events:*') }
+    registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus, permissions as any)
+
+    const result = await (ipcMain as unknown as { _invokeHandle: Function })._invokeHandle(
+      'kernel:panel:events:subscribe',
+      { sender: { isDestroyed: () => false, send: vi.fn() } },
+      { panelId: 'panel-1', eventName: 'message:received' }
+    )
+    expect(result).toEqual({ ok: true })
+  })
+
+  // S9-01
+  it('re-attaches live subscriptions to a freshly created bus on onBusConnected', async () => {
+    const reg = registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus)
+    await (ipcMain as unknown as { _invokeHandle: Function })._invokeHandle(
+      'kernel:panel:events:subscribe',
+      { sender: { isDestroyed: () => false, send: vi.fn() } },
+      { panelId: 'panel-1', eventName: 'message:incoming' }
+    )
+
+    let newBusHandler: Function | undefined
+    const newBus = {
+      on: vi.fn((_e: any, fn: any) => { newBusHandler = fn; return newBus }),
+      off: vi.fn(),
+      emit: vi.fn()
+    } as unknown as IWAEventBus
+
+    reg.onBusConnected(newBus)
+
+    expect(mockEventBus.off).toHaveBeenCalledWith('message:incoming', expect.any(Function))
+    expect(newBus.on).toHaveBeenCalledWith('message:incoming', expect.any(Function))
+    expect(newBusHandler).toBeTypeOf('function')
+  })
+
+  // S9-03
+  it('cleans up subscriptions when the panel webContents is destroyed', async () => {
+    registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus)
+
+    let destroyedCb: (() => void) | undefined
+    const sender = {
+      id: 42,
+      isDestroyed: () => false,
+      send: vi.fn(),
+      once: vi.fn((_ev: string, cb: () => void) => { destroyedCb = cb })
+    }
+
+    await (ipcMain as unknown as { _invokeHandle: Function })._invokeHandle(
+      'kernel:panel:events:subscribe',
+      { sender },
+      { panelId: 'panel-1', eventName: 'message:incoming' }
+    )
+
+    expect(sender.once).toHaveBeenCalledWith('destroyed', expect.any(Function))
+    destroyedCb?.()
+    expect(mockEventBus.off).toHaveBeenCalledWith('message:incoming', expect.any(Function))
+  })
+
   it('cleans up handlers when unbind disposer is called', () => {
-    const unbind = registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus)
-    unbind()
+    const { dispose } = registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus)
+    dispose()
 
     expect(ipcMain.removeHandler).toHaveBeenCalledWith('kernel:panel:api')
     expect(ipcMain.removeHandler).toHaveBeenCalledWith('kernel:panel:events:subscribe')

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { MessageChannel } from 'node:worker_threads'
-import { WorkerPluginChannel } from '../../../kernel/channels/WorkerPluginChannel'
+import { WorkerPluginChannel, PLUGIN_REQUEST_TIMEOUT_MS } from '../../../kernel/channels/WorkerPluginChannel'
 import { KernelRequest, KernelResponse } from '../../../kernel/channels/IPluginChannel'
 
 describe('WorkerPluginChannel', () => {
@@ -130,5 +130,24 @@ describe('WorkerPluginChannel', () => {
     port2.close()
 
     await expect(pendingPromise).rejects.toThrow('Channel destroyed')
+  })
+
+  // S9-04
+  it('rejects a pending request with PLUGIN_TIMEOUT when the plugin never replies', async () => {
+    vi.useFakeTimers()
+    try {
+      const { port1, port2 } = new MessageChannel()
+      const channel = new WorkerPluginChannel(port1)
+
+      const pending = channel.sendRequestToPlugin({ id: 'r-hang', type: 'contribution:execute:ai-tool', payload: {} })
+      const assertion = expect(pending).rejects.toThrow(/PLUGIN_TIMEOUT/)
+      await vi.advanceTimersByTimeAsync(PLUGIN_REQUEST_TIMEOUT_MS + 1)
+      await assertion
+
+      channel.destroy()
+      port2.close()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

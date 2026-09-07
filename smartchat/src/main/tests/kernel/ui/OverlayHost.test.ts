@@ -122,4 +122,39 @@ describe('OverlayHost', () => {
       })
     )
   })
+
+  // S9-05
+  it('rejects showModal immediately when the main window is missing', async () => {
+    const host = new OverlayHost(() => null)
+    await expect(
+      host.showModal({ type: 'alert', modalId: 'm-x', payload: {} })
+    ).rejects.toMatchObject({ code: 'WINDOW_UNAVAILABLE' })
+  })
+
+  it('rejects showOverlay when the main window is destroyed', async () => {
+    mockMainWindow.isDestroyed.mockReturnValue(true)
+    await expect(
+      overlayHost.showOverlay('plugin-a', { panel: 'x.html', mode: 'promise' })
+    ).rejects.toMatchObject({ code: 'WINDOW_UNAVAILABLE' })
+  })
+
+  it('dispose() rejects every outstanding modal and promise-overlay', async () => {
+    const modal = overlayHost.showModal({ type: 'form', modalId: 'm-d', payload: {} })
+    const overlay = overlayHost.showOverlay('plugin-a', { panel: 'x.html', mode: 'promise' })
+    overlayHost.dispose()
+    await expect(modal).rejects.toMatchObject({ code: 'KERNEL_DISPOSED' })
+    await expect(overlay).rejects.toMatchObject({ code: 'KERNEL_DISPOSED' })
+  })
+
+  it('frees the plugin overlay slot when a handle-mode entry times out', async () => {
+    vi.useFakeTimers()
+    try {
+      await overlayHost.showOverlay('plugin-a', { panel: 'x.html', mode: 'handle' })
+      expect(overlayHost.hasActiveOverlayForPlugin('plugin-a')).toBe(true)
+      vi.advanceTimersByTime(6 * 60_000)
+      expect(overlayHost.hasActiveOverlayForPlugin('plugin-a')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

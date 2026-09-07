@@ -1,9 +1,17 @@
 import { MessagePort, Worker } from 'node:worker_threads'
 import { IBidirectionalPluginChannel, KernelRequest, KernelResponse } from './IPluginChannel'
 
+/**
+ * Ceiling for a kernel→plugin request. A plugin that never replies (crashed
+ * mid-handler, threw asynchronously, infinite loop) would otherwise wedge the
+ * caller forever and leak the pending entry. (S9-04)
+ */
+export const PLUGIN_REQUEST_TIMEOUT_MS = 30_000
+
 interface PendingRequest {
   resolve: (res: KernelResponse) => void
   reject: (err: Error) => void
+  timer?: ReturnType<typeof setTimeout>
 }
 
 function isKernelRequest(msg: unknown): msg is KernelRequest {
@@ -63,6 +71,7 @@ export class WorkerPluginChannel implements IBidirectionalPluginChannel {
       const pending = this.pendingRequests.get(msg.id)
       if (pending) {
         this.pendingRequests.delete(msg.id)
+        if (pending.timer) clearTimeout(pending.timer)
         pending.resolve(msg)
       }
     } else if (isKernelRequest(msg)) {
@@ -93,7 +102,13 @@ export class WorkerPluginChannel implements IBidirectionalPluginChannel {
     }
     assertSerializable(msg.payload)
     return new Promise<KernelResponse>((resolve, reject) => {
-      this.pendingRequests.set(msg.id, { resolve, reject })
+      const timer = setTimeout(() => {
+        if (this.pendingRequests.delete(msg.id)) {
+          reject(new Error(`PLUGIN_TIMEOUT: plugin did not respond to '${msg.type}' within ${PLUGIN_REQUEST_TIMEOUT_MS}ms`))
+        }
+      }, PLUGIN_REQUEST_TIMEOUT_MS)
+      if (typeof timer.unref === 'function') timer.unref()
+      this.pendingRequests.set(msg.id, { resolve, reject, timer })
       this.port.postMessage(msg)
     })
   }
@@ -107,6 +122,7 @@ export class WorkerPluginChannel implements IBidirectionalPluginChannel {
     this.isDestroyed = true
 
     for (const [, pending] of this.pendingRequests) {
+      if (pending.timer) clearTimeout(pending.timer)
       pending.reject(new Error('Channel destroyed'))
     }
     this.pendingRequests.clear()

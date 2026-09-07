@@ -11,6 +11,12 @@ export class PanelHost implements IPanelHost {
   registerPanel(desc: Omit<PanelDescriptor, 'panelId'>): string {
     const existing = this.findPanel(desc.pluginId, desc.contributionId)
     if (existing) {
+      // Same (plugin, contribution) but the manifest now points the panel at a
+      // different entry file (reload with a changed `panel` path) — replace the
+      // stale descriptor instead of returning the old panelId. (S9-06)
+      if (existing.panelPath !== desc.panelPath || existing.type !== desc.type) {
+        this.panels.set(existing.panelId, { ...desc, panelId: existing.panelId })
+      }
       return existing.panelId
     }
 
