@@ -223,7 +223,84 @@ sweep the temp dir on app start.
 **Status:** open
 
 ## Slice 3 — WhatsApp service & subscribers
-_none yet_
+
+### [P2-S3-01] med — src/main/services/whatsapp/WhatsAppConnectionManager.ts:126, 145-152
+**What:** `connect()` sets `this.isFreshLogin = true` when no creds exist but never
+resets it to `false`. Every later `connect()` in the same app session therefore still
+sees `isFreshLogin === true`.
+**Why it's a bug:** after a fresh QR login, if `connect()` runs again in the same
+process — supervised restart via `handleWorkerDeath()` (worker exits non-zero), a
+settings toggle, or a manual re-login — the still-true flag makes the code
+(a) call `authSettingsService.clearHistorySyncCompleted()` again at line 146, wiping
+the just-persisted "history sync done" flag, and (b) compute
+`shouldSyncHistory = this.isFreshLogin || !isHistorySyncCompleted` → always `true`, so
+the worker is started with `shouldSyncHistory = true` and re-runs a full history sync
+(heavy DB ingestion + bandwidth + re-dedup) that already completed. Repeats on every
+subsequent reconnect for the life of the process. The worker's own
+`workerConnectionManager` has setter plumbing to clear its `isFreshLogin`; the
+main-process manager has none.
+**Fix idea:** set `this.isFreshLogin = false` once the fresh-login path has been
+consumed (after reading `shouldSyncHistory`), or drive it entirely off
+`hasCreds()` / `getHistorySyncCompleted()` instead of a sticky field.
+**Status:** open
+
+### [P2-S3-02] med — src/main/services/whatsapp/AppStateSyncParser.ts:114-135
+**What:** `handleMute` emits `chat:updated` with `update.muteExpiration` set to
+`muteSec`, a **bigint** (seconds, or `-1n` for "muted forever"). Every other emitter of
+`chat:updated.muteExpiration` produces a plain `number`
+(`WAEventHandler.handleChatsUpdate`/`handleChatsUpsert` via
+`Math.floor(num / MS_IN_SEC)`), and `handlePin` in this same file emits `pinned` as a
+`number`.
+**Why it's a bug:** `PersistenceSubscriber.onChatUpdated` forwards the value straight
+into `chatService.upsertChat(jid, { muteExpiration: <bigint> })`. Prisma `Int`/`Float`
+columns reject a JS `bigint` ("Unable to fit value" / type error), so the write throws,
+is swallowed by the subscriber's `.catch`, and the mute/unmute performed on the phone
+never lands in the desktop DB. `-1n` as the "indefinite mute" sentinel also disagrees
+with the numeric threshold logic used on the read path.
+**Fix idea:** emit `Number(muteSec)` (and a plain number sentinel) from `handleMute`,
+matching the other `chat:updated` producers.
+**Status:** open
+
+### [P2-S3-03] low — src/main/services/whatsapp/subscribers/CallEventSubscriber.ts:31
+**What:** `onCall` writes `upsertCallLog({ …, timestamp: BigInt(Math.floor(Date.now()/1000)) })`
+for every call event, ignoring `call.date` (which Baileys does populate and which
+`WAEventHandler.handleCallEvent` already reads for the synthetic message timestamp).
+**Why it's a bug:** (a) call events replayed during offline catch-up after a reconnect
+get stamped with "now" instead of when the call happened, mis-ordering the call log;
+(b) a single call fires multiple events (`offer` → `ringing` → `terminate`), and
+`upsertCallLog` is keyed by `call.id`, so each event overwrites `timestamp` with a
+later "now" — a missed call ends up timestamped at its terminate event, not its start.
+**Fix idea:** use `call.date?.getTime()` when present, falling back to `Date.now()`, and
+don't overwrite an existing timestamp on later status updates for the same id.
+**Status:** open
+
+### [P2-S3-04] low — src/main/services/whatsapp/WASocketFactory.ts:39-50
+**What:** `WASocketFactory` is constructed in `ServiceContainer.ts:333` and stored, but
+`createSocket()` is never called anywhere in production (only in
+`WASocketFactory.test.ts`) — the live socket is created by the worker's
+`connectSocket.ts`. The class is dead code. Its `getMessage` also does
+`JSON.parse(msg.content)` with no `BufferJSON.reviver` (the same defect as P2-S1-01).
+**Why it's a bug:** dead code that duplicates a real bug is a trap — a future change
+that re-wires the main-process socket through this factory would silently reintroduce
+the broken poll-vote / retry-receipt decryption from P2-S1-01. It also keeps
+`fetchLatestBaileysVersion` / socket deps referenced from a path that is never
+exercised.
+**Fix idea:** delete `WASocketFactory` + `IWASocketFactory` + the container wiring, or
+if it is meant to be used, fix `getMessage` to parse with `BufferJSON.reviver`.
+**Status:** open
+
+### [P2-S3-05] low — src/main/services/whatsapp/WAEventLogger.ts (whole file)
+**What:** The `WAEventLogger` module and its `waEventLogger` singleton are never
+imported or called anywhere in `src/**` — it is entirely dead code (~220 lines).
+**Why it's a bug:** beyond being dead weight, the design as written is a latent
+foot-gun: if wired per its own docstring (`sock.ev.process` → `logBatch(events)`) it
+writes one JSONL file per calendar day under `logs/` (dev) or `userData/logs` (prod)
+with the **full sanitised payload of every Baileys event**, and nothing ever prunes or
+size-caps those files — unbounded disk growth for any long-lived install, plus a
+synchronous `JSON.stringify` of every event payload on the hot path.
+**Fix idea:** delete the module, or if it is wanted for debugging, gate it behind a
+debug flag and add day-count / size retention.
+**Status:** open
 
 ## Slice 4 — Chats & sync
 
