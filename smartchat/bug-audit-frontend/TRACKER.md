@@ -13,7 +13,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |---|-------|--------|--------------|-------|
 | F1 | Preload bridge & IPC surface | DONE (6 findings) | 2026-09-07 | 1 high, 2 med, 3 low |
 | F2 | App shell, providers, contributions | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
-| F3 | Chat data hooks (backend event sync) | IN PROGRESS | 2026-09-07 | highest bug density expected — async races, event lifecycle |
+| F3 | Chat data hooks (backend event sync) | DONE (11 findings) | 2026-09-07 | 1 high, 6 med, 4 low — async races, presence expiry/JID, hierarchy orphans |
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F5 | Message view & rendering | TODO | — | check markdown / media URL / keys / virtualization |
 | F6 | Message input & composition | TODO | — | mentions, file queue, audio recorder |
@@ -218,7 +218,152 @@ context`), or document the semantics explicitly.
 **Status:** open
 
 ## Slice F3 — Chat data hooks
-_none yet_
+
+Files audited: `components/chat/hooks/{useChats,useMessages,useChatHierarchy,useSearch}.ts`,
+`hooks/{useChatNavigation,usePresence}.ts` (+ their tests), and the consumers
+`ChatLayout.tsx` / `ChatList.tsx` for the real call/render paths. Preload
+`on*` wrappers verified to remove the specific listener on cleanup (no leak there).
+`loadMore` double-fire on the chat list and the empty-name `open-chat` path are
+already recorded as F4-07 / F4-04 — not duplicated here.
+
+### [F3-01] high — src/renderer/src/components/chat/hooks/useMessages.ts:26-76
+**What:** `loadInitialMessages` / `performJump` do `const msgs = await api.getMessages(jid,…)`
+then `setMessages(msgs)` with no check that `jid` is still the active chat and no
+AbortController. The driving effect (:62-76) updates `lastActiveJid.current`
+*synchronously* before the await, so a late response can't be detected either.
+**Why it's a bug:** rapid chat switching (click chat A, then chat B before A's
+fetch resolves). A's `getMessages` resolves after B's → `setMessages` overwrites
+B's message list with A's messages while chat B is open and its header/input
+still say B. Also `loading` can be left in the wrong state. Classic out-of-order
+response bug — the checklist's headline case.
+**Fix idea:** capture a request id / `AbortController` per load; in the `.then`
+bail if `jid !== activeJidRef.current` (add an `activeJidRef`) or the id is stale.
+**Status:** open
+
+### [F3-02] med — src/renderer/src/components/chat/hooks/useMessages.ts:78-95
+**What:** `loadMore` awaits `api.getMessages(activeJid, nextPage,…)` then
+`setMessages((prev) => [...olderMsgs, ...prev])` with no post-await guard that
+`activeJid` is unchanged.
+**Why it's a bug:** if the user switches chats (or the chat is closed) while a
+"load older messages" fetch is in flight, the resolved older page for chat A is
+prepended onto chat B's current message list — B's history now contains A's
+messages, with `currentPage` also advanced against the wrong chat.
+**Fix idea:** snapshot `activeJid` at call time and discard the result if it no
+longer matches `activeJidRef.current`; reset pagination on chat switch (already
+done in the effect, but the in-flight call must also be invalidated).
+**Status:** open
+
+### [F3-03] med — src/renderer/src/components/chat/hooks/useChats.ts:135-190
+**What:** in `onNewMessage`, for a chat not yet in the list the handler
+*synchronously* does `chatJidsRef.current.add(chatJidLower)` and then
+`await api.getChat(...)`. A second `new-message` for the same new chat arriving
+before that await resolves now sees `hasChat === true` and takes the `else`
+branch (:191), whose `setChats` does `findIndex(... ) === -1 → return prev`.
+**Why it's a bug:** the second (newer) message is silently dropped from the
+chat-list row. The first branch then builds the row from the *first* message's
+preview text/timestamp, so the sidebar shows an older message as "last message".
+Self-heals only on the next event for that chat.
+**Fix idea:** queue/coalesce events for a jid whose `getChat` is in flight, or
+re-read the latest message after the fetch resolves; don't mark `chatJidsRef`
+until the row is actually in state.
+**Status:** open
+
+### [F3-04] med — src/renderer/src/components/chat/hooks/useChats.ts:73-96
+**What:** the initial `loadChats(1,false)` resolves to `setChats(data)` — a full
+replace of the list with the backend page, discarding anything applied to `chats`
+state in between.
+**Why it's a bug:** on startup the `onNewMessage` / `onChatUpdated` subscriptions
+are registered in the same effect *before* `getChats()` resolves. A message or
+chat update that arrives during that fetch window updates `chats`, then the
+awaited `setChats(data)` wipes it — the chat list briefly shows the new
+message/unread bump and then reverts until the next event.
+**Fix idea:** merge the fetched page into existing state (like the `append` path
+does) instead of replacing, or buffer events received before the first load
+completes and replay them.
+**Status:** open
+
+### [F3-05] med — src/renderer/src/components/chat/hooks/useChatHierarchy.ts:21-33, 70-103
+**What:** Pass 1 puts every chat with a `linkedParentJid` into `childrenByParent`
+and adds it to `processedJids`; Pass 2 excludes all processed jids from
+`standaloneChats`; Pass 5 only emits children for community roots that are present
+in `sortableItems` (i.e. roots that are `isCommunity` and in the current list).
+**Why it's a bug:** a subgroup chat whose community root is **not** in the loaded
+/ paginated set (root on a later page, or the backend's `outOfWindow` root
+injection missed it) is neither a standalone nor emitted under a root → it
+disappears from the sidebar completely. The user loses access to an active group
+with no indication it exists.
+**Fix idea:** after Pass 5, emit any `childrenByParent` entries whose parent was
+never rendered as standalone rows (or synthesize a placeholder root).
+**Status:** open
+
+### [F3-06] med — src/renderer/src/hooks/usePresence.ts:27-49
+**What:** the 2s expiry interval only downgrades entries whose
+`lastKnownPresence` is `composing`/`recording` (after 10s). `available` /
+`online` presence is never aged out.
+**Why it's a bug:** if the backend doesn't reliably push an `unavailable`
+presence when a contact goes offline, `getActivePresence` keeps returning
+`'online'` indefinitely (it returns online if *any* sub-entry is
+available/composing/recording). Chat header / list show a stale "online".
+**Fix idea:** also expire `available` after a bounded TTL (e.g. 60s) without a
+refresh, or have the hook re-request presence on a timer for the active chat.
+**Status:** open
+
+### [F3-07] med — src/renderer/src/hooks/usePresence.ts:57-59 & src/renderer/src/components/chat/ChatList.tsx:146
+**What:** presence is stored keyed by the raw `update.remoteJid` and read with an
+exact-match lookup: `presences[jid]` in `getActivePresence`, `presences[chat.jid]`
+in `ChatList.getPresenceText`. Every other part of the chat layer compares JIDs
+with `isSameJid` (case-insensitive, device-suffix tolerant).
+**Why it's a bug:** if the presence event's `remoteJid` differs in case or
+`:device`/`@lid` form from the `activeJid` / `chat.jid` used for lookup, the
+typing / online indicator silently never appears even though the data is present.
+**Fix idea:** normalize JIDs to a canonical form on write and on read, or expose a
+`getActivePresence` that scans with `isSameJid`.
+**Status:** open
+
+### [F3-08] low — src/renderer/src/components/chat/hooks/useChats.ts:73-80
+**What:** the non-append branch returns `data` verbatim; only the `append` branch
+runs `sortChats`. Every realtime update path (`onNewMessage`, `onChatUpdated`,
+`onMessageEdited`, `onMessageStatusUpdated`) re-sorts with the pinned-first /
+timestamp comparator.
+**Why it's a bug:** the initial (and `reload()`) list order is whatever the
+backend returned; if that ordering ever diverges from `sortChats` semantics the
+list visibly reshuffles the moment the first event arrives.
+**Fix idea:** `return sortChats(data)` in the replace branch too.
+**Status:** open
+
+### [F3-09] low — src/renderer/src/components/chat/hooks/useSearch.ts:12,47
+**What:** the debounce effect's dep array is `[query, mode, filters]`; `filters`
+is compared by reference.
+**Why it's a bug:** the current sole caller (`ChatList`) passes a `useState`
+value so the ref is stable, but any caller that passes an inline
+`filters={{…}}` (or a `useMemo`-less derived object) makes the effect tear down
+and recreate the `setTimeout` on every render — while the user is actively
+typing / the parent is re-rendering, the debounce timer keeps resetting and the
+search request may never fire.
+**Fix idea:** memoize `filters` inside the hook (e.g. `JSON.stringify` key) or
+document that callers must pass a stable reference.
+**Status:** open
+
+### [F3-10] low — src/renderer/src/components/chat/hooks/useChats.ts:19-20 & useChatHierarchy.ts:39,46-50,80
+**What:** timestamp fields are fed straight into `BigInt(...)` in the `sortChats`
+comparator and the `useChatHierarchy` memo.
+**Why it's a bug:** `BigInt` throws synchronously on any non-numeric string
+(`BigInt("2026-01-01")`, `BigInt("abc")`). One malformed `lastMessageTimestamp`
+from the backend takes down the whole `useMemo` / the `onNewMessage` handler, and
+there is no error boundary around `ChatList` — white sidebar.
+**Fix idea:** parse defensively (`/^\d+$/` check, or `try/catch` → `0n`).
+**Status:** open
+
+### [F3-11] low — src/renderer/src/hooks/usePresence.ts:13-55 (via ChatLayout.tsx:62 & ChatList.tsx:62)
+**What:** `usePresence()` is instantiated separately in both `ChatLayout` and
+`ChatList`, which are mounted simultaneously.
+**Why it's a bug:** two independent `onPresenceUpdate` IPC subscriptions and two
+2-second `setInterval` timers run for the whole app lifetime; the two copies of
+`presences` state are maintained independently and can briefly disagree (e.g. one
+mid-expiry sweep). Minor constant overhead + a duplicated subscription.
+**Fix idea:** lift presence into a context/provider (or a shared store) consumed
+by both, so there is a single subscription and interval.
+**Status:** open
 
 ## Slice F4 — Chat list & layout & nav UI
 
