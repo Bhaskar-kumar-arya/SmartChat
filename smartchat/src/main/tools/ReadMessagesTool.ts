@@ -189,9 +189,22 @@ EXAMPLES:
     throw new Error('[ReadMessagesTool] Missing required arguments: Provide jid, sql, or messages.');
   }
 
+  /**
+   * Strip string literals and comments so the forbidden-keyword scan only sees
+   * SQL code, not user data — otherwise `LIKE '%please update me%'` etc. are
+   * wrongly rejected.
+   */
+  private stripLiteralsAndComments(sql: string): string {
+    return sql
+      .replace(/'(?:[^']|'')*'/g, "''")
+      .replace(/"(?:[^"]|"")*"/g, '""')
+      .replace(/--[^\n]*/g, ' ')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ');
+  }
+
   private validateSqlQuery(sql: string): void {
     const trimmed = sql.trim();
-    const normalized = trimmed.toUpperCase().replace(/\s+/g, ' ');
+    const normalized = this.stripLiteralsAndComments(trimmed).toUpperCase().replace(/\s+/g, ' ').trim();
 
     if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
       throw new Error(

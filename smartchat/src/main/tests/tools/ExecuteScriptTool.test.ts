@@ -87,6 +87,49 @@ describe('ExecuteScriptTool sandbox hardening (S12-03)', () => {
     expect(out.logs).toContain('[tool:echo] call #1');
   });
 
+  it('refuses further tool calls after the wall-clock timeout fires (S12-04)', async () => {
+    vi.useFakeTimers();
+    let echoCalls = 0;
+    let resolveSlow: () => void = () => {};
+    const slowTool: AITool = {
+      name: 'slow',
+      description: 'never resolves until we say so',
+      parametersSchema: { type: 'object' },
+      requiresPermission: false,
+      execute: () => new Promise<ToolResult>((res) => { resolveSlow = () => res({ text: '{}' }); })
+    };
+    const countingEcho: AITool = {
+      ...echoTool,
+      execute: async (args: Record<string, unknown>): Promise<ToolResult> => {
+        echoCalls++;
+        return { text: JSON.stringify({ echoed: args }) };
+      }
+    };
+
+    const tool = new ExecuteScriptTool(makeRegistry([slowTool, countingEcho]));
+    const resPromise = tool.execute({
+      script: `await slow(); await echo({ after: 'timeout' }); return 'done';`,
+      explanation: 'test'
+    });
+
+    // Let the script start and enter `await slow()`.
+    await vi.advanceTimersByTimeAsync(1);
+    // Fire the 60s wall-clock timeout.
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    const res = JSON.parse((await resPromise).text) as { success: boolean; timedOut?: boolean };
+    expect(res.success).toBe(false);
+    expect(res.timedOut).toBe(true);
+
+    // The orphaned script now resumes — its next tool call must be rejected.
+    resolveSlow();
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.resolve();
+    expect(echoCalls).toBe(0);
+
+    vi.useRealTimers();
+  });
+
   it('surfaces a tool error as a catchable script error, not a host object', async () => {
     const tool = new ExecuteScriptTool(makeRegistry([boomTool]));
     const out = await run(

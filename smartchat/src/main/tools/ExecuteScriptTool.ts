@@ -162,6 +162,11 @@ export class ExecuteScriptTool implements AITool {
 
     const logs: string[] = [];
     let toolCallCount = 0;
+    // Flipped true when the wall-clock timeout fires. `vm` has no async
+    // interruption, so the orphaned script keeps running after we reject the
+    // caller — this flag lets the bridge refuse any further tool calls so a
+    // "timed out" script can't still send messages / write to the DB.
+    let aborted = false;
 
     const context = vm.createContext(
       {},
@@ -174,6 +179,7 @@ export class ExecuteScriptTool implements AITool {
       () => {
         toolCallCount++;
       },
+      () => aborted,
       ctx
     );
     const toolNames = this.toolRegistry
@@ -227,6 +233,7 @@ export class ExecuteScriptTool implements AITool {
     try {
       result = await this.runScriptWithTimeout(scriptPromise, () => {
         timedOut = true;
+        aborted = true;
       });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -271,6 +278,7 @@ export class ExecuteScriptTool implements AITool {
     logs: string[],
     getCallCount: () => number,
     incrementCallCount: () => void,
+    isAborted: () => boolean,
     ctx?: import('../services/ai/IToolRegistry').ToolExecutionContext
   ): (op: string, payloadJson: string) => Promise<string> {
     return async (op: string, payloadJson: string): Promise<string> => {
@@ -285,6 +293,13 @@ export class ExecuteScriptTool implements AITool {
       }
 
       if (op !== 'tool') return JSON.stringify({ __scriptError__: true, message: `Unknown bridge op: ${op}` });
+
+      if (isAborted()) {
+        return JSON.stringify({
+          __scriptError__: true,
+          message: 'Script was aborted (wall-clock timeout reached); no further tool calls are permitted.'
+        });
+      }
 
       let name: string;
       let toolArgs: Record<string, unknown>;
@@ -338,14 +353,21 @@ export class ExecuteScriptTool implements AITool {
     scriptPromise: Promise<unknown>,
     onTimeout: () => void
   ): Promise<unknown> {
-    return Promise.race([
-      scriptPromise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => {
-          onTimeout();
-          reject(new Error(`[ExecuteScriptTool] Script exceeded ${MAX_EXECUTION_MS / 1000}s timeout.`));
-        }, MAX_EXECUTION_MS)
-      )
-    ]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        scriptPromise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            onTimeout();
+            reject(new Error(`[ExecuteScriptTool] Script exceeded ${MAX_EXECUTION_MS / 1000}s timeout.`));
+          }, MAX_EXECUTION_MS);
+        })
+      ]);
+    } finally {
+      // Clear on the success path so a dangling timer doesn't keep the event
+      // loop busy for the full timeout after the script already resolved.
+      if (timer) clearTimeout(timer);
+    }
   }
 }

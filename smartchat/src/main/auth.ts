@@ -91,11 +91,13 @@ const adapter = new Proxy(baseAdapter, {
             console.error("[AdapterPatch] Failed to apply SQLite pragmas:", e);
           }
 
-          try {
-            runMigrations(conn.client);
-          } catch (e: unknown) {
-            console.error("[AdapterPatch] Schema migration failed — app may be in a broken state:", e);
-          }
+          // A failed migration is a startup-blocking error (see schema-migrations.ts):
+          // proceeding would run Prisma against an inconsistent schema and produce
+          // scattered, hard-to-diagnose query failures later. Concurrent-run races
+          // (main vs worker) no longer throw here — they're absorbed by busy_timeout
+          // + `INSERT OR IGNORE` + the in-transaction re-check — so a throw now means
+          // a genuine failure. Let it propagate as one clear fatal error.
+          runMigrations(conn.client);
 
           try {
             let loadablePath = sqliteVec.getLoadablePath();

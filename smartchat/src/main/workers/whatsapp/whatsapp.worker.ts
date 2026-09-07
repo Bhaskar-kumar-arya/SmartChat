@@ -28,12 +28,16 @@ async function bootstrapPrismaAndRepos(dbPath: string, userDataPath: string) {
   // Run schema migrations synchronously before Prisma touches the DB.
   // Uses a short-lived raw better-sqlite3 connection so we don't depend on
   // Prisma being able to open a schema-inconsistent database.
+  // A failed migration is a startup-blocking error (see schema-migrations.ts).
+  // Concurrent-run races with the main process are absorbed inside runMigrations
+  // (busy_timeout + `INSERT OR IGNORE` + in-transaction re-check), so a throw here
+  // is a genuine failure — let it propagate and fail the worker loudly rather than
+  // run Prisma against an inconsistent schema.
+  const migrationDb = new openDatabase(dbPath)
   try {
-    const migrationDb = new openDatabase(dbPath)
     runMigrations(migrationDb)
+  } finally {
     migrationDb.close()
-  } catch (err) {
-    console.error('[WhatsAppWorker] Schema migration failed — worker may be in a broken state:', err)
   }
 
   const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` })

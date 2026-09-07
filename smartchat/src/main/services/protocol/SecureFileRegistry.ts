@@ -5,6 +5,12 @@ export class SecureFileRegistry implements ISecureFileRegistry {
   private readonly allowedDirectories = new Map<string, string>();
   private readonly grantedFiles = new Set<string>();
 
+  // win32 paths are case-insensitive; lowercase them before any containment
+  // comparison so drive-letter casing differences don't cause false denials.
+  private static normalizeForCompare(p: string): string {
+    return process.platform === 'win32' ? p.toLowerCase() : p;
+  }
+
   public registerDirectory(host: string, absolutePath: string): void {
     // Ensure the registered path is normalized and absolute
     this.allowedDirectories.set(host, path.resolve(absolutePath));
@@ -26,7 +32,12 @@ export class SecureFileRegistry implements ISecureFileRegistry {
     // Prevent Directory Traversal (LFI) - the resolved path must be the base dir
     // itself or a path strictly *inside* it. A bare `startsWith(baseDir)` check
     // is insufficient: it also matches sibling dirs like `<baseDir>-backup`.
-    if (resolvedPath !== baseDir && !resolvedPath.startsWith(baseDir + path.sep)) {
+    // On win32 the filesystem is case-insensitive and `path.resolve` can emit a
+    // drive letter in a different case than the registered base (`C:\` vs `c:\`),
+    // which would wrongly *deny* a valid path — so compare case-normalized there.
+    const cmpResolved = SecureFileRegistry.normalizeForCompare(resolvedPath);
+    const cmpBase = SecureFileRegistry.normalizeForCompare(baseDir);
+    if (cmpResolved !== cmpBase && !cmpResolved.startsWith(cmpBase + path.sep)) {
       console.warn(`[SecureFileRegistry] Attempted directory traversal detected for host: ${host}, path: ${relativePath}`);
       return null;
     }

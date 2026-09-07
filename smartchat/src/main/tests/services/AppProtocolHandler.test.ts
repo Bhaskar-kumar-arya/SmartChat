@@ -60,4 +60,14 @@ describe('SecureFileRegistry — traversal guard (audit S12-02)', () => {
     reg.registerDirectory('media', '/data/media')
     expect(reg.resolvePath('media', '/a.png')).toBe(require('path').resolve('/data/media/a.png'))
   })
+
+  // S12-02 remaining: win32 filesystem is case-insensitive; a drive-letter or
+  // path-segment case difference between the registered base and the resolved
+  // path must not wrongly deny a valid path.
+  it.runIf(process.platform === 'win32')('accepts a same-directory path that differs only in case (win32)', () => {
+    const reg = new SecureFileRegistry()
+    reg.registerDirectory('media', 'C:\\data\\media')
+    // resolves to C:\data\MEDIA\a.png — same dir on win32, different case
+    expect(reg.resolvePath('media', '/../MEDIA/a.png')).not.toBeNull()
+  })
 })

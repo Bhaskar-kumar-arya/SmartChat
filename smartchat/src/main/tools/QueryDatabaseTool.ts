@@ -245,9 +245,24 @@ export class QueryDatabaseTool implements AITool {
     return `DATABASE SCHEMA (live, auto-introspected from schema.prisma):\n${tableLines.join('\n')}`;
   }
 
+  /**
+   * Remove SQL string literals ('...', "..."), and `--` / block comments so the
+   * forbidden-keyword scan only sees SQL *code*, not user data. Without this,
+   * legitimate message searches like `LIKE '%please update me%'` or
+   * `'%delete this%'` are wrongly rejected.
+   */
+  private stripLiteralsAndComments(sql: string): string {
+    return sql
+      .replace(/'(?:[^']|'')*'/g, "''")      // single-quoted strings
+      .replace(/"(?:[^"]|"")*"/g, '""')      // double-quoted identifiers/strings
+      .replace(/--[^\n]*/g, ' ')             // line comments
+      .replace(/\/\*[\s\S]*?\*\//g, ' ');    // block comments
+  }
+
   private validateSqlQuery(sql: string): void {
     const trimmed = sql.trim();
-    const normalized = trimmed.toUpperCase().replace(/\s+/g, ' ');
+    const code = this.stripLiteralsAndComments(trimmed);
+    const normalized = code.toUpperCase().replace(/\s+/g, ' ').trim();
 
     if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
       throw new Error(
@@ -296,15 +311,12 @@ export class QueryDatabaseTool implements AITool {
     this.validateSqlQuery(sql);
 
     // ── Enforce row cap ───────────────────────────────────────────────────────
-    const trimmed = sql.trim();
-    const hasLimit = /\bLIMIT\b/i.test(trimmed);
-    let finalSql = trimmed.replace(/;?\s*$/, '');
-
-    if (!hasLimit) {
-      finalSql += ` LIMIT ${MAX_ROWS}`;
-    } else {
-      finalSql = `SELECT * FROM (${finalSql}) AS _capped LIMIT ${MAX_ROWS}`;
-    }
+    // Always wrap as a subquery rather than string-appending ` LIMIT`, so the
+    // cap can't be silently defeated by a trailing `--` line comment or an
+    // unmatched construct at the end of the query. The `\n` before `)` protects
+    // the closing paren from a trailing line comment on the last line.
+    const inner = sql.trim().replace(/;\s*$/, '');
+    const finalSql = `SELECT * FROM (\n${inner}\n) AS _capped LIMIT ${MAX_ROWS}`;
 
     // ── Execute ───────────────────────────────────────────────────────────────
     let rows: unknown[];

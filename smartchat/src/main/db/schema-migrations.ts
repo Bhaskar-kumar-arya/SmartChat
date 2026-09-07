@@ -102,6 +102,16 @@ const MIGRATIONS: Migration[] = [
  * @param db - The raw better-sqlite3 Database instance exposed by the Prisma adapter.
  */
 export function runMigrations(db: RawSqliteDb): void {
+  // 0. On first launch the main process and the WhatsApp worker can both run
+  //    this concurrently against the same file. Give SQLite a busy timeout so
+  //    the loser waits for the winner's write transaction instead of failing
+  //    immediately with SQLITE_BUSY. (No-op if already set on this connection.)
+  try {
+    db.exec('PRAGMA busy_timeout = 10000;')
+  } catch (err) {
+    console.warn('[Migrations] Could not set busy_timeout:', err)
+  }
+
   // 1. Bootstrap the bookkeeping table if this is a brand-new or legacy DB.
   db.exec(`
     CREATE TABLE IF NOT EXISTS "_schema_migrations" (
@@ -126,12 +136,26 @@ export function runMigrations(db: RawSqliteDb): void {
     console.log(`[Migrations] Applying migration: ${migration.id}`)
 
     const applyMigration = db.transaction(() => {
+      // Re-check inside the transaction: a racing process (main vs worker) may
+      // have applied this migration between our SELECT above and acquiring the
+      // write lock here.
+      const alreadyApplied =
+        (
+          db
+            .prepare('SELECT 1 FROM "_schema_migrations" WHERE id = ?')
+            .all(migration.id) as unknown[]
+        ).length > 0
+      if (alreadyApplied) return
+
       // Execute the DDL (may contain multiple statements separated by semicolons).
+      // All statements use `CREATE TABLE IF NOT EXISTS`, so a partial apply by
+      // the racer is harmless.
       db.exec(migration.sql)
 
-      // Record the migration as applied.
+      // Record the migration as applied. `OR IGNORE` so a concurrent winner's
+      // row doesn't turn this into a UNIQUE-violation abort.
       db.prepare(
-        'INSERT INTO "_schema_migrations" ("id", "applied_at") VALUES (?, ?)'
+        'INSERT OR IGNORE INTO "_schema_migrations" ("id", "applied_at") VALUES (?, ?)'
       ).run(migration.id, Date.now())
     })
 
