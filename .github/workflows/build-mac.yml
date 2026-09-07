@@ -33,53 +33,56 @@ jobs:
         uses: actions/checkout@v4
 
       # ── 2. Node.js setup ───────────────────────────────────────────────────
-      - name: Set up Node.js 20
+      # @electron/rebuild >=4 requires Node >=22.12.0
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: smartchat/package-lock.json
 
-      # ── 3. Install system deps (libvips for sharp / @xenova/transformers) ──
-      # sharp (a dep of @xenova/transformers) links against libvips at compile
-      # time. Without this, electron/rebuild fails when it tries to recompile
-      # sharp from source on the macOS runner.
-      - name: Install libvips via Homebrew
-        run: brew install vips
-
-      # ── 4. Install npm dependencies ────────────────────────────────────────
+      # ── 3. Install npm dependencies ────────────────────────────────────────
+      # SHARP_IGNORE_GLOBAL_LIBVIPS=1 forces sharp to use its own prebuilt
+      # binary instead of compiling from source against a system libvips.
+      # This avoids the "napi.h not found" build failure when no dev headers
+      # are available for the system-installed vips.
       - name: Install npm dependencies
         run: npm ci --legacy-peer-deps
+        env:
+          SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
+          npm_config_sharp_ignore_global_libvips: 'true'
 
-      # ── 5. Rebuild native modules for Electron on macOS ───────────────────
+      # ── 4. Rebuild native modules for Electron on macOS ───────────────────
       # Rebuilds better-sqlite3, onnxruntime-node, sqlite-vec, etc. against
-      # the Electron 39.8.2 headers. We do NOT set build_from_source globally
-      # so that modules with prebuilt binaries (e.g. sharp) can use them.
+      # Electron 39.8.2 headers.
+      # --ignore sharp  →  sharp lives in @xenova/transformers and only runs
+      #   in the main process where Node.js prebuilt binaries work fine.
+      #   Forcing a recompile requires system libvips dev headers which are
+      #   unavailable on the runner, so we skip it entirely.
       - name: Rebuild native modules for Electron
-        run: npx @electron/rebuild --force -v 39.8.2
+        run: npx @electron/rebuild --force -v 39.8.2 --ignore sharp
         env:
           npm_config_target: '39.8.2'
           npm_config_runtime: 'electron'
           npm_config_disturl: 'https://electronjs.org/headers'
-          # SHARP_IGNORE_GLOBAL_LIBVIPS=false lets sharp find the brew-installed vips
-          SHARP_IGNORE_GLOBAL_LIBVIPS: 'false'
+          SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
 
-      # ── 6. Generate Prisma client ──────────────────────────────────────────
+      # ── 5. Generate Prisma client ──────────────────────────────────────────
       - name: Generate Prisma client
         run: npx prisma generate
 
-      # ── 7. Write .env (DATABASE_URL only — no secret keys needed to build) ─
+      # ── 6. Write .env (DATABASE_URL only — no secret keys needed to build) ─
       - name: Create .env for build
         run: |
           echo 'DATABASE_URL="file:./prisma/dev.db"' > .env
 
-      # ── 8. Build (electron-vite compile + generate template DB) ───────────
+      # ── 7. Build (electron-vite compile + generate template DB) ───────────
       - name: Build (electron-vite + generate template DB)
         run: npm run build
         env:
           NODE_ENV: production
 
-      # ── 9. Package as macOS .dmg ───────────────────────────────────────────
+      # ── 8. Package as macOS .dmg ───────────────────────────────────────────
       - name: Package macOS .dmg (unsigned)
         run: npx electron-builder --mac --publish never
         env:
@@ -87,7 +90,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
 
-      # ── 10. Upload .dmg as a GitHub Actions artifact ───────────────────────
+      # ── 9. Upload .dmg as a GitHub Actions artifact ────────────────────────
       - name: Upload macOS .dmg artifact
         uses: actions/upload-artifact@v4
         with:
