@@ -19,7 +19,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 7 | Kernel API modules & router | IN PROGRESS | 2026-09-07 | |
 | 8 | Kernel plugins, contributions, permissions | IN PROGRESS | 2026-09-07 | |
 | 9 | Kernel storage, channels, ipc, ui | IN PROGRESS | 2026-09-07 | |
-| 10 | App IPC & auth | TODO | — | |
+| 10 | App IPC & auth | IN PROGRESS | 2026-09-07 | |
 | 11 | apiServer, search, notification, calls, audio | TODO | — | |
 | 12 | SDK, tools, data wipe, domain, db, protocol | TODO | — | |
 | 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
