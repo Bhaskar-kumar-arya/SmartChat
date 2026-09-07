@@ -17,7 +17,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 5 | Contacts | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 6 | AI (providers, mentions, citations, prompts) | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 1 med, 5 low |
 | 7 | Kernel API modules & router | DONE (8 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 6 low |
-| 8 | Kernel plugins, contributions, permissions | IN PROGRESS | 2026-09-07 | |
+| 8 | Kernel plugins, contributions, permissions | DONE (7 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 4 low |
 | 9 | Kernel storage, channels, ipc, ui | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 10 | App IPC & auth | IN PROGRESS | 2026-09-07 | |
 | 11 | apiServer, search, notification, calls, audio | TODO | — | |
@@ -704,7 +704,111 @@ construction).
 **Status:** open
 
 ## Slice 8 — Kernel plugins, contributions, permissions
-_none yet_
+
+### [P2-S8-01] med — src/main/kernel/plugins/PluginLoader.ts:54-75 (+ ipc/contributionIpc.ts:135-143, KernelBootstrapper.ts:196-200)
+**What:** `install()` accepts any `manifest.id` that passes `validateManifest`
+(`PLUGIN_ID_RE` allows dots, so `com.smartchat.builtin.whatsapp-core` is valid) — there is
+no check that the id is not already owned by a built-in plugin. `extension:install` then
+calls `permissions.registerPluginManifest(manifest.id, manifest.permissions)` which is
+last-write-wins (`manifestCapabilities.set(pluginId, new Set(capabilities))`).
+**Why it's a bug:** a sideloaded `.scext` whose manifest id equals a builtin's id
+(`com.smartchat.builtin.whatsapp-core`, `…ai-assistant`, `…notifications`) installs into
+`extensions/<id>/` and overwrites the builtin's registered capability set in the live
+`PermissionStore`. `host.load(id)` then returns early (registry already has the builtin),
+so the worker code never runs — but the damage is done: declaring `permissions: []` for
+that id revokes `chats:read`/`chats:write` from the real WhatsApp-core plugin, so every
+pin/mute/archive/mark-read chat action throws `KernelPermissionError` for the rest of the
+session. It re-applies on every boot (bootstrapper registers builtins first, then the
+installed dir at line 198 overwrites again), so it survives restart until the dir is
+manually removed.
+**Fix idea:** in `install()` (and before `registerPluginManifest` in the install handler),
+reject any `manifest.id` that collides with a registered/built-in plugin id; keep builtin
+capability registrations authoritative.
+**Status:** open
+
+### [P2-S8-02] med — src/main/kernel/plugins/PluginHost.ts:417-437
+**What:** For worker plugins, `load()` registers all manifest contributions into the
+`ContributionRegistry` and then fires `channel.sendToPlugin({ type: 'plugin:activate' })`
+— fire-and-forget. There is no ack, no await, and no error path; `DirectPluginChannel`/
+`WorkerPluginChannel.sendToPlugin` just does `void handler(msg)`.
+**Why it's a bug:** if the plugin throws during activation (bad code, failed
+`ctx.storage` read, missing native dep) nothing observes it. `extension:install` still
+returns `{ success: true }`, the plugin shows as loaded (`registry.get(id)` truthy,
+`isLoaded` true in `extension:list`), and its chat/message actions, slash commands, etc.
+are all visible in the UI — but every invocation is a silent no-op because the plugin
+never registered its handlers. Contrast `registerBuiltin`, which `await plugin.activate(ctx)`.
+**Fix idea:** send `plugin:activate` as a bidirectional request (like `plugin:deactivate`
+already is), await it with a timeout, and on failure roll back the contribution
+registration + registry entry and surface the error to the installer.
+**Status:** open
+
+### [P2-S8-03] med — src/main/kernel/plugins/PluginHost.ts:445-469
+**What:** In `unload()`, `await builtin.deactivate()` (builtin branch) and the worker
+deactivate race are followed — unconditionally — by `onPluginUnload?.(id)`,
+`contributionRegistry.unregisterAll(id)`, `metadata.channel.destroy()`,
+`registry.unregister(id)`, and handler cleanup. But `builtin.deactivate()` is not wrapped:
+if it throws, `unload()` rejects and **none** of the teardown after it runs.
+**Why it's a bug:** a builtin whose `deactivate()` throws leaks its channel, its WA
+event-bus subscriptions and AI tools (`onPluginUnload` skipped), and leaves its
+contributions registered (stale chat actions in the UI) while `registry` still reports it
+loaded. Worse, `KernelBootstrapper.dispose()` loops `for (const id of loaded) await
+host.unload(id)` with no per-iteration catch, so one throwing plugin aborts shutdown for
+every plugin after it.
+**Fix idea:** wrap `deactivate()` in try/catch (log and continue), and/or run the
+post-deactivate teardown in a `finally`; make `dispose()`'s loop catch per plugin.
+**Status:** open
+
+### [P2-S8-04] low — src/main/kernel/plugins/PluginHost.ts:488-491
+**What:** `reload(id)` is `await this.unload(id); await this.load(id)` with no rollback.
+`load()` always goes through `this.loader.load(id)`, which reads
+`extensions/<id>/manifest.json` from disk.
+**Why it's a bug:** `reload` is reachable via the `extension:reload` IPC handler for any
+id. Called on a built-in plugin id (or a worker plugin whose on-disk manifest has since
+become invalid), `unload()` succeeds but `load()` throws `ManifestValidationError` — the
+plugin is now fully unloaded (contributions gone, channel destroyed) with no way back
+except an app restart.
+**Fix idea:** guard `reload` against builtin ids; on `load()` failure during reload,
+re-register the previous state or at minimum report that the plugin is now unloaded.
+**Status:** open
+
+### [P2-S8-05] low — src/main/kernel/plugins/PluginHost.ts:143-154
+**What:** In `registerBuiltin`, the `kernel:events:emit` branch runs
+`for (const h of handlers) { await h(payload) }` with no try/catch, then sends the
+`{ ok: true }` ack at line 152.
+**Why it's a bug:** one event handler that throws (or rejects) aborts the loop — sibling
+handlers subscribed to the same event never receive that payload — and the ack is never
+sent, so the emit rejects back to the kernel emitter (recovered only by the 30 s channel
+timeout) instead of completing.
+**Fix idea:** wrap each `h(payload)` in try/catch, log per-handler failures, always send
+the ack.
+**Status:** open
+
+### [P2-S8-06] low — src/main/kernel/plugins/PluginHost.ts:297-313
+**What:** `ctx.scheduler.setInterval/setTimeout/onCron` create real Node timers /
+map entries in the **main process** and are never tracked by the host. `setTimeout`'s
+disposer even calls `clearInterval(id)` on a `setTimeout` handle (works only because Node
+handles are interchangeable). `onCron` adds to `eventHandlers` but nothing is shown to
+emit `cron:<name>` events.
+**Why it's a bug:** a builtin that forgets to call the returned disposer (or throws before
+it does) leaks a live repeating timer in the kernel process for the life of the app;
+`unload()` does nothing to reclaim scheduler resources. `onCron` handlers appear to be
+dead (no emitter).
+**Fix idea:** track every timer created via `ctx.scheduler` per plugin and clear them in
+`unload()`; use `clearTimeout` for `setTimeout`; wire or remove `onCron`.
+**Status:** open
+
+### [P2-S8-07] low — src/main/kernel/plugins/PluginLoader.ts:69-73, 117-139
+**What:** `install()` does `zip.extractAllTo(pluginDir, true)` over an existing plugin
+directory without clearing it first, and `listInstalled()` silently `catch {}`-skips any
+directory whose `manifest.json` fails to parse/validate.
+**Why it's a bug:** (a) upgrading/re-installing a plugin leaves behind files deleted in
+the new version; if a later manifest `main` points back at a stale `.js`, `load()` will
+`new Worker()` old code. (b) A plugin that ships a slightly-malformed manifest just
+disappears from `extension:list` with no log line, so the user has no idea why their
+installed plugin vanished.
+**Fix idea:** `fs.rmSync(pluginDir, { recursive: true, force: true })` before extract
+(after the zip-slip check); log a warning in `listInstalled()` when a manifest is skipped.
+**Status:** open
 
 ## Slice 9 — Kernel storage, channels, ipc, ui
 
@@ -808,7 +912,109 @@ have plugin unload / `deregisterPlugin` call into the `PanelIpcRegistration` to
 **Status:** open
 
 ## Slice 10 — App IPC & auth
-_none yet_
+
+### [P2-S10-01] med — src/main/ipcHandlers.ts:186-190 (`grant-local-file-preview`)
+**What:** `ipcMain.on('grant-local-file-preview', (_event, filePath) => secureRegistry.grantFile(filePath))`
+has **no `isTrustedSender` guard**, unlike every other privileged channel in this file
+(`save-temp-file`, `download-url-to-temp`, `logout`, `set-sync-full-history`, `clear-vectors`).
+**Why it's a bug:** `grantFile(absPath)` is documented as "the only way `app://local/<abs path>`
+can resolve" — the exact sink the pass-1 S12-01 LFI fix locked down. Any frame that can reach
+this channel (a `<webview>` guest — `webviewTag: true` is set in src/main/index.ts:118 — a
+sub-frame, or an injected document) can call
+`ipcRenderer.send('grant-local-file-preview', 'C:/Users/<user>/AppData/Roaming/smartchat/dev.db')`
+then `fetch('app://local/C:/Users/.../dev.db')` and read the message DB, auth-state DB, key
+files, or any absolute path off disk. The S12-01 "only granted paths resolve" mitigation is
+fully bypassed because the grant itself is unauthenticated. `select-file` (line 192-203) grants
+only after a user dialog; this raw channel has no such gate.
+**Fix idea:** add `if (!isTrustedSender(event)) return` (channel already receives `event`; it is
+currently named `_event`). Consider also capping the registry size / TTL.
+**Status:** open
+
+### [P2-S10-02] med — src/main/ipcHandlers.ts:398-404 (`get-provider-keys` / `set-provider-key`)
+**What:** Neither handler has an `isTrustedSender` guard. `get-provider-keys` →
+`AIService.getProviderKeys()` → `aiKeyService.getKeys()` returns the **plaintext** provider API
+keys as `Record<string,string>`. `set-provider-key` overwrites a stored key and hot-swaps it
+into the live provider instance.
+**Why it's a bug:** consistent with P2-S10-01 / the pass-1 S10-05/06 threat model (`<webview>`
+guest, sub-frame, injected cross-origin document): an untrusted frame can invoke
+`get-provider-keys` and exfiltrate the user's Gemini/Groq/Mistral/DeepSeek API keys in the
+clear, or invoke `set-provider-key` to redirect all future AI traffic through an
+attacker-controlled key (MITM of prompts/responses, billing abuse). Privileged, data-bearing
+channels — but ungated.
+**Fix idea:** gate both with `isTrustedSender(event)` (they already receive `event` /
+`_event`).
+**Status:** open
+
+### [P2-S10-03] med — src/main/auth.ts:202-213 (`writeData` / `saveCreds`)
+**What:** `writeData` wraps its `authState.upsert` in `try { … } catch (error) { console.error(…) }`
+— the error is swallowed and the function resolves normally. `saveCreds` is
+`() => writeData(creds, "creds")`, so a failed creds persist is reported to Baileys as success.
+**Why it's a bug:** this is the exact defect the `keys` `set` path 30 lines below was hardened
+against (comment: "Do NOT swallow a failed keystore write (S10-02) … losing them silently
+corrupts the session until a re-link" → retries then throws). `saveCreds` runs right after
+pairing (persisting the freshly registered identity, `me`, `myAppStateKeyId`, advertised
+pre-keys) and after every noise-handshake ratchet advance. If that write fails transiently
+(DB locked by the worker, I/O), Baileys thinks creds are saved; on the next launch `readData`
+finds no/old `creds` row → fresh QR prompt, or a stale identity that no longer matches the
+server ratchet. Inconsistent hardening within the same file.
+**Fix idea:** give `writeData` the same retry-then-throw treatment as the `set` path (at least
+for `id === 'creds'`), so `saveCreds` rejects and the socket errors/reconnects instead of
+advancing on unsaved creds.
+**Status:** open
+
+### [P2-S10-04] low — src/main/auth.ts:126-175 (`initVectorDb`)
+**What:** The whole body is inside one `try { … } catch (err) { console.error(…) }`. The
+dimension-mismatch self-heal does `DROP TABLE IF EXISTS vec_messages` then a bare
+`CREATE VIRTUAL TABLE vec_messages …` (no `IF NOT EXISTS`).
+**Why it's a bug:** if the `CREATE` fails after the `DROP` succeeds (locked DB, extension not
+loaded on this connection — the sqlite-vec load a few lines earlier is itself wrapped in a
+swallow-all catch), the app continues with **no `vec_messages` table at all**. Every later
+semantic-search / `vector MATCH` query throws and is caught somewhere upstream, so deep search
+silently returns nothing with no user-visible error and no retry until a full restart happens
+to succeed.
+**Fix idea:** use `CREATE VIRTUAL TABLE IF NOT EXISTS` in the self-heal branch too; surface a
+fatal error (or a ret/'degraded search' flag) rather than logging and proceeding.
+**Status:** open
+
+### [P2-S10-05] low — src/main/ipcHandlers.ts:172-184 (`download-url-to-temp`)
+**What:** After the `isTrustedSender` check, `fetch(url)` is called on a renderer-supplied URL
+with no host/scheme allow-list, no timeout, no redirect restriction, and
+`response.arrayBuffer()` buffers the entire body in memory with no size cap before
+`fs.writeFileSync`.
+**Why it's a bug:** (a) SSRF — the app's own `APIServer` and any other localhost/LAN service,
+or a cloud metadata endpoint, can be reached from the main process (which has no CORS / origin
+constraints); (b) a hostile or accidental URL pointing at a multi-GB resource is read fully
+into a main-process Buffer → OOM / main-process crash. The trusted-frame gate limits the
+attacker to a compromised renderer, but message-content rendering is an XSS surface.
+**Fix idea:** restrict to `https:` (and known hosts), add an `AbortSignal` timeout, cap
+`Content-Length` / streamed bytes, and stream to disk instead of buffering.
+**Status:** open
+
+### [P2-S10-06] low — src/main/ipc/ipcGuards.ts:41 (`isTrustedSender`)
+**What:** The prod branch accepts the frame iff
+`url.startsWith('file://') && url.endsWith('/renderer/index.html')`.
+**Why it's a bug:** (a) brittle — if the renderer is ever loaded with a hash route or query
+string (`…/renderer/index.html#/chats`, `?foo`), `endsWith` fails and every privileged IPC
+call from the legitimate app is rejected; (b) loose — it matches *any* `file://` document
+whose path ends `/renderer/index.html` (e.g. an attacker-planted
+`file:///tmp/x/renderer/index.html`), so the check leans entirely on nothing else being able
+to navigate the top frame.
+**Fix idea:** parse the URL and compare `pathname` (ignoring hash/search) against the known
+`renderer/index.html` absolute path, or compare against `mainWindow.webContents` identity
+directly.
+**Status:** open
+
+### [P2-S10-07] low — src/main/ipcHandlers.ts:351-370 (`execute-tool`)
+**What:** For `tool.requiresPermission` the main process only checks `isTrustedSender` and
+`console.log`s — it never prompts. The comment states the trusted renderer "prompts the user
+before calling"; enforcement of user consent lives entirely in the renderer.
+**Why it's a bug:** a compromised trusted renderer (message content is a rendered-HTML/markdown
+XSS surface) satisfies `isTrustedSender` and can drive `ExecuteScriptTool` (host RCE per pass-1
+S12-03), `SendMessageTool`, `QueryDatabaseTool`, `MessageActionTool` with no main-process
+confirmation. The permission flag is effectively advisory.
+**Fix idea:** perform the user-consent prompt in the main process (`dialog`) for
+`requiresPermission` tools, or sign/nonce the renderer's "user approved" assertion.
+**Status:** open
 
 ## Slice 11 — apiServer, search, notification, calls, audio
 _none yet_
