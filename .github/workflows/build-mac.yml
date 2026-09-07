@@ -41,7 +41,18 @@ jobs:
           cache: 'npm'
           cache-dependency-path: smartchat/package-lock.json
 
-      # ── 3. Install npm dependencies ────────────────────────────────────────
+      # ── 3. Override .npmrc mirrors for CI ──────────────────────────────────
+      # .npmrc sets electron_builder_binaries_mirror to npmmirror, which does
+      # NOT host dmg-builder (the tool electron-builder needs to create .dmg
+      # files on macOS). We override both mirrors to GitHub official releases
+      # BEFORE npm ci so the setting is in effect for the entire job.
+      # The .npmrc values are preserved for local development (India mirror).
+      - name: Override electron mirrors to GitHub for CI
+        run: |
+          npm config set electron_mirror "https://github.com/electron/electron/releases/download/v"
+          npm config set electron_builder_binaries_mirror "https://github.com/electron-userland/electron-builder-binaries/releases/download/"
+
+      # ── 4. Install npm dependencies ────────────────────────────────────────
       # SHARP_IGNORE_GLOBAL_LIBVIPS=1 forces sharp to use its own prebuilt
       # binary instead of compiling from source against a system libvips.
       # This avoids the "napi.h not found" build failure when no dev headers
@@ -52,7 +63,7 @@ jobs:
           SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
           npm_config_sharp_ignore_global_libvips: 'true'
 
-      # ── 4. Rebuild native modules for Electron on macOS ───────────────────
+      # ── 5. Rebuild native modules for Electron on macOS ───────────────────
       # Rebuilds better-sqlite3, onnxruntime-node, sqlite-vec, etc. against
       # Electron 39.8.2 headers.
       # --ignore sharp  →  sharp lives in @xenova/transformers and only runs
@@ -67,36 +78,30 @@ jobs:
           npm_config_disturl: 'https://electronjs.org/headers'
           SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
 
-      # ── 5. Generate Prisma client ──────────────────────────────────────────
+      # ── 6. Generate Prisma client ──────────────────────────────────────────
       - name: Generate Prisma client
         run: npx prisma generate
 
-      # ── 6. Write .env (DATABASE_URL only — no secret keys needed to build) ─
+      # ── 7. Write .env (DATABASE_URL only — no secret keys needed to build) ─
       - name: Create .env for build
         run: |
           echo 'DATABASE_URL="file:./prisma/dev.db"' > .env
 
-      # ── 7. Build (electron-vite compile + generate template DB) ───────────
+      # ── 8. Build (electron-vite compile + generate template DB) ───────────
       - name: Build (electron-vite + generate template DB)
         run: npm run build
         env:
           NODE_ENV: production
 
-      # ── 8. Package as macOS .dmg ───────────────────────────────────────────
+      # ── 9. Package as macOS .dmg ───────────────────────────────────────────
       - name: Package macOS .dmg (unsigned)
         run: npx electron-builder --mac --publish never
         env:
           # Disable code-signing — unsigned build, notarize is already false
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          # Override electron-builder.yml's electronDownload.mirror (npmmirror).
-          # npmmirror only hosts the Electron runtime — it does NOT host
-          # electron-builder tool binaries (dmg-builder, nsis, etc.), so we
-          # point both mirrors to GitHub official releases for CI.
-          ELECTRON_MIRROR: "https://github.com/electron/electron/releases/download/v"
-          ELECTRON_BUILDER_BINARIES_MIRROR: "https://github.com/electron-userland/electron-builder-binaries/releases/download/"
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
 
-      # ── 9. Upload .dmg as a GitHub Actions artifact ────────────────────────
+      # ── 10. Upload .dmg as a GitHub Actions artifact ───────────────────────
       - name: Upload macOS .dmg artifact
         uses: actions/upload-artifact@v4
         with:
