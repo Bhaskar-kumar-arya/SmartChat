@@ -104,8 +104,8 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | 7 — Kernel API modules & router | 4 | DONE (2026-09-06) — S7-02 (sendMedia path containment), S7-03 (ai:sessions capability split), S7-04 (tool-name conflict reject + unregister on unload), S7-05 (overlay:send/close require ui:overlay + ownership) |
 | 8 — Kernel plugins/contributions/permissions | 6 | DONE (2026-09-06) — S8-02/03/04 already fixed by b42bff6 (S7-01); S8-05 (atomic write + fail-closed on corrupt), S8-06 (KernelEventsModule.removePlugin unload hook), S8-07 (await worker deactivate ack before destroy) |
 | 9 — Kernel storage/channels/ipc/ui | 6 | DONE (2026-09-07) — S9-01 (panelIpc lazy getBus + onBusConnected re-attach wired in index.ts), S9-02 (panel event subscribe permission-gated), S9-03 (webContents 'destroyed' cleanup), S9-04 (30s PLUGIN_TIMEOUT on both plugin channels' sendRequestToPlugin), S9-05 (OverlayHost: reject on missing window + pending-timeout eviction + dispose()), S9-06 (panelHost.deregisterPlugin on unload + changed-panelPath re-register) |
-| 10 — App IPC & auth | 4 | TODO |
-| 11 — apiServer/search/notification/calls/audio | 7 | TODO |
+| 10 — App IPC & auth | 4 | DONE (2026-09-07) — S10-03 (readData throws on transient error, both auth copies), S10-04 (resolveInsideDir containment), S10-05 (execute-tool gated to trusted frame + audit log), S10-06 (isTrustedSender on destructive channels); guards in src/main/ipc/ipcGuards.ts |
+| 11 — apiServer/search/notification/calls/audio | 7 | DONE (2026-09-07) — S11-02 (no rewrite on unreadable prefs), S11-03 (fail pendingJobs on worker death + vectorless embed_done), S11-04 (re-check pause per loop iteration), S11-05 (call-log monotonic/terminal guard), S11-06 (ffmpeg error rejects + cleanup + unique name), S11-07 (deepSearch post-filter; core already S2-03), S11-08 (body size cap + Buffer.concat + idle timeout) |
 | 12 — SDK/tools/data wipe/domain/db/protocol | 6 | TODO |
 | 13 — Cross-cutting | 5 | TODO |
 

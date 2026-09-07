@@ -1577,6 +1577,13 @@ decryption failures for that session.
 **Fix idea:** on read error, throw so startup aborts/retries instead of silently minting a new
 identity; only fall back to `initAuthCreds()` when the row is genuinely absent.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 10, commit 91dee99) — `readData` in both
+`workers/whatsapp/socket/useLocalPrismaAuthState.ts` (live) and `auth.ts` (dead copy, kept in sync)
+now catches the `findUnique` failure and **re-throws**; only a genuinely absent/`data`-less row returns
+`null`. A transient DB error loading `creds` aborts `useLocalPrismaAuthState` → `connect()`'s retry
+path re-attempts with the real creds instead of `initAuthCreds()` minting a new identity. Keystore
+`get` likewise rejects rather than returning `null` for real keys. Test:
+`useLocalPrismaAuthState.test.ts` +2. typecheck clean.
 
 ### [S10-04] med — ipcHandlers.ts:152-165 (`save-temp-file`) & 167-178 (`download-url-to-temp`)
 **What:** Both handlers do `const filePath = join(tempDir, fileName)` with `fileName` taken verbatim
@@ -1591,6 +1598,12 @@ the destination.
 **Fix idea:** `const safe = path.basename(fileName)` and verify `path.resolve(tempDir, safe)` is
 still inside `tempDir` before writing; reject otherwise.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 10, commit 91dee99) — new `resolveInsideDir(baseDir, fileName)`
+in `src/main/ipc/ipcGuards.ts`: takes `basename(fileName)`, rejects empty/`.`/`..`, and asserts
+`resolve(base, name) === base + sep + name` before returning. Both `save-temp-file` and
+`download-url-to-temp` route the renderer-supplied name through it (and both now also require
+`isTrustedSender`). Test: `ipcGuards.test.ts` (plain name kept, dir component neutralized, traversal
+never escapes base, empty/dot rejected). typecheck clean.
 
 ### [S10-05] med — ipcHandlers.ts:312-321 (`execute-tool`) + services/ai/IToolRegistry.ts:17
 **What:** `execute-tool` looks up the tool and calls `tool.execute(args, ctx)` with no check of
@@ -1604,6 +1617,13 @@ impression that the backend enforces it.
 **Fix idea:** enforce `requiresPermission` in the `execute-tool` handler (and the apiServer path) —
 prompt / check a granted-permission store in the main process before `tool.execute`.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 10, commit 91dee99) — the `execute-tool` handler now rejects
+any `tool.requiresPermission` invocation whose IPC sender is not the trusted top-level app renderer
+frame (`isTrustedSender`), and `console.log`s every allowed permission-gated execution as an audit
+line. The renderer's own per-call user prompt (`useAIStream.ts`) is unchanged and still runs on the
+trusted path. A full main-process grant store is still not built — out of scope; the sender gate
+closes the "injected sub-frame / `<webview>` guest invokes a gated tool" hole. (apiServer path is
+S11-01, already fixed.) Covered by `ipcGuards.test.ts` (`isTrustedSender` matrix). typecheck clean.
 
 ### [S10-06] med — ipcHandlers.ts:230-235 (`logout`) + all handlers (no sender validation)
 **What:** `logout` runs `sock.logout()` then `services.dataWipeService.wipeAllData()` on receipt of
@@ -1618,6 +1638,13 @@ destructive action across the trust boundary. Electron's own guidance is to vali
 explicit main-process confirmation dialog and/or validate `event.senderFrame.url` against the app
 origin on every handler.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 10, commit 91dee99) — `isTrustedSender(event)` validates
+`event.senderFrame` is the top-level app frame (no parent, URL === `ELECTRON_RENDERER_URL` prefix in
+dev or `…/renderer/index.html` in prod). Applied to `logout`, `clear-vectors`,
+`set-sync-full-history`, `save-temp-file`, `download-url-to-temp` — a `<webview>` guest / sub-frame /
+injected cross-origin document is rejected before the destructive work runs. Not every handler is
+gated (read-only channels left alone); a confirmation dialog was not added (kept minimal). Test:
+`ipcGuards.test.ts`. typecheck clean.
 
 ### [S10-07] low — src/preload/index.ts:421-427
 **What:** The preload exposes both the curated `api` object **and** `@electron-toolkit/preload`'s
@@ -1720,6 +1747,11 @@ provider settings, everything — with a 2-key stub. Data loss triggered by a re
 **Fix idea:** on parse/read failure, abort token generation and do not write; only persist when the
 file was successfully parsed (or missing entirely). Merge into the parsed object, never a `{}`.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 11, commit 5b/audit11) — `loadOrCreateConfig` tracks a
+`safeToWrite` flag: a read/parse failure or a non-object payload sets it false, and the token
+write-back is skipped in that case (an in-memory token is still issued for the session with a
+`console.warn`). A genuinely-absent file still writes normally. Test:
+`APIConfigProvider.test.ts` +2 (read throws → no write; invalid JSON → no write). typecheck clean.
 
 ### [S11-03] med — services/search/EmbeddingWorkerManager.ts:96-101, 119-142
 **What:** When the embedding worker emits `error` (global) or `exit`, the handlers null
@@ -1737,6 +1769,12 @@ degrades (`deepSearch` catch returns `[]`).
 clear the map, reset `activeJobs`; add a per-job timeout; treat a vectorless `embed_done` as a
 rejection.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 11, commit audit11) — new `failAllPending(reason)` rejects
+and clears every entry in `pendingJobs` (each `reject` wrapper already decrements `activeJobs`);
+called from both the `error` and `exit` worker handlers (which also null `worker`/`initPromise`).
+A vectorless `embed_done` now `job.reject`s instead of leaking the promise. Per-job timeout not
+added (worker-death path covers the stall). Test: `EmbeddingWorkerManager.test.ts` (exit, error,
+vectorless embed_done all reject the in-flight `embed()`). typecheck clean.
 
 ### [S11-04] med — services/search/EmbeddingService.ts:88-115 (`processQueue`) & 117-166 (`indexAll`)
 **What:** Both loops check `this.isPaused` only once, at entry. `processQueue`'s `while
@@ -1750,6 +1788,12 @@ duration — exactly the contention the pause is meant to prevent.
 **Fix idea:** check `this.isPaused` at the top of each loop iteration and break/yield (re-enqueue the
 current item for `processQueue`), resuming from `setPaused(false)` → `processQueue()`.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 11, commit audit11) — `processQueue`'s `while` and
+`indexAll`'s `for` both `break` on `this.isPaused` at the top of each iteration. The unprocessed
+`processQueue` item stays in `indexQueue` and resumes via `setPaused(false)` → `processQueue()`;
+`indexAll` logs and returns (its remaining messages are picked up by the next `indexAll`). Test:
+`EmbeddingService.test.ts` (a pause during the first embed stops the drain before item 2).
+typecheck clean.
 
 ### [S11-05] med — services/calls/CallRepository.ts:36-43 (`upsertCallLog` update branch)
 **What:** The `update` branch unconditionally overwrites `status` and `timestamp` with the incoming
@@ -1763,6 +1807,12 @@ and S2-05 (reactions); `ReceiptService` guards this for messages, calls have no 
 **Fix idea:** in the update branch, only apply when `entry.timestamp >= existing.timestamp` and the
 status transition is forward (define an ordering); otherwise keep the stored row.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 11, commit audit11) — `upsertCallLog` now reads the existing
+row and skips the update when the incoming event is older (`entry.timestamp < existing.timestamp`)
+or would regress an already-terminal call (`accept`/`reject`/`timeout`/`terminate`) back to a
+non-terminal status. New rows still create; a create that loses a race to a concurrent insert
+retries through the guarded path. Test: `CallRepository.test.ts` (create; stale-timestamp ignored;
+terminal-not-regressed; forward transition applied). typecheck clean.
 
 ### [S11-06] med — services/audio/AudioTranscoderService.ts:51-55 (`transcodeToWAPtt` error path)
 **What:** On any ffmpeg `error` the promise resolves with **`inputPath`** (the original file) and
@@ -1775,6 +1825,12 @@ surfaced to the sender. Also the partially-written `outPath` from the failed run
 **Fix idea:** `reject(err)` on error so the caller can fail the send or fall back explicitly; clean
 up a partial `outPath`; make the output name unique.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 11, commit audit11) — the `error` handler now `reject`s with
+the ffmpeg error (was `resolve(inputPath)`), unlinks the partial `outPath`, and `outPath` gets a
+`Date.now()_<rand>` prefix so concurrent same-basename transcodes don't collide. The sole caller
+(`save-temp-file` IPC handler) already `return`s the promise, so the rejection now surfaces to the
+renderer instead of an unplayable WebM PTT being sent. No unit test (ffmpeg subprocess); verified by
+inspection. typecheck clean.
 
 ### [S11-07] med — services/search/SearchService.ts:146-166 (`deepSearch`) + MessageVectorRepository (S2-03)
 **What:** `deepSearch` computes `candidateIds` from the chat/date filters and passes them to
@@ -1788,6 +1844,11 @@ ignored.
 **Fix idea:** fix S2-03 (chunk the `IN` list / temp-table join, never drop the filter); until then,
 have `deepSearch` post-filter `scoredResults` against `candidateIds` when it supplied them.
 **Status:** open
+**Fix status:** fixed — the underlying filter-drop was closed in S2-03 (repo now chunks the `IN`
+list, never drops the scope). Batch D (slice 11, commit audit11) additionally adds the belt-and-
+suspenders post-filter: `deepSearch` filters `scoredResults` against the `candidateIds` Set it
+supplied, so a scoped deep search can never surface a hit from outside the chat/date filter.
+typecheck clean.
 
 ### [S11-08] med — services/apiServer/controllers/helpers.ts:3-16 (`readRequestBody`)
 **What:** Accumulates the request body with `body += chunk.toString()` and no maximum size. Also
@@ -1801,6 +1862,11 @@ arbitrarily large body entirely in the main process's memory before `JSON.parse`
 **Fix idea:** cap total bytes (e.g. 1–5 MB) and destroy the socket past the limit; collect `Buffer`
 chunks and `Buffer.concat(...).toString('utf-8')` once; add an idle timeout.
 **Status:** open
+**Fix status:** fixed in Batch D (slice 11, commit audit11) — `readRequestBody` collects `Buffer`
+chunks (decoded once via `Buffer.concat(...).toString('utf-8')` — fixes the multi-byte-split
+corruption), rejects + `req.destroy()`s past a 5 MB cap (overridable per call), and has a 30s idle
+timeout (`idleTimer.refresh()` per chunk). Test: `helpers.test.ts` (split-emoji reassembled;
+over-cap body rejects). typecheck clean.
 
 ### [S11-09] low — services/apiServer/APIServer.ts:64 (auth middleware)
 **What:** Token check is `reqToken !== this.token` — a short-circuiting, non-constant-time string
