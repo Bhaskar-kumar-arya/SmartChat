@@ -1,6 +1,7 @@
 import { ipcMain, app, dialog, BrowserWindow } from 'electron'
 import fs from 'fs'
 import { join } from 'path'
+import { resolveInsideDir, isTrustedSender } from './ipc/ipcGuards'
 import { ServiceContainer } from './ServiceContainer'
 import { AIToolInitializer } from './services/ai/AIToolInitializer'
 import { audioTranscoderService } from './services/audio/AudioTranscoderService'
@@ -152,11 +153,12 @@ function registerMediaAndFileHandlers(
   getSock: () => WASocket | null,
   secureRegistry: ISecureFileRegistry
 ): void {
-  ipcMain.handle('save-temp-file', async (_event, buffer: Buffer | ArrayBuffer | Uint8Array, fileName: string) => {
+  ipcMain.handle('save-temp-file', async (event, buffer: Buffer | ArrayBuffer | Uint8Array, fileName: string) => {
+    if (!isTrustedSender(event)) throw new Error('[IPC] save-temp-file cannot be invoked from this context')
     const tempDir = join(app.getPath('userData'), DIR_NAME_TEMP)
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
 
-    const filePath = join(tempDir, fileName)
+    const filePath = resolveInsideDir(tempDir, fileName)
     const data = buffer instanceof Uint8Array ? buffer : Buffer.from(buffer)
     fs.writeFileSync(filePath, data)
 
@@ -167,11 +169,12 @@ function registerMediaAndFileHandlers(
     return filePath
   })
 
-  ipcMain.handle('download-url-to-temp', async (_event, url: string, fileName: string) => {
+  ipcMain.handle('download-url-to-temp', async (event, url: string, fileName: string) => {
+    if (!isTrustedSender(event)) throw new Error('[IPC] download-url-to-temp cannot be invoked from this context')
     const tempDir = join(app.getPath('userData'), DIR_NAME_TEMP)
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
 
-    const filePath = join(tempDir, fileName)
+    const filePath = resolveInsideDir(tempDir, fileName)
     const response = await fetch(url)
     if (!response.ok) throw new Error(`[IPC] Failed to download file: ${response.statusText}`)
     
@@ -240,7 +243,13 @@ function registerAuthAndProfileHandlers(
     return services.contactService.getMePhoneNumberJid(getSock())
   })
 
-  ipcMain.handle('logout', async () => {
+  ipcMain.handle('logout', async (event) => {
+    // S10-06: `logout` unlinks the device AND wipes all local data. Only the
+    // trusted app renderer may trigger it — not a <webview>/sub-frame.
+    if (!isTrustedSender(event)) {
+      console.warn('[IPC] Blocked logout from untrusted frame')
+      throw new Error('[IPC] logout cannot be invoked from this context')
+    }
     const sock = getSock()
     if (sock) await sock.logout().catch((err: unknown) => { console.warn('[IPC] sock.logout failed:', err) })
     // wipeAllData throws on a partial wipe — let it reject so the renderer keeps
@@ -262,9 +271,20 @@ function registerAuthAndProfileHandlers(
     return services.authSettingsService.getSyncFullHistory()
   })
 
-  ipcMain.handle('set-sync-full-history', async (_event, full: boolean) => {
+  ipcMain.handle('set-sync-full-history', async (event, full: boolean) => {
+    if (!isTrustedSender(event)) {
+      console.warn('[IPC] Blocked set-sync-full-history from untrusted frame')
+      throw new Error('[IPC] set-sync-full-history cannot be invoked from this context')
+    }
     await services.authSettingsService.setSyncFullHistory(full)
-    waConnectionManager.connect()
+    // S10-09 / S3-04: don't leave connect() as a floating promise — a rejection
+    // here (wipeAllData, hasCreds, getHistorySyncCompleted) would otherwise be an
+    // unhandled rejection with the renderer told the change succeeded.
+    try {
+      await waConnectionManager.connect()
+    } catch (err: unknown) {
+      console.error('[IPC] set-sync-full-history reconnect failed:', err)
+    }
     return true
   })
 }
@@ -303,7 +323,11 @@ function registerSearchAndVectorHandlers(
     }
   })
 
-  ipcMain.handle('clear-vectors', async (_event) => {
+  ipcMain.handle('clear-vectors', async (event) => {
+    if (!isTrustedSender(event)) {
+      console.warn('[IPC] Blocked clear-vectors from untrusted frame')
+      throw new Error('[IPC] clear-vectors cannot be invoked from this context')
+    }
     try {
       await services.embeddingService.clearAllVectors()
     } catch (err: unknown) {
@@ -324,9 +348,19 @@ function registerAIServiceHandlers(
     })
   })
 
-  ipcMain.handle('execute-tool', async (_event, toolName: string, args: Record<string, unknown> | undefined, sessionId?: string | null) => {
+  ipcMain.handle('execute-tool', async (event, toolName: string, args: Record<string, unknown> | undefined, sessionId?: string | null) => {
     const tool = services.toolRegistry.getTool(toolName);
     if (!tool) throw new Error(`[IPC] Tool ${toolName} not found`);
+    // S10-05: permission-gated tools (send-as-user, arbitrary SQL/script) may
+    // only be driven from the trusted app renderer, which prompts the user
+    // before calling. Reject the call from any other frame and audit-log it.
+    if (tool.requiresPermission && !isTrustedSender(event)) {
+      console.warn(`[IPC] Blocked execute-tool('${toolName}') from untrusted frame`);
+      throw new Error(`[IPC] Tool ${toolName} requires permission and cannot be invoked from this context`);
+    }
+    if (tool.requiresPermission) {
+      console.log(`[IPC] execute-tool('${toolName}') (permission-gated) invoked`);
+    }
     const ctx = sessionId ? { citationEmitter: await services.citationSessionManager.createEmitter(sessionId) } : undefined;
     const result = await tool.execute(args || {}, ctx);
     if (sessionId && result.citations && result.citations.size > 0) {

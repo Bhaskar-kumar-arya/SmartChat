@@ -21,19 +21,27 @@ export const useLocalPrismaAuthState = async (
   state: AuthenticationState;
   saveCreds: () => Promise<void>;
 }> => {
+  // S10-03: distinguish "row genuinely absent" (return null) from "read failed"
+  // (throw). Returning null on a transient DB error made a failed `creds` read
+  // mint a brand-new identity whose first saveCreds() overwrote the real stored
+  // creds — a read hiccup destroyed the WhatsApp link. Throwing instead aborts
+  // startup so connect()'s retry path can re-attempt with the real creds.
   const readData = async (id: string): Promise<unknown | null> => {
+    let row: { data: string | null } | null;
     try {
-      const data = await prisma.authState.findUnique({
+      row = await prisma.authState.findUnique({
         where: { id },
       });
-      if (data && data.data) {
-        return JSON.parse(data.data, BufferJSON.reviver);
-      }
-      return null;
     } catch (error: unknown) {
       console.error("[LocalAuthState] Error reading auth state:", error);
-      return null;
+      throw error instanceof Error
+        ? error
+        : new Error(`[LocalAuthState] failed to read auth state '${id}': ${String(error)}`);
     }
+    if (row && row.data) {
+      return JSON.parse(row.data, BufferJSON.reviver);
+    }
+    return null;
   };
 
   const writeData = async (data: unknown, id: string): Promise<void> => {

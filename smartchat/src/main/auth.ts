@@ -176,19 +176,25 @@ export const usePrismaAuthState = async (): Promise<{
   state: AuthenticationState;
   saveCreds: () => Promise<void>;
 }> => {
+  // S10-03: a transient read error must NOT be reported as "row absent" —
+  // that made a failed `creds` read mint a fresh identity that then overwrote
+  // the real stored creds on first saveCreds(). Throw so startup aborts/retries.
   const readData = async (id: string) => {
+    let row: { data: string | null } | null;
     try {
-      const data = await prisma.authState.findUnique({
+      row = await prisma.authState.findUnique({
         where: { id },
       });
-      if (data && data.data) {
-        return JSON.parse(data.data, BufferJSON.reviver);
-      }
-      return null;
     } catch (error: unknown) {
       console.error("Error reading auth state:", error);
-      return null;
+      throw error instanceof Error
+        ? error
+        : new Error(`Failed to read auth state '${id}': ${String(error)}`);
     }
+    if (row && row.data) {
+      return JSON.parse(row.data, BufferJSON.reviver);
+    }
+    return null;
   };
 
   const writeData = async (data: unknown, id: string) => {

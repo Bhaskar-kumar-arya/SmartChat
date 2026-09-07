@@ -56,3 +56,40 @@ describe('useLocalPrismaAuthState keystore.set', () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(3)
   })
 })
+
+/**
+ * S10-03 regression: a transient read error must throw (aborting startup so the
+ * real creds can be re-read) — not be reported as "row absent", which made a
+ * read hiccup mint a fresh identity that overwrote the real stored creds.
+ */
+describe('useLocalPrismaAuthState creds bootstrap (S10-03)', () => {
+  it('throws when the creds read fails instead of minting a new identity', async () => {
+    const prisma = {
+      authState: {
+        findUnique: vi.fn().mockRejectedValue(new Error('database is locked')),
+        upsert: vi.fn(),
+        deleteMany: vi.fn()
+      },
+      $transaction: vi.fn()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+
+    await expect(useLocalPrismaAuthState(prisma)).rejects.toThrow(/database is locked/)
+  })
+
+  it('falls back to fresh creds only when the row is genuinely absent', async () => {
+    const prisma = {
+      authState: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn(),
+        deleteMany: vi.fn()
+      },
+      $transaction: vi.fn()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+
+    const { state } = await useLocalPrismaAuthState(prisma)
+    expect(state.creds).toBeDefined()
+    expect(state.creds.registered).toBe(false)
+  })
+})
