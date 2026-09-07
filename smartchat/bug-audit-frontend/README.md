@@ -44,6 +44,20 @@ leaves the summary-count cell for a final reconciliation). Slice 12
 
 ## Frontend bug-class checklist (apply to every slice)
 
+**This list is a floor, not a ceiling.** It names the classes most likely to be
+missed on a skim — always sweep for all of them — but report *any* defect you can
+substantiate: wrong logic / spec violations, bad conditionals, off-by-one, wrong
+formatting or number/date/timezone handling, security holes (XSS, unsafe links /
+`javascript:` / `data:` URLs, IPC or preload escape, `<webview>` sandbox gaps,
+secrets exposed to the renderer), missing input validation or output encoding,
+accessibility breakage that blocks a task (unlabeled controls, keyboard traps,
+lost focus), state that can't recover from an error, race conditions,
+memory/listener growth over a long session, performance cliffs (re-render storms,
+unvirtualized long lists, expensive work on every keystroke), broken empty/error/
+loading states, and mismatches with the backend's actual event/response shapes.
+If it would surprise or harm a user, or violate the component's evident intent,
+it's in scope.
+
 - **Effect cleanup / listener leaks**: `useEffect` that subscribes to a
   `window.api` event, `window` event, timer, interval, `ResizeObserver`,
   `IntersectionObserver`, media element, or AbortController and does **not**

@@ -36,6 +36,17 @@ commit. The next session resumes from there.
 
 ## Bug-class checklist (apply to every slice)
 
+**This list is a floor, not a ceiling.** It names the classes most likely to be
+missed on a skim — always sweep for all of them — but report *any* defect you can
+substantiate, in scope or not: wrong business logic / spec violations, incorrect
+conditionals, off-by-one, bad math, wrong units, security holes (injection, auth
+bypass, path traversal, SSRF, secrets in source, unsafe deserialization), missing
+input validation, memory / handle leaks, deadlocks, unbounded growth, performance
+cliffs (N+1, accidental O(n^2), sync work blocking the event loop), API contract
+mismatches between caller and callee, incorrect error messages, dead code hiding
+a bug, config/build issues. If it would surprise or harm a user, or violate the
+code's evident intent, it's in scope.
+
 - **Async correctness**: floating promises, missing `await` (esp. inside loops,
   `forEach`, event handlers, constructors), `await` in a loop that should be
   parallel, unhandled rejection paths.
