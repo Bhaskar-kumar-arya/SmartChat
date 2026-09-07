@@ -221,7 +221,101 @@ context`), or document the semantics explicitly.
 _none yet_
 
 ## Slice F4 — Chat list & layout & nav UI
-_none yet_
+
+Files audited: `ChatLayout.tsx`, `ChatList.tsx`, `SidebarRail.tsx`,
+`ExtensionChatListItem.tsx`, `hooks/useSidebarResize.ts` (+ tests). Community
+hierarchy / `useChats` / `useChatHierarchy` logic belongs to F3 and was only
+skimmed for the interactions below.
+
+### [F4-01] med — ChatList.tsx:97-111
+**What:** the embedding-progress effect calls `setTimeout(() => setIndexingProgress(null), 3000)`
+on every `pct === 100` event and never stores or clears the timer; the effect
+also has `[]` deps while closing over `api`.
+**Why it's a bug:** (a) if the user leaves the chat view (or logs out — `confirmLogout`
+does `window.location.reload()`, but route changes / conditional unmounts don't)
+within 3s of indexing finishing, the timer fires `setIndexingProgress` on an
+unmounted component → React warning + wasted work. (b) If the backend emits
+`pct === 100` more than once (retry, multiple index passes in one session) the
+timeouts stack and each re-nulls the progress bar, making a subsequent indexing
+run's bar flicker away early. Nothing clears the pending timer when a new run
+starts (`confirmIndex` sets `setIndexingProgress(0)` but a stale 100%-timer can
+still fire 0→null mid-run).
+**Fix idea:** keep the timeout id in a ref (or effect-local var), `clearTimeout`
+in the effect cleanup and at the top of each new progress handler; add `api` to
+deps (it's context-stable so harmless).
+**Status:** open
+
+### [F4-02] med — hooks/useSidebarResize.ts:11-24
+**What:** `startResizing` attaches `mousemove`/`mouseup` listeners to `document`
+and only detaches them in its own `onMouseUp`. There is no `useEffect` cleanup
+and no tracking of an in-flight drag.
+**Why it's a bug:** if `ChatLayout` unmounts while a resize drag is active (the
+resizer only renders when `isAIOpen || isChatSearchOpen`; toggling AI/search off
+mid-drag, or a logout reload, removes it), the `mousemove` listener survives and
+keeps calling `setSidebarWidth` on the unmounted hook → setState-after-unmount
+and a leaked listener that persists for the life of the document. Repeated over a
+long session each interrupted drag adds another live `mousemove` handler.
+**Fix idea:** store the handler refs and return a `useEffect` cleanup that removes
+them; or lift the drag into an effect keyed on an `isResizing` state flag.
+**Status:** open
+
+### [F4-03] low — ChatLayout.tsx:136-141
+**What:** `api.onExtensionFocus` handler calls `handleOpenExtensionChat(id, id)`
+— passing the extension **id** as the display name. The comment says "name
+resolved on next render" but no code resolves it.
+**Why it's a bug:** when an extension calls `ctx.dedicatedChat.focus()`, the chat
+header (`activeName`) and any name-dependent UI show the raw extension id (e.g.
+`com.acme.things`) instead of the extension's human name, until an unrelated
+`onChatUpdated` event happens to arrive (usually never for a synthetic extension
+chat).
+**Fix idea:** resolve the name from `useExtensionManager().extensions` (already in
+scope) — `extensions.find(e => e.id === id)?.manifest.name ?? id`.
+**Status:** open
+
+### [F4-04] low — ChatLayout.tsx:157-178
+**What:** the `smartchat:open-chat` window-event effect closes over
+`handleOpenExtensionChat` but its dep array is
+`[handleSelectChat, activeJid, jumpToMessage]` (missing `handleOpenExtensionChat`
+and `api`). Also `jumpToMessage(newTarget).then(...)` has no `.catch`.
+**Why it's a bug:** `handleOpenExtensionChat` is currently referentially stable
+so no live misbehaviour, but the lying dep array will silently break if that
+callback ever gains a real dependency. The un-caught `jumpToMessage` promise
+produces an unhandled rejection if the anchor query fails (bad/deleted message
+id), and `setTargetMessageId` is never reached so the UI gives no feedback.
+**Fix idea:** add the missing deps; `.catch(console.error)` on the jump, and
+still clear/indicate on failure.
+**Status:** open
+
+### [F4-05] low — ExtensionChatListItem.tsx:27,33
+**What:** renders `{chat.name}` and `{chat.lastMessage}` as raw text, whereas
+every regular row in `ChatList` wraps the same fields in `<EmojiText>`.
+**Why it's a bug:** extension chat titles / last-message previews that contain
+emoji shortcodes or custom-emoji tokens render inconsistently (raw `:smile:`
+etc.) versus the rest of the list.
+**Fix idea:** use `<EmojiText text={chat.name} />` / `<EmojiText text={chat.lastMessage || 'Start a conversation…'} />`.
+**Status:** open
+
+### [F4-06] low — ChatList.tsx:483-494
+**What:** the community subgroup chips (`<span className="subgroup-tag" onClick=…>`)
+are click-only — no `role="button"`, `tabIndex`, or key handler. (The
+community expand/collapse control at :464 is correctly a `<button>`.)
+**Why it's a bug:** keyboard-only users can expand a community but cannot open a
+specific subgroup from the collapsed preview row.
+**Fix idea:** render the chips as `<button>` or add `role="button"` + `tabIndex={0}`
++ Enter/Space handling.
+**Status:** open
+
+### [F4-07] low — ChatList.tsx:64-71
+**What:** `handleScroll` calls `loadMore()` on every scroll event within 50px of
+the bottom, with no throttle. `useChats.loadMoreChats` guards with
+`if (loading || loadingMore || !hasMore) return`, but `loadingMore` is a state
+value — two scroll events fired in the same frame (before the re-render that sets
+`loadingMore = true`) both pass the guard.
+**Why it's a bug:** a fast flick to the bottom can dispatch two overlapping
+page fetches → a duplicated page / skipped cursor in the chat list.
+**Fix idea:** guard `loadMoreChats` with a `useRef` in-flight flag (set
+synchronously) rather than relying on state; or debounce `handleScroll`.
+**Status:** open
 
 ## Slice F5 — Message view & rendering
 _none yet_
