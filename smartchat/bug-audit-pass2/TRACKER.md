@@ -16,7 +16,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 4 | Chats & sync | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 5 | Contacts | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 6 | AI (providers, mentions, citations, prompts) | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 1 med, 5 low |
-| 7 | Kernel API modules & router | IN PROGRESS | 2026-09-07 | |
+| 7 | Kernel API modules & router | DONE (8 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 6 low |
 | 8 | Kernel plugins, contributions, permissions | IN PROGRESS | 2026-09-07 | |
 | 9 | Kernel storage, channels, ipc, ui | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 10 | App IPC & auth | IN PROGRESS | 2026-09-07 | |
