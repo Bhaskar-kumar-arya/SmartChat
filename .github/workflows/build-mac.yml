@@ -42,15 +42,21 @@ jobs:
           cache-dependency-path: smartchat/package-lock.json
 
       # ── 3. Override .npmrc mirrors for CI ──────────────────────────────────
-      # .npmrc sets electron_builder_binaries_mirror to npmmirror, which does
-      # NOT host dmg-builder (the tool electron-builder needs to create .dmg
-      # files on macOS). We override both mirrors to GitHub official releases
-      # BEFORE npm ci so the setting is in effect for the entire job.
-      # The .npmrc values are preserved for local development (India mirror).
-      - name: Override electron mirrors to GitHub for CI
+      # .npmrc uses custom keys (electron_mirror, electron_builder_binaries_mirror)
+      # that are NOT valid npm config options — they are read directly from
+      # .npmrc by electron-builder. npm config set rejects them, so we patch
+      # the .npmrc file in-place with sed.
+      # npmmirror does NOT host dmg-builder (needed to create the .dmg), so
+      # we redirect both to GitHub official releases for the CI run.
+      # The project .npmrc is not committed back, so local builds keep npmmirror.
+      - name: Patch .npmrc electron mirrors to GitHub for CI
         run: |
-          npm config set electron_mirror "https://github.com/electron/electron/releases/download/v"
-          npm config set electron_builder_binaries_mirror "https://github.com/electron-userland/electron-builder-binaries/releases/download/"
+          sed -i '' \
+            -e 's|electron_mirror=.*|electron_mirror=https://github.com/electron/electron/releases/download/v|' \
+            -e 's|electron_builder_binaries_mirror=.*|electron_builder_binaries_mirror=https://github.com/electron-userland/electron-builder-binaries/releases/download/|' \
+            .npmrc
+          echo "=== .npmrc after patch ==="
+          cat .npmrc
 
       # ── 4. Install npm dependencies ────────────────────────────────────────
       # SHARP_IGNORE_GLOBAL_LIBVIPS=1 forces sharp to use its own prebuilt
