@@ -15,7 +15,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F2 | App shell, providers, contributions | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F3 | Chat data hooks (backend event sync) | DONE (11 findings) | 2026-09-07 | 1 high, 6 med, 4 low — async races, presence expiry/JID, hierarchy orphans |
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
-| F5 | Message view & rendering | TODO | — | check markdown / media URL / keys / virtualization |
+| F5 | Message view & rendering | IN PROGRESS | 2026-09-07 | check markdown / media URL / keys / virtualization |
 | F6 | Message input & composition | TODO | — | mentions, file queue, audio recorder |
 | F7 | Search UI | TODO | — | search-as-you-type out-of-order responses |
 | F8 | AI chat UI | TODO | — | streaming abort/race, citation markdown XSS |
