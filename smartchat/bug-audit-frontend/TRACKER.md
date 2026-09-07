@@ -11,9 +11,9 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 
 | # | Slice | Status | Last touched | Notes |
 |---|-------|--------|--------------|-------|
-| F1 | Preload bridge & IPC surface | TODO | — | trust boundary — start here |
+| F1 | Preload bridge & IPC surface | IN PROGRESS | 2026-09-07 | trust boundary — start here |
 | F2 | App shell, providers, contributions | TODO | — | |
-| F3 | Chat data hooks (backend event sync) | TODO | — | highest bug density expected — async races, event lifecycle |
+| F3 | Chat data hooks (backend event sync) | IN PROGRESS | 2026-09-07 | highest bug density expected — async races, event lifecycle |
 | F4 | Chat list & layout & nav UI | TODO | — | |
 | F5 | Message view & rendering | TODO | — | check markdown / media URL / keys / virtualization |
 | F6 | Message input & composition | TODO | — | mentions, file queue, audio recorder |
