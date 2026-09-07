@@ -133,10 +133,40 @@ describe('WAWorkerBridge', () => {
   it('stop should terminate worker', async () => {
     bridge.start(true, true)
     const workerMock = (Worker as any)._getMockInstances()
-    
+
     await bridge.stop()
-    
+
     expect(workerMock.terminate).toHaveBeenCalled()
     await expect(bridge.logout()).rejects.toThrow('Worker thread is not running')
+  })
+
+  it('sendCommand rejects after the command timeout when the worker never replies (S13-03)', async () => {
+    vi.useFakeTimers()
+    bridge.start(true, true)
+    const promise = bridge.groupMetadata('jid1')
+    // attach a catch synchronously so an early rejection isn't unhandled
+    const settled = promise.then(() => 'ok').catch((e) => e.message)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(await settled).toMatch(/timed out/i)
+    vi.useRealTimers()
+  })
+
+  it('emits wa-disconnected and invokes the supervisor on unexpected worker exit (S13-04)', () => {
+    const onExit = vi.fn()
+    bridge.setUnexpectedExitHandler(onExit)
+    bridge.start(true, true)
+    ;(Worker as any)._triggerExit(1)
+    expect(mockWindowEmitter.send).toHaveBeenCalledWith('wa-disconnected', { code: 1 })
+    expect(onExit).toHaveBeenCalledWith(1)
+  })
+
+  it('does not treat an intentional stop() as an unexpected exit (S13-04)', async () => {
+    const onExit = vi.fn()
+    bridge.setUnexpectedExitHandler(onExit)
+    bridge.start(true, true)
+    await bridge.stop()
+    ;(Worker as any)._triggerExit(0)
+    expect(onExit).not.toHaveBeenCalled()
+    expect(mockWindowEmitter.send).not.toHaveBeenCalledWith('wa-disconnected', expect.anything())
   })
 })

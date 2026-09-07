@@ -1981,9 +1981,13 @@ sibling directory whose name begins with `media`) passes the check.
 `path.resolve`) which can wrongly *deny* valid paths.
 **Fix idea:** require `resolvedPath === baseDir || resolvedPath.startsWith(baseDir + path.sep)`;
 normalize case on win32.
-**Status:** partially fixed alongside S12-01 — prefix check is now
-`=== baseDir || startsWith(baseDir + path.sep)`. Remaining: win32 drive-letter
-case normalization.
+**Status:** fixed. Prefix check is `=== baseDir || startsWith(baseDir + path.sep)`;
+win32 drive-letter / segment casing now handled by `SecureFileRegistry.normalizeForCompare`
+(lowercases both sides on `process.platform === 'win32'` before the containment
+comparison) so a case difference no longer wrongly *denies* a valid path.
+**Fix status:** fixed in <pending-commit> — regression test in
+`tests/services/AppProtocolHandler.test.ts` (`it.runIf(win32)` — same-dir path
+differing only in case resolves non-null). typecheck clean.
 
 ### [S12-03] high — tools/ExecuteScriptTool.ts:198-256 (`buildSandbox`)
 **What:** The `vm.createContext` sandbox is presented as a security boundary ("Safe JS built-ins
@@ -2031,7 +2035,16 @@ sees a timeout; messages still get sent. The dangling timer also keeps the event
 call.
 **Fix idea:** thread an `AbortSignal` the tool wrappers check before executing; refuse new tool calls
 once `timedOut`; `clearTimeout` in a `finally`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — an `aborted` flag is flipped when the
+wall-clock timeout fires; the bridge's `tool` op checks it and returns a
+`__scriptError__` ("Script was aborted … no further tool calls are permitted")
+for every subsequent call, so a timed-out script can no longer send messages /
+write to the DB. `runScriptWithTimeout` now `clearTimeout`s in a `finally` (kills
+the 60s dangling-timer-per-call on the success path). Regression test in
+`tests/tools/ExecuteScriptTool.test.ts` (fake timers: script parked in
+`await slow()`, fire 60s timeout, resume script → next `echo()` never executes).
+typecheck clean.
 
 ### [S12-05] high — services/DataWipeService.ts:33-53 & 55-76 (`wipeAllData` / `wipeUserDataOnly`)
 **What:** The per-table `DELETE FROM "<name>"` loop runs as independent `$executeRawUnsafe` calls
@@ -2074,7 +2087,13 @@ table throws at runtime, scattered and hard to diagnose, instead of one clear fa
 **Fix idea:** let the throw propagate (fail fast with a user-visible "database upgrade failed"), or
 explicitly decide migrations are best-effort and remove the "startup-blocking" guarantee from the
 docstring.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — chose fail-fast. Both call sites
+(`auth.ts` adapter-proxy `connect` hook, `whatsapp.worker.ts` bootstrap) no longer
+`try/catch`-and-continue: `runMigrations` throws propagate. Safe now because
+concurrent-run races (the historical source of spurious failures) are absorbed
+inside `runMigrations` by S12-07's fixes. Worker path wraps only `migrationDb.close()`
+in `finally`. typecheck clean.
 
 ### [S12-07] med — db/schema-migrations.ts:104-146 + auth.ts:95 + whatsapp.worker.ts:32-33
 **What:** On first launch the **main** process (Prisma adapter `connect` proxy) and the **worker**
@@ -2091,7 +2110,16 @@ startup.
 **Fix idea:** `INSERT OR IGNORE` into `_schema_migrations`; set `busy_timeout` on the raw
 `migrationDb` before `runMigrations`; ideally run migrations in exactly one process and have the
 other wait.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — `runMigrations` now (1) issues
+`PRAGMA busy_timeout = 10000` at entry (covers the worker's raw connection which
+previously had none), (2) re-checks `_schema_migrations` *inside* the write
+transaction (a racer that committed between our SELECT and acquiring the write
+lock is detected → no-op), (3) records with `INSERT OR IGNORE` so a concurrent
+winner's row can't turn into a UNIQUE-violation abort. All migration DDL is
+`CREATE TABLE IF NOT EXISTS`, so a partial apply by the racer is harmless.
+Regression tests in `tests/db/schema-migrations.test.ts` (idempotent re-run;
+pre-existing racer row → no throw; busy_timeout set; tables created). typecheck clean.
 
 ### [S12-08] med — tools/QueryDatabaseTool.ts:258-265 & tools/ReadMessagesTool.ts:202-209
 **What:** The read-only guard loops `FORBIDDEN_KEYWORDS` (`INSERT UPDATE DELETE DROP ALTER CREATE
@@ -2106,7 +2134,16 @@ prefer relying on that + a read-only connection.)
 **Fix idea:** enforce read-only structurally (open a read-only DB handle for these tools / check the
 parsed statement type) instead of substring-scanning; at minimum strip string/quoted literals and
 comments before keyword matching.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — took the "at minimum" path:
+`stripLiteralsAndComments` (removes `'…'` / `"…"` string literals, `--` line
+comments, `/* */` block comments) runs before the forbidden-keyword scan in
+*both* `QueryDatabaseTool` and `ReadMessagesTool`. `LIKE '%please update me%'`,
+`'%delete this%'`, `'%create a poll%'`, `'%grant access%'` etc. now pass; real
+write statements (`SELECT 1; DELETE FROM …`, `UPDATE …`) still rejected — plus
+`better-sqlite3` only ever compiles one statement. Structural read-only handle
+left as a future hardening. Regression tests in `tests/tools/QueryDatabaseTool.test.ts`.
+typecheck clean.
 
 ### [S12-09] med — tools/QueryDatabaseTool.ts:299-307 (`execute`, row-cap enforcement)
 **What:** When the query has no `LIMIT`, the tool does `finalSql = trimmed.replace(/;?\s*$/, '') + '
@@ -2118,7 +2155,13 @@ unbounded result set is loaded into memory and serialized (twin mechanism to S2-
 is advertised as guaranteed). A `/* … */` block comment spanning the end has the same effect.
 **Fix idea:** wrap every query as `SELECT * FROM (<sql>) LIMIT <cap>` (the path already used when a
 LIMIT is present) rather than string-appending; or strip trailing comments first.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — `execute` now *always* wraps:
+`SELECT * FROM (\n<sql>\n) AS _capped LIMIT 1500` (the `\n` before `)` protects the
+closing paren from a trailing `--` line comment). The old string-append branch
+(defeatable by a trailing `--`/`/* */`) is gone; the `hasLimit` regex sniff is no
+longer needed. Regression tests in `tests/tools/QueryDatabaseTool.test.ts` (query
+with trailing line comment → LIMIT survives on its own line). typecheck clean.
 
 ### [S12-10] low — packages/sdk/src/channel.ts:393-405 (`schedulerAPI`)
 **What:** `ctx.scheduler.setInterval` / `setTimeout` create real timers and return a disposer, but
@@ -2230,7 +2273,17 @@ enforcement possibly left OFF (see S1-02 / S12-05). `trayService` leaks its nati
 **Fix idea:** retain `bootResult`; in `will-quit` await (with a timeout) `bootResult.dispose()`,
 `waConnectionManager` shutdown / `waWorkerBridge.stop()`, embedding-worker terminate, and
 `trayService.destroy()` before `app.exit(0)`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — `src/main/index.ts` retains the boot
+result at module scope (`bootResultForShutdown`, set in `boot().then`). `will-quit`
+now runs, in order: `bootResult.dispose()` (unbind overlay/panel IPC + `host.unload`
+every plugin → plugin `onDeactivate` / `ctx.storage` flush) → new
+`WhatsAppConnectionManager.shutdown()` (cancels any pending supervised reconnect,
+`waWorkerBridge.stop()`, tears down bus) → `EmbeddingWorkerManager.terminate()` (new
+method, S13-05) → `apiServer.stop()` → `aiService.cleanup()` → `trayService.destroy()`.
+The whole sequence is `Promise.race`d against an 8s hard timeout before `app.exit(0)`
+(also closes S13-08). `embeddingWorkerManager` is now exposed on the ServiceContainer.
+typecheck clean; not manually run in-app.
 
 ### [S13-03] med — workers/bridge/WAWorkerBridge.ts:169-185 (`sendCommand`)
 **What:** `sendCommand` registers a `pendingReplies` entry and `postMessage`s to the worker with
@@ -2245,7 +2298,14 @@ The `pendingReplies` map also leaks those entries permanently. A single wedged w
 freezes all outbound WhatsApp operations with no surfaced error.
 **Fix idea:** attach a per-command timeout that rejects with a `WORKER_TIMEOUT` error and deletes
 the pending entry; consider a heartbeat / watchdog that restarts the worker if it stops responding.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — `sendCommand` now arms a 30s
+(`COMMAND_TIMEOUT_MS`) timer per call: on expiry it deletes the `pendingReplies`
+entry and rejects with `Command "<type>" timed out … (worker unresponsive)`. The
+timer is cleared on both the resolve and reject paths (wrapped resolvers). No
+leak, callers surface an error instead of hanging forever. Watchdog/heartbeat not
+added — the S13-04 supervision path covers a fully-dead worker. Regression test in
+`tests/workers/bridge/WAWorkerBridge.test.ts` (fake timers). typecheck clean.
 
 ### [S13-04] med — workers/bridge/WAWorkerBridge.ts:135-147 (`error` / `exit` handlers)
 **What:** `worker.on('error')` only `console.error`s. `worker.on('exit')` nulls `this.worker`,
@@ -2262,7 +2322,18 @@ but still unrecovered). The renderer's connection indicator is driven by `wa-con
 **Fix idea:** on `exit` with a non-zero code (or `error`), emit a `wa-disconnected` window event and
 have `WhatsAppConnectionManager` re-run `connect()` with backoff (bounded retries), or surface a
 "WhatsApp stopped — reconnect" state to the UI.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — `WAWorkerBridge` tracks a `stopping`
+flag (set by `stop()`, cleared by `start()`); on `exit` with `code !== 0` and
+`!stopping` it emits a `wa-disconnected` window event and invokes a new
+`unexpectedExitHandler`. `WhatsAppConnectionManager` registers that handler in its
+constructor → `handleWorkerDeath`: bounded (`MAX_WORKER_RESTARTS = 5`) reconnect
+with exponential backoff (2s→30s cap). A manual/external `connect()` resets the
+attempt counter; an auto-reconnect keeps counting (via `isAutoReconnecting`
+guard) so the cap holds. `shutdown()` also cancels a pending reconnect. Renderer
+"reconnect" UI state left to a follow-up. Regression tests in
+`tests/workers/bridge/WAWorkerBridge.test.ts` +
+`tests/services/whatsapp/WhatsAppConnectionManager.supervise.test.ts`. typecheck clean.
 
 ### [S13-05] med — services/search/EmbeddingWorkerManager.ts (whole file — no shutdown path)
 **What:** `EmbeddingWorkerManager` spawns a `Worker` in `ensureWorker` but exposes **no**
@@ -2277,7 +2348,16 @@ is also no way to cycle the worker after a fault without restarting the app.
 **Fix idea:** add `EmbeddingWorkerManager.terminate()` (await `worker.terminate()`, reject pending
 jobs, null state) and call it from the shutdown sequence after the queue is drained/paused; let
 `EmbeddingService` finish or checkpoint the current batch first.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <pending-commit> — `terminate()` added to
+`IEmbeddingWorkerManager` + `EmbeddingWorkerManager`: nulls `worker`/`initPromise`,
+`failAllPending('embedding worker terminated (app shutdown)')`, awaits
+`worker.terminate()`. Wired into `will-quit` (S13-02) after `apiServer`/`aiService`
+are handled — actually before, ordered with the rest of the teardown. Worker is
+re-spawnable via the next `ensureWorker`. Batch checkpointing before terminate not
+added (the queue pauses on quit; a torn `vec_messages` write is still self-healed
+by `initVectorDb` per S10-10). Regression test in
+`tests/services/search/EmbeddingWorkerManager.test.ts`. typecheck clean.
 
 ### [S13-06] med — services/whatsapp/BaileysPatcher.ts:5-178 (invoked at src/main/index.ts:14)
 **What:** `BaileysPatcher.patch()` runs synchronously at module-import time and rewrites four files
@@ -2298,7 +2378,16 @@ Mutating installed package source on disk means the patch state depends on insta
 (checked into the repo, version-pinned, CI-verified), or wrap the needed behavior with runtime
 composition instead of source rewriting. At minimum, make a failed patch a hard startup error in
 dev so a version bump can't ship silently broken.
-**Status:** open
+**Status:** fixed (minimum path)
+**Fix status:** fixed in <pending-commit> — took the "at minimum" path.
+`BaileysPatcher.patch()` accumulates genuine failures (target file located but an
+expected signature/regex is absent and the file isn't already patched, or a target
+file couldn't be found at all) into a `failures[]`, then `reportFailures()`:
+**throws** in dev (`!app.isPackaged`) so a Baileys bump can't ship silently broken,
+logs-only when packaged (asar is read-only → `writeFileSync` throwing is expected
+there). Each "already patched" branch is distinguished from "signature drift" by an
+idempotency marker check. Full vendoring / `patch-package` still recommended as the
+real fix. typecheck clean; not manually run (patch runs at import of `src/main/index.ts`).
 
 ### [S13-07] low — services/whatsapp/WhatsAppConnectionManager.ts:19, 42-44
 **What:** `busCreatedCallback` is a single nullable field; `onBusCreated(cb)` overwrites it
@@ -2321,7 +2410,8 @@ must kill it. `will-quit` also runs cleanup that assumes `services` is defined; 
 `index.ts:195` makes this handler throw (caught) but that path is fine.
 **Fix idea:** `Promise.race` the cleanup against a hard timeout (e.g. 5 s), then `app.exit(0)`
 regardless.
-**Status:** open
+**Status:** fixed (folded into S13-02) — `will-quit` cleanup is now `Promise.race`d
+against an 8s hard timeout before the `finally { app.exit(0) }`.
 
 ### [S13-09] low — services/whatsapp/WhatsAppConnectionManager.ts:47
 **What:** `connect()` begins with `this.deps.embeddingService.setPaused(false)` unconditionally,

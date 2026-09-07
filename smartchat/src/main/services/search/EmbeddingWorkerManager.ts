@@ -141,6 +141,20 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
     return this.initPromise
   }
 
+  public async terminate(): Promise<void> {
+    const currentWorker = this.worker
+    this.worker = null
+    this.initPromise = null
+    this.failAllPending('embedding worker terminated (app shutdown)')
+    if (currentWorker) {
+      try {
+        await currentWorker.terminate()
+      } catch (err) {
+        console.error('[EmbeddingWorkerManager] Error terminating worker:', err)
+      }
+    }
+  }
+
   async embed(text: string): Promise<number[]> {
     const currentWorker = this.worker
     if (!currentWorker) throw new Error('Worker not available')

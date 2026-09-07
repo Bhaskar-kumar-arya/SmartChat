@@ -9,6 +9,15 @@ import { WorkerCommandMessage, WorkerEventMessage } from '../whatsapp/whatsappWo
 import { IWindowEventEmitter } from './IWindowEventEmitter';
 
 /**
+ * Per-command reply timeout. If the worker thread wedges without exiting (stuck
+ * in a long synchronous Baileys/Prisma call, a deadlock on the shared SQLite
+ * file, a dropped message), every `sendCommand` caller would otherwise hang
+ * forever and leak its `pendingReplies` entry. A rejection lets callers surface
+ * an error instead.
+ */
+const COMMAND_TIMEOUT_MS = 30_000;
+
+/**
  * WAWorkerBridge
  * ==============
  * Coordinates spawning, lifecycle management, and communication with the background
@@ -23,6 +32,10 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
   >();
   private currentUser: { id: string; name?: string | null; lid?: string | null } | null | undefined = null;
   private commandCounter = 0;
+  /** True while `stop()` is intentionally terminating the worker — suppresses the
+   *  unexpected-exit supervision path. */
+  private stopping = false;
+  private unexpectedExitHandler: ((code: number) => void) | null = null;
 
   constructor(
     private readonly workerPath: string,
@@ -34,6 +47,20 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
 
   public get user(): { id: string; name?: string | null; lid?: string | null } | null | undefined {
     return this.currentUser;
+  }
+
+  /**
+   * Register a supervisor callback invoked when the worker thread exits
+   * unexpectedly (non-zero code, not via `stop()`). Lets
+   * `WhatsAppConnectionManager` drive a bounded reconnect instead of leaving
+   * WhatsApp permanently dead until an app restart.
+   */
+  public setUnexpectedExitHandler(handler: (code: number) => void): void {
+    this.unexpectedExitHandler = handler;
+  }
+
+  public isRunning(): boolean {
+    return this.worker !== null;
   }
 
   public readonly signalRepository = {
@@ -58,6 +85,7 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
     }
 
     console.log(`[WAWorkerBridge] Spawning WhatsApp worker from: ${this.workerPath}`);
+    this.stopping = false;
     this.worker = new Worker(this.workerPath);
 
     this.worker.on('message', (msg: unknown) => {
@@ -138,11 +166,27 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
 
     this.worker.on('exit', (code: number) => {
       console.log(`[WAWorkerBridge] Worker exited with code: ${code}`);
+      const wasStopping = this.stopping;
       this.worker = null;
       this.currentUser = null;
       for (const [correlationId, pending] of this.pendingReplies.entries()) {
         pending.reject(new Error(`Worker exited with code ${code} before replying`));
         this.pendingReplies.delete(correlationId);
+      }
+
+      // Unsupervised worker death: without this, WhatsApp goes permanently dead
+      // (no reconnect, no QR, no UI signal) until the user restarts the app.
+      if (!wasStopping && code !== 0) {
+        try {
+          this.windowEmitter.send('wa-disconnected', { code });
+        } catch (err) {
+          console.error('[WAWorkerBridge] Failed to emit wa-disconnected:', err);
+        }
+        try {
+          this.unexpectedExitHandler?.(code);
+        } catch (err) {
+          console.error('[WAWorkerBridge] Unexpected-exit handler threw:', err);
+        }
       }
     });
 
@@ -161,6 +205,7 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
   public async stop(): Promise<void> {
     if (!this.worker) return;
     console.log('[WAWorkerBridge] Stopping worker thread...');
+    this.stopping = true;
     await this.worker.terminate();
     this.worker = null;
     this.currentUser = null;
@@ -172,7 +217,22 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
     }
     const correlationId = `cmd-${++this.commandCounter}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     return new Promise<T>((resolve, reject) => {
-      this.pendingReplies.set(correlationId, { resolve: resolve as (val: unknown) => void, reject });
+      const timer = setTimeout(() => {
+        if (this.pendingReplies.delete(correlationId)) {
+          reject(new Error(`[WAWorkerBridge] Command "${type}" timed out after ${COMMAND_TIMEOUT_MS}ms (worker unresponsive)`));
+        }
+      }, COMMAND_TIMEOUT_MS);
+
+      this.pendingReplies.set(correlationId, {
+        resolve: (val: unknown) => {
+          clearTimeout(timer);
+          (resolve as (val: unknown) => void)(val);
+        },
+        reject: (err: Error) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
 
       const message = {
         type,

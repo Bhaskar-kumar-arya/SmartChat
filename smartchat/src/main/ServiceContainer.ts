@@ -13,6 +13,7 @@ import { ProfileSyncService } from './services/contacts/ProfileSyncService'
 import { IProfileSyncService } from './services/contacts/IProfileSyncService'
 import { EmbeddingService } from './services/search/EmbeddingService'
 import { IEmbeddingService } from './services/search/IEmbeddingService'
+import { IEmbeddingWorkerManager } from './services/search/IEmbeddingWorkerManager'
 import { IVectorSyncService } from './services/search/IVectorSyncService'
 import { VectorSyncService } from './services/search/VectorSyncService'
 import { EmbeddingWorkerManager } from './services/search/EmbeddingWorkerManager'
@@ -351,6 +352,7 @@ export function createServices(
     contactService,
     groupMembershipService,
     embeddingService,
+    embeddingWorkerManager,
     vectorSyncService,
     dataWipeService,
     receiptService,
@@ -408,6 +410,7 @@ export type ServiceContainer = {
   contactService: IContactService
   groupMembershipService: IGroupMembershipService
   embeddingService: IEmbeddingService
+  embeddingWorkerManager: IEmbeddingWorkerManager
   vectorSyncService: IVectorSyncService
   dataWipeService: IDataWipeService
   receiptService: IReceiptService

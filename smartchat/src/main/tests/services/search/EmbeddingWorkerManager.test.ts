@@ -57,4 +57,17 @@ describe('EmbeddingWorkerManager (S11-03)', () => {
     workerInstances[0].emit('message', { type: 'embed_done', id: embedCall?.[0].id, payload: {} })
     await expect(embedPromise).rejects.toThrow(/no vector/)
   })
+
+  it('terminate() stops the worker and rejects pending jobs (S13-05)', async () => {
+    const mgr = await startedManager()
+    const embedPromise = mgr.embed('hello')
+    const settled = embedPromise.catch((e) => (e as Error).message)
+    await mgr.terminate()
+    expect(workerInstances[0].terminate).toHaveBeenCalled()
+    expect(await settled).toMatch(/terminated/)
+    // worker is re-spawnable afterwards
+    const p = mgr.ensureWorker('model-x')
+    workerInstances[1].emit('message', { type: 'init_done', id: null, payload: {} })
+    await expect(p).resolves.toBeUndefined()
+  })
 })

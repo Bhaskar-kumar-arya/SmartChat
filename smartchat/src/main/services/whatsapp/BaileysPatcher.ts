@@ -1,8 +1,18 @@
 import fs from 'fs';
 import path from 'path';
+import { app } from 'electron';
 
 export class BaileysPatcher {
   public static patch(): void {
+    // Genuine patch failures (target file present but an expected signature is
+    // missing, or a target file could not be located at all). A dependency bump
+    // that reformats Baileys' compiled output silently drops the matching patch
+    // — the failure modes are severe and non-obvious (app-state sync aborts,
+    // messageContextInfo lost, profile-picture token regresses). Make that a
+    // hard error in dev so a version bump can't ship silently broken; in a
+    // packaged build `node_modules` is inside the (read-only) asar so writes are
+    // expected to throw — stay best-effort there.
+    const failures: string[] = [];
     try {
       // Find the path to the chat-utils.js file inside node_modules
       const possiblePaths = [
@@ -19,7 +29,8 @@ export class BaileysPatcher {
       }
 
       if (!targetPath) {
-        console.warn('[BaileysPatcher] Could not locate chat-utils.js to apply patches.');
+        failures.push('Could not locate chat-utils.js to apply patches.');
+        BaileysPatcher.reportFailures(failures);
         return;
       }
 
@@ -41,7 +52,7 @@ export class BaileysPatcher {
           console.log('[BaileysPatcher] Successfully patched chat-utils.js to emit app-state.sync events.');
           modified = true;
         } else {
-          console.error('[BaileysPatcher] Target signature for processSyncAction not found in chat-utils.js.');
+          failures.push('Target signature for processSyncAction not found in chat-utils.js.');
         }
       }
 
@@ -52,6 +63,8 @@ export class BaileysPatcher {
         content = content.replace(targetThrow, replacementThrow);
         console.log('[BaileysPatcher] Successfully patched chat-utils.js to bypass tried remove error.');
         modified = true;
+      } else if (!content.includes("[BaileysPatcher] tried remove, but no previous op")) {
+        failures.push('Target throw "tried remove, but no previous op" not found in chat-utils.js.');
       }
 
       if (modified) {
@@ -93,11 +106,13 @@ $1}`;
 
         if (decodeModified) {
           fs.writeFileSync(targetDecodePath, decodeContent, 'utf8');
+        } else if (!decodeContent.includes('const messageContextInfo = msg.messageContextInfo;')) {
+          failures.push('Expected decode-wa-message.js signature (deviceSentMessage decode) not found.');
         } else {
           console.log('[BaileysPatcher] decode-wa-message.js is already fully patched.');
         }
       } else {
-        console.warn('[BaileysPatcher] Could not locate decode-wa-message.js to apply patches.');
+        failures.push('Could not locate decode-wa-message.js to apply patches.');
       }
 
       // 4. Patch chats.js to fix profile picture token structure
@@ -165,15 +180,44 @@ $1}`;
 
         if (chatsModified) {
           fs.writeFileSync(targetChatsPath, chatsContent, 'utf8');
+        } else if (!chatsContent.includes('// NEST the tctoken here as a child')) {
+          failures.push('Expected chats.js signature (profilePictureUrl) not found.');
         } else {
           console.log('[BaileysPatcher] chats.js is already fully patched.');
         }
       } else {
-        console.warn('[BaileysPatcher] Could not locate chats.js to apply patches.');
+        failures.push('Could not locate chats.js to apply patches.');
       }
 
     } catch (error) {
-      console.error('[BaileysPatcher] Error applying patches:', error);
+      // In a packaged build the asar is read-only, so writeFileSync throws — that
+      // is an expected, best-effort miss, not a dev-time signature drift.
+      if (BaileysPatcher.isPackaged()) {
+        console.error('[BaileysPatcher] Error applying patches (packaged, expected on read-only asar):', error);
+        return;
+      }
+      failures.push(`Error applying patches: ${error instanceof Error ? error.message : String(error)}`);
     }
+
+    BaileysPatcher.reportFailures(failures);
+  }
+
+  private static isPackaged(): boolean {
+    try {
+      return app.isPackaged;
+    } catch {
+      return false;
+    }
+  }
+
+  private static reportFailures(failures: string[]): void {
+    if (failures.length === 0) return;
+    const msg = `[BaileysPatcher] ${failures.length} patch(es) failed to apply:\n  - ${failures.join('\n  - ')}`;
+    if (BaileysPatcher.isPackaged()) {
+      console.error(msg);
+      return;
+    }
+    // Dev: fail loudly so a Baileys version bump can't ship silently broken.
+    throw new Error(msg);
   }
 }

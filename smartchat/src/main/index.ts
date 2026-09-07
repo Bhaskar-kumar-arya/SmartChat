@@ -96,6 +96,9 @@ let kernelEventsModule: { onBusConnected(bus: IWAEventBus): void } | null = null
 // reconnect, or panel plugins stop receiving WhatsApp events. (S9-01)
 let panelIpcOnBusConnected: ((bus: IWAEventBus) => void) | null = null
 let bufferedWaBus: IWAEventBus | null = null
+// Retained so `will-quit` can run the kernel teardown (unbind overlay/panel IPC,
+// host.unload every plugin → plugin onDeactivate / storage flush). (S13-02)
+let bootResultForShutdown: { dispose: () => Promise<void> } | null = null
 
 const getSock = () => waConnectionManager?.getSocket() || null
 
@@ -221,6 +224,7 @@ app.whenReady().then(() => {
   })
 
   bootstrapper.boot().then((bootResult) => {
+    bootResultForShutdown = bootResult
     registerContributionIpcHandlers(bootResult.registry, bootResult.host, () => mainWindow?.webContents, bootResult.loader, bootResult.permissions, services.toolRegistry, bootResult.panelHost)
     // The onBusCreated callback is wired synchronously below (after
     // waConnectionManager is constructed). Now that the events module exists,
@@ -296,13 +300,39 @@ app.on('window-all-closed', () => {
 app.on('will-quit', async (e) => {
   // Prevent immediate quit to allow cleanup
   e.preventDefault();
-  try {
+  // Bound the whole cleanup so a hung provider request / kept-alive socket can't
+  // leave the process lingering with a hidden window + tray icon. (S13-08)
+  const HARD_TIMEOUT_MS = 8000;
+  const cleanup = (async () => {
+    // Kernel teardown first: plugin onDeactivate / ctx.storage flush before the
+    // worker threads it may talk to are stopped. (S13-02)
+    if (bootResultForShutdown) {
+      await bootResultForShutdown.dispose().catch(err => console.error('[App] Kernel dispose failed:', err));
+    }
+    if (waConnectionManager) {
+      await waConnectionManager.shutdown().catch(err => console.error('[App] WA shutdown failed:', err));
+    }
+    if (services?.embeddingWorkerManager) {
+      await services.embeddingWorkerManager.terminate().catch(err => console.error('[App] Embedding worker terminate failed:', err));
+    }
     if (services?.apiServer) {
       await services.apiServer.stop().catch(err => console.error('[App] APIServer stop failed:', err));
     }
     if (services?.aiService) {
-      await services.aiService.cleanup();
+      await services.aiService.cleanup().catch((err: unknown) => console.error('[App] AI cleanup failed:', err));
     }
+    try {
+      trayService?.destroy();
+    } catch (err) {
+      console.error('[App] Tray destroy failed:', err);
+    }
+  })();
+
+  try {
+    await Promise.race([
+      cleanup,
+      new Promise((resolve) => setTimeout(resolve, HARD_TIMEOUT_MS))
+    ]);
   } catch (err) {
     console.error('[App] Error during cleanup:', err);
   } finally {
