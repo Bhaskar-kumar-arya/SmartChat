@@ -22,7 +22,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 10 | App IPC & auth | DONE (7 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 4 low |
 | 11 | apiServer, search, notification, calls, audio | DONE (10 findings) | 2026-09-07 | 0 crit, 1 high, 2 med, 7 low |
 | 12 | SDK, tools, data wipe, domain, db, protocol | DONE (11 findings) | 2026-09-07 | 0 crit, 0 high, 4 med, 7 low |
-| 13 | Cross-cutting pass | IN PROGRESS | 2026-09-07 | do only after 1–12 |
+| 13 | Cross-cutting pass | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
 
 ## Summary counts
 
@@ -1359,7 +1359,109 @@ manifest-declarative.
 **Status:** open
 
 ## Slice 13 — Cross-cutting pass
-_none yet_
+
+### [P2-S13-01] med — src/main/index.ts:300-342 (`will-quit`) + src/main/kernel/KernelBootstrapper.ts:202-210
+**What:** `will-quit`'s `cleanup` IIFE `await`s `bootResultForShutdown.dispose()`
+first, then WA worker shutdown, embedding-worker terminate, apiServer stop, AI
+cleanup. `dispose()` itself runs `for (const id of loaded) { await
+host.unload(id) }` with **no per-iteration try/catch**, and `.dispose()` in
+index.ts is only guarded by `.catch(err => console.error(...))` on that one call.
+**Why it's a bug:** the `.catch` on `bootResultForShutdown.dispose()` *does* stop a
+rejection from aborting the rest of `cleanup` — but the unguarded loop inside
+`dispose()` means the **first** plugin whose `deactivate()` / worker-deactivate
+rejects (see P2-S8-03) aborts `unload` for every remaining plugin: their
+`onPluginUnload` (WA bus detach, AI tool removal), `contributionRegistry.unregisterAll`,
+`channel.destroy()` and `ctx.storage` flush never run. Those plugins' storage
+writes are lost and their channels/timers leak, and this happens on every normal
+quit, not an edge case. The 8 s `HARD_TIMEOUT_MS` race compounds it: if any
+remaining step is slow, `app.exit(0)` fires from `finally` with the WA worker
+still mid-transaction on the shared SQLite file.
+**Fix idea:** wrap each `host.unload(id)` in `dispose()`'s loop in try/catch
+(log + continue); consider running WA worker `shutdown()` before kernel dispose
+so a hung plugin can't strand an active socket/transaction.
+**Status:** open
+
+### [P2-S13-02] low — src/main/index.ts:175 + src/main/kernel/KernelBootstrapper.ts:80 + src/main/protocol/pluginProtocol.ts:89-95
+**What:** `registerPluginProtocol(extDir)` is called from `app.whenReady()` in
+index.ts **and again** from `KernelBootstrapper.boot()` (same `extensionsPath`).
+The module-level `registeredSessions` WeakSet dedups the `protocol.handle('plugin',
+…)` call per session, but the `Electron.app.on('web-contents-created', …)`
+listener registered at pluginProtocol.ts:89 is **outside** that guard, so each
+call adds another permanent app-level listener. index.ts:193 also registers its
+own `web-contents-created` listener, and `registerPluginProtocolForSession` is
+invoked once more per webview from within the accumulated listeners.
+**Why it's a bug:** N identical `web-contents-created` listeners fire on every
+window/webview creation (each re-running `registerPluginProtocolForSession`, a
+WeakSet no-op after the first), and the count trips Node's
+`MaxListenersExceededWarning` once a few webviews/windows have existed. Pure
+redundancy — boot() does not need to register the protocol that index.ts already
+registered.
+**Fix idea:** register the protocol once (drop the call from `boot()` or from
+index.ts), and register the `web-contents-created` app listener a single time
+guarded by a module flag.
+**Status:** open
+
+### [P2-S13-03] med — src/main/workers/bridge/WAWorkerBridge.ts:137-157 vs src/main/services/whatsapp/WAEventBus.ts:56-68
+**What:** `WAEventBus.emit` awaits its handler chain sequentially **within one
+call**, preserving "DB write before IPC send for the same event." But the only
+production emitter, `WAWorkerBridge`'s `worker.on('message')` handler, does
+`bus.emit(typedEventName, …).catch(…)` — **not awaited**. The worker `message`
+listener returns immediately and the next worker message is dispatched before the
+previous emit's handler chain resolves.
+**Why it's a bug:** across successive events the ordering guarantee the bus is
+designed to provide does not hold. During a reconnect catch-up burst the worker
+streams `message:incoming`, `message:edited`, `message:decrypted`,
+`reaction:update` for overlapping ids in quick succession; `UIBroadcastSubscriber`
+enrichment (async DB queries) for event A is still in flight when event B's chain
+starts, so the renderer can receive an edited/decrypted/reacted update for a
+message before its insert broadcast, or a notification for a message the UI hasn't
+rendered. There is also no backpressure — a slow subscriber chain lets the worker
+outrun the main bus without bound.
+**Fix idea:** serialise emits in the bridge (chain them on a promise queue, or
+make the `message` handler `async` and `await bus.emit`), so the per-call ordering
+guarantee extends across the event stream.
+**Status:** open
+
+### [P2-S13-04] low — src/main/index.ts:274 + src/main/auth.ts:126-175
+**What:** `initVectorDb(services.vectorSyncService)` is called fire-and-forget
+(not awaited) right before `createWindow()`, and its entire body is wrapped in a
+`try { … } catch (err) { console.error(…) }` that resolves normally on any
+failure (P2-S10-04). Nothing gates deep-search / embedding writes on it having
+finished.
+**Why it's a bug:** `apiServer.start()` and `registerIpcHandlers` run
+synchronously right after, and `createWindow` → `ready-to-show` →
+`waConnectionManager.connect()` starts the WA worker — all before the `await`s
+inside `initVectorDb` (table create, self-heal probe, `vectorSyncService.sync()`)
+resolve. A `deepSearch` IPC from the renderer, or a `VectorSyncService.sync()`
+kicked off in parallel, can hit `vec_messages` before it exists (fresh DB) or
+mid `DROP`/`CREATE` self-heal — the query throws, is swallowed upstream, and deep
+search silently returns nothing for the rest of the session with no retry. The
+startup sequence has no "vector store ready" barrier.
+**Fix idea:** `await initVectorDb(...)` before starting the API server / enabling
+the deep-search path, or expose a ready flag that `SearchService.deepSearch` and
+`VectorSyncService.sync` check and surface as "search initialising" instead of
+empty results.
+**Status:** open
+
+### [P2-S13-05] low — src/main/services/whatsapp/WhatsAppConnectionManager.ts:155-160 + src/main/services/whatsapp/subscribers/index.ts:57-77
+**What:** `connect()` calls `createSubscribers(bus, this.deps, …)` on **every**
+connect/reconnect, creating a fresh set of 4 subscriber instances each time. It
+only ever tears down with `this.currentBus.removeAllListeners()` — the returned
+subscriber array is discarded and `subscriber.dispose()` is never called (the
+factory's own doc says to call `forEach(s => s.dispose())` *or* `removeAllListeners`).
+**Why it's a bug:** today the 4 main-process subscribers keep all their teardown
+in bus-listener removal, so `removeAllListeners` happens to suffice — but this is
+a latent trap identical to P2-S3-04/P2-S8-06: the moment any main-process
+subscriber acquires a non-bus resource (a timer, an fs.watch, a listener on
+`app`/`ipcMain`, a debounce handle — e.g. the prefs-cache `fs.watch` proposed in
+P2-S11-05), every reconnect leaks one, because the code path that would call
+`dispose()` doesn't exist. `NotificationSubscriber` already bind-caches handlers
+specifically "so we can remove the exact same reference in dispose()", implying
+dispose is meant to run.
+**Fix idea:** keep the subscriber array on the instance and call
+`subscribers.forEach(s => s.dispose())` in `connect()` (before swapping buses)
+and in `shutdown()`, instead of relying solely on `removeAllListeners()`.
+**Status:** open
 
 ---
 
