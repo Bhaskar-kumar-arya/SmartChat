@@ -41,18 +41,15 @@ jobs:
           cache: 'npm'
           cache-dependency-path: smartchat/package-lock.json
 
-      # ── 3. Override .npmrc mirrors for CI ──────────────────────────────────
-      # .npmrc uses custom keys (electron_mirror, electron_builder_binaries_mirror)
-      # that are NOT valid npm config options — they are read directly from
-      # .npmrc by electron-builder. npm config set rejects them, so we patch
-      # the .npmrc file in-place with sed.
-      # npmmirror does NOT host dmg-builder (needed to create the .dmg), so
-      # we redirect both to GitHub official releases for the CI run.
-      # The project .npmrc is not committed back, so local builds keep npmmirror.
-      - name: Patch .npmrc electron mirrors to GitHub for CI
+      # ── 3. Patch .npmrc builder-binaries mirror for CI ─────────────────────
+      # .npmrc sets two custom keys read directly by electron-builder:
+      #   electron_mirror              → npmmirror hosts Electron runtime ✓ (keep)
+      #   electron_builder_binaries_mirror → npmmirror does NOT host dmg-builder ✗ (fix)
+      # We only patch the binaries mirror to GitHub so dmg-builder can be
+      # downloaded. The Electron mirror stays on npmmirror — it was working.
+      - name: Patch .npmrc builder-binaries mirror to GitHub for CI
         run: |
           sed -i '' \
-            -e 's|electron_mirror=.*|electron_mirror=https://github.com/electron/electron/releases/download/v|' \
             -e 's|electron_builder_binaries_mirror=.*|electron_builder_binaries_mirror=https://github.com/electron-userland/electron-builder-binaries/releases/download/|' \
             .npmrc
           echo "=== .npmrc after patch ==="
