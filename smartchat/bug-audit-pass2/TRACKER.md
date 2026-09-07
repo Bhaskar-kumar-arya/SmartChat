@@ -14,8 +14,8 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 2 | Message pipeline | DONE (8 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 5 low |
 | 3 | WhatsApp service & subscribers | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
 | 4 | Chats & sync | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
-| 5 | Contacts | IN PROGRESS | 2026-09-07 | |
-| 6 | AI (providers, mentions, citations, prompts) | IN PROGRESS | 2026-09-07 | |
+| 5 | Contacts | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
+| 6 | AI (providers, mentions, citations, prompts) | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 1 med, 5 low |
 | 7 | Kernel API modules & router | IN PROGRESS | 2026-09-07 | |
 | 8 | Kernel plugins, contributions, permissions | IN PROGRESS | 2026-09-07 | |
 | 9 | Kernel storage, channels, ipc, ui | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
@@ -385,7 +385,98 @@ the type, and drop the unused `_currentBatchIds` param + its call-site Set.
 **Status:** open
 
 ## Slice 5 — Contacts
-_none yet_
+
+### [P2-S5-01] med — src/main/services/contacts/ContactService.ts:235-259
+**What:** `upsertContact` resolves an existing identity id (via `findExistingIdentityId`,
+which checks `phoneNumber` **before** the LID alias), then unconditionally re-points the
+contact's LID alias onto that id with `ensureAlias(lid, 'LID')`. When the LID currently
+belongs to a *different* identity — a LID-only stub created earlier from group messages —
+the alias moves but the stub's `Message.senderId` / `Reaction.senderId` / `ChatMember`
+rows are left pointing at the now-orphaned stub. No message/member/reaction migration and
+no stub deletion happen here (unlike `deduplicateIdentities`).
+**Why it's a bug:** a very common sequence — (1) group history sync creates stub A for
+`X@lid` with pushName "Alex" and dozens of messages, (2) `contacts.upsert` later arrives
+with `{ id: 'X@lid', phoneNumber: 'P@s.whatsapp.net' }` and `P` already has identity B —
+ends with `X@lid` alias on B but all of Alex's historical group messages still rendered
+under stub A (bare `~Alex` pushName, wrong/duplicated contact in the UI, wrong identity
+in AI context). Only self-heals if `deduplicateIdentities` later finds an unambiguous
+single-candidate pushName match; otherwise permanent.
+**Fix idea:** when `findExistingIdentityId` and the LID alias disagree, route through the
+full merge path (`IdentityReconciliationService` step 2-6 logic) instead of a bare alias
+re-point; or at minimum `message.updateMany`/`reaction.updateMany`/`chatMember` migrate +
+delete the empty stub.
+**Status:** open
+
+### [P2-S5-02] med — src/main/services/contacts/IdentityReconciliationService.ts:50-88
+**What:** `deduplicateIdentities` merges a LID-only stub into a PN identity whenever the
+**trimmed `pushName` strings are exactly equal** and there is exactly one PN candidate
+with that pushName. `pushName` is arbitrary user-set display text.
+**Why it's a bug:** two genuinely different people whose pushName happens to collide —
+"Mom", "Dad", "John", "Papa", common first names — get silently merged: all of the stub's
+messages, reactions and group memberships are re-pointed to the unrelated PN identity
+(steps 2-4) and the stub is `delete`d (step 6). This is irreversible cross-contact data
+corruption, and it runs automatically at the end of **every** history sync
+(`WorkerHistorySyncManager` / `HistorySyncManager` call it in `finishSync`). The
+"exactly one candidate" guard does not protect against this — it only requires the *PN*
+side to be unambiguous, not that the two identities are actually the same person.
+**Fix idea:** require a corroborating signal before merging (shared LID↔PN `LidMap`
+entry, matching verifiedName, or an overlapping group membership), or demote the merge to
+a "suggested" state a human confirms; at least skip when pushName is a short/common token.
+**Status:** open
+
+### [P2-S5-03] low — src/main/services/contacts/ContactNameResolver.ts:78-121
+**What:** `batchResolveNames` loops over `uniqueJids` (up to hundreds — group member
+lists, chat-list batch) and for each does `aliases.find(a => a.jid === jid)` (and again
+`aliases.find(a => a.jid === pn)` in the LID branch) — O(n·m) over the alias array.
+**Why it's a bug:** name resolution is on the chat-list render and group-open hot paths;
+for a 500-member group this is ~250k string comparisons per call, plus a fire-and-forget
+`linkLidAndPn` DB write per unknown LID with no per-call dedup. Also duplicates the
+`getDisplayName` implementation from `utils/contactUtils.ts` (drift risk).
+**Fix idea:** build `new Map(aliases.map(a => [a.jid, a]))` once; dedupe the
+`linkLidAndPn` calls; share the single `getDisplayName`.
+**Status:** open
+
+### [P2-S5-04] low — src/main/services/contacts/ProfileSyncService.ts:7,38-58,86-91
+**What:** `imageCache` is a plain unbounded `Map`, never cleared (`ProfileSyncService`
+isn't wired to `ContactService.clearCaches()` / any teardown). `type:'image'` fetch
+failures and "no picture" (`null`) results are never cached, so every render re-hits
+`sock.profilePictureUrl` over the network. The `preview` path has no in-memory cache at
+all and calls `contactService.getIdentityIdByJid(jid)` twice in one invocation (lines 67
+and 86).
+**Why it's a bug:** long-lived process slowly leaks one cache entry per viewed full
+image; contacts with no profile picture cause a network round-trip on every single
+chat-list / header render forever (no negative cache); redundant identity lookups.
+**Fix idea:** bound the cache (LRU) and clear it on logout; negatively cache
+`item-not-found`/`null` with a short TTL; reuse the resolved `identityId` within the call.
+**Status:** open
+
+### [P2-S5-05] low — src/main/services/contacts/ProfileSyncService.ts:60-94
+**What:** Profile-picture URLs returned by Baileys are time-limited CDN URLs, but they
+are persisted verbatim into `Identity.profilePictureUrl` / `Chat.profilePictureUrl` with
+no fetched-at timestamp. The non-`forceRefresh` read path (the default;
+`get-profile-picture` IPC defaults `forceRefresh=false`) returns the stored URL
+indefinitely.
+**Why it's a bug:** once a URL expires (hours/days) every avatar for that contact/group
+is a broken image until something explicitly passes `forceRefresh=true` — there is no
+TTL, no periodic refresh, and no expiry detection.
+**Fix idea:** store a `profilePictureFetchedAt` and treat the cached URL as stale after N
+hours, or store the image bytes / a stable local path instead of the ephemeral URL.
+**Status:** open
+
+### [P2-S5-06] low — src/main/services/contacts/LidPnLinker.ts:32-81
+**What:** `linkLidAndPn` writes the `LidMap` ledger row first (step 1), then does the
+relational identity sync (steps 2). If step 2 throws — `updateIdentity(id,{phoneNumber})`
+or an `upsertIdentityAlias` hitting a P2002 race, or the orphan `deleteIdentity` hitting
+a fresh FK reference — the error is only `.catch`-logged by fire-and-forget callers
+(`ContactNameResolver`, `reconcileLidPnFromJids`, `MessageService`). No transaction spans
+the two steps and there is no retry.
+**Why it's a bug:** the mapping ledger and the relational `Identity`/`IdentityAlias`
+state diverge: `LidMap` says lid↔pn are linked (so `isAlreadyLinked` short-circuits all
+future attempts via the cache/ledger), but the identities were never actually merged/
+aliased — name resolution keeps treating them as two contacts permanently.
+**Fix idea:** wrap steps 1-2 in one `$transaction`, or write the ledger row **last**
+(after the relational sync succeeds) so a failure leaves it retryable.
+**Status:** open
 
 ## Slice 6 — AI
 _none yet_
