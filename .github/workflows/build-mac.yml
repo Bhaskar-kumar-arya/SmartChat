@@ -1,0 +1,89 @@
+name: Build SmartChat for macOS
+
+on:
+  # Manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      upload_artifact:
+        description: 'Upload .dmg as artifact?'
+        required: false
+        default: 'true'
+        type: boolean
+
+  # Also triggers on pushes to main/master that touch the smartchat source
+  push:
+    branches: [main, master]
+    paths:
+      - 'smartchat/**'
+      - '.github/workflows/build-mac.yml'
+
+jobs:
+  build-mac:
+    name: Build macOS .dmg
+    runs-on: macos-latest
+
+    defaults:
+      run:
+        # All commands run inside the smartchat sub-directory
+        working-directory: smartchat
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js setup ───────────────────────────────────────────────────
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: smartchat/package-lock.json
+
+      # ── 3. Install dependencies ────────────────────────────────────────────
+      - name: Install npm dependencies
+        run: npm ci --legacy-peer-deps
+
+      # ── 4. Rebuild native modules for Electron on macOS ───────────────────
+      # better-sqlite3, onnxruntime-node, sqlite-vec, etc. must be compiled
+      # against the same Electron headers that the packaged app uses.
+      - name: Rebuild native modules for Electron
+        run: npx @electron/rebuild --force -v 39.8.2
+        env:
+          npm_config_target: '39.8.2'
+          npm_config_runtime: 'electron'
+          npm_config_disturl: 'https://electronjs.org/headers'
+          npm_config_build_from_source: 'true'
+
+      # ── 5. Generate Prisma client ──────────────────────────────────────────
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # ── 6. Write .env (DATABASE_URL only — no secret keys needed to build) ─
+      - name: Create .env for build
+        run: |
+          echo 'DATABASE_URL="file:./prisma/dev.db"' > .env
+
+      # ── 7. Build (vite compile + electron-vite build) ─────────────────────
+      - name: Build (electron-vite + generate template DB)
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      # ── 8. Package as macOS .dmg ───────────────────────────────────────────
+      - name: Package macOS .dmg (unsigned)
+        run: npx electron-builder --mac --publish never
+        env:
+          # Disable code-signing — unsigned build, notarize is already false
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
+
+      # ── 9. Upload .dmg as a GitHub Actions artifact ────────────────────────
+      - name: Upload macOS .dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartChat-macOS-dmg
+          # electron-builder places the output in smartchat/dist/
+          path: smartchat/dist/*.dmg
+          retention-days: 14
+          if-no-files-found: error

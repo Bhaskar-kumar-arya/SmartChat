@@ -24,6 +24,8 @@ files:
 asarUnpack:
   - resources/**
   - node_modules/sqlite-vec-windows-x64/**
+  - node_modules/sqlite-vec-darwin-x64/**
+  - node_modules/sqlite-vec-darwin-arm64/**
 extraResources:
   - from: node_modules/.prisma
     to: node_modules/.prisma
@@ -40,6 +42,8 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  target:
+    - dmg
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
