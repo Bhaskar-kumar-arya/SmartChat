@@ -22,7 +22,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F9 | Extensions / plugins UI | DONE (12 findings) | 2026-09-08 | 4 med, 8 low — plugin webview unsandboxed + no will-navigate lock, all sidebar-panel webviews mounted at once, stale panel theme after toggle, extension-chat history race; plugin content rendered as text (no XSS sink) |
 | F10 | Overlays & modals | DONE (13 findings) | 2026-09-08 | 6 med, 7 low — webview insecure-content pref, send/receive cross-wiring, no Escape/focus-trap on common modals, required-checkbox validation gap, optimistic-toggle no-revert |
 | F11 | Common components & utils | DONE (8 findings) | 2026-09-08 | 1 high, 2 med, 5 low — plugin SVG XSS, stale avatar on chat switch, isSameJid LID/PN collision |
-| F12 | Cross-cutting pass | TODO | — | do only after F1–F11 |
+| F12 | Cross-cutting pass | IN PROGRESS | 2026-09-08 | do only after F1–F11 |
 
 ## Summary counts
 
