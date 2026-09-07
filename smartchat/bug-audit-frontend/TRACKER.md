@@ -18,7 +18,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F5 | Message view & rendering | DONE (14 findings) | 2026-09-07 | 1 high, 5 med, 8 low — markdown link XSS, template-button URL scheme, pagination lock-up, reaction self-JID |
 | F6 | Message input & composition | DONE (14 findings) | 2026-09-07 | 1 high, 6 med, 7 low — voice note mis-delivery on chat switch, mouse mention pick broken, stale mentions |
 | F7 | Search UI | DONE (8 findings) | 2026-09-08 | 1 high, 3 med, 4 low — ChatSearchSidebar out-of-order responses, date-range timezone/inclusive-end |
-| F8 | AI chat UI | IN PROGRESS | 2026-09-08 | streaming abort/race, citation markdown XSS |
+| F8 | AI chat UI | DONE (13 findings) | 2026-09-08 | 1 high, 6 med, 6 low — no stream abort on session switch (answer lost), citation IPC storm, per-keystroke key persist; markdown XSS checked clean |
 | F9 | Extensions / plugins UI | IN PROGRESS | 2026-09-08 | webview sandbox, plugin-supplied content |
 | F10 | Overlays & modals | DONE (13 findings) | 2026-09-08 | 6 med, 7 low — webview insecure-content pref, send/receive cross-wiring, no Escape/focus-trap on common modals, required-checkbox validation gap, optimistic-toggle no-revert |
 | F11 | Common components & utils | IN PROGRESS | 2026-09-08 | |
@@ -971,7 +971,189 @@ new chat's header.
 **Status:** open
 
 ## Slice F8 — AI chat UI
-_none yet_
+
+Files audited: `components/ai/{AIChatSidebar,AIMessageBubble,AISmartInput,AIToolCard,
+CitationPill,CitationMarkdownRenderer,AIChatHistoryModal,AISettingsModal,
+AIChatExportButton}.tsx`, `components/ai/hooks/{useAIStream,useAIChatSessions}.ts`,
+`hooks/{useCitation,useCitationActions}.ts`, `types/ai/**`. Cross-checked
+`hooks/useChatNavigation.ts`, preload `aiChatStream`/`abortAiChat` (F1-04/F1-05),
+`src/main/services/ai/AIChatSessionService.ts` for the session/timestamp shapes.
+
+**Markdown XSS check (clean):** all AI/thought text goes through `<ReactMarkdown>`
+with no `rehype-raw` (raw HTML escaped) and a `urlTransform` that delegates to
+react-markdown's `defaultUrlTransform` for every scheme except `cite:`; `cite:`
+hrefs are intercepted by the `a` component and rendered as a `<CitationPill>`
+`<button>`, never as an anchor. Non-citation links get `defaultUrlTransform`'s
+`javascript:`/`data:` stripping. No injection vector found here (contrast F5-01,
+where the WA `TextMessage` overrode `urlTransform` with identity).
+
+### [F8-01] high — src/renderer/src/components/ai/hooks/useAIStream.ts:275-281 & AIChatSidebar.tsx:191-204,276-285
+**What:** Switching AI sessions (History modal `onSelectSession`), starting a New
+Chat, deleting the active session, and closing the sidebar (`isOpen` → `return
+null`) all call `setMessages([])` / load another session's messages but **never
+call `abort()`**. The in-flight stream's preload listeners stay registered and
+its callbacks keep running against the now-replaced state.
+**Why it's a bug:** start a long AI response, then click a different session in
+History (or "New Chat"). The old stream keeps generating on the backend
+(wasted tokens/compute, no way to stop it — the abort button is gone with the
+old input). When it finally emits `-end`: the drip loop's `setMessages` maps
+over the *new* conversation (no-op), the `-end` handler can't find `aiMsgId` so
+`finalContent=''`, and the `100 ms` auto-save `setTimeout` then calls
+`saveCurrentMessages(activeSessionIdRef.current, messagesRef.current)` — i.e. it
+re-persists whatever session is now open. The actual streamed answer is silently
+lost and never saved to the session that requested it.
+**Fix idea:** call `abort()` at the top of `selectSession`/`startNewChat`/delete
+and in a `useAIStream` unmount cleanup; have `-end`/auto-save bail if
+`activeSessionIdRef.current` differs from the session captured at
+`startStream` time (snapshot the sid per stream).
+**Status:** open
+
+### [F8-02] med — src/renderer/src/components/ai/hooks/useAIStream.ts:46-52,65-93,101-110
+**What:** The unmount cleanup only `clearInterval(typingInterval.current)`. The
+per-stream `-chunk`/`-end`/`-error` IPC listeners (registered inside
+`api.aiChatStream`, F1-05) are not disposed on unmount, and the `-chunk`
+callback calls `drip()`, which does `if (!typingInterval.current) typingInterval
+.current = setInterval(...)` — **re-creating the interval after unmount**.
+**Why it's a bug:** close the AI sidebar (or navigate) while a stream is active.
+Chunks keep arriving, each one re-arms the 30 ms interval, and the interval's
+`setMessages` runs on the unmounted hook → repeated setState-after-unmount
+warnings and wasted renders until the backend stream ends. Over a long session
+with many AI chats the undisposed listeners also accumulate (F1-05).
+**Fix idea:** return a disposer from `aiChatStream` and call it (plus `abort()`)
+in the hook's unmount cleanup; guard `drip()` with an `isMountedRef`.
+**Status:** open
+
+### [F8-03] med — src/renderer/src/components/ai/hooks/useAIStream.ts:275-281
+**What:** `abort` does `await api.abortAiChat(activeChannelId)` with no
+`try/catch`; `setActiveChannelId(null)` / `setLoading(false)` run only on the
+resolve path.
+**Why it's a bug:** if `abortAiChat` rejects (backend already tore the stream
+down, IPC error), the click produces an unhandled promise rejection and
+`activeChannelId` stays truthy, so `AISmartInput` stays `disabled` showing the
+Stop button forever — the user can't type or send until they reload. The
+`-end`/`-error` events that would normally clear it may never come if the stream
+is already gone.
+**Fix idea:** `try { await api.abortAiChat(id) } finally { setActiveChannelId(null);
+setLoading(false) }`.
+**Status:** open
+
+### [F8-04] med — src/renderer/src/hooks/useCitation.ts:23-49
+**What:** `resolve` caches an entity in `globalCitationCache` only `if (entity)`.
+A citation index that the backend resolves to `null` (deleted message, bad
+index, session not yet persisted) is never cached, so every subsequent call
+re-hits `api.resolveCitation`.
+**Why it's a bug:** `CitationPill`'s effect calls `resolve(index)` on every
+mount, and during streaming the markdown subtree re-renders on every drip tick
+(~33/s) — each re-render remounts/re-runs the pills. For any unresolvable
+citation in the answer that's a sustained IPC storm (one `resolve-citation`
+round-trip per pill per render) for the whole stream, plus `setLoadingIndices`
+churn.
+**Fix idea:** cache negative results too (store `null`, or a sentinel), and/or
+dedupe in-flight requests per `(sessionId,index)` with a promise map.
+**Status:** open
+
+### [F8-05] med — src/renderer/src/components/ai/CitationPill.tsx:19-21
+**What:** `useEffect(() => { resolve(index).then(setEntity) }, [index, resolve])`
+— no mounted guard, and `resolve` identity changes whenever `sessionId` changes.
+**Why it's a bug:** pills mount and unmount constantly while the answer streams
+in (markdown re-parse each tick). A `resolve` that settles after the pill
+unmounts calls `setEntity` on an unmounted component → React warning; same class
+as F2-03 / F5-13, but here it fires many times per answer.
+**Fix idea:** `let alive = true` flag with cleanup, or an `AbortController` /
+ignore-stale pattern.
+**Status:** open
+
+### [F8-06] med — src/renderer/src/components/ai/AISettingsModal.tsx:124-134
+**What:** the API-key `<input onChange>` does `await api.setProviderKey(provider,
+val)` on **every keystroke**, with no debounce or blur/commit step.
+**Why it's a bug:** typing/pasting a 40-char key fires ~40 IPC writes, each
+persisting a partial/invalid key to the backend key store. If the backend
+validates or probes the key on set (network call), that's 40 failing probes; and
+if the user navigates away mid-type the last persisted value is a truncated key
+that silently breaks the provider until they retype it fully.
+**Fix idea:** keep the field local and persist on blur / debounced (500 ms) /
+explicit Save.
+**Status:** open
+
+### [F8-07] med — src/renderer/src/components/ai/AIChatSidebar.tsx:301-323
+**What:** `messages.filter(...).map(msg => <AIMessageBubble .../>)` with no error
+boundary anywhere in the AI sidebar subtree. `AIMessageBubble` renders
+`<ReactMarkdown>` + `remark-math` + `rehype-katex` over unvalidated model
+output.
+**Why it's a bug:** a KaTeX parse edge case, a malformed markdown table, or any
+throw inside a bubble unmounts the entire `AIChatSidebar` — the whole assistant
+panel goes blank with no recovery but toggling it closed/open (and if the throw
+is in persisted history it recurs on reload). Same class as F5-06.
+**Fix idea:** wrap each bubble (or the list) in an error boundary that renders a
+"couldn't display this message" fallback.
+**Status:** open
+
+### [F8-08] low — src/renderer/src/components/ai/AIChatSidebar.tsx:88-90
+**What:** the auto-scroll effect is keyed on `[messages.length, loading]`. During
+streaming the message count is constant and `loading` flips to `false` on the
+first chunk, so after the first token no further scroll happens.
+**Why it's a bug:** for any answer taller than the viewport the view stops
+following the streaming text — the user has to manually scroll to keep reading,
+and jumping back to bottom only happens on the next message.
+**Fix idea:** also depend on the active message's content length, or observe the
+scroll container size, and only auto-scroll when already near the bottom.
+**Status:** open
+
+### [F8-09] low — src/renderer/src/components/ai/AISettingsModal.tsx:78-79 & AIChatHistoryModal.tsx:79-80 & AIChatExportButton.tsx:84
+**What:** all three modals (and the export confirm-delete) close on
+overlay-click only — no `Escape` handler, no focus trap, no focus restore to the
+opener, no `role="dialog"`/`aria-modal`. `AISettingsModal` also has no close
+button in its header (only the "Done" button at the bottom and the backdrop).
+**Why it's a bug:** keyboard-only users can open AI settings / history but can't
+dismiss with `Escape`, and focus is left behind the overlay. Consistent with
+F5-14; F10 owns the shared fix.
+**Fix idea:** shared modal primitive with focus-trap + `Escape`.
+**Status:** open
+
+### [F8-10] low — src/renderer/src/components/ai/CitationPill.tsx:32
+**What:** `title={entity ? \`Go to ${entity.type}: ${JSON.stringify(entity)}\` : …}`
+— the native tooltip dumps the raw entity object (`chatJid`, `messageId`,
+`filePath`) as JSON.
+**Why it's a bug:** hovering a citation shows an unreadable JSON blob including
+absolute file paths / internal JIDs instead of a human label; minor info leak
+and poor UX.
+**Fix idea:** format a friendly title per type (e.g. "Go to file: report.pdf").
+**Status:** open
+
+### [F8-11] low — src/renderer/src/components/ai/hooks/useAIStream.ts:54-170 & AIChatSidebar.tsx:133-140
+**What:** (a) `startStream` is `useCallback(..., [])` but closes over
+`saveCurrentMessages` (not memoised in `useAIChatSessions` — new ref every
+render) and reads options/tools/session via refs; the empty dep array is a
+deliberate lie that only works because those refs are hand-synced. Fragile — any
+new direct dependency added to `startStream` will silently use stale values.
+(b) `handleSend`'s catch branch pushes an error message with
+`id: (Date.now() + 1).toString()` — non-UUID, collides if two errors land in the
+same ms, and inconsistent with `crypto.randomUUID()` everywhere else.
+**Fix idea:** memoise `saveCurrentMessages` with `useCallback`; use
+`crypto.randomUUID()` for the error message id.
+**Status:** open
+
+### [F8-12] low — src/renderer/src/components/ai/AIChatSidebar.tsx:77-86
+**What:** the load effect has dep array `[isOpen]` while calling `api.getChats`,
+`api.getAiTools`, `api.getAiModels`, `api.getAiOptions` (none guarded for
+unmount / re-entrancy). Tools/models/options are refetched every time the
+sidebar is opened, and `getAiOptions().then(setAiOptions)` can stomp a change
+the user just made in Settings if it resolves late.
+**Fix idea:** load once on mount (or when actually stale); add an `alive` guard;
+don't overwrite `aiOptions` from a background fetch after the user edits it.
+**Status:** open
+
+### [F8-13] low — src/renderer/src/components/ai/hooks/useAIStream.ts:131-152
+**What:** the auto-exec / auto-save logic runs inside `setTimeout(fn, 100)` after
+`-end`, matching `AIMessageBubble`'s own `100 ms`-free parse. The tool-call
+regex `/<tool_call>([\s\S]*?)<\/tool_call>/` and the JSON-in-fence stripping are
+duplicated verbatim between `useAIStream` (:132-137) and `AIMessageBubble`
+(:78-85) — two copies that can drift, and the `100 ms` delay is a race (if the
+user clicks Approve on the card before the timer fires, the tool runs twice).
+**Fix idea:** extract a single `parseToolCall(content)` helper; drive auto-exec
+off the parsed result rather than a timer, and guard against double execution
+with `executingToolId` / a per-message "handled" flag.
+**Status:** open
 
 ## Slice F9 — Extensions / plugins UI
 _none yet_
