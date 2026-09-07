@@ -14,7 +14,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 2 | Message pipeline | DONE (8 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 5 low |
 | 3 | WhatsApp service & subscribers | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
 | 4 | Chats & sync | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
-| 5 | Contacts | TODO | — | |
+| 5 | Contacts | IN PROGRESS | 2026-09-07 | |
 | 6 | AI (providers, mentions, citations, prompts) | TODO | — | |
 | 7 | Kernel API modules & router | TODO | — | |
 | 8 | Kernel plugins, contributions, permissions | TODO | — | |
