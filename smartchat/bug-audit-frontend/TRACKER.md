@@ -19,7 +19,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F6 | Message input & composition | DONE (14 findings) | 2026-09-07 | 1 high, 6 med, 7 low — voice note mis-delivery on chat switch, mouse mention pick broken, stale mentions |
 | F7 | Search UI | DONE (8 findings) | 2026-09-08 | 1 high, 3 med, 4 low — ChatSearchSidebar out-of-order responses, date-range timezone/inclusive-end |
 | F8 | AI chat UI | DONE (13 findings) | 2026-09-08 | 1 high, 6 med, 6 low — no stream abort on session switch (answer lost), citation IPC storm, per-keystroke key persist; markdown XSS checked clean |
-| F9 | Extensions / plugins UI | IN PROGRESS | 2026-09-08 | webview sandbox, plugin-supplied content |
+| F9 | Extensions / plugins UI | DONE (12 findings) | 2026-09-08 | 4 med, 8 low — plugin webview unsandboxed + no will-navigate lock, all sidebar-panel webviews mounted at once, stale panel theme after toggle, extension-chat history race; plugin content rendered as text (no XSS sink) |
 | F10 | Overlays & modals | DONE (13 findings) | 2026-09-08 | 6 med, 7 low — webview insecure-content pref, send/receive cross-wiring, no Escape/focus-trap on common modals, required-checkbox validation gap, optimistic-toggle no-revert |
 | F11 | Common components & utils | DONE (8 findings) | 2026-09-08 | 1 high, 2 med, 5 low — plugin SVG XSS, stale avatar on chat switch, isSameJid LID/PN collision |
 | F12 | Cross-cutting pass | TODO | — | do only after F1–F11 |
@@ -1156,7 +1156,186 @@ with `executingToolId` / a per-message "handled" flag.
 **Status:** open
 
 ## Slice F9 — Extensions / plugins UI
-_none yet_
+
+Files audited: `components/extensions/{ExtensionManager,ExtensionCard,ExtensionLogViewer}.tsx`,
+`components/panels/{PanelWebview,SidebarPluginTabs,SettingsPluginPage}.tsx`,
+`components/chat/ExtensionChat/{ExtensionChatView,ExtensionChatInput,ExtensionMessageRenderer}.tsx`,
+`hooks/{useExtensionChat,useExtensionLog,useExtensionManager}.ts`. Cross-checked
+the `<webview>` guest config against `src/main/index.ts` (`webPreferences`,
+`web-contents-created`, `setWindowOpenHandler`). Extension/plugin-supplied
+strings (card title/body/text, chat message content, manifest name/description,
+permission names, slash-command names) are all rendered as React text nodes —
+**no `dangerouslySetInnerHTML` anywhere in this slice, no markdown/HTML sink** —
+so plugin content cannot inject markup. The webview attack surface and the
+IPC-race / leak classes are where the findings are.
+
+### [F9-01] med — src/renderer/src/components/panels/SidebarPluginTabs.tsx:55-101
+**What:** `SidebarPluginMainStage` maps over **every** `sidebar-panel`
+contribution and renders a `<PanelWebview>` for each, unconditionally; only the
+`visible` prop differs (`display: 'flex' | 'none'` in `PanelWebview`). Nothing is
+unmounted when a panel is deselected — `activePanelId` only flips `display`.
+**Why it's a bug:** each `<webview>` is a full separate renderer process with its
+own preload. Every plugin that declares a sidebar panel spins up a live webview
+process at app start and keeps it running for the whole session even if the user
+never opens it (and each also runs its 2s-ish panel logic, timers, network). With
+several panel-contributing plugins installed this is a large fixed memory/CPU cost
+and N persistent `plugin://` sessions. `SettingsPluginPage` has the same shape but
+is at least gated by the settings route being open.
+**Fix idea:** only mount the `<PanelWebview>` for `activePanelId` (plus maybe a
+keep-alive for the most-recently-used), or lazy-mount on first open and unmount
+after a grace period. At minimum document the per-plugin process cost.
+**Status:** open
+
+### [F9-02] med — src/renderer/src/components/panels/PanelWebview.tsx:59-82
+**What:** theme tokens are extracted (`extractThemeTokens()`) and pushed into the
+guest via `_init(panelId, tokens)` **only** inside the one-shot `dom-ready`
+handler. There is no subscription to app theme changes and `_init` is never
+called again for the life of the panel.
+**Why it's a bug:** toggle the app between light/dark (or any theme change) while
+a plugin panel is open and the panel keeps rendering with the `--wa-*` token
+values captured at load time — stale colors, unreadable contrast — until the
+panel/webview is reloaded. Panels mounted permanently (see F9-01) never reload,
+so they are wrong for the rest of the session.
+**Fix idea:** subscribe to the same theme-change signal the app uses (or a
+`MutationObserver` on `documentElement` class/attr) and re-push tokens via
+`executeJavaScript`/a dedicated `smartchat:theme` channel on change.
+**Status:** open
+
+### [F9-03] med — src/renderer/src/hooks/useExtensionChat.ts:14-26
+**What:** the mount/`extensionId`-change effect does
+`api.extensionChatHistory(extensionId).then(setMessages)` with **no is-mounted
+guard, no stale-`extensionId` guard**, and registers the `onExtensionChatPush`
+listener alongside it. The initial history `setMessages(msgs)` is a full replace.
+**Why it's a bug:** (a) rapid switching between two extension chats (or unmounting
+the view) while a history fetch is in flight → the late response overwrites the
+now-current chat's messages / setState-after-unmount (same class as F3-01).
+(b) A push message that arrives in the window between the listener being
+registered and `extensionChatHistory` resolving is appended to `prev`, then the
+awaited `setMessages(msgs)` replaces the array and **drops that pushed message**
+until another event arrives (same class as F3-04). (c) No de-dupe: a push whose
+message is also in the fetched history renders twice.
+**Fix idea:** capture `extensionId` + an `alive`/seq flag in the effect; ignore
+the history resolution if stale; merge the fetched page with messages already in
+state (dedupe by `id`) rather than replacing; buffer pushes received before the
+first load resolves.
+**Status:** open
+
+### [F9-04] med — src/renderer/src/components/panels/PanelWebview.tsx:104-114 (+ src/main/index.ts:114-118,193-205)
+**What:** the `<webview>` is declared with only `src` / `preload` / `partition` —
+no `webpreferences`, no `sandbox` attribute. Main sets `sandbox: false` globally
+and `webviewTag: true`, and the `web-contents-created` hook for `'webview'` only
+installs a `setWindowOpenHandler` — there is **no `will-attach-webview` (to pin
+guest `webPreferences`) and no `will-navigate` handler**.
+**Why it's a bug:** plugin panel guests run **unsandboxed** with the panel
+preload (`window.__smartchat`, IPC bridge) attached, and nothing restricts
+in-page navigation. A panel HTML that does `location.href = 'https://evil…'`
+(or a `<a target="_self">`, a meta-refresh, a form post) navigates the guest to
+arbitrary remote/`file:` content **in the same persistent partition with the
+plugin API still exposed** — remote content then has the plugin's IPC surface and
+whatever `persist:plugin-<id>` holds. Installed plugins are semi-trusted, but a
+compromised plugin CDN / an XSS in a panel page escalates straight to the kernel
+API.
+**Fix idea:** add `will-navigate` on the guest `webContents` that blocks any
+navigation whose URL isn't `plugin://<thisPluginId>/…`; add `will-attach-webview`
+to force `sandbox`, `contextIsolation`, `nodeIntegration:false` and reject an
+unexpected `preload`. (F12/backend may also want this — recorded here as the
+renderer declares the tag.)
+**Status:** open
+
+### [F9-05] low — src/renderer/src/hooks/useExtensionChat.ts:28-33 & ExtensionChatView.tsx:27-30
+**What:** `send()` and `handleAction()` call `api.extensionChatSend(...)` /
+`api.extensionChatSend(id, \`__button:${buttonId}\`)` fire-and-forget — no
+`.catch`, no pending/failed state. `handleAction` also bypasses the hook's `send`
+and encodes the button press as a magic `__button:<id>` text string.
+**Why it's a bug:** (a) if the send IPC rejects (extension unloaded mid-chat,
+kernel error) the user gets an unhandled promise rejection and zero feedback —
+the message just never appears. (b) a user whose literal message starts with
+`__button:` is indistinguishable from a real button press to the extension.
+**Fix idea:** `.catch` with an inline "couldn't send" affordance; route button
+actions through a structured field, not a text-prefix sentinel; have
+`handleAction` go through the hook.
+**Status:** open
+
+### [F9-06] low — src/renderer/src/hooks/useExtensionLog.ts:12-30
+**What:** the immediate `api.extensionGetLog(extensionId).then(setLog)` has no
+is-mounted guard, and the 2s `setInterval` runs an `async` callback with no
+in-flight guard and no request ordering.
+**Why it's a bug:** (a) select an extension then close the manager within the
+first fetch → setState-after-unmount. (b) if `extensionGetLog` ever takes >2s,
+calls overlap and an older response can land after a newer one → the log panel
+briefly shows stale/rewound output. (c) the entire log string is re-fetched over
+IPC, re-set, and the whole `<pre>` re-rendered + re-scrolled every 2s regardless
+of whether it changed — wasteful for a large/verbose log.
+**Fix idea:** `alive` flag; skip a tick if the previous fetch is still pending;
+have the backend push log deltas (or an mtime/length) instead of full-poll.
+**Status:** open
+
+### [F9-07] low — src/renderer/src/components/panels/PanelWebview.tsx:104-114
+**What:** the component renders the `<webview>` with no `did-fail-load` /
+`did-finish-load` listeners and no loading or error state.
+**Why it's a bug:** if the `plugin://<id>/<panel>` resource 404s (manifest points
+at a missing file, extension half-unloaded, protocol handler error) the user sees
+a permanently blank panel area with no message. The `SidebarPluginMainStage`
+placeholder only covers the "no `panel` declared" case, not a failed load.
+**Fix idea:** add `did-fail-load` → render an inline "This panel failed to load"
+state with a retry; show a spinner until `dom-ready`.
+**Status:** open
+
+### [F9-08] low — src/renderer/src/components/chat/ExtensionChat/ExtensionChatView.tsx:46-58
+**What:** message rows use `key={msg.id}` and the push handler in
+`useExtensionChat` is append-only with no de-dupe (see F9-03c).
+**Why it's a bug:** if the backend re-emits a message on reconnect / retry (same
+`id`), React gets duplicate keys in the list → dev warning and a doubled bubble
+that can mis-associate on the next update.
+**Fix idea:** de-dupe by `id` on insert in the hook.
+**Status:** open
+
+### [F9-09] low — src/renderer/src/components/extensions/ExtensionManager.tsx:26-37
+**What:** `handleInstall` passes `paths[0]` from `api.selectFile()` straight to
+`install()` with no check that it is a `.scext` file; the picker is opened with no
+`filters` argument (generic `selectFile`).
+**Why it's a bug:** the user can pick any file; the failure only surfaces
+(if at all) from the backend as a `console.error('Failed to install extension')`
+with no UI message — the modal just silently does nothing after the spinner.
+**Fix idea:** pass an accept filter to the file dialog; validate the extension
+client-side; surface `install` errors in the modal (the hook already exposes
+`error`, but `install` throws are only `console.error`-d here).
+**Status:** open
+
+### [F9-10] low — src/renderer/src/hooks/useExtensionManager.ts:15-31
+**What:** `refresh()` (`setLoading`/`setExtensions`/`setError`) has no is-mounted
+guard; it runs on mount and after every install/unload/reload/uninstall.
+`ExtensionManager` unmounts entirely when closed (`if (!isOpen) return null`).
+**Why it's a bug:** close the manager while a `refresh()` (or the `refresh()`
+chained after `unload`/`uninstall`) is in flight → setState-after-unmount
+warnings. Minor, consistent with the F2-03 / F5-13 class.
+**Fix idea:** `alive` flag or `AbortController` in `refresh`.
+**Status:** open
+
+### [F9-11] low — src/renderer/src/components/panels/PanelWebview.tsx:12-45,63-64
+**What:** `extractThemeTokens()` walks **every** stylesheet and **every** CSS rule
+in the document (`document.styleSheets` → `rule.style` → each property) on every
+panel `dom-ready`.
+**Why it's a bug:** with the app's full CSS loaded this is a large O(rules×props)
+scan; it runs once per panel load and once per guest reload/navigation, and with
+several panels mounted at once (F9-01) they all run it. Perceptible hitch on panel
+open on lower-end machines.
+**Fix idea:** compute the `--wa-*` token set once at app level (they're a known,
+fixed list) and reuse; or cache the result and invalidate only on theme change
+(pairs with F9-02).
+**Status:** open
+
+### [F9-12] low — src/renderer/src/components/chat/ExtensionChat/ExtensionChatInput.tsx:32-38
+**What:** `handleKeyDown` calls `setShowAutocomplete(false)` on `Escape` but does
+not `stopPropagation`/`preventDefault`, and there is no keyboard navigation
+(Arrow/Enter) of the slash-command autocomplete — it is mouse-`onClick` only.
+**Why it's a bug:** (a) keyboard users cannot pick a slash command from the
+autocomplete (must type it in full). (b) `Escape` pressed to dismiss the
+autocomplete also bubbles to any ancestor Escape handler (e.g. a close-on-Escape
+container), closing more than intended.
+**Fix idea:** add Arrow/Enter selection with a highlighted index; when the
+autocomplete is open, consume the `Escape` key.
+**Status:** open
 
 ## Slice F10 — Overlays & modals
 
