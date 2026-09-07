@@ -21,7 +21,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 9 | Kernel storage, channels, ipc, ui | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 10 | App IPC & auth | DONE (7 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 4 low |
 | 11 | apiServer, search, notification, calls, audio | DONE (10 findings) | 2026-09-07 | 0 crit, 1 high, 2 med, 7 low |
-| 12 | SDK, tools, data wipe, domain, db, protocol | IN PROGRESS | 2026-09-07 | |
+| 12 | SDK, tools, data wipe, domain, db, protocol | DONE (11 findings) | 2026-09-07 | 0 crit, 0 high, 4 med, 7 low |
 | 13 | Cross-cutting pass | TODO | — | do only after 1–12 |
 
 ## Summary counts
@@ -1187,7 +1187,176 @@ validate the configured port.
 **Status:** open
 
 ## Slice 12 — SDK, tools, data wipe, domain, db, protocol
-_none yet_
+
+### [P2-S12-01] med — src/main/tools/ReadMessagesTool.ts:225-241, 30-32
+**What:** `getMessagesBySql` applies **no row cap**. `LIMIT_MAX_MESSAGE` (20000)
+is only enforced in JID mode (`getMessagesByJid`); the SQL path runs the
+caller-supplied query, takes every returned id, `findMessagesByIds` fetches all
+of them, then formats each one on the main thread. `QueryDatabaseTool` caps every
+query at `MAX_ROWS = 1500`; this tool has no equivalent.
+**Why it's a bug:** the model (or a plugin via the HTTP tools controller) issuing
+`SELECT id FROM Message` — or any broad predicate over a large history — loads
+the entire message table into memory and runs the full transcript formatter
+(`JSON.parse(content)`, `unwrapMessage`, formatter registry, name resolution) over
+tens of thousands of rows synchronously in the main process, producing a
+multi-megabyte tool result. Main-thread stall + oversized AI context.
+**Fix idea:** cap `msgIds` (e.g. slice to a few thousand) or wrap the query like
+`QueryDatabaseTool` does, and tell the caller the result was truncated.
+**Status:** open
+
+### [P2-S12-02] med — src/main/services/DataWipeService.ts:7-31
+**What:** `clearDirectory` wraps `fs.rmSync` / `fs.mkdirSync` in `try/catch` that
+only `console.error`s. `wipeAllFolders` catches again. So a failure to delete
+`media/`, `favourites/`, `temp/` or `temp_stickers/` does not propagate —
+`wipeAllData` / `wipeUserDataOnly` still log success and resolve.
+**Why it's a bug:** on Windows a single open handle on any cached media file
+(thumbnailer, AV scanner, an Electron `net.fetch` still streaming an `app://media`
+response) makes `fs.rmSync` throw `EBUSY`/`EPERM`. The DB is wiped but the
+on-disk media — photos, voice notes, documents — remains. For a feature whose
+entire purpose is erasing user data (privacy / shared-machine / "delete
+everything" support flow) this is a silent, security-relevant incomplete wipe.
+**Fix idea:** collect per-directory failures and throw (or return a
+partial-failure result the UI surfaces); retry with backoff for Windows lock
+churn; at minimum unlink files individually and report the count that survived.
+**Status:** open
+
+### [P2-S12-03] med — src/main/services/storage/LocalFileStorage.ts:67-77
+**What:** `resolveMediaPath` does `appUri.replace('app://media/', '')` (and the
+`favourites/` variant) then `join(app.getPath('userData'), 'media', fileName)`
+with no `basename` / `..` / path-separator rejection and no containment assertion.
+Same defect class as P2-S2-03 (`MediaService.openFile`) and P2-S7-06
+(`KernelMessagesModule.downloadMedia`), a third independent sink.
+**Why it's a bug:** `LocalFileStorage` is the DIP adapter used by
+`MessageActionService` (media send / favourite copy) — it is handed `localURI`
+values read back from persisted message `content`. A value like
+`app://media/..\..\..\Users\me\Desktop\x.exe` (back-slashes survive the naive
+`replace`) resolves outside `<userData>/media`; the resulting path is then read
+(`readFile`) or copied and sent as an outbound WhatsApp attachment, i.e.
+arbitrary-file exfiltration if any caller can influence `localURI`.
+**Fix idea:** `path.basename` after stripping the scheme, reject names containing
+separators or `..`, and assert `path.resolve(result).startsWith(mediaDir + sep)`.
+**Status:** open
+
+### [P2-S12-04] med — packages/sdk/src/manifest.ts:185-217
+**What:** `ManifestSchema` validates `id` and `main` only as `z.string()` — no
+plugin-id format/namespace constraint and no check that `main` is a
+non-escaping relative path. `validateManifest` is the shared gate used by both
+the packaging CLI and the app's `PluginLoader.install()` (per P2-S8-01).
+**Why it's a bug:** (a) any `id` string passes here, so the collision guard that
+P2-S8-01 asks for has to live entirely in `PluginLoader` — the SDK contract
+gives no help. (b) `main: "../../../../etc/anything.js"` or an absolute path
+passes validation; `PluginLoader.load` does `path.join(pluginDir, manifest.main)`
+and `new Worker(entryPath)`, so a crafted `.scext` can point the worker entry at
+a file outside its extracted directory.
+**Fix idea:** constrain `id` with the same `PLUGIN_ID_RE` the loader uses; require
+`main` to match a safe relative-path regex and reject `..` segments / absolute
+paths in `validateManifest`.
+**Status:** open
+
+### [P2-S12-05] low — src/main/tools/QueryDatabaseTool.ts:7-11, 273-280 / src/main/tools/ReadMessagesTool.ts:14-18, 215-222
+**What:** `REPLACE` is in `FORBIDDEN_KEYWORDS`, matched with `\bREPLACE\b` against
+the literal-stripped query. Only `REPLACE INTO` / `INSERT OR REPLACE` is a
+mutation; `REPLACE(x, y, z)` is a standard read-only SQLite scalar string
+function.
+**Why it's a bug:** a legitimate read-only query such as
+`SELECT REPLACE(textContent, e'\n', ' ') FROM Message …` — exactly the string
+manipulation `QueryDatabaseTool`'s own TIP ("format the output using column
+concatenation") invites — is rejected with "Forbidden keyword detected". The
+model then can't do server-side text shaping and has to pull raw rows.
+**Fix idea:** drop `REPLACE` from the blanket list and instead reject the
+mutating forms specifically (`REPLACE\s+INTO`, `INSERT\s+OR\s+REPLACE`), or rely
+on the SELECT/WITH prefix gate plus a read-only connection.
+**Status:** open
+
+### [P2-S12-06] low — src/main/tools/QueryDatabaseTool.ts:262-281, 321-328
+**What:** The safety gate is a keyword denylist + SELECT/WITH prefix check. It
+does not block SQLite functions that a pure `SELECT` can still use for side
+effects — `load_extension('…')`, and (if the `fileio` extension is ever loaded)
+`readfile()` / `writefile()`. `$queryRawUnsafe` runs on the Prisma
+better-sqlite3 connection.
+**Why it's a bug:** today better-sqlite3 disables `load_extension` unless
+`db.loadExtension`/`allowExtension` is set and Prisma doesn't enable it, so this
+is latent — but the read-only guarantee rests entirely on driver configuration
+that lives outside this file, not on the validator, and `readfile()` for local
+file disclosure needs no extension if a future build links it.
+**Fix idea:** add `load_extension` / `readfile` / `writefile` / `edit` to the
+forbidden set, and/or execute tool queries over an explicitly read-only
+connection (`PRAGMA query_only = ON` on a dedicated handle).
+**Status:** open
+
+### [P2-S12-07] low — packages/sdk/src/channel.ts:295-311, 377-386
+**What:** `request()` only installs a timeout timer when `effectiveTimeout > 0`.
+`showForm`, `showConfirm`, `showAlert` and `showOverlay` are all called as
+`self.request(type, payload, 0)` — deliberately un-timed so a user can take as
+long as they like on the dialog.
+**Why it's a bug:** if the kernel never sends a `KernelResponse` for that id
+(overlay `BrowserWindow` destroyed by the user, kernel-side handler throws before
+it can reply, channel torn down mid-dialog), the `pendingRequests` entry is never
+deleted and the plugin's `await ui.showForm()` never settles. Every such event
+permanently leaks a Map entry + a hung promise in the worker.
+**Fix idea:** always register a (generous) ceiling timeout, or reject all
+outstanding `pendingRequests` when the port emits `close`.
+**Status:** open
+
+### [P2-S12-08] low — packages/sdk/src/channel.ts:393-405
+**What:** In `WorkerPluginRuntime.getContext`, `schedulerAPI.setInterval` /
+`setTimeout` create raw Node timers that the runtime never tracks; nothing clears
+them on `plugin:deactivate` (only `deactivateCallbacks` run). `onCron` does
+`self.eventHandlers.set(\`cron:${name}\`, [fn])` — it **replaces** any existing
+handlers for that key and never sends `kernel:events:subscribe`, and there is no
+kernel-side `cron:*` emitter (see P2-S8-06).
+**Why it's a bug:** a worker plugin that schedules an interval and forgets its
+disposer leaks a live timer for the life of the worker thread, surviving
+deactivate/reload. `ctx.scheduler.onCron` is entirely dead — it never fires — yet
+it's a documented API, so plugins relying on it silently do nothing.
+**Fix idea:** track scheduler timers per runtime and clear them in the
+`plugin:deactivate` handler; either implement `onCron` end-to-end or remove it
+from `IPluginSchedulerAPI`.
+**Status:** open
+
+### [P2-S12-09] low — src/main/services/protocol/SecureFileRegistry.ts:48-54 vs 10-12, 38-43
+**What:** `resolvePath` case-normalizes both sides on win32 before the
+containment check (deliberately, per its own comment). `grantFile` /
+`isFileGranted` do not — they key a `Set` on bare `path.resolve(absolutePath)`.
+**Why it's a bug:** `AppProtocolHandler` resolves `app://local/<abs path>` only
+if `registry.isFileGranted(decodedPath)` is true. On Windows the granted path and
+the requested path can differ purely in casing (drive letter `C:` vs `c:`,
+or a differently-cased directory component from however the URL was built), so a
+file the user explicitly picked in a native dialog fails the `Set.has` check and
+the request 404s — user-picked attachments / previews intermittently fail to
+load.
+**Fix idea:** normalize with the same `normalizeForCompare` helper when inserting
+into and querying `grantedFiles`.
+**Status:** open
+
+### [P2-S12-10] low — packages/sdk/src/bridge.ts:38-51 (+ context.ts:147-160)
+**What:** The `messages` bridge API is inconsistent about where the chat jid
+goes: `delete(jid, messageId)` and `react(jid, messageId, emoji)` take jid
+first; `edit(messageId, newText, jid?)` and `forward(messageId, targetJids, jid?)`
+take it last and optional; `send(jid, text, …)` first.
+**Why it's a bug:** jid and messageId are both `string`, so transposing them
+(`delete(messageId, jid)`) is not a type error and not caught until it deletes /
+reacts against the wrong target at runtime. An action API operating on someone
+else's chats deserves an unambiguous, uniform signature.
+**Fix idea:** settle on one argument order (jid first everywhere, or an options
+object) across the `messages` API.
+**Status:** open
+
+### [P2-S12-11] low — packages/sdk/src/channel.ts:407-435 vs context.ts:288-325
+**What:** `IPluginContributionsAPI` declares `registerSidebarPanel`,
+`registerSettingsPage` and `registerMessageRenderer`, but the
+`contributionsAPI` object built in `WorkerPluginRuntime.getContext` implements
+none of them (only chat/message action, badge, slash command, AI tool,
+completion, send-interceptor, expose/import).
+**Why it's a bug:** they are optional (`?`) methods, so a plugin doing
+`ctx.contributions.registerMessageRenderer?.(…)` type-checks and silently no-ops;
+the panel/renderer is still declared in the manifest so it appears in the UI, but
+clicking it does nothing (no handler registered) — the same "looks wired, isn't"
+trap as P2-S8-02.
+**Fix idea:** implement the three `register*` methods (forwarding to the kernel
+like the others) or remove them from the interface if panels are purely
+manifest-declarative.
+**Status:** open
 
 ## Slice 13 — Cross-cutting pass
 _none yet_
