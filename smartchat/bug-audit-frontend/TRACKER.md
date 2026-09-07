@@ -11,10 +11,10 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 
 | # | Slice | Status | Last touched | Notes |
 |---|-------|--------|--------------|-------|
-| F1 | Preload bridge & IPC surface | IN PROGRESS | 2026-09-07 | trust boundary — start here |
+| F1 | Preload bridge & IPC surface | DONE (6 findings) | 2026-09-07 | 1 high, 2 med, 3 low |
 | F2 | App shell, providers, contributions | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F3 | Chat data hooks (backend event sync) | IN PROGRESS | 2026-09-07 | highest bug density expected — async races, event lifecycle |
-| F4 | Chat list & layout & nav UI | TODO | — | |
+| F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F5 | Message view & rendering | TODO | — | check markdown / media URL / keys / virtualization |
 | F6 | Message input & composition | TODO | — | mentions, file queue, audio recorder |
 | F7 | Search UI | TODO | — | search-as-you-type out-of-order responses |
@@ -45,7 +45,98 @@ _(per-slice counts in the status table; reconcile totals here after F1–F11)_
 # Findings
 
 ## Slice F1 — Preload bridge & IPC surface
-_none yet_
+
+Audited: `preload/index.ts`, `preload/overlay-preload.ts`, `preload/panel-preload.ts`,
+`preload/index.d.ts`, `renderer/src/services/{api.service,IAPIService}.ts`,
+`renderer/src/context/APIContext.tsx`. Cross-checked main-side handlers in
+`src/main/ipcHandlers.ts` + `src/main/ipc/ipcGuards.ts` for the trust boundary.
+
+### [F1-01] high — src/preload/index.ts:428,435
+**What:** The full `@electron-toolkit/preload` `electronAPI` is exposed to the
+renderer as `window.electron`. That object includes `ipcRenderer.invoke/send/
+sendSync/on/postMessage` with **no channel allowlist** (any IPC channel is
+reachable) and `process` with a `get env()` that returns a copy of the entire
+main/preload `process.env`.
+**Why it's a bug:** The renderer only ever uses `window.electron.process.versions`
+(`components/common/Versions.tsx:4`). Everything else is unused attack surface:
+any XSS in the renderer, or a malicious/compromised renderer dependency, can call
+every `ipcMain.handle` channel directly (bypassing the curated `window.api`
+wrapper) and read secrets out of `process.env`. The `isTrustedSender` guard only
+covers a handful of handlers, so most channels are fully exercisable this way.
+**Fix idea:** Don't call `exposeElectronAPI()` / expose `electronAPI`. Expose a
+hand-written minimal object: `contextBridge.exposeInMainWorld('electron', {
+process: { versions: process.versions } })`.
+**Status:** open
+
+### [F1-02] med — src/renderer/src/services/api.service.ts:213 (handler src/main/ipcHandlers.ts:399)
+**What:** `api.getProviderKeys()` → `get-provider-keys` returns the **plaintext**
+AI provider API keys (`AIService.getProviderKeys()` → `aiKeyService.getKeys()`) to
+the renderer as `Record<string,string>`.
+**Why it's a bug:** The renderer only needs to know whether a provider is
+configured (to render the settings UI state) — it never needs the secret value.
+Shipping the raw keys into renderer JS memory means any XSS or third-party
+renderer script can exfiltrate them, and they show up in a renderer heap
+snapshot / devtools. (Backend audit pass 1 follow-up S6-01 already flags leaked
+keys.)
+**Fix idea:** Return masked values or `Record<string, boolean>`; keep the real
+key in main. If a masked preview is needed, send only the last 4 chars.
+**Status:** open
+
+### [F1-03] med — src/preload/overlay-preload.ts:42,46-53
+**What:** The overlay preload relays IPC payloads into the guest page with
+`window.postMessage({ channel, args: [payload] }, '*')` — wildcard target origin —
+for `smartchat:init` (theme tokens) and `smartchat:send` / `smartchat:receive`
+(overlay message payloads). Additionally both the `smartchat:send` and
+`smartchat:receive` IPC handlers re-post the payload under **both** the
+`smartchat:send` and `smartchat:receive` channel names.
+**Why it's a bug:** (a) `'*'` means if the overlay `<webview>` navigates to or
+embeds any third-party/plugin-controlled origin, that content receives every
+overlay payload. (b) The send/receive cross-wiring means a guest listening for
+`smartchat:receive` also fires on outbound `smartchat:send` (and vice versa) —
+echoed/duplicated events, and outbound data delivered to an inbound handler.
+**Fix idea:** Post with the guest's actual origin (or at least the app's known
+origin), and keep `send` vs `receive` as distinct one-directional channels.
+**Status:** open
+
+### [F1-04] low — src/preload/index.ts:205
+**What:** `aiChatStream` builds its IPC channel id as `` `ai-chat-${Date.now()}` ``
+— millisecond timestamp only, no random/counter component.
+**Why it's a bug:** Two AI streams started within the same millisecond (e.g. a
+user message + an auto/system prompt fired together) get the same `channelId`,
+so their `-chunk` / `-end` / `-error` events collide — chunks from one stream are
+delivered to the other's callbacks, and the first `-end` tears down both.
+**Fix idea:** Append a random suffix or monotonic counter:
+`` `ai-chat-${Date.now()}-${crypto.randomUUID()}` ``.
+**Status:** open
+
+### [F1-05] low — src/preload/index.ts:204-226
+**What:** The per-stream `-chunk` / `-end` / `-error` listeners registered by
+`aiChatStream` are only removed inside the `-end` and `-error` handlers. There is
+no disposer returned to the renderer and `abortAiChat` (invoke only) does not
+remove them.
+**Why it's a bug:** The main side does send `-end` on abort and on error, so the
+normal path is fine, but if a stream never terminates (backend hang, or the AI
+component unmounts / the user navigates away and the backend reply is dropped)
+the three `ipcRenderer` listeners for that `channelId` stay registered for the
+life of the window. Slow listener growth over a long session with many
+AI chats.
+**Fix idea:** Have `aiChatStream` return a disposer that `removeAllListeners` for
+the three channels; call it from the hook's `useEffect` cleanup and on abort.
+**Status:** open
+
+### [F1-06] low — src/preload/panel-preload.ts:64-76
+**What:** `__smartchat.api.events.on(event, handler)` uses the module-level
+`panelId`, which is `''` until `__smartchat._init(id, tokens)` is called. It also
+fire-and-forgets the subscribe (`void ipcRenderer.invoke(...)`).
+**Why it's a bug:** A panel script that calls `api.events.on(...)` during module
+init (before `_init`) sends `kernel:panel:events:subscribe` with an empty
+`panelId` — the subscription silently targets nothing, and the returned cleanup
+later unsubscribes `''` too. The discarded invoke result hides a rejected
+subscription.
+**Fix idea:** Queue `on()` calls until `panelId` is set (resolve in `_init`), and
+surface subscribe failures.
+**Status:** open
+
 
 ## Slice F2 — App shell, providers, contributions
 
