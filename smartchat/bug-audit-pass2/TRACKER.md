@@ -10,7 +10,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 
 | # | Slice | Status | Last touched | Notes |
 |---|-------|--------|--------------|-------|
-| 1 | WhatsApp worker & socket | TODO | — | |
+| 1 | WhatsApp worker & socket | IN PROGRESS | 2026-09-07 | |
 | 2 | Message pipeline | TODO | — | |
 | 3 | WhatsApp service & subscribers | TODO | — | |
 | 4 | Chats & sync | TODO | — | |
