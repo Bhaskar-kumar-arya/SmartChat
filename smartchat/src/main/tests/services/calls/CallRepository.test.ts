@@ -1,0 +1,51 @@
+import { describe, it, expect, vi } from 'vitest'
+import { CallRepository } from '../../../services/calls/CallRepository'
+import type { CallLogEntry } from '../../../services/calls/ICallService'
+
+function makePrisma(existing: { status: string; timestamp: bigint } | null) {
+  const create = vi.fn().mockResolvedValue(undefined)
+  const update = vi.fn().mockResolvedValue(undefined)
+  const findUnique = vi.fn().mockResolvedValue(existing)
+  return {
+    prisma: { callLog: { findUnique, create, update } } as never,
+    create,
+    update,
+    findUnique
+  }
+}
+
+const base: CallLogEntry = {
+  id: 'call_1',
+  callerJid: 'a@s.whatsapp.net',
+  isVideo: false,
+  isGroup: false,
+  status: 'offer',
+  timestamp: 100n
+}
+
+describe('CallRepository.upsertCallLog (S11-05)', () => {
+  it('creates a row when none exists', async () => {
+    const m = makePrisma(null)
+    await new CallRepository(m.prisma).upsertCallLog(base)
+    expect(m.create).toHaveBeenCalledTimes(1)
+    expect(m.update).not.toHaveBeenCalled()
+  })
+
+  it('ignores a stale (older-timestamp) re-delivered event', async () => {
+    const m = makePrisma({ status: 'accept', timestamp: 200n })
+    await new CallRepository(m.prisma).upsertCallLog({ ...base, status: 'offer', timestamp: 150n })
+    expect(m.update).not.toHaveBeenCalled()
+  })
+
+  it('does not regress a terminal call back to a non-terminal status', async () => {
+    const m = makePrisma({ status: 'reject', timestamp: 100n })
+    await new CallRepository(m.prisma).upsertCallLog({ ...base, status: 'ringing', timestamp: 300n })
+    expect(m.update).not.toHaveBeenCalled()
+  })
+
+  it('applies a forward transition', async () => {
+    const m = makePrisma({ status: 'offer', timestamp: 100n })
+    await new CallRepository(m.prisma).upsertCallLog({ ...base, status: 'accept', timestamp: 120n })
+    expect(m.update).toHaveBeenCalledTimes(1)
+  })
+})

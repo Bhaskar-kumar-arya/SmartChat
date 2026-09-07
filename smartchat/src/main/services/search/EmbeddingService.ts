@@ -90,6 +90,12 @@ export class EmbeddingService implements IEmbeddingService {
     this.isProcessingQueue = true
 
     while (this.indexQueue.length > 0) {
+      // S11-04: re-check pause each iteration — a setPaused(true) that arrives
+      // mid-drain (WhatsApp history sync starting) must stop embedding work
+      // now, not after the whole queue is exhausted. The item stays queued and
+      // resumes on setPaused(false) → processQueue().
+      if (this.isPaused) break
+
       const item = this.indexQueue.shift()
       if (!item) continue
 
@@ -141,6 +147,11 @@ export class EmbeddingService implements IEmbeddingService {
     try {
       let done = 0
       for (const m of pending) {
+        // S11-04: stop the bulk pass promptly when a history sync pauses us.
+        if (this.isPaused) {
+          console.warn('[EmbeddingService] Bulk indexing interrupted by pause; remaining messages will be picked up later.')
+          break
+        }
         if (!m.textContent) continue
         try {
           const vector = await this.embed(m.textContent)

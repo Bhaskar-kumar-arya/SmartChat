@@ -38,6 +38,21 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
     }
   }
 
+  /**
+   * S11-03: reject every in-flight embed() promise. Called when the worker
+   * dies (error/exit) so `EmbeddingService.processQueue`'s `await this.embed()`
+   * unblocks instead of hanging forever and stalling the whole index queue.
+   */
+  private failAllPending(reason: string): void {
+    if (this.pendingJobs.size === 0) return
+    console.error(`[EmbeddingWorkerManager] Failing ${this.pendingJobs.size} pending embed job(s): ${reason}`)
+    const jobs = Array.from(this.pendingJobs.values())
+    this.pendingJobs.clear()
+    for (const job of jobs) {
+      job.reject(new Error(reason))
+    }
+  }
+
   public setModel(modelName: string): void {
     if (this.worker) {
       this.worker.postMessage({ type: 'setModel', payload: { modelName } })
@@ -56,9 +71,15 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
     } else if (msg.type === 'embed_done') {
       if (msg.id !== null && msg.id !== undefined) {
         const job = this.pendingJobs.get(msg.id)
-        if (job && msg.payload.vector) {
-          job.resolve(msg.payload.vector)
+        if (job) {
           this.pendingJobs.delete(msg.id)
+          if (msg.payload.vector) {
+            job.resolve(msg.payload.vector)
+          } else {
+            // S11-03: a vectorless embed_done must reject, not silently leak
+            // the pending promise.
+            job.reject(new Error('embed_done with no vector'))
+          }
         }
       }
     } else if (msg.type === 'error') {
@@ -91,6 +112,9 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
 
         currentWorker.on('error', (err) => {
           console.error('[EmbeddingWorkerManager] Worker Critical Error:', err)
+          this.worker = null
+          this.initPromise = null
+          this.failAllPending(`worker error: ${err?.message || String(err)}`)
           reject(err)
         })
 
@@ -98,6 +122,7 @@ export class EmbeddingWorkerManager implements IEmbeddingWorkerManager {
           if (code !== 0) console.error(`[EmbeddingWorkerManager] Worker stopped with exit code ${code}`)
           this.worker = null
           this.initPromise = null
+          this.failAllPending(`worker exited (code ${code})`)
         })
 
         currentWorker.postMessage({

@@ -163,8 +163,17 @@ export class SearchService implements ISearchService {
     }
 
     try {
-      const scoredResults = await this.messageVectorRepository.searchVectorMatch(queryVectorJson, candidateIds)
+      let scoredResults = await this.messageVectorRepository.searchVectorMatch(queryVectorJson, candidateIds)
       if (scoredResults.length === 0) return []
+
+      // S11-07: the repo now always applies the `messageId IN (...)` scope
+      // (S2-03), but keep a defensive post-filter so a scoped deep search can
+      // never leak semantic hits from outside the user's chat/date filter.
+      if (candidateIds) {
+        const allowed = new Set(candidateIds)
+        scoredResults = scoredResults.filter((r) => allowed.has(r.messageId))
+        if (scoredResults.length === 0) return []
+      }
 
       const scoredIds = scoredResults.map((r) => r.messageId)
       const messages = await this.messageRepository.findMessagesByIdsWithChatAndSender(scoredIds)

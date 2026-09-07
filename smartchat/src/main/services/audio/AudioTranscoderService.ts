@@ -27,9 +27,11 @@ export class AudioTranscoderService {
    */
   async transcodeToWAPtt(inputPath: string, tempDir: string): Promise<string> {
     const fileName = inputPath.split(/[\\/]/).pop() || `voice_${Date.now()}.ogg`
-    const outPath = join(tempDir, `converted_${fileName}`)
+    // S11-06: unique output name so concurrent transcodes of same-basename
+    // inputs don't collide on `converted_<name>`.
+    const outPath = join(tempDir, `converted_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${fileName}`)
 
-    return new Promise((resolve) => {
+    return new Promise<string>((resolve, reject) => {
       ffmpeg(inputPath)
         .outputOptions([
           '-c:a libopus',
@@ -50,8 +52,15 @@ export class AudioTranscoderService {
         })
         .on('error', (err: Error) => {
           console.error('[AudioTranscoder] Transcoding error:', err)
-          // Fallback: resolution with original path if transcoding fails
-          resolve(inputPath)
+          // S11-06: reject rather than resolve with the untranscoded input —
+          // returning the raw WebM produced an unplayable/rejected PTT on the
+          // recipient side with no error surfaced to the sender.
+          try {
+            if (fs.existsSync(outPath)) fs.unlinkSync(outPath)
+          } catch (cleanupErr) {
+            console.warn('[AudioTranscoder] Failed to delete partial output:', cleanupErr)
+          }
+          reject(err instanceof Error ? err : new Error(String(err)))
         })
         .save(outPath)
     })

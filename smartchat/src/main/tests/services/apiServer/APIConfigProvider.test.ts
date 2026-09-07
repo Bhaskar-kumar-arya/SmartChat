@@ -47,6 +47,25 @@ describe('APIConfigProvider', () => {
     expect(fs.writeFileSync).not.toHaveBeenCalled()
   })
 
+  it('S11-02: does NOT overwrite ai_preferences.json when the read/parse fails', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('EBUSY') })
+
+    const config = provider.loadOrCreateConfig()
+
+    expect(config.token).toContain('smartchat_') // in-memory token still issued
+    expect(fs.writeFileSync).not.toHaveBeenCalled() // but nothing written back
+  })
+
+  it('S11-02: does NOT overwrite when the file contains invalid JSON', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue('{ not json')
+
+    provider.loadOrCreateConfig()
+
+    expect(fs.writeFileSync).not.toHaveBeenCalled()
+  })
+
   it('should override port with environment variable', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true)
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
