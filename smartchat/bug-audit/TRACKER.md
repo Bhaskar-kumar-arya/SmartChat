@@ -32,8 +32,10 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | med  | 65 |
 | low  | 51 |
 
-All 13 slices audited. Total findings: 127. Next phase: triage in the Fix phase
-section below.
+All 13 slices audited. Total findings: 127. **Fix phase COMPLETE (2026-09-07):**
+3 crit + 8 high + 65 med fixed (S4-02 perf refactor = WONTFIX); all 51 low =
+WONTFIX (user decision). See `FIX_PLAN.md`. Only the consolidation verification
+pass remains. Follow-ups: S2-02 (feature), S6-01 (rotate leaked keys).
 
 ---
 
@@ -499,10 +501,11 @@ flagged `outOfWindow: true` on the returned `ChatListEntry` (new optional field)
 (`data.filter(c => !c.outOfWindow).length < pageSize`), fixing the corrupted end-of-list detection and
 page overlap (bug #3). Duplicate-jid-across-pages (bug #2) was already defended in the renderer's
 append path (`filter(c => !existingJids.has(c.jid))`) and the injection still de-dupes within a page.
-**Not addressed** (deferred as a follow-up refactor, like S2-02): the 60× enrichment cost when a large
-community is touched — a proper fix moves community grouping to a renderer-side on-demand fetch or a
-cursor-based API. Tests: `ChatListEnricher.test.ts` +1 (outOfWindow flagging + no dup). typecheck +
-renderer suite (319) clean. — services/sync/SyncMessagesHandler.ts:253-291 (`_parseBatch`) + 216-238 (`_resolveSenderId`)
+**WONTFIX** (user decision 2026-09-07): the 60× enrichment cost when a large community is touched.
+The correctness bugs (#2 dup rows, #3 broken has-more) are fixed above; the remaining item is a pure
+performance refactor (move community grouping to a renderer-side on-demand / cursor-based API) that the
+user has chosen not to pursue. Tests: `ChatListEnricher.test.ts` +1 (outOfWindow flagging + no dup).
+typecheck + renderer suite (319) clean. — services/sync/SyncMessagesHandler.ts:253-291 (`_parseBatch`) + 216-238 (`_resolveSenderId`)
 **What:** `_parseBatch` loops over the 200-message batch and does `await this._resolveSenderId(...)` for
 every message serially. For a never-before-seen participant `_resolveSenderId` runs
 `await contactService.upsertContact({ id })` **then** `await contactService.getIdentityIdByJid(id)` — two

@@ -98,7 +98,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | 1 — WhatsApp worker & socket | 5 | DONE (2026-09-06) — S1-01/02/04/05 fixed, S1-03 wontfix (not a bug) |
 | 2 — Message pipeline | 6 | DONE (2026-09-06) — S2-01..06 all fixed (S2-02 UI-retry deferred as follow-up feature) |
 | 3 — WhatsApp service & subscribers | 2 | DONE (2026-09-06) — S3-02 (unpause only on wa-sync-complete) + S3-03 (safety timer covers between-chunk inactivity only; finishSync deferred while a chunk writes) fixed. FIX_PLAN's "3" was a miscount — slice 3 has 2 med. |
-| 4 — Chats & sync | 4 | DONE (2026-09-06) — S4-01 (per-batch try/catch), S4-03 (batched identity prefetch), S4-04 (persist unreadCount>=0) fixed; S4-02 partial (outOfWindow flag fixes pagination signal; 60× enrichment refactor deferred) |
+| 4 — Chats & sync | 4 | DONE (2026-09-06) — S4-01 (per-batch try/catch), S4-03 (batched identity prefetch), S4-04 (persist unreadCount>=0) fixed; S4-02 done: correctness bugs fixed, 60× enrichment perf refactor = WONTFIX (user decision 2026-09-07) |
 | 5 — Contacts | 2 | DONE (2026-09-06) — S5-01 (per-stub merge in one interactive $transaction), S5-02 (new ContactCacheSyncSubscriber flushes main-process contact caches on wa-sync-complete) |
 | 6 — AI | 7 | DONE (2026-09-06) — S6-02 ('ai' role → assistant in Groq/Mistral/DeepSeek), S6-03 (maxTurns cap 25 + abort between turns), S6-04 (Gemini abortSignal threaded), S6-05 (empty-name skip + replacer fn + boundary), S6-06 (escapeXml on all strategy interpolations), S6-07 (citation persist createMany→per-row upsert fallback), S6-08 (userData path + corrupt-file backup+throw + atomic write) |
 | 7 — Kernel API modules & router | 4 | DONE (2026-09-06) — S7-02 (sendMedia path containment), S7-03 (ai:sessions capability split), S7-04 (tool-name conflict reject + unregister on unload), S7-05 (overlay:send/close require ui:overlay + ownership) |
@@ -109,29 +109,36 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | 12 — SDK/tools/data wipe/domain/db/protocol | 6 | DONE (2026-09-07) — S12-02 (win32 case-normalized containment check), S12-04 (abort flag refuses tool calls after timeout + clearTimeout in finally), S12-06 (migration failure now propagates as fatal — both call sites), S12-07 (busy_timeout + INSERT OR IGNORE + in-tx re-check), S12-08 (strip string literals/comments before forbidden-keyword scan — both tools), S12-09 (always wrap query as capped subquery). Also folded S13-08 (will-quit hard timeout) opportunistically. |
 | 13 — Cross-cutting | 5 | DONE (2026-09-07) — S13-02 (will-quit retains bootResult + disposes kernel/WA/embedding worker/tray under a hard timeout), S13-03 (WAWorkerBridge per-command 30s timeout), S13-04 (unexpected worker exit → wa-disconnected event + WhatsAppConnectionManager bounded backed-off reconnect, 5 attempts), S13-05 (EmbeddingWorkerManager.terminate() + shutdown wiring), S13-06 (BaileysPatcher collects patch failures → hard throw in dev, best-effort when packaged) |
 
-### Batch E — low findings (triage first, then fix loosely batched)
+### Batch E — low findings — WONTFIX (user decision 2026-09-07)
 
-For each low finding, first decide `fix` or `wontfix` (note reason in TRACKER),
-then batch the `fix`-marked ones per slice same as Batch D. Not broken out
-per-slice here until triage happens — do the triage pass as its own session:
-read every low finding across all 13 slices, mark each `WONTFIX` (with reason)
-or leave for fixing, tally the result into this table.
+All 51 low-severity findings are **deliberately not being fixed**. They remain
+logged in TRACKER.md for reference; if any is later promoted, pull it into a new
+batch. No triage pass needed.
 
-| Slice | Low count | Triaged? |
+| Slice | Low count | Status |
 |---|---|---|
-| 1 | 3 | no |
-| 2 | 6 | no |
-| 3 | 2 | no |
-| 4 | 5 | no |
-| 5 | 3 | no |
-| 6 | 3 | no |
-| 7 | 4 | no |
-| 8 | 3 | no |
-| 9 | 4 | no |
-| 10 | 4 | no |
-| 11 | 6 | no |
-| 12 | 5 | no |
-| 13 | 3 | no |
+| 1–13 | 51 total | WONTFIX (low value — user decision 2026-09-07) |
+
+---
+
+## Fix phase — COMPLETE (2026-09-07)
+
+- Batch A (crit) — DONE (3)
+- Batch B (RCE/sandbox, high) — DONE (3)
+- Batch C (correctness, high) — DONE (5)
+- Batch D (med, all 13 slices) — DONE (65; S4-02 perf refactor carved out as WONTFIX)
+- Batch E (low) — WONTFIX (51)
+
+**Carried-forward, non-bug follow-ups (not blocking):**
+- S2-02 — manual send-retry / outbox UI (feature, not a bug)
+- S4-02 — community-grouping perf refactor (WONTFIX unless perf becomes a problem)
+- S6-01 — ⚠️ leaked API keys still need provider-side revoke + rotate by the user
+  (still live in git history)
+
+**Remaining before declaring the backend done:** the consolidation verification
+pass — full `npm run test:run:all` + `npm run typecheck` against the recorded
+baseline, then a manual in-app smoke test of the touched subsystems. See
+"Consolidation verification" section below once run.
 
 ---
 
