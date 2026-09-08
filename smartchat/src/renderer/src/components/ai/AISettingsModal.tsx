@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AIChatOptions, ModelInfo } from '../../types/aiTypes';
 import { useAPI } from '../../context/APIContext';
 
@@ -17,13 +17,29 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
   const [isOpenDropdown, setIsOpenDropdown] = useState(false);
   const [providerKeys, setProviderKeys] = useState<Record<string, string>>({ gemini: '', groq: '', mistral: '', deepseek: '' });
   const [showKey, setShowKey] = useState(false);
+  // F8-06: the key input is now a local draft; it persists on blur, not per
+  // keystroke. `loadedKeysRef` holds the values getProviderKeys returned (which
+  // are MASKED, e.g. "••••ab12", per F1-02) so we only persist a genuine change
+  // and never write the masked placeholder back.
+  const loadedKeysRef = useRef<Record<string, string>>({});
 
   // Load persisted keys when settings modal opens
   useEffect(() => {
     if (isOpen) {
-      api.getProviderKeys().then(setProviderKeys).catch(console.error);
+      api.getProviderKeys().then((keys) => {
+        loadedKeysRef.current = { ...keys };
+        setProviderKeys(keys);
+      }).catch(console.error);
     }
   }, [isOpen]);
+
+  const commitProviderKey = (provider: string, value: string) => {
+    // Unchanged, or still the masked placeholder → nothing to persist.
+    if (value === (loadedKeysRef.current[provider] ?? '')) return;
+    if (value.includes('•')) return;
+    loadedKeysRef.current[provider] = value;
+    api.setProviderKey(provider, value).catch(console.error);
+  };
 
   // Keep selected provider in sync with active model option
   useEffect(() => {
@@ -126,14 +142,17 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
                 className="ai-settings-key-input"
                 placeholder={`Enter custom ${selectedProvider} API key...`}
                 value={providerKeys[selectedProvider] || ''}
-                onChange={async (e) => {
+                onChange={(e) => {
                   const val = e.target.value;
                   setProviderKeys(prev => ({ ...prev, [selectedProvider]: val }));
-                  await api.setProviderKey(selectedProvider, val);
+                }}
+                onBlur={(e) => commitProviderKey(selectedProvider, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitProviderKey(selectedProvider, (e.target as HTMLInputElement).value);
                 }}
               />
               <span className="ai-settings-key-caption">
-                Auto-saves on change. Uses built-in fallbacks if left empty.
+                Saved when you leave the field. Uses built-in fallbacks if left empty.
               </span>
             </div>
           )}

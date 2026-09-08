@@ -58,7 +58,9 @@ export function useAIChatSessions() {
     return []
   }
 
-  const saveCurrentMessages = async (sessionId: string, messages: AIChatMessage[]) => {
+  // F8-11: memoised — `useAIStream.startStream` closes over this via a ref, and
+  // an unstable identity defeats that hand-synced pattern.
+  const saveCurrentMessages = useCallback(async (sessionId: string, messages: AIChatMessage[]) => {
     if (!sessionId || messages.length === 0) return
     try {
       await api.saveAiSessionMessages(sessionId, messages)
@@ -66,7 +68,7 @@ export function useAIChatSessions() {
     } catch (e) {
       console.error('Failed to save AI session messages:', e)
     }
-  }
+  }, [api, refreshSessions])
 
   const renameSession = async (id: string, title: string) => {
     try {

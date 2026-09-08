@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { AIChatMessage, AIChatOptions, ToolDefinition, AIContextItem } from '../../../types/aiTypes'
 import { SelectedContext } from '../../../types/chatTypes'
 import { useAPI } from '../../../context/APIContext'
+import { parseToolCall } from '../../../utils/parseToolCall'
 
 interface UseAIStreamProps {
   aiOptions: AIChatOptions
@@ -27,6 +28,9 @@ export function useAIStream({
   const typingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const isMountedRef = useRef(true)
   const activeChannelIdRef = useRef<string | null>(null)
+  // F8-13: message ids whose no-permission tool call was already auto-executed,
+  // so a late `-end` timer can't run it a second time.
+  const autoExecutedToolIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     activeChannelIdRef.current = activeChannelId
@@ -165,22 +169,21 @@ export function useAIStream({
           return next
         })
 
-        // Check for auto-executable tool call
+        // Check for auto-executable tool call (F8-13: shared parser + guard
+        // against double execution if the user already clicked Approve).
         setTimeout(() => {
-          const toolMatch = finalContent.match(/<tool_call>([\s\S]*?)<\/tool_call>/)
-          if (toolMatch) {
-            try {
-              let jsonStr = toolMatch[1].trim()
-              jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
-              const toolData = JSON.parse(jsonStr)
-              const tool = availableToolsRef.current.find((t) => t.name === toolData.tool)
-              if (tool && tool.requiresPermission === false) {
-                executeToolCall(aiMsgId, toolData.tool, toolData.arguments)
-              }
-            } catch (e) {
-              console.error('Failed to parse tool data for auto-exec:', e)
+          const parsed = parseToolCall(finalContent)
+          if (parsed?.data) {
+            if (autoExecutedToolIds.current.has(aiMsgId)) return
+            // User may have already approved/declined via the card.
+            if (messagesRef.current.find((m) => m.id === aiMsgId)?.toolResult) return
+            const toolData = parsed.data
+            const tool = availableToolsRef.current.find((t) => t.name === toolData.tool)
+            if (tool && tool.requiresPermission === false && toolData.tool) {
+              autoExecutedToolIds.current.add(aiMsgId)
+              executeToolCall(aiMsgId, toolData.tool, (toolData.arguments ?? {}) as Record<string, any>)
             }
-          } else {
+          } else if (!parsed) {
             // No tool execution requested, perform auto-save if enabled
             const sid = activeSessionIdRef.current
             if (aiOptionsRef.current.autoSaveChats && sid) {

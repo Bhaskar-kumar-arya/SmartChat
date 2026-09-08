@@ -93,7 +93,7 @@ describe('AISettingsModal', () => {
     })
   })
 
-  it('updates provider API key via apiService', async () => {
+  it('F8-06: persists provider API key on blur, not per keystroke', async () => {
     const user = userEvent.setup()
     const setProviderKey = vi.fn().mockResolvedValue(true)
     const apiService = createMockApiService({ setProviderKey })
@@ -111,8 +111,12 @@ describe('AISettingsModal', () => {
 
     const keyInput = screen.getByPlaceholderText(/Enter custom gemini API key/i)
     await user.type(keyInput, 'secret-key-123')
+    // Not persisted while typing.
+    expect(setProviderKey).not.toHaveBeenCalled()
 
-    expect(setProviderKey).toHaveBeenCalled()
+    await user.tab()
+    expect(setProviderKey).toHaveBeenCalledTimes(1)
+    expect(setProviderKey).toHaveBeenCalledWith('gemini', 'secret-key-123')
   })
 
   it('triggers onClose when Done button is clicked', async () => {

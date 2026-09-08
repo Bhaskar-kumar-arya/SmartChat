@@ -71,7 +71,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | F5-01 | TextMessage markdown identity `urlTransform` → `javascript:`/`data:` link XSS | DONE (e0cac7a) |
 | F6-01 | Voice note delivered to wrong chat after switch mid-record | DONE (a802146) |
 | F7-01 | ChatSearchSidebar out-of-order search responses | DONE (737b13d) |
-| F8-01 | No stream abort on AI session switch → streamed answer lost | TODO |
+| F8-01 | No stream abort on AI session switch → streamed answer lost | DONE (f037405) |
 | F11-01 | PluginIcon injects raw plugin SVG via dangerouslySetInnerHTML | TODO |
 | F12-02 | Navigation via unbuffered `smartchat:open-chat` window event drops intents | TODO |
 
@@ -86,7 +86,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | F5 | 5 | DONE (3eee44c) — F5-02..F5-05 med + F5-06/07/08/10/11/13 low; F5-09 partial (b/c fixed, a deferred); F5-12 wontfix; F5-14 deferred to F10-05 |
 | F6 | 6 | DONE (ecfc4d7) — F6-02..F6-07 med + F6-08/09/10/11/13/14 low; F6-05 in a802146; F6-12 already resolved; F6-13 partial (regex hoisted; caret-offset rework deferred) |
 | F7 | 3 | DONE (96e8b6a) — F7-02/03/04 med + F7-05/06/07 low + F7-08 (partial); F7-06 select-all cap deferred |
-| F8 | 6 | TODO |
+| F8 | 6 | DONE (ed1650c) — F8-02..F8-07 med + F8-08/10/11/12/13 low; F8-09 deferred to F10-05 |
 | F9 | 4 | TODO |
 | F10 | 6 | TODO |
 | F11 | 2 | TODO |

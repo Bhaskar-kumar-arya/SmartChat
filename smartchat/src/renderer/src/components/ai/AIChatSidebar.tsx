@@ -9,6 +9,7 @@ import AIChatExportButton from './AIChatExportButton'
 import { useAIChatSessions } from './hooks/useAIChatSessions'
 import { useAIStream } from './hooks/useAIStream'
 import { useAPI } from '../../context/APIContext'
+import { MessageErrorBoundary } from '../common/MessageErrorBoundary'
 
 interface AIChatSidebarProps {
   isOpen: boolean
@@ -74,20 +75,28 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
 
   const focusInput = () => setTimeout(() => inputRef.current?.focus(), 100)
 
+  const hasLoadedRef = useRef(false)
   useEffect(() => {
-    if (isOpen) {
-      if (chatList.length === 0) {
-        api.getChats(1, 100).then(setChatList).catch(console.error)
-      }
-      api.getAiTools().then(setAvailableTools).catch(console.error)
-      api.getAiModels().then(setAvailableModels).catch(console.error)
-      api.getAiOptions().then(setAiOptions).catch(console.error)
+    // F8-12: load reference data once (guarded against unmount / re-entrancy);
+    // re-opening the sidebar must not refetch and stomp options the user just
+    // changed in Settings.
+    if (!isOpen || hasLoadedRef.current) return
+    hasLoadedRef.current = true
+    let alive = true
+    api.getChats(1, 100).then((v) => alive && setChatList(v)).catch(console.error)
+    api.getAiTools().then((v) => alive && setAvailableTools(v)).catch(console.error)
+    api.getAiModels().then((v) => alive && setAvailableModels(v)).catch(console.error)
+    api.getAiOptions().then((v) => alive && setAiOptions(v)).catch(console.error)
+    return () => {
+      alive = false
     }
   }, [isOpen])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, loading])
+    // F8-08: also follow the growing text of the last (streaming) message,
+    // not just message count / loading transitions.
+  }, [messages.length, loading, messages[messages.length - 1]?.content.length])
 
   const handleSend = async (prompt: string, currentMentions: SelectedContext[], overrideHistory?: AIChatMessage[]) => {
     let baseHistory = overrideHistory || messages
@@ -133,7 +142,7 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
       setMessages((prev) => [
         ...prev,
         {
-          id: (Date.now() + 1).toString(),
+          id: crypto.randomUUID(),
           role: 'ai',
           content: 'Sorry, I encountered an error. Please check the console.'
         }
@@ -312,19 +321,22 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
           </div>
         ) : (
           messages.filter(m => !m.isHidden).map(msg => (
-            <AIMessageBubble
-              key={msg.id}
-              message={msg}
-              availableTools={availableTools}
-              isExecuting={executingToolId === msg.id}
-              onApprove={executeToolCall}
-              onDecline={declineToolCall}
-              onRetry={() => handleRetry(msg.id)}
-              onReRun={handleReRunMessage}
-              onSave={handleSaveMessage}
-              chatList={chatList}
-              sessionId={activeSessionId ?? undefined}
-            />
+            // F8-07: isolate each bubble so a KaTeX/markdown throw over model
+            // output can't blank the whole assistant panel.
+            <MessageErrorBoundary key={msg.id}>
+              <AIMessageBubble
+                message={msg}
+                availableTools={availableTools}
+                isExecuting={executingToolId === msg.id}
+                onApprove={executeToolCall}
+                onDecline={declineToolCall}
+                onRetry={() => handleRetry(msg.id)}
+                onReRun={handleReRunMessage}
+                onSave={handleSaveMessage}
+                chatList={chatList}
+                sessionId={activeSessionId ?? undefined}
+              />
+            </MessageErrorBoundary>
           ))
         )}
         {loading && (

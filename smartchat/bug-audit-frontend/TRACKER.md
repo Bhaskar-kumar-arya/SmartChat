@@ -1338,7 +1338,7 @@ and in a `useAIStream` unmount cleanup; have `-end`/auto-save bail if
 `activeSessionIdRef.current` differs from the session captured at
 `startStream` time (snapshot the sid per stream).
 **Status:** fixed
-**Fix status:** fixed in <SHA-F8-01> — `useAIStream` now: (a) snapshots
+**Fix status:** fixed in f037405 — `useAIStream` now: (a) snapshots
 `streamSessionId = activeSessionIdRef.current` in `startStream`; the `-end` and
 `-error` handlers bail (no `setMessages`, no auto-save) when
 `streamSessionId && activeSessionIdRef.current !== streamSessionId` (null snapshot
@@ -1364,7 +1364,13 @@ warnings and wasted renders until the backend stream ends. Over a long session
 with many AI chats the undisposed listeners also accumulate (F1-05).
 **Fix idea:** return a disposer from `aiChatStream` and call it (plus `abort()`)
 in the hook's unmount cleanup; guard `drip()` with an `isMountedRef`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in f037405 — `useAIStream` unmount cleanup now calls
+`api.abortAiChat(activeChannelIdRef.current)` (the preload disposer map removes
+the three per-stream listeners) and clears the drip interval; the drip
+`setInterval` callback bails and self-clears when `!isMountedRef.current`, so a
+late chunk can't re-arm it after unmount. Covered via the F8-01 unmount path;
+typecheck:web green.
 
 ### [F8-03] med — src/renderer/src/components/ai/hooks/useAIStream.ts:275-281
 **What:** `abort` does `await api.abortAiChat(activeChannelId)` with no
@@ -1378,7 +1384,11 @@ Stop button forever — the user can't type or send until they reload. The
 is already gone.
 **Fix idea:** `try { await api.abortAiChat(id) } finally { setActiveChannelId(null);
 setLoading(false) }`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in f037405 — `abort` now wraps `api.abortAiChat` in
+try/catch/finally; `setActiveChannelId(null)` + `setLoading(false)` always run so
+the input can't stay stuck behind the Stop button. New test `useAIStream.test.tsx`
+"F8-03: abort still clears loading/channel when abortAiChat rejects".
 
 ### [F8-04] med — src/renderer/src/hooks/useCitation.ts:23-49
 **What:** `resolve` caches an entity in `globalCitationCache` only `if (entity)`.
@@ -1393,7 +1403,13 @@ round-trip per pill per render) for the whole stream, plus `setLoadingIndices`
 churn.
 **Fix idea:** cache negative results too (store `null`, or a sentinel), and/or
 dedupe in-flight requests per `(sessionId,index)` with a promise map.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ed1650c — `useCitation.resolve` now caches the
+resolved value (including `null`) in `globalCitationCache`, so an unresolvable
+citation is hit at most once per session; a module-level `inFlightCitations`
+`Map<'sid:index', Promise>` dedupes concurrent resolves. New tests
+"F8-04: caches negative (null) results…" and "F8-04: dedupes concurrent
+resolves…". useCitation.test.tsx 5/5.
 
 ### [F8-05] med — src/renderer/src/components/ai/CitationPill.tsx:19-21
 **What:** `useEffect(() => { resolve(index).then(setEntity) }, [index, resolve])`
@@ -1404,7 +1420,10 @@ unmounts calls `setEntity` on an unmounted component → React warning; same cla
 as F2-03 / F5-13, but here it fires many times per answer.
 **Fix idea:** `let alive = true` flag with cleanup, or an `AbortController` /
 ignore-stale pattern.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ed1650c — `CitationPill`'s resolve effect uses an
+`alive` flag with cleanup so a late `resolve` can't `setEntity` after unmount.
+CitationPill.test.tsx still 3/3.
 
 ### [F8-06] med — src/renderer/src/components/ai/AISettingsModal.tsx:124-134
 **What:** the API-key `<input onChange>` does `await api.setProviderKey(provider,
@@ -1416,7 +1435,14 @@ if the user navigates away mid-type the last persisted value is a truncated key
 that silently breaks the provider until they retype it fully.
 **Fix idea:** keep the field local and persist on blur / debounced (500 ms) /
 explicit Save.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ed1650c — the API-key `<input>` is now edited locally
+and persisted only `onBlur` / on Enter, via `commitProviderKey`, which no-ops
+when the value is unchanged from what `getProviderKeys` returned or still
+contains a `•` (the F1-02 masked placeholder) — so the masked value is never
+written back. New test "F8-06: persists provider API key on blur, not per
+keystroke" (replaces the old per-keystroke assertion). AISettingsModal.test.tsx
+green.
 
 ### [F8-07] med — src/renderer/src/components/ai/AIChatSidebar.tsx:301-323
 **What:** `messages.filter(...).map(msg => <AIMessageBubble .../>)` with no error
@@ -1429,7 +1455,13 @@ panel goes blank with no recovery but toggling it closed/open (and if the throw
 is in persisted history it recurs on reload). Same class as F5-06.
 **Fix idea:** wrap each bubble (or the list) in an error boundary that renders a
 "couldn't display this message" fallback.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ed1650c — each `<AIMessageBubble>` in `AIChatSidebar`
+is wrapped in the reusable `components/common/MessageErrorBoundary` (from F5), so
+a KaTeX/markdown throw over model output renders a `.message-render-error`
+placeholder instead of blanking the panel. App-wide/nested boundary policy still
+owned by **F12-01** — F12 should decide whether this local boundary stays or
+folds into the shared hierarchy (same note as F5-06). typecheck:web green.
 
 ### [F8-08] low — src/renderer/src/components/ai/AIChatSidebar.tsx:88-90
 **What:** the auto-scroll effect is keyed on `[messages.length, loading]`. During
@@ -1440,7 +1472,11 @@ following the streaming text — the user has to manually scroll to keep reading
 and jumping back to bottom only happens on the next message.
 **Fix idea:** also depend on the active message's content length, or observe the
 scroll container size, and only auto-scroll when already near the bottom.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ed1650c — the auto-scroll effect now also depends on
+`messages[messages.length - 1]?.content.length`, so the view follows the growing
+streaming text, not just message-count / loading transitions. (Near-bottom-only
+gating left as a nicety; not implemented.) typecheck:web green.
 
 ### [F8-09] low — src/renderer/src/components/ai/AISettingsModal.tsx:78-79 & AIChatHistoryModal.tsx:79-80 & AIChatExportButton.tsx:84
 **What:** all three modals (and the export confirm-delete) close on
@@ -1451,7 +1487,10 @@ button in its header (only the "Done" button at the bottom and the backdrop).
 dismiss with `Escape`, and focus is left behind the overlay. Consistent with
 F5-14; F10 owns the shared fix.
 **Fix idea:** shared modal primitive with focus-trap + `Escape`.
-**Status:** open
+**Status:** deferred
+**Fix status:** deferred to **F10-05** (shared modal primitive with focus-trap +
+Escape + focus restore). Same call as F5-14; not worth three bespoke handlers
+here when F10 owns the shared fix.
 
 ### [F8-10] low — src/renderer/src/components/ai/CitationPill.tsx:32
 **What:** `title={entity ? \`Go to ${entity.type}: ${JSON.stringify(entity)}\` : …}`
@@ -1461,7 +1500,11 @@ F5-14; F10 owns the shared fix.
 absolute file paths / internal JIDs instead of a human label; minor info leak
 and poor UX.
 **Fix idea:** format a friendly title per type (e.g. "Go to file: report.pdf").
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ed1650c — `CitationPill` `title` is now a friendly
+per-type string ("Go to file: <basename>", "Go to message", "Go to chat"); the
+raw `JSON.stringify(entity)` dump (absolute paths / JIDs) is gone. typecheck:web
+green.
 
 ### [F8-11] low — src/renderer/src/components/ai/hooks/useAIStream.ts:54-170 & AIChatSidebar.tsx:133-140
 **What:** (a) `startStream` is `useCallback(..., [])` but closes over
@@ -1474,7 +1517,13 @@ new direct dependency added to `startStream` will silently use stale values.
 same ms, and inconsistent with `crypto.randomUUID()` everywhere else.
 **Fix idea:** memoise `saveCurrentMessages` with `useCallback`; use
 `crypto.randomUUID()` for the error message id.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ed1650c — (a) `saveCurrentMessages` in
+`useAIChatSessions` is now `useCallback`-memoised (`[api, refreshSessions]`), so
+the ref `startStream` closes over is stable. (b) `handleSend`'s catch branch uses
+`crypto.randomUUID()` for the error message id. The empty-dep-array on
+`startStream` itself is still a hand-synced-refs pattern (documented); not
+rewritten this slice. typecheck:web green.
 
 ### [F8-12] low — src/renderer/src/components/ai/AIChatSidebar.tsx:77-86
 **What:** the load effect has dep array `[isOpen]` while calling `api.getChats`,
@@ -1484,7 +1533,12 @@ sidebar is opened, and `getAiOptions().then(setAiOptions)` can stomp a change
 the user just made in Settings if it resolves late.
 **Fix idea:** load once on mount (or when actually stale); add an `alive` guard;
 don't overwrite `aiOptions` from a background fetch after the user edits it.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ed1650c — the load effect is now gated by a
+`hasLoadedRef` (runs once, on first open) and every `.then` is guarded by a local
+`alive` flag cleared on cleanup. `getAiOptions`/tools/models are no longer
+refetched on every re-open, so a background resolve can't stomp a Settings edit.
+typecheck:web green; AIChatSidebar.test.tsx green.
 
 ### [F8-13] low — src/renderer/src/components/ai/hooks/useAIStream.ts:131-152
 **What:** the auto-exec / auto-save logic runs inside `setTimeout(fn, 100)` after
@@ -1496,7 +1550,14 @@ user clicks Approve on the card before the timer fires, the tool runs twice).
 **Fix idea:** extract a single `parseToolCall(content)` helper; drive auto-exec
 off the parsed result rather than a timer, and guard against double execution
 with `executingToolId` / a per-message "handled" flag.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ed1650c — new `utils/parseToolCall.ts` is the single
+`<tool_call>` parser, used by both `useAIStream` (auto-exec) and `AIMessageBubble`
+(the two verbatim copies are gone). Auto-exec now guards against double execution
+with an `autoExecutedToolIds` ref Set AND a check that the message has no
+`toolResult` yet (user already approved/declined via the card). The 100 ms
+`setTimeout` after `-end` is kept (it also drives the auto-save branch) but is no
+longer a double-exec race. typecheck:web green; AIMessageBubble.test.tsx green.
 
 ## Slice F9 — Extensions / plugins UI
 

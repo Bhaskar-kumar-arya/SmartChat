@@ -9,6 +9,7 @@ import AISmartInput from './AISmartInput'
 import { AIChatMessage, ToolDefinition } from '../../types/aiTypes'
 import { SelectedContext, ChatItem } from '../../types/chatTypes'
 import { useCitationMarkdownComponents } from './CitationMarkdownRenderer'
+import { parseToolCall } from '../../utils/parseToolCall'
 
 // ── Mention highlighter for rendered bubbles ──────────────────────────────────
 function escapeRe(s: string) {
@@ -74,20 +75,10 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
   const thoughtMatch = message.content.match(/<(thought|think)>([\s\S]*?)<\/\1>/)
   const thoughtContent = thoughtMatch ? thoughtMatch[2].trim() : null
 
-  // Extract <tool_call> block
-  const toolMatch = message.content.match(/<tool_call>([\s\S]*?)<\/tool_call>/)
-  let toolData: any = null
-  let parseError: string | null = null
-  if (toolMatch) {
-    try { 
-      let jsonStr = toolMatch[1].trim()
-      jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
-      toolData = JSON.parse(jsonStr) 
-    } catch (e) {
-      console.error('Failed to parse tool data:', e)
-      parseError = e instanceof Error ? e.message : String(e)
-    }
-  }
+  // Extract <tool_call> block (shared parser — F8-13)
+  const parsedTool = parseToolCall(message.content)
+  const toolData: any = parsedTool?.data ?? null
+  const parseError: string | null = parsedTool?.error ?? null
 
   // Clean the display content: strip thought/think and <tool_call> blocks
   // Also sanitize malformed AI citations (e.g., [](cite:12] -> [](cite:12))
@@ -150,11 +141,11 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
         )}
 
         {/* Tool parse error */}
-        {!toolData && parseError && toolMatch && (
+        {!toolData && parseError && parsedTool && (
            <div className="ai-tool-error">
               <strong>Failed to parse tool call</strong>
               <p>{parseError}</p>
-              <pre>{toolMatch[1].trim()}</pre>
+              <pre>{parsedTool.raw}</pre>
            </div>
         )}
 

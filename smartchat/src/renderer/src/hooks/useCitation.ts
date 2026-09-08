@@ -7,8 +7,13 @@ interface UseCitationOptions {
   sessionId: string | null
 }
 
-// Module-level cache: { [sessionId]: Map<index, entity> }
-const globalCitationCache: Record<string, Map<number, CitationEntity>> = {}
+// Module-level cache: { [sessionId]: Map<index, entity | null> }
+// F8-04: negative (unresolvable) results are cached as `null` too, so an
+// unresolvable citation in a streaming answer doesn't re-hit IPC on every
+// markdown re-parse.
+const globalCitationCache: Record<string, Map<number, CitationEntity | null>> = {}
+// F8-04: dedupe concurrent resolves for the same (sessionId, index).
+const inFlightCitations: Map<string, Promise<CitationEntity | null>> = new Map()
 
 export function useCitation({ sessionId }: UseCitationOptions) {
   const api = useAPI()
@@ -29,21 +34,28 @@ export function useCitation({ sessionId }: UseCitationOptions) {
         return sessionCache.get(index) ?? null
       }
 
+      const flightKey = `${sessionId}:${index}`
+      const existing = inFlightCitations.get(flightKey)
+      if (existing) return existing
+
       setLoadingIndices((prev) => new Set(prev).add(index))
-      try {
-        const entity = await api.resolveCitation(sessionId, index)
-        if (entity) {
-          sessionCache.set(index, entity)
+      const promise = (async () => {
+        try {
+          const entity = await api.resolveCitation(sessionId, index)
+          sessionCache.set(index, entity ?? null)
           globalCitationCache[sessionId] = sessionCache
+          return entity ?? null
+        } finally {
+          inFlightCitations.delete(flightKey)
+          setLoadingIndices((prev) => {
+            const next = new Set(prev)
+            next.delete(index)
+            return next
+          })
         }
-        return entity
-      } finally {
-        setLoadingIndices((prev) => {
-          const next = new Set(prev)
-          next.delete(index)
-          return next
-        })
-      }
+      })()
+      inFlightCitations.set(flightKey, promise)
+      return promise
     },
     [api, sessionId]
   )
