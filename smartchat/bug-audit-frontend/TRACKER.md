@@ -529,7 +529,11 @@ still fire 0→null mid-run).
 **Fix idea:** keep the timeout id in a ref (or effect-local var), `clearTimeout`
 in the effect cleanup and at the top of each new progress handler; add `api` to
 deps (it's context-stable so harmless).
-**Status:** open
+**Fix status:** fixed in 529302d — timeout id stored in `indexingDoneTimerRef`,
+`clearTimeout` on effect cleanup and at the top of each progress handler; `api`
+added to deps. New test `ChatList.test.tsx` "clears the indexing-complete timer
+on unmount (F4-01)". typecheck:web green; 16/16 in touched files pass.
+**Status:** fixed
 
 ### [F4-02] med — hooks/useSidebarResize.ts:11-24
 **What:** `startResizing` attaches `mousemove`/`mouseup` listeners to `document`
@@ -543,7 +547,12 @@ and a leaked listener that persists for the life of the document. Repeated over 
 long session each interrupted drag adds another live `mousemove` handler.
 **Fix idea:** store the handler refs and return a `useEffect` cleanup that removes
 them; or lift the drag into an effect keyed on an `isResizing` state flag.
-**Status:** open
+**Fix status:** fixed in 529302d — drag listeners tracked in `listenersRef`;
+`stopResizing` detaches them and is returned as the hook's `useEffect` cleanup,
+so an unmount mid-drag removes the `mousemove`/`mouseup` handlers. New test
+`useSidebarResize.test.ts` "detaches the mousemove listener when unmounted
+mid-drag (F4-02)". typecheck green; touched tests 16/16.
+**Status:** fixed
 
 ### [F4-03] low — ChatLayout.tsx:136-141
 **What:** `api.onExtensionFocus` handler calls `handleOpenExtensionChat(id, id)`
@@ -556,7 +565,11 @@ header (`activeName`) and any name-dependent UI show the raw extension id (e.g.
 chat).
 **Fix idea:** resolve the name from `useExtensionManager().extensions` (already in
 scope) — `extensions.find(e => e.id === id)?.manifest.name ?? id`.
-**Status:** open
+**Fix status:** fixed in 529302d — `onExtensionFocus` handler now resolves the
+display name from `extensions` (`.find(e => e.id === id)?.manifest.name ?? id`)
+before calling `handleOpenExtensionChat`; `extensions` added to the effect deps.
+typecheck green.
+**Status:** fixed
 
 ### [F4-04] low — ChatLayout.tsx:157-178
 **What:** the `smartchat:open-chat` window-event effect closes over
@@ -570,7 +583,11 @@ produces an unhandled rejection if the anchor query fails (bad/deleted message
 id), and `setTargetMessageId` is never reached so the UI gives no feedback.
 **Fix idea:** add the missing deps; `.catch(console.error)` on the jump, and
 still clear/indicate on failure.
-**Status:** open
+**Fix status:** fixed in 529302d — `handleOpenExtensionChat` added to the
+`smartchat:open-chat` effect deps; `jumpToMessage(newTarget)` now has a
+`.catch` that logs the failure. Kept minimal per note (F12-02 will rework the
+bus). typecheck green.
+**Status:** fixed
 
 ### [F4-05] low — ExtensionChatListItem.tsx:27,33
 **What:** renders `{chat.name}` and `{chat.lastMessage}` as raw text, whereas
@@ -579,7 +596,10 @@ every regular row in `ChatList` wraps the same fields in `<EmojiText>`.
 emoji shortcodes or custom-emoji tokens render inconsistently (raw `:smile:`
 etc.) versus the rest of the list.
 **Fix idea:** use `<EmojiText text={chat.name} />` / `<EmojiText text={chat.lastMessage || 'Start a conversation…'} />`.
-**Status:** open
+**Fix status:** fixed in 529302d — `ExtensionChatListItem` now wraps `chat.name`
+and the last-message preview in `<EmojiText>`, matching the regular `ChatList`
+rows. typecheck green.
+**Status:** fixed
 
 ### [F4-06] low — ChatList.tsx:483-494
 **What:** the community subgroup chips (`<span className="subgroup-tag" onClick=…>`)
@@ -589,7 +609,10 @@ community expand/collapse control at :464 is correctly a `<button>`.)
 specific subgroup from the collapsed preview row.
 **Fix idea:** render the chips as `<button>` or add `role="button"` + `tabIndex={0}`
 + Enter/Space handling.
-**Status:** open
+**Fix status:** fixed in 529302d — subgroup chips got `role="button"`,
+`tabIndex={0}` and an `onKeyDown` handler opening the subgroup on Enter/Space
+(with `preventDefault`/`stopPropagation`). typecheck green.
+**Status:** fixed
 
 ### [F4-07] low — ChatList.tsx:64-71
 **What:** `handleScroll` calls `loadMore()` on every scroll event within 50px of
@@ -601,7 +624,13 @@ value — two scroll events fired in the same frame (before the re-render that s
 page fetches → a duplicated page / skipped cursor in the chat list.
 **Fix idea:** guard `loadMoreChats` with a `useRef` in-flight flag (set
 synchronously) rather than relying on state; or debounce `handleScroll`.
-**Status:** open
+**Fix status:** fixed in 529302d — `ChatList.handleScroll` now sets a synchronous
+`loadMoreInFlightRef` before calling `loadMore()` and clears it in `.finally`,
+so two scroll events in one frame produce a single page fetch. (`useChats`
+already has its own in-flight refs from F3; this closes the scroll-handler-side
+gap.) New test `ChatList.test.tsx` "does not fire two overlapping loadMore
+fetches on a fast scroll (F4-07)". typecheck green; touched tests 16/16.
+**Status:** fixed
 
 ## Slice F5 — Message view & rendering
 
