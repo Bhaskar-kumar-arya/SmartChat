@@ -4,6 +4,7 @@ import { ChatItem, MessageItem } from '../../../types/chatTypes'
 import { formatSenderName } from '../../../utils/formatters'
 import { isSameJid } from '../../../utils/jidUtils'
 import { formatMessagePreview } from '../../../utils/messagePreview'
+import { toBigIntTime } from '../../../utils/bigintTime'
 
 /**
  * Helper to sort chats: pinned first, then by timestamp
@@ -16,8 +17,8 @@ const sortChats = (chatList: ChatItem[]) => {
     if (pinB > 0 && pinA <= 0) return 1
     if (pinA > 0 && pinB > 0) return pinB - pinA
 
-    const tsA = BigInt(a.lastMessageTimestamp || a.timestamp || 0)
-    const tsB = BigInt(b.lastMessageTimestamp || b.timestamp || 0)
+    const tsA = toBigIntTime(a.lastMessageTimestamp || a.timestamp || 0)
+    const tsB = toBigIntTime(b.lastMessageTimestamp || b.timestamp || 0)
     if (tsB > tsA) return 1
     if (tsB < tsA) return -1
     return 0
@@ -45,6 +46,12 @@ export const useChats = (activeJid: string | null) => {
 
   // Cache out-of-order status updates that arrive before the new-message event
   const pendingStatusUpdatesRef = useRef<Map<string, string>>(new Map())
+
+  // Coalesce new-message events for a chat whose `getChat()` is still in flight,
+  // so a second (newer) message for a brand-new chat isn't dropped by the
+  // `else` branch before the row lands in state (F3-03).
+  const inFlightChatFetchRef = useRef<Set<string>>(new Set())
+  const pendingNewMsgRef = useRef<Map<string, MessageItem>>(new Map())
 
   const activeJidRef = useRef(activeJid)
   useEffect(() => {
@@ -76,7 +83,25 @@ export const useChats = (activeJid: string | null) => {
           const filteredNew = data.filter(c => !existingJids.has(c.jid))
           return sortChats([...prev, ...filteredNew])
         }
-        return data
+        // First load / reload: don't blindly replace. Realtime events
+        // (onNewMessage / onChatUpdated) can land while getChats() is in flight
+        // and mutate `chats`; a plain `return data` wipes those (F3-04). Merge:
+        // keep whichever copy of a chat has the newer last-message timestamp, and
+        // preserve chats that only exist in `prev`. Always sorted (F3-08).
+        if (prev.length === 0) return sortChats(data)
+        const merged = data.map((dc) => {
+          const p = prev.find((pc) => isSameJid(pc.jid, dc.jid))
+          if (
+            p &&
+            toBigIntTime(p.lastMessageTimestamp || p.timestamp || 0) >
+              toBigIntTime(dc.lastMessageTimestamp || dc.timestamp || 0)
+          ) {
+            return p
+          }
+          return dc
+        })
+        const extras = prev.filter((pc) => !data.some((dc) => isSameJid(dc.jid, pc.jid)))
+        return sortChats([...merged, ...extras])
       })
       setPage(pageToLoad)
     } catch (err) {
@@ -95,7 +120,7 @@ export const useChats = (activeJid: string | null) => {
   useEffect(() => {
     loadChats(1, false)
 
-    const unSubNewMsg = api.onNewMessage(async (msg: MessageItem) => {
+    const handleNewMessage = async (msg: MessageItem): Promise<void> => {
       let reactionText = ''
       try {
         if (msg.messageType === 'reactionMessage' && msg.content) {
@@ -135,6 +160,13 @@ export const useChats = (activeJid: string | null) => {
       const hasChat = chatJidsRef.current.has(chatJidLower)
 
       if (!hasChat) {
+        if (inFlightChatFetchRef.current.has(chatJidLower)) {
+          // A getChat() for this new chat is already running — remember the
+          // latest message and replay it once the row exists.
+          pendingNewMsgRef.current.set(chatJidLower, msg)
+          return
+        }
+        inFlightChatFetchRef.current.add(chatJidLower)
         chatJidsRef.current.add(chatJidLower)
         try {
           const chatData = await api.getChat(msg.chatJid)
@@ -187,8 +219,18 @@ export const useChats = (activeJid: string | null) => {
         } catch (err) {
           console.error('[useChats] Failed to fetch chat on new message:', err)
           chatJidsRef.current.delete(chatJidLower)
+        } finally {
+          inFlightChatFetchRef.current.delete(chatJidLower)
+          const queued = pendingNewMsgRef.current.get(chatJidLower)
+          if (queued) {
+            pendingNewMsgRef.current.delete(chatJidLower)
+            void handleNewMessage(queued)
+          }
         }
-      } else {
+        return
+      }
+
+      {
         setChats((prev) => {
           const idx = prev.findIndex((c) => isSameJid(c.jid, msg.chatJid))
           if (idx === -1) return prev
@@ -215,7 +257,9 @@ export const useChats = (activeJid: string | null) => {
           return sortChats([updatedChat, ...filtered])
         })
       }
-    })
+    }
+
+    const unSubNewMsg = api.onNewMessage(handleNewMessage)
 
     const unSubChatUpd = api.onChatUpdated(async (update) => {
       const chatJidLower = update.jid.toLowerCase()
@@ -282,8 +326,8 @@ export const useChats = (activeJid: string | null) => {
         if (idx === -1) return prev
 
         const existing = prev[idx]
-        const msgTs = BigInt(msg.timestamp || 0)
-        const chatTs = BigInt(existing.lastMessageTimestamp || existing.timestamp || 0)
+        const msgTs = toBigIntTime(msg.timestamp || 0)
+        const chatTs = toBigIntTime(existing.lastMessageTimestamp || existing.timestamp || 0)
 
         // Only update preview if the edited message is the latest (or matches current last message timestamp)
         if (msgTs >= chatTs) {

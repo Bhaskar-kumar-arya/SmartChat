@@ -123,4 +123,50 @@ describe('usePresence', () => {
 
     expect(result.current.getActivePresence('user1@s.whatsapp.net')).toBe('online')
   })
+
+  it('F3-06: expires stale `available` presence after the TTL', () => {
+    const { result } = renderHook(() => usePresence(), { wrapper: createWrapper() })
+
+    act(() => {
+      if (presenceCallback) {
+        presenceCallback({
+          remoteJid: 'user1@s.whatsapp.net',
+          presences: {
+            'user1@s.whatsapp.net': {
+              lastKnownPresence: 'available',
+              timestamp: Date.now() - 70000,
+            },
+          },
+        })
+      }
+    })
+
+    expect(result.current.getActivePresence('user1@s.whatsapp.net')).toBe('online')
+
+    act(() => { vi.advanceTimersByTime(2000) })
+
+    expect(result.current.getActivePresence('user1@s.whatsapp.net')).toBeNull()
+  })
+
+  it('F3-07: matches presence by JID identity, not exact string', () => {
+    const { result } = renderHook(() => usePresence(), { wrapper: createWrapper() })
+
+    act(() => {
+      if (presenceCallback) {
+        presenceCallback({
+          remoteJid: '12345:3@s.whatsapp.net',
+          presences: {
+            '12345:3@s.whatsapp.net': {
+              lastKnownPresence: 'composing',
+              timestamp: Date.now(),
+            },
+          },
+        })
+      }
+    })
+
+    // Looked up with the device-suffix-free / @lid form.
+    expect(result.current.getActivePresence('12345@lid')).toBe('typing...')
+    expect(result.current.lookupPresence('12345@s.whatsapp.net')).toBeDefined()
+  })
 })

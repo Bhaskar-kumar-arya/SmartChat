@@ -43,6 +43,40 @@ describe('useChatHierarchy', () => {
     expect(rootItem?.totalUnreadCount).toBe(3)
   })
 
+  it('F3-05: surfaces a subgroup whose community root is not in the loaded set', () => {
+    const orphanSubgroup: ChatItem[] = [
+      {
+        jid: 'orphan-sub@g.us',
+        name: 'Orphan Subgroup',
+        linkedParentJid: 'missing-community@g.us',
+        unreadCount: 1,
+        timestamp: '3000',
+        lastMessage: '',
+        lastMessageTimestamp: '3000',
+      },
+      sampleChats[2], // a standalone
+    ]
+
+    const { result } = renderHook(() => useChatHierarchy(orphanSubgroup))
+
+    expect(result.current.groupedChats.some((c) => c.jid === 'orphan-sub@g.us')).toBe(true)
+  })
+
+  it('F3-10: a malformed timestamp does not throw', () => {
+    const bad: ChatItem[] = [
+      {
+        jid: 'bad@s.whatsapp.net',
+        name: 'Bad TS',
+        unreadCount: 0,
+        timestamp: 'not-a-number',
+        lastMessage: '',
+        lastMessageTimestamp: '2026-01-01',
+      },
+    ]
+
+    expect(() => renderHook(() => useChatHierarchy(bad))).not.toThrow()
+  })
+
   it('should toggle community expansion', () => {
     const { result } = renderHook(() => useChatHierarchy(sampleChats))
 

@@ -14,6 +14,11 @@ export const useSearch = (query: string, mode: SearchMode = 'normal', filters?: 
   const [results, setResults] = useState<SearchResults>({ chats: [], messages: [] })
   const [isSearching, setIsSearching] = useState(false)
 
+  // Compare `filters` by value, not reference: a caller passing an inline
+  // `filters={{…}}` object would otherwise tear down and recreate the debounce
+  // timer on every render, so the search request may never fire (F3-09).
+  const filtersKey = JSON.stringify(filters ?? null)
+
   useEffect(() => {
     if (!query.trim()) {
       setResults({ chats: [], messages: [] })
@@ -44,7 +49,8 @@ export const useSearch = (query: string, mode: SearchMode = 'normal', filters?: 
       ignored = true
       clearTimeout(timer)
     }
-  }, [query, mode, filters])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, mode, filtersKey])
 
   return { results, isSearching }
 }

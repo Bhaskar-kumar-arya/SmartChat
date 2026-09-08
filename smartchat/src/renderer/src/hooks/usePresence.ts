@@ -1,6 +1,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAPI } from '../context/APIContext'
 import { PresenceMap, PresenceUpdate } from '../types/chatTypes'
+import { isSameJid } from '../utils/jidUtils'
+
+// `available` / `online` presence is aged out after this long without a refresh.
+// The backend does not reliably push an `unavailable` presence when a contact
+// goes offline, so without a TTL the header/list show a stale "online" forever (F3-06).
+const AVAILABLE_TTL_MS = 60000
+const TYPING_TTL_MS = 10000
 
 /**
  * Hook to manage real-time presence updates and their automatic expiration.
@@ -36,8 +43,16 @@ export const usePresence = () => {
           for (const subJid of Object.keys(pMap)) {
             const s = pMap[subJid]
             const isTyping = s.lastKnownPresence === 'composing' || s.lastKnownPresence === 'recording'
-            if (isTyping && s.timestamp && now - s.timestamp > 10000) {
+            if (isTyping && s.timestamp && now - s.timestamp > TYPING_TTL_MS) {
               pMap[subJid] = { ...s, lastKnownPresence: 'available' }
+              subChanged = true
+              changed = true
+            } else if (
+              s.lastKnownPresence === 'available' &&
+              s.timestamp &&
+              now - s.timestamp > AVAILABLE_TTL_MS
+            ) {
+              pMap[subJid] = { ...s, lastKnownPresence: 'unavailable' }
               subChanged = true
               changed = true
             }
@@ -54,9 +69,23 @@ export const usePresence = () => {
     }
   }, [])
 
+  // Presence is stored keyed by the raw `update.remoteJid`, which can differ in
+  // case / `:device` / `@lid` form from the `activeJid` / `chat.jid` used for
+  // lookup. Every other part of the chat layer compares JIDs with `isSameJid`;
+  // do the same here so the indicator doesn't silently never appear (F3-07).
+  const lookupPresence = useCallback(
+    (jid: string | null | undefined): PresenceMap | undefined => {
+      if (!jid) return undefined
+      if (presences[jid]) return presences[jid]
+      const key = Object.keys(presences).find((k) => isSameJid(k, jid))
+      return key ? presences[key] : undefined
+    },
+    [presences]
+  )
+
   const getActivePresence = useCallback((jid: string | null) => {
-    if (!jid || !presences[jid]) return null
-    const presenceMap = presences[jid]
+    const presenceMap = jid ? lookupPresence(jid) : undefined
+    if (!jid || !presenceMap) return null
     const entries = Object.entries(presenceMap)
     
     const composing = entries.filter(([_, s]) => s.lastKnownPresence === 'composing')
@@ -83,7 +112,7 @@ export const usePresence = () => {
     }
     
     return null
-  }, [presences])
+  }, [lookupPresence])
 
-  return { presences, getActivePresence }
+  return { presences, getActivePresence, lookupPresence }
 }

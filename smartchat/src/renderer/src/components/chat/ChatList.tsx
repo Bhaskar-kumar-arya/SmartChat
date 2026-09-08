@@ -59,7 +59,7 @@ export default function ChatList({
     setSearchQuery, 
     clearUnreadCount 
   } = useChats(activeJid)
-  const { presences } = usePresence()
+  const { lookupPresence } = usePresence()
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget
@@ -143,7 +143,7 @@ export default function ChatList({
   }
 
   const getPresenceText = (chat: ChatItem) => {
-    return getPresenceStatusText(chat, presences[chat.jid])
+    return getPresenceStatusText(chat, lookupPresence(chat.jid))
   }
 
   const getMessageIcon = (typeStr: string | null | undefined) => {

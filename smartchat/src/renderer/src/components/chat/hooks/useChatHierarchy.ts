@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { ChatItem, ExtendedChatItem } from '../../../types/chatTypes'
+import { toBigIntTime } from '../../../utils/bigintTime'
 
 /**
  * Custom hook to manage the community hierarchy sorting and rendering states.
@@ -36,14 +37,14 @@ export const useChatHierarchy = (
     const sortableItems = [
       ...standaloneChats.map(chat => ({ 
         chat, 
-        effectiveTimestamp: BigInt(chat.lastMessageTimestamp || chat.timestamp || 0),
+        effectiveTimestamp: toBigIntTime(chat.lastMessageTimestamp || chat.timestamp || 0),
         pinned: chat.pinned || 0
       })),
       ...roots.map(root => {
         const children = childrenByParent.get(root.jid) || []
         const timestamps = [
-          BigInt(root.lastMessageTimestamp || root.timestamp || 0),
-          ...children.map(c => BigInt(c.lastMessageTimestamp || c.timestamp || 0))
+          toBigIntTime(root.lastMessageTimestamp || root.timestamp || 0),
+          ...children.map(c => toBigIntTime(c.lastMessageTimestamp || c.timestamp || 0))
         ]
         return { 
           chat: root, 
@@ -77,7 +78,7 @@ export const useChatHierarchy = (
         let latestChildTimestamp: string | null = null
         let maxTs = 0n
         children.forEach(c => {
-          const ts = BigInt(c.lastMessageTimestamp || c.timestamp || 0)
+          const ts = toBigIntTime(c.lastMessageTimestamp || c.timestamp || 0)
           if (ts > maxTs) {
             maxTs = ts
             latestChildTimestamp = c.lastMessageTimestamp || c.timestamp || null
@@ -100,6 +101,22 @@ export const useChatHierarchy = (
       } else {
         finalItems.push(item.chat)
       }
+    })
+
+    // Pass 6: rescue orphaned subgroups. A chat with a `linkedParentJid` whose
+    // community root is not in the loaded/paginated set is neither a standalone
+    // (Pass 2 excluded it) nor emitted under a root (Pass 5) — it would vanish
+    // from the sidebar entirely. Surface those as standalone rows (F3-05).
+    const rootJids = new Set(roots.map(r => r.jid))
+    const renderedJids = new Set(finalItems.map(i => i.jid))
+    childrenByParent.forEach((children, parentJid) => {
+      if (rootJids.has(parentJid)) return
+      children.forEach(child => {
+        if (!renderedJids.has(child.jid)) {
+          finalItems.push(child)
+          renderedJids.add(child.jid)
+        }
+      })
     })
 
     return { groupedChats: finalItems, childrenByParent }
