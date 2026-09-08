@@ -102,6 +102,35 @@ describe('CallEventSubscriber', () => {
     )
   })
 
+  it('P2-S3-03: stamps the call log with call.date when present, not "now"', async () => {
+    const callDate = new Date('2026-01-01T00:00:00.000Z')
+    const event: CallEvent = {
+      calls: [
+        { id: 'call-date', from: '1@s.whatsapp.net', status: 'offer', date: callDate } as any
+      ]
+    }
+
+    await bus.emit('call:event', event)
+
+    expect(callService.upsertCallLog).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'call-date',
+      timestamp: BigInt(Math.floor(callDate.getTime() / 1000))
+    }))
+  })
+
+  it('P2-S3-03: falls back to now when call.date is absent', async () => {
+    const before = Math.floor(Date.now() / 1000)
+    const event: CallEvent = {
+      calls: [{ id: 'call-nodate', from: '1@s.whatsapp.net', status: 'offer' } as any]
+    }
+
+    await bus.emit('call:event', event)
+
+    const arg = callService.upsertCallLog.mock.calls[0][0]
+    expect(Number(arg.timestamp)).toBeGreaterThanOrEqual(before)
+    expect(Number(arg.timestamp)).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 1)
+  })
+
   it('should handle errors gracefully without crashing', async () => {
     callService.upsertCallLog.mockRejectedValueOnce(new Error('DB Error'))
     const event: CallEvent = {

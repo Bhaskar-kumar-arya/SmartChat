@@ -113,8 +113,6 @@ import { HistorySyncManager } from './services/whatsapp/HistorySyncManager'
 import { IHistorySyncManager } from './services/whatsapp/IHistorySyncManager'
 import { WAEventWiringService } from './services/whatsapp/WAEventWiringService'
 import { IWAEventWiringService } from './services/whatsapp/IWAEventWiringService'
-import { IWASocketFactory } from './services/whatsapp/IWASocketFactory'
-import { WASocketFactory } from './services/whatsapp/WASocketFactory'
 import { IWACatchUpManager } from './services/whatsapp/IWACatchUpManager'
 import { WACatchUpManager } from './services/whatsapp/WACatchUpManager'
 
@@ -330,7 +328,6 @@ export function createServices(
     getBus,
     windowEmitter
   )
-  const socketFactory: IWASocketFactory = new WASocketFactory(messageQueryRepository)
   const catchUpManager: IWACatchUpManager = new WACatchUpManager(embeddingService, authSettingsService)
   const historySyncManager = new HistorySyncManager(services, getMainWindow, authSettingsService)
   const waEventWiringService = new WAEventWiringService(historySyncManager)
@@ -382,7 +379,6 @@ export function createServices(
     aiKeyService,
     historySyncManager,
     waEventWiringService,
-    socketFactory,
     catchUpManager,
     apiServer,
     callService,
@@ -440,7 +436,6 @@ export type ServiceContainer = {
   aiKeyService: IAIKeyService
   historySyncManager: IHistorySyncManager
   waEventWiringService: IWAEventWiringService
-  socketFactory: IWASocketFactory
   catchUpManager: IWACatchUpManager
   apiServer: IAPIServer
   callService: ICallQueryService & ICallMutationService

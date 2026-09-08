@@ -48,7 +48,9 @@ describe('CallRepository', () => {
 
     const updated = await repository.getCallLog('call1')
     expect(updated?.status).toBe('accepted')
-    expect(updated?.timestamp).toBe(200n)
+    // P2-S3-03: later events for the same call keep the first-seen (start)
+    // timestamp rather than being pushed forward to a later event's time.
+    expect(updated?.timestamp).toBe(100n)
   })
 
   it('should return null for missing call', async () => {

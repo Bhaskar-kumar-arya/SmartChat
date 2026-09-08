@@ -48,4 +48,12 @@ describe('CallRepository.upsertCallLog (S11-05)', () => {
     await new CallRepository(m.prisma).upsertCallLog({ ...base, status: 'accept', timestamp: 120n })
     expect(m.update).toHaveBeenCalledTimes(1)
   })
+
+  it('P2-S3-03: keeps the first-seen (start) timestamp on a later status update', async () => {
+    const m = makePrisma({ status: 'offer', timestamp: 100n })
+    await new CallRepository(m.prisma).upsertCallLog({ ...base, status: 'terminate', timestamp: 500n })
+    expect(m.update).toHaveBeenCalledTimes(1)
+    expect(m.update.mock.calls[0][0].data.timestamp).toBe(100n)
+    expect(m.update.mock.calls[0][0].data.status).toBe('terminate')
+  })
 })

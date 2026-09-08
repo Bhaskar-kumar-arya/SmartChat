@@ -246,7 +246,7 @@ main-process manager has none.
 **Fix idea:** set `this.isFreshLogin = false` once the fresh-login path has been
 consumed (after reading `shouldSyncHistory`), or drive it entirely off
 `hasCreds()` / `getHistorySyncCompleted()` instead of a sticky field.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S3-02] med — src/main/services/whatsapp/AppStateSyncParser.ts:114-135
 **What:** `handleMute` emits `chat:updated` with `update.muteExpiration` set to
@@ -263,7 +263,7 @@ never lands in the desktop DB. `-1n` as the "indefinite mute" sentinel also disa
 with the numeric threshold logic used on the read path.
 **Fix idea:** emit `Number(muteSec)` (and a plain number sentinel) from `handleMute`,
 matching the other `chat:updated` producers.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S3-03] low — src/main/services/whatsapp/subscribers/CallEventSubscriber.ts:31
 **What:** `onCall` writes `upsertCallLog({ …, timestamp: BigInt(Math.floor(Date.now()/1000)) })`
@@ -276,7 +276,7 @@ get stamped with "now" instead of when the call happened, mis-ordering the call 
 later "now" — a missed call ends up timestamped at its terminate event, not its start.
 **Fix idea:** use `call.date?.getTime()` when present, falling back to `Date.now()`, and
 don't overwrite an existing timestamp on later status updates for the same id.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S3-04] low — src/main/services/whatsapp/WASocketFactory.ts:39-50
 **What:** `WASocketFactory` is constructed in `ServiceContainer.ts:333` and stored, but
@@ -291,7 +291,7 @@ the broken poll-vote / retry-receipt decryption from P2-S1-01. It also keeps
 exercised.
 **Fix idea:** delete `WASocketFactory` + `IWASocketFactory` + the container wiring, or
 if it is meant to be used, fix `getMessage` to parse with `BufferJSON.reviver`.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S3-05] low — src/main/services/whatsapp/WAEventLogger.ts (whole file)
 **What:** The `WAEventLogger` module and its `waEventLogger` singleton are never
@@ -304,7 +304,7 @@ size-caps those files — unbounded disk growth for any long-lived install, plus
 synchronous `JSON.stringify` of every event payload on the hot path.
 **Fix idea:** delete the module, or if it is wanted for debugging, gate it behind a
 debug flag and add day-count / size retention.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ## Slice 4 — Chats & sync
 

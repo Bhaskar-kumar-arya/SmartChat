@@ -127,10 +127,13 @@ export class AppStateSyncParser {
       muteEndTimestamp
     })
 
+    // P2-S3-02: every other `chat:updated` producer emits `muteExpiration` as a
+    // plain number; Prisma Int/Float columns reject a JS bigint, so emitting
+    // `muteSec` (bigint, -1n sentinel) made phone-side mute/unmute never persist.
     await bus.emit('chat:updated', {
       jid: cleanChatJid,
       update: {
-        muteExpiration: muteSec
+        muteExpiration: Number(muteSec)
       }
     })
   }

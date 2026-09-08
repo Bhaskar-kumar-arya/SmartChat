@@ -150,6 +150,10 @@ export class WhatsAppConnectionManager {
 
     const isHistorySyncCompleted = await this.authSettingsService.getHistorySyncCompleted()
     const shouldSyncHistory = this.isFreshLogin || !isHistorySyncCompleted
+    // P2-S3-01: the fresh-login intent is consumed exactly once. Leaving it
+    // sticky makes every later reconnect in the same process re-clear the
+    // history_sync_completed flag and re-run a full history sync.
+    this.isFreshLogin = false
     const syncFullHistory = await this.authSettingsService.getSyncFullHistory()
 
     // Create the event bus and wire up all subscribers for this connection

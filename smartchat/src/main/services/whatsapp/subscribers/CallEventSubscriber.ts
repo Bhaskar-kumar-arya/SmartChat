@@ -28,7 +28,10 @@ export class CallEventSubscriber implements IWAEventSubscriber {
           isVideo: call.isVideo ?? false,
           isGroup: call.isGroup ?? false,
           status: call.status,
-          timestamp: BigInt(Math.floor(Date.now() / 1000)) // Fallback, Baileys Call doesn't have timestamp usually
+          // P2-S3-03: prefer the real call time (Baileys populates `call.date`)
+          // so replayed offline events keep their original ordering instead of
+          // all collapsing onto "now".
+          timestamp: BigInt(Math.floor((call.date?.getTime() ?? Date.now()) / 1000))
         })
 
         // Also do LID to PN mapping

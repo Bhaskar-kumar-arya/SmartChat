@@ -43,7 +43,10 @@ export class CallRepository implements ICallRepository {
           isVideo: entry.isVideo,
           isGroup: entry.isGroup,
           status: entry.status,
-          timestamp: entry.timestamp
+          // P2-S3-03: a single call fires several events (offer → ringing →
+          // terminate). Keep the first-seen timestamp (the call's start) rather
+          // than letting each later status update push it forward.
+          timestamp: existing.timestamp < entry.timestamp ? existing.timestamp : entry.timestamp
         }
       })
       return
