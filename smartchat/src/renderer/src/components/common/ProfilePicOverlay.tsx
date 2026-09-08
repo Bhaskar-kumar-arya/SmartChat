@@ -38,43 +38,34 @@ export const ProfilePicOverlay: React.FC<ProfilePicOverlayProps> = ({
   }, [jid])
 
   // BaseModal (F11-05): Escape to close, focus trap + restore, role="dialog",
-  // and a real backdrop-click target (the previous `-z-10` catcher sat behind
-  // the dimmer and never received clicks).
+  // and a real backdrop-click target. Styling is plain CSS (see modals.css) —
+  // this app does not compile Tailwind, so utility classes never applied and
+  // the overlay rendered unstyled in normal document flow.
   return (
-    <BaseModal
-      onClose={onClose}
-      label={name}
-      overlayClassName="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-    >
-      <div className="relative max-w-2xl w-full mx-4 flex flex-col items-center">
-        {/* Header */}
-        <div className="absolute -top-12 left-0 right-0 flex justify-between items-center text-white px-2">
-          <span className="text-lg font-medium"><EmojiText text={name} /></span>
+    <BaseModal onClose={onClose} label={name} overlayClassName="profile-pic-overlay">
+      <div className="profile-pic-dialog">
+        <div className="profile-pic-dialog-header">
+          <span className="profile-pic-dialog-name"><EmojiText text={name} /></span>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="p-1 hover:bg-white/10 rounded-full transition-colors"
+            className="profile-pic-dialog-close"
           >
             <X size={24} />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="bg-zinc-900 rounded-lg overflow-hidden shadow-2xl min-h-[300px] min-w-[300px] flex items-center justify-center">
+        <div className="profile-pic-dialog-body">
           {loading ? (
-            <div className="flex flex-col items-center space-y-4">
-              <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-              <span className="text-zinc-400 text-sm">Loading full image...</span>
+            <div className="profile-pic-dialog-loading">
+              <div className="profile-pic-dialog-spinner" />
+              <span>Loading full image...</span>
             </div>
           ) : imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={name}
-              className="max-h-[80vh] w-auto object-contain animate-in zoom-in-95 duration-300"
-            />
+            <img src={imageUrl} alt={name} className="profile-pic-dialog-image" />
           ) : (
-            <div className="text-zinc-500 flex flex-col items-center p-8">
-              <span className="text-lg">No profile picture available</span>
+            <div className="profile-pic-dialog-empty">
+              <span>No profile picture available</span>
             </div>
           )}
         </div>
