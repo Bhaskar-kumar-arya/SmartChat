@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useAPI } from './context/APIContext'
+import { useToast } from './context/ToastContext'
 import { ChatLayout } from './components/chat'
 import { ModalPortal } from './components/overlays/ModalPortal'
 import { CheckCircle2, Loader2, Circle } from 'lucide-react'
@@ -9,6 +10,7 @@ type AppState = 'initializing' | 'qr' | 'connected' | 'syncing' | 'ready'
 
 export function App() {
   const api = useAPI()
+  const { showError } = useToast()
   const [qr, setQr] = useState<string | null>(null)
   const [appState, setAppState] = useState<AppState>('initializing')
   const [syncProgress, setSyncProgress] = useState<number>(0)
@@ -113,6 +115,8 @@ export function App() {
       console.error('Failed to set sync full history preference:', err)
       // Un-stick the QR pane so the user isn't left on the spinner forever
       setIsRegeneratingQr(false)
+      setSyncFullHistory(!full) // revert the optimistic toggle
+      showError(err, 'Could not change the sync mode. Please try again.')
     }
   }
 

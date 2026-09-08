@@ -3,6 +3,7 @@ import { render, RenderOptions } from '@testing-library/react'
 import { APIProvider } from '@renderer/context/APIContext'
 import { ContributionProvider } from '@renderer/context/ContributionContext'
 import { PresenceProvider } from '@renderer/context/PresenceContext'
+import { ToastProvider } from '@renderer/context/ToastContext'
 import { IAPIService } from '@renderer/services/IAPIService'
 import { createMockApiService } from './mocks/mockApiService'
 
@@ -19,11 +20,13 @@ export function renderWithProviders(
 ) {
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
-      <APIProvider service={apiService}>
-        <ContributionProvider>
-          <PresenceProvider>{children}</PresenceProvider>
-        </ContributionProvider>
-      </APIProvider>
+      <ToastProvider>
+        <APIProvider service={apiService}>
+          <ContributionProvider>
+            <PresenceProvider>{children}</PresenceProvider>
+          </ContributionProvider>
+        </APIProvider>
+      </ToastProvider>
     )
   }
 

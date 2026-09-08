@@ -7,18 +7,21 @@ import { APIProvider } from './context/APIContext'
 import { ContributionProvider } from './context/ContributionContext'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { PresenceProvider } from './context/PresenceContext'
+import { ToastProvider } from './context/ToastContext'
 import { api } from './services/api.service'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <APIProvider service={api}>
-        <ContributionProvider>
-          <PresenceProvider>
-            <App />
-          </PresenceProvider>
-        </ContributionProvider>
-      </APIProvider>
+      <ToastProvider>
+        <APIProvider service={api}>
+          <ContributionProvider>
+            <PresenceProvider>
+              <App />
+            </PresenceProvider>
+          </ContributionProvider>
+        </APIProvider>
+      </ToastProvider>
     </ErrorBoundary>
   </StrictMode>
 )

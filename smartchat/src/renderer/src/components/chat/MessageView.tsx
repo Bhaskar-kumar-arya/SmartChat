@@ -5,6 +5,7 @@ import { formatDate } from '../../utils/formatters'
 import MessageItem from './MessageItem'
 import { emojiToUnified } from '../../utils/emojiUtils'
 import { MessageErrorBoundary } from '../common/MessageErrorBoundary'
+import { useToast } from '../../context/ToastContext'
 import { BaseModal } from '../overlays/BaseModal'
 
 interface MessageViewProps {
@@ -38,6 +39,7 @@ export default function MessageView({
   onScrollToMessage,
   onSelectChat
 }: MessageViewProps) {
+  const { showError } = useToast()
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -179,9 +181,10 @@ export default function MessageView({
         console.error('[MessageView] Failed to load older messages:', err)
         clearTimeout(safety)
         release()
+        showError(err, 'Could not load older messages.')
       }
     }
-  }, [hasMore, onLoadMore])
+  }, [hasMore, onLoadMore, showError])
 
   const handleReply = useCallback((msg: IMessageItem) => {
     onReply(msg)

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { AIChatMessage, AIChatOptions, ToolDefinition, AIContextItem } from '../../../types/aiTypes'
 import { SelectedContext } from '../../../types/chatTypes'
 import { useAPI } from '../../../context/APIContext'
+import { useToast } from '../../../context/ToastContext'
 import { parseToolCall } from '../../../utils/parseToolCall'
 
 interface UseAIStreamProps {
@@ -18,6 +19,7 @@ export function useAIStream({
   saveCurrentMessages
 }: UseAIStreamProps) {
   const api = useAPI()
+  const { showError } = useToast()
   const [messages, setMessages] = useState<AIChatMessage[]>([])
   const messagesRef = useRef<AIChatMessage[]>([])
   const [loading, setLoading] = useState(false)
@@ -324,11 +326,12 @@ export function useAIStream({
       // F8-03: backend may have already torn the stream down / IPC error.
       // The input must not stay stuck disabled behind a Stop button.
       console.error('Failed to abort AI chat:', e)
+      showError(e, 'Could not stop the AI response cleanly.')
     } finally {
       setActiveChannelId(null)
       setLoading(false)
     }
-  }, [activeChannelId, api])
+  }, [activeChannelId, api, showError])
 
   return {
     messages,

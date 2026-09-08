@@ -498,7 +498,7 @@ mid-expiry sweep). Minor constant overhead + a duplicated subscription.
 **Fix idea:** lift presence into a context/provider (or a shared store) consumed
 by both, so there is a single subscription and interval.
 **Status:** fixed
-**Fix status:** deferred in F3 → **fixed in F12-05 (<C3>)**. Presence is now
+**Fix status:** deferred in F3 → **fixed in F12-05 (3db83bb)**. Presence is now
 owned by `context/PresenceContext.tsx` (`PresenceProvider` in `main.tsx`): one
 `onPresenceUpdate` subscription, one 2s interval, one `presences` map shared by
 `ChatLayout` + `ChatList`. `hooks/usePresence.ts` re-exports the context hook so
@@ -2369,7 +2369,7 @@ expiry/refresh tick.
 into context providers with a single subscription/interval; keep per-view hooks
 only for view-local state.
 **Status:** fixed (presence) / partial (extension-manager)
-**Fix status:** fixed in <C3> — presence lifted into `context/PresenceContext.tsx`
+**Fix status:** fixed in 3db83bb — presence lifted into `context/PresenceContext.tsx`
 (`PresenceProvider` added in `main.tsx` inside the provider stack). It owns the
 single `onPresenceUpdate` subscription + single 2s expiry interval; `usePresence`
 is now `useContext(PresenceContext)`, re-exported from `hooks/usePresence.ts` for
@@ -2401,7 +2401,29 @@ invisible in a packaged build.
 **Fix idea:** add a minimal toast/error-surface context and a convention that
 every user-triggered async action reports failure through it; pair with the
 per-action fixes (revert optimistic state, clear stuck flags).
-**Status:** open
+**Status:** fixed (primitive + high-value sites) / partial (remaining sites)
+**Fix status:** fixed in <C4> — new `context/ToastContext.tsx`: `ToastProvider`
+(in `main.tsx`, renders a bottom-centre live-region stack, click- or
+timeout-dismiss, 3–7s per kind) + `useToast()` → `{ showToast, showError,
+dismiss }`. `showError` accepts a string or `Error`. Container only mounts when
+≥1 toast (keeps `container.firstChild === null` in existing tests).
+Wired the high-value user-facing failures:
+ - **F2-01** `App.handleSetSyncFullHistory` — `showError` + revert the optimistic
+   `syncFullHistory` toggle on reject.
+ - **F5-03** `MessageView` `onLoadMore` reject — `showError('Could not load older
+   messages.')` (lock already released).
+ - **F8-03** `useAIStream.abort` reject — `showError('Could not stop the AI
+   response cleanly.')` (flags already cleared).
+New test `tests/context/ToastContext.test.tsx` (show + auto-dismiss; `showError`
+from `Error` → `role="alert"`). typecheck:web green.
+**Remaining `console.error`-only sites — deliberately left (note):** F10-06
+`SettingsModal.handleToggle`, F10-10 `ModalPortal.handleResolve`, F9-09
+`ExtensionManager` install, F9-05 `useExtensionChat.send`, F6-05/F6-10 composer
+over-limit (has an inline error already). The primitive is in place; wiring these
+is mechanical (`const { showError } = useToast()` + one call in the existing
+`catch`) and can be done incrementally without further design. Not blocking —
+each already has a local fallback (revert / inline message / disabled state) from
+its own slice.
 
 ### [F12-07] low — src/renderer/src/main.tsx:11 — `<StrictMode>` double-invoke makes the F1–F11 missing-cleanup effects behave differently in dev vs prod
 **What:** the app is wrapped in `<StrictMode>`, which in dev mounts→unmounts→
