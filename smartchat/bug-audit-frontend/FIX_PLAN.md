@@ -26,7 +26,11 @@ npm run test:run -- src/renderer
 ```
 Record exact pass/fail here before starting.
 
-**Baseline recorded (____-__-__):** _pending_
+**Baseline recorded (2026-09-08):**
+- `npm run typecheck:web` — PASS (exit 0)
+- `npm run test:run -- src/renderer` — 59 files / 255 tests pass; 14 vitest worker-startup timeout errors (environmental — extremely slow transform on this machine, not real test failures). Exit 0.
+
+Fix approach (user directive 2026-09-08): sequential subagents, one per slice F1→F12. Each writes a failing test reproducing the bug where feasible, then fixes all findings in that slice, runs typecheck + that slice's tests, commits to main, updates TRACKER.
 
 ---
 
@@ -62,7 +66,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 
 | ID | Summary | Status |
 |---|---|---|
-| F1-01 | `window.electron` exposes full ipcRenderer + `process.env` | TODO |
+| F1-01 | `window.electron` exposes full ipcRenderer + `process.env` | DONE (57876a2) |
 | F3-01 | useMessages out-of-order response overwrites active chat | TODO |
 | F5-01 | TextMessage markdown identity `urlTransform` → `javascript:`/`data:` link XSS | TODO |
 | F6-01 | Voice note delivered to wrong chat after switch mid-record | TODO |
@@ -75,7 +79,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 
 | Slice | Med count | Status |
 |---|---|---|
-| F1 | 2 | TODO |
+| F1 | 2 | DONE (57876a2) — F1-02, F1-03 + F1-04/05/06 lows |
 | F2 | 2 | TODO |
 | F3 | 6 | TODO |
 | F4 | 2 | TODO |

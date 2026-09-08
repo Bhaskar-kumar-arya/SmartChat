@@ -11,7 +11,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 
 | # | Slice | Status | Last touched | Notes |
 |---|-------|--------|--------------|-------|
-| F1 | Preload bridge & IPC surface | DONE (6 findings) | 2026-09-07 | 1 high, 2 med, 3 low |
+| F1 | Preload bridge & IPC surface | DONE (6 findings) — ALL FIXED in 57876a2 | 2026-09-08 | 1 high, 2 med, 3 low |
 | F2 | App shell, providers, contributions | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F3 | Chat data hooks (backend event sync) | DONE (11 findings) | 2026-09-07 | 1 high, 6 med, 4 low — async races, presence expiry/JID, hierarchy orphans |
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
@@ -78,7 +78,13 @@ covers a handful of handlers, so most channels are fully exercisable this way.
 **Fix idea:** Don't call `exposeElectronAPI()` / expose `electronAPI`. Expose a
 hand-written minimal object: `contextBridge.exposeInMainWorld('electron', {
 process: { versions: process.versions } })`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 57876a2 — `window.electron` is now a hand-written bridge
+exposing only `process.versions`; `index.d.ts` narrowed to
+`{ process: { versions: NodeJS.ProcessVersions } }`; `@electron-toolkit/preload`
+import dropped. Grep confirms `Versions.tsx` is the only `window.electron`
+consumer and nothing references `window.electron.ipcRenderer`. typecheck:web +
+typecheck:node green; `Versions.test.tsx` passes.
 
 ### [F1-02] med — src/renderer/src/services/api.service.ts:213 (handler src/main/ipcHandlers.ts:399)
 **What:** `api.getProviderKeys()` → `get-provider-keys` returns the **plaintext**
@@ -92,7 +98,14 @@ snapshot / devtools. (Backend audit pass 1 follow-up S6-01 already flags leaked
 keys.)
 **Fix idea:** Return masked values or `Record<string, boolean>`; keep the real
 key in main. If a masked preview is needed, send only the last 4 chars.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 57876a2 — `AIService.getProviderKeys()` masks each key
+to `••••<last4>` (or `••••` / `''`), keeping the plaintext in main. Types stay
+`Record<string,string>` so no consumer churn: `AISettingsModal.tsx` still shows
+the (now masked) value in the key input and `setProviderKey` still takes the
+full new value on edit. New unit test in `AIService.test.ts` (`F1-02: … masks
+… last-4 preview`); 13/13 pass. `index.d.ts` / `IAPIService.ts` left as
+`Record<string,string>` (accurate for masked strings).
 
 ### [F1-03] med — src/preload/overlay-preload.ts:42,46-53
 **What:** The overlay preload relays IPC payloads into the guest page with
@@ -108,7 +121,16 @@ overlay payload. (b) The send/receive cross-wiring means a guest listening for
 echoed/duplicated events, and outbound data delivered to an inbound handler.
 **Fix idea:** Post with the guest's actual origin (or at least the app's known
 origin), and keep `send` vs `receive` as distinct one-directional channels.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 57876a2 — overlay-preload now relays via
+`relayToGuest()` which posts to `window.location.origin` (falls back to `'*'`
+only for opaque `file://`/`data:` origins that serialize to `"null"`), and the
+`smartchat:send` / `smartchat:receive` IPC handlers each post only their own
+channel name — no more cross-posting. Manual code review; preload not
+unit-tested. NOTE for F10: `OverlayShell.tsx:107-108` still calls
+`webview.send('smartchat:receive', …)` AND `webview.send('smartchat:send', …)`
+for every inbound payload — the host-side half of the same cross-wiring, left
+for F10 which owns that component.
 
 ### [F1-04] low — src/preload/index.ts:205
 **What:** `aiChatStream` builds its IPC channel id as `` `ai-chat-${Date.now()}` ``
@@ -119,7 +141,10 @@ so their `-chunk` / `-end` / `-error` events collide — chunks from one stream 
 delivered to the other's callbacks, and the first `-end` tears down both.
 **Fix idea:** Append a random suffix or monotonic counter:
 `` `ai-chat-${Date.now()}-${crypto.randomUUID()}` ``.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 57876a2 — channelId is now
+`` `ai-chat-${Date.now()}-${crypto.randomUUID()}` ``. Manual code review;
+typecheck green.
 
 ### [F1-05] low — src/preload/index.ts:204-226
 **What:** The per-stream `-chunk` / `-end` / `-error` listeners registered by
@@ -134,7 +159,14 @@ life of the window. Slow listener growth over a long session with many
 AI chats.
 **Fix idea:** Have `aiChatStream` return a disposer that `removeAllListeners` for
 the three channels; call it from the hook's `useEffect` cleanup and on abort.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 57876a2 — a module-level `aiChatStreamDisposers`
+`Map<channelId, dispose>` is populated per stream; `abortAiChat(channelId)` now
+calls the disposer (removing all three listeners) before invoking the main
+handler, and `-end`/`-error` dispose + delete the map entry. Kept the return
+type as `string` (channelId) to avoid touching the F8 hook. The pure
+never-terminates-and-never-aborted path is inherently unbounded but now the
+common navigate-away path (which triggers abort) cleans up. Manual code review.
 
 ### [F1-06] low — src/preload/panel-preload.ts:64-76
 **What:** `__smartchat.api.events.on(event, handler)` uses the module-level
@@ -147,7 +179,13 @@ later unsubscribes `''` too. The discarded invoke result hides a rejected
 subscription.
 **Fix idea:** Queue `on()` calls until `panelId` is set (resolve in `_init`), and
 surface subscribe failures.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 57876a2 — `on()` pushes its subscribe thunk onto
+`pendingSubscribes` when `panelId` is still `''`; `_init` flushes the queue.
+Subscribe now `.catch`es and logs instead of `void`-ing the invoke. Disposer
+sets a `disposed` flag so a queued subscribe that was cancelled before `_init`
+is skipped, and unsubscribe is a no-op while `panelId` is empty. Manual code
+review; typecheck green.
 
 
 ## Slice F2 — App shell, providers, contributions
