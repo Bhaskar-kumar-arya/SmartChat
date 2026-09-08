@@ -17,7 +17,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F5 | Message view & rendering | DONE (14 findings) | 2026-09-07 | 1 high, 5 med, 8 low — markdown link XSS, template-button URL scheme, pagination lock-up, reaction self-JID |
 | F6 | Message input & composition | DONE (14 findings) | 2026-09-07 | 1 high, 6 med, 7 low — voice note mis-delivery on chat switch, mouse mention pick broken, stale mentions |
-| F7 | Search UI | DONE (8 findings) — FIXED (737b13d + 3c2ba28) | 2026-09-08 | 1 high, 3 med, 4 low — all fixed; F7-06 select-all cap deferred, F7-08 sync-clear partial |
+| F7 | Search UI | DONE (8 findings) — FIXED (737b13d + 96e8b6a) | 2026-09-08 | 1 high, 3 med, 4 low — all fixed; F7-06 select-all cap deferred, F7-08 sync-clear partial |
 | F8 | AI chat UI | DONE (13 findings) | 2026-09-08 | 1 high, 6 med, 6 low — no stream abort on session switch (answer lost), citation IPC storm, per-keystroke key persist; markdown XSS checked clean |
 | F9 | Extensions / plugins UI | DONE (12 findings) | 2026-09-08 | 4 med, 8 low — plugin webview unsandboxed + no will-navigate lock, all sidebar-panel webviews mounted at once, stale panel theme after toggle, extension-chat history race; plugin content rendered as text (no XSS sink) |
 | F10 | Overlays & modals | DONE (13 findings) | 2026-09-08 | 6 med, 7 low — webview insecure-content pref, send/receive cross-wiring, no Escape/focus-trap on common modals, required-checkbox validation gap, optimistic-toggle no-revert |
@@ -1186,7 +1186,7 @@ the range is off by up to a day at both ends.
 **Fix idea:** build the bounds from local time — `fromDate` → local 00:00:00,
 `toDate` → local 23:59:59.999 — before `toISOString()`.
 **Status:** fixed
-**Fix status:** fixed in 3c2ba28 — new `utils/dateRange.ts`
+**Fix status:** fixed in 96e8b6a — new `utils/dateRange.ts`
 (`toLocalDayStartISO` / `toLocalDayEndISO`) builds the bounds from local
 time; `toDate` is now the inclusive end-of-day. Wired into `ChatSearchSidebar`
 (effect) and `SearchFiltersPanel` (date inputs + quick ranges). New
@@ -1205,7 +1205,7 @@ without the `.split` but still anchors "today" at local-midnight→UTC.
 (`` `${y}-${pad(m)}-${pad(d)}` ``) rather than round-tripping through
 `toISOString()`.
 **Status:** fixed
-**Fix status:** fixed in 3c2ba28 — `dateRange.ts#formatLocalDate` /
+**Fix status:** fixed in 96e8b6a — `dateRange.ts#formatLocalDate` /
 `isoToLocalDateInput` format from local getters. `ChatSearchSidebar.setQuickRange`
 and `SearchFiltersPanel` (quick ranges + `type=date` value) no longer round-trip
 through `toISOString().split('T')[0]`. Covered by `dateRange.test.ts`.
@@ -1223,7 +1223,7 @@ also churns a new object on each of these no-op clears.
 **Fix idea:** delete keys instead of assigning `undefined` (or compute "active"
 from `filters.jids?.length || filters.fromDate || filters.toDate`).
 **Status:** fixed
-**Fix status:** fixed in 3c2ba28 — both applied. `SearchFiltersPanel` routes
+**Fix status:** fixed in 96e8b6a — both applied. `SearchFiltersPanel` routes
 every change through `pruneFilters()` which drops empty `jids` / falsy
 `fromDate` / `toDate`, so a fully-cleared filter set serializes back to `{}`
 (also stops the `useSearch` dep churn noted in F3-09). `ChatList`'s
@@ -1240,7 +1240,7 @@ the first time any chat is selected, and the box can briefly retain a
 browser-set state out of sync with `filters`.
 **Fix idea:** `checked={!!filters.jids?.includes(chat.jid)}`.
 **Status:** fixed
-**Fix status:** fixed in 3c2ba28 — `checked={!!filters.jids?.includes(chat.jid)}`;
+**Fix status:** fixed in 96e8b6a — `checked={!!filters.jids?.includes(chat.jid)}`;
 the checkbox is always controlled now.
 
 ### [F7-06] low — src/renderer/src/components/chat/SearchFiltersPanel.tsx:23-48, 87-140
@@ -1254,7 +1254,7 @@ first 100 and the user gets no indication the rest were skipped.
 **Fix idea:** add a `mousedown` outside-click listener (removed on unmount) +
 `Escape`; either raise/remove the 100 cap for select-all or surface the count.
 **Status:** fixed
-**Fix status:** fixed in 3c2ba28 (outside-click/Escape) — `SearchFiltersPanel`
+**Fix status:** fixed in 96e8b6a (outside-click/Escape) — `SearchFiltersPanel`
 adds `mousedown` + `keydown(Escape)` listeners while the dropdown is open,
 removed on close/unmount, closing it on an outside click or Escape (via a
 `custom-dropdown` ref). New test "closes the chat dropdown on Escape (F7-06)".
@@ -1275,7 +1275,7 @@ score shown, lost highlight); clicking such a row opens the chat but
 composite key (`msg-${item.jid}-${idx}`) and skip the jump when `messageId` is
 absent.
 **Status:** fixed
-**Fix status:** fixed in 3c2ba28 — `SearchResultsPanel` message rows use
+**Fix status:** fixed in 96e8b6a — `SearchResultsPanel` message rows use
 `` `msg-${item.messageId}` `` when present, else `` `msg-${item.jid}-${idx}` ``,
 and pass `item.messageId || null` to `onSelectChat` so a `messageId`-less row
 opens the chat without a jump (`ChatLayout` already no-ops a null target).
