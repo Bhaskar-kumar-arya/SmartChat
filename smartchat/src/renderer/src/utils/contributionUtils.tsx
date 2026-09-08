@@ -21,13 +21,15 @@ export function mapSubMenuItems(
   baseContext: Record<string, unknown>,
   executeContribution: (opts: ExecuteContributionOpts) => Promise<unknown>
 ): Array<{ label: string; icon?: React.ReactNode; onClick?: () => void; subMenu?: any[] }> {
-  return subItems.map((sub) => ({
+  return subItems.map((sub) => {
+    const hasSubMenu = Array.isArray(sub.subMenu) && sub.subMenu.length > 0
+    return {
     label: sub.label,
     icon: sub.icon ? <PluginIcon icon={sub.icon} /> : undefined,
-    subMenu: sub.subMenu
-      ? mapSubMenuItems(sub.subMenu, action, slot, baseContext, executeContribution)
+    subMenu: hasSubMenu
+      ? mapSubMenuItems(sub.subMenu!, action, slot, baseContext, executeContribution)
       : undefined,
-    onClick: sub.subMenu
+    onClick: hasSubMenu
       ? undefined
       : () => {
           executeContribution({
@@ -37,5 +39,6 @@ export function mapSubMenuItems(
             context: { ...baseContext, ...sub.args }
           }).catch(console.error)
         }
-  }))
+    }
+  })
 }

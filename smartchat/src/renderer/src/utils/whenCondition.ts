@@ -34,14 +34,18 @@ export function evaluateWhen(
   }
 
   // Leaf comparison
-  const ctxValue = (context as unknown as Record<string, unknown>)[condition.field]
+  const ctx = context as unknown as Record<string, unknown>
+  const hasField = condition.field in ctx
+  const ctxValue = ctx[condition.field]
   const { op, value } = condition
 
   switch (op) {
     case 'eq':
       return ctxValue === value
     case 'neq':
-      return ctxValue !== value
+      // A missing field is not a match — asymmetric-negative gates ('neq'/'nin')
+      // should not pass just because the context lacks the field.
+      return hasField && ctxValue !== value
     case 'gt':
       return typeof ctxValue === 'number' && typeof value === 'number' && ctxValue > value
     case 'gte':
@@ -53,7 +57,7 @@ export function evaluateWhen(
     case 'in':
       return Array.isArray(value) && value.includes(ctxValue as string)
     case 'nin':
-      return Array.isArray(value) && !value.includes(ctxValue as string)
+      return hasField && Array.isArray(value) && !value.includes(ctxValue as string)
     default:
       return true
   }

@@ -14,10 +14,13 @@ export function ContributionProvider({ children }: ContributionProviderProps) {
 
   useEffect(() => {
     let mounted = true
+    // If a live update lands before the initial fetch resolves (plugin activating
+    // during startup), the fetch must not clobber the newer snapshot.
+    let updateApplied = false
 
     api.getContributions()
       .then((data) => {
-        if (mounted && data) {
+        if (mounted && data && !updateApplied) {
           setSnapshot(data)
         }
       })
@@ -27,6 +30,7 @@ export function ContributionProvider({ children }: ContributionProviderProps) {
 
     const unsubscribe = api.onContributionsUpdated((updatedSnapshot) => {
       if (mounted && updatedSnapshot) {
+        updateApplied = true
         setSnapshot(updatedSnapshot)
       }
     })

@@ -26,11 +26,15 @@ export function App() {
 
   // 1. Initial configuration load
   useEffect(() => {
+    let alive = true
     api.getSyncFullHistory().then((full: boolean) => {
-      setSyncFullHistory(full)
+      if (alive) setSyncFullHistory(full)
     }).catch(err => {
       console.error('Failed to get sync full history preference:', err)
     })
+    return () => {
+      alive = false
+    }
   }, [])
 
   // 2. Auth & Sync listeners
@@ -102,7 +106,14 @@ export function App() {
     setIsRegeneratingQr(true)
     setQr(null)
     setSyncFullHistory(full)
-    await api.setSyncFullHistory(full)
+    try {
+      await api.setSyncFullHistory(full)
+      // isRegeneratingQr stays true until the backend re-emits a QR (onWaQr resets it)
+    } catch (err) {
+      console.error('Failed to set sync full history preference:', err)
+      // Un-stick the QR pane so the user isn't left on the spinner forever
+      setIsRegeneratingQr(false)
+    }
   }
 
   // Define steps (placed before any early returns to satisfy React Hook rules)
@@ -315,6 +326,14 @@ export function App() {
                 </div>
               </div>
             </div>
+          </div>
+        ) : appState === 'connected' ? (
+          <div className="init-container">
+            <div className="init-spinner-wrapper">
+              <div className="init-spinner" />
+              <div className="init-spinner-glow" />
+            </div>
+            <p className="init-text">Reconnecting and catching up on missed messages…</p>
           </div>
         ) : (
           <div className="init-container">

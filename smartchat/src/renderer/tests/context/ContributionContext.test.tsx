@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { useState } from 'react'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import { APIProvider } from '@renderer/context/APIContext'
 import { createMockApiService } from '../mocks/mockApiService'
@@ -131,5 +132,78 @@ describe('ContributionContext & useContributions', () => {
 
     unmount()
     expect(unsubscribeFn).toHaveBeenCalled()
+  })
+
+  // F2-02
+  it('does not let a slow initial fetch clobber a snapshot already set by an update event', async () => {
+    let resolveFetch: (v: ContributionRegistrySnapshot) => void = () => {}
+    let updateCallback: ((snapshot: ContributionRegistrySnapshot) => void) | undefined
+
+    const staleSnapshot: ContributionRegistrySnapshot = {
+      'chat-action': [{ pluginId: 'p', id: 'old', label: 'Old' }]
+    }
+    const freshSnapshot: ContributionRegistrySnapshot = {
+      'chat-action': [
+        { pluginId: 'p', id: 'old', label: 'Old' },
+        { pluginId: 'p', id: 'new', label: 'New' }
+      ]
+    }
+
+    const apiService = createMockApiService({
+      getContributions: vi.fn().mockImplementation(
+        () => new Promise<ContributionRegistrySnapshot>((res) => { resolveFetch = res })
+      ),
+      onContributionsUpdated: vi.fn().mockImplementation((cb) => {
+        updateCallback = cb
+        return vi.fn()
+      })
+    })
+
+    render(
+      <APIProvider service={apiService}>
+        <ContributionProvider>
+          <ChatActionConsumer />
+        </ContributionProvider>
+      </APIProvider>
+    )
+
+    // Update event arrives first...
+    act(() => updateCallback?.(freshSnapshot))
+    expect(screen.getByTestId('action-count')).toHaveTextContent('2')
+
+    // ...then the slow initial fetch resolves with an older snapshot.
+    await act(async () => {
+      resolveFetch(staleSnapshot)
+    })
+
+    expect(screen.getByTestId('action-count')).toHaveTextContent('2')
+  })
+
+  // F2-06
+  it('returns a stable reference for an unpopulated slot across re-renders', () => {
+    const seen: unknown[] = []
+    function Probe() {
+      const panels = useContributions('sidebar-panel')
+      seen.push(panels)
+      const [, force] = useState(0)
+      ;(Probe as any)._force = force
+      return null
+    }
+
+    const apiService = createMockApiService({
+      getContributions: vi.fn().mockReturnValue(new Promise(() => {}))
+    })
+
+    render(
+      <APIProvider service={apiService}>
+        <ContributionProvider>
+          <Probe />
+        </ContributionProvider>
+      </APIProvider>
+    )
+
+    act(() => (Probe as any)._force((n: number) => n + 1))
+    expect(seen.length).toBeGreaterThanOrEqual(2)
+    expect(seen[0]).toBe(seen[seen.length - 1])
   })
 })
