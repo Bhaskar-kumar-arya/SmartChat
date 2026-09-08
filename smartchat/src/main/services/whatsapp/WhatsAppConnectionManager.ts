@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import { IDataWipeService } from '../IDataWipeService'
 import type { IWAEventBus, WAEventBusFactory } from './IWAEventBus'
 import { createSubscribers, SubscriberServices } from './subscribers'
+import type { IWAEventSubscriber } from './subscribers/IWAEventSubscriber'
 import { IAuthSettingsService } from '../auth/IAuthSettingsService'
 import { IChatRepository } from '../chats/IChatRepository'
 import type { IEmbeddingOperationalControl } from '../search/IEmbeddingService'
@@ -15,6 +16,11 @@ export class WhatsAppConnectionManager {
   private currentSock: WAWorkerBridge | null = null
   private mainWindow: BrowserWindow | null = null
   private currentBus: IWAEventBus | null = null
+  // S13-05: retained so every subscriber gets an explicit `dispose()` on
+  // reconnect/shutdown. `bus.removeAllListeners()` alone only suffices while no
+  // subscriber holds a non-bus resource (timer, fs.watch, app/ipcMain listener);
+  // the moment one does, relying on listener removal leaks it per reconnect.
+  private currentSubscribers: IWAEventSubscriber[] = []
   private isFreshLogin = false
   private busCreatedCallback: ((bus: IWAEventBus) => void) | null = null
 
@@ -105,6 +111,7 @@ export class WhatsAppConnectionManager {
     }
 
     // Tear down previous event bus and subscribers
+    this.disposeSubscribers()
     if (this.currentBus) {
       this.currentBus.removeAllListeners()
       this.currentBus = null
@@ -159,7 +166,7 @@ export class WhatsAppConnectionManager {
     // Create the event bus and wire up all subscribers for this connection
     const bus = this.eventBusFactory()
     this.currentBus = bus
-    createSubscribers(bus, this.deps, () => this.mainWindow)
+    this.currentSubscribers = createSubscribers(bus, this.deps, () => this.mainWindow)
     // Notify any listeners that a fresh bus is available (e.g. to replay plugin subscriptions)
     this.busCreatedCallback?.(bus)
 
@@ -186,10 +193,23 @@ export class WhatsAppConnectionManager {
       console.warn('[WhatsAppConnectionManager] Error stopping worker bridge during shutdown:', err)
     }
     this.currentSock = null
+    this.disposeSubscribers()
     if (this.currentBus) {
       this.currentBus.removeAllListeners()
       this.currentBus = null
     }
+  }
+
+  /** S13-05: dispose every subscriber from the previous connection, then drop them. */
+  private disposeSubscribers(): void {
+    for (const s of this.currentSubscribers) {
+      try {
+        s.dispose()
+      } catch (err) {
+        console.error('[WhatsAppConnectionManager] Subscriber dispose() threw:', err)
+      }
+    }
+    this.currentSubscribers = []
   }
 
   public skipSync(): void {

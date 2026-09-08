@@ -22,16 +22,41 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 10 | App IPC & auth | DONE (7 findings) | 2026-09-08 | 0 crit, 0 high, 3 med, 4 low — all 7 fixed 2026-09-08 (slice 10) |
 | 11 | apiServer, search, notification, calls, audio | DONE (10 findings) | 2026-09-08 | 0 crit, 1 high, 2 med, 7 low — all 10 fixed 2026-09-08 (slice 11); S11-01 embedding pipeline restored + gated, S11-02/03 correctness+perf, runtime model-load not unit-tested |
 | 12 | SDK, tools, data wipe, domain, db, protocol | DONE (11 findings) | 2026-09-08 | 0 crit, 0 high, 4 med, 7 low — all 11 fixed 2026-09-08 (slice 12); tools row-cap + SQL denylist tightening, DataWipe partial-wipe now throws, LocalFileStorage/SecureFileRegistry path hardening, SDK manifest gate + channel timeout/timer-leak fixes, messages API signature uniformity |
-| 13 | Cross-cutting pass | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
+| 13 | Cross-cutting pass | DONE (5 findings) | 2026-09-08 | 0 crit, 0 high, 2 med, 3 low — all 5 fixed 2026-09-08 (slice 13) |
 
 ## Summary counts
+
+Reconciled 2026-09-08 after the fix phase completed — totals across all 13 slices.
 
 | Severity | Count |
 |----------|-------|
 | crit | 0 |
-| high | 0 |
-| med  | 6 |
-| low  | 10 |
+| high | 1 |
+| med  | 30 |
+| low  | 59 |
+| **total** | **90** |
+
+Per-slice severity breakdown (crit / high / med / low):
+
+| Slice | crit | high | med | low | total |
+|-------|------|------|-----|-----|-------|
+| 1  | 0 | 0 | 2 | 3 | 5  |
+| 2  | 0 | 0 | 3 | 5 | 8  |
+| 3  | 0 | 0 | 2 | 3 | 5  |
+| 4  | 0 | 0 | 2 | 4 | 6  |
+| 5  | 0 | 0 | 2 | 4 | 6  |
+| 6  | 0 | 0 | 1 | 5 | 6  |
+| 7  | 0 | 0 | 2 | 6 | 8  |
+| 8  | 0 | 0 | 3 | 4 | 7  |
+| 9  | 0 | 0 | 2 | 4 | 6  |
+| 10 | 0 | 0 | 3 | 4 | 7  |
+| 11 | 0 | 1 | 2 | 7 | 10 |
+| 12 | 0 | 0 | 4 | 7 | 11 |
+| 13 | 0 | 0 | 2 | 3 | 5  |
+| **all** | **0** | **1** | **30** | **59** | **90** |
+
+Fix disposition: 89 fixed, 1 wontfix (P2-S6-04, justified in situ). All fixes
+landed on `ci/fix-mac-dmg-mirror` across slice commits 1–13.
 
 ---
 
@@ -1538,7 +1563,16 @@ still mid-transaction on the shared SQLite file.
 **Fix idea:** wrap each `host.unload(id)` in `dispose()`'s loop in try/catch
 (log + continue); consider running WA worker `shutdown()` before kernel dispose
 so a hung plugin can't strand an active socket/transaction.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** the per-iteration guard is now in place — `dispose()`'s loop wraps each
+`host.unload(id)` in `.catch(log)` (landed with S8-03), and `index.ts`'s
+`will-quit` cleanup guards `bootResultForShutdown.dispose()` with its own
+`.catch`, so one plugin's failing `deactivate()` no longer aborts `unload` for
+the rest (their `onPluginUnload` / `contributionRegistry.unregisterAll` /
+`channel.destroy()` / storage flush all still run). The cleanup chain already
+calls `waConnectionManager.shutdown()` (graceful `worker.terminate()`) as a
+guarded step and the whole sequence is bounded by `HARD_TIMEOUT_MS`; kernel
+dispose stays first so plugin storage flushes complete before workers stop.
 
 ### [P2-S13-02] low — src/main/index.ts:175 + src/main/kernel/KernelBootstrapper.ts:80 + src/main/protocol/pluginProtocol.ts:89-95
 **What:** `registerPluginProtocol(extDir)` is called from `app.whenReady()` in
@@ -1558,7 +1592,12 @@ registered.
 **Fix idea:** register the protocol once (drop the call from `boot()` or from
 index.ts), and register the `web-contents-created` app listener a single time
 guarded by a module flag.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `pluginProtocol.ts` now guards the `Electron.app.on('web-contents-created',
+…)` registration with a module-level `appWebContentsListenerRegistered` flag, so
+the second `registerPluginProtocol()` call (from `KernelBootstrapper.boot()`,
+after `index.ts` already registered it) no longer adds a duplicate permanent
+app-level listener. `resetRegisteredSessions()` clears the flag for tests.
 
 ### [P2-S13-03] med — src/main/workers/bridge/WAWorkerBridge.ts:137-157 vs src/main/services/whatsapp/WAEventBus.ts:56-68
 **What:** `WAEventBus.emit` awaits its handler chain sequentially **within one
@@ -1579,7 +1618,16 @@ outrun the main bus without bound.
 **Fix idea:** serialise emits in the bridge (chain them on a promise queue, or
 make the `message` handler `async` and `await bus.emit`), so the per-call ordering
 guarantee extends across the event stream.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `WAWorkerBridge` now holds a private `emitChain: Promise<void>` and the
+`domain_event` branch chains each `bus.emit(...)` onto it
+(`this.emitChain = this.emitChain.then(() => bus.emit(...).catch(log))`), so
+event B's handler chain cannot start until event A's has fully resolved —
+`WAEventBus.emit`'s per-call sequential guarantee now extends across the whole
+worker event stream. `reply` / `reply_error` correlation handling is untouched
+(stays immediate). Regression test added in
+`tests/workers/bridge/WAWorkerBridge.test.ts` ("serialises bus.emit across
+successive worker messages").
 
 ### [P2-S13-04] low — src/main/index.ts:274 + src/main/auth.ts:126-175
 **What:** `initVectorDb(services.vectorSyncService)` is called fire-and-forget
@@ -1600,7 +1648,14 @@ startup sequence has no "vector store ready" barrier.
 the deep-search path, or expose a ready flag that `SearchService.deepSearch` and
 `VectorSyncService.sync` check and surface as "search initialising" instead of
 empty results.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `index.ts`'s `app.whenReady()` handler is now `async` and `await`s
+`initVectorDb(services.vectorSyncService)` before `apiServer.start()` /
+`createWindow()`. `initVectorDb` catches internally and always resolves (never
+rejects), setting the `vectorDbReady` flag (S10-04), so the `vec_messages` table
+create + self-heal + initial `VectorSyncService.sync()` now complete before any
+`deepSearch` IPC or the WA worker's parallel sync can query the table
+mid-`CREATE`/`DROP`. The startup sequence now has a real vector-store barrier.
 
 ### [P2-S13-05] low — src/main/services/whatsapp/WhatsAppConnectionManager.ts:155-160 + src/main/services/whatsapp/subscribers/index.ts:57-77
 **What:** `connect()` calls `createSubscribers(bus, this.deps, …)` on **every**
@@ -1620,12 +1675,28 @@ dispose is meant to run.
 **Fix idea:** keep the subscriber array on the instance and call
 `subscribers.forEach(s => s.dispose())` in `connect()` (before swapping buses)
 and in `shutdown()`, instead of relying solely on `removeAllListeners()`.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `WhatsAppConnectionManager` now keeps the returned subscriber array on
+`this.currentSubscribers` and a new private `disposeSubscribers()` calls
+`s.dispose()` (each in try/catch) on every one, invoked in `connect()` before the
+bus swap and in `shutdown()` — so a subscriber that later acquires a non-bus
+resource (timer, `fs.watch`, `app`/`ipcMain` listener) is released per reconnect
+instead of leaked. Regression test:
+`tests/services/whatsapp/WhatsAppConnectionManager.subscriberDispose.test.ts`.
 
 ---
 
 # Fix phase (after audit)
 
-Not started. When it starts: commit directly to `main`, test-first where
-feasible, manually verify in the running app for IPC/socket/lifecycle bugs,
-record a test/typecheck baseline first. See `FIX_PLAN.md`.
+**COMPLETE 2026-09-08.** All 13 slices fixed via subagents, one commit per slice
+on `ci/fix-mac-dmg-mirror` (slices 1–9: …e579cc3, 3c19700, 36da98f; slices 10–12:
+fe97bf2, b7cf2ca, 25dfb90; slice 13 + this reconciliation: final commit).
+
+Outcome: 90 findings — 89 fixed, 1 wontfix (P2-S6-04, renderer-loop turn cap, not
+a backend defect). New SDK capabilities added along the way: `ui:modal` (slice 7).
+Regression tests were added where the bug class allowed; lifecycle/ordering bugs
+(slice 13) are covered at unit level (emit serialisation, subscriber disposal).
+
+Known unrelated failures at completion: 3 pre-existing kernel e2e tests
+(declarative-modal-overlay-plugin, declarative-modal-plugin,
+voice-transcriber-overlay) — confirmed unrelated via `git stash`.

@@ -12,8 +12,19 @@ type SessionLike = Partial<Electron.Session> & {
 
 let registeredSessions = new WeakSet<object>()
 
+/**
+ * `registerPluginProtocol` is called from both `app.whenReady()` (index.ts) and
+ * `KernelBootstrapper.boot()` with the same extensions path. The `handle()` call
+ * is deduped per-session by `registeredSessions`, but the app-level
+ * `web-contents-created` listener is not — without this flag every call added
+ * another permanent listener, tripping Node's `MaxListenersExceededWarning` once
+ * a few webviews/windows had existed. (S13-02)
+ */
+let appWebContentsListenerRegistered = false
+
 export function resetRegisteredSessions(): void {
   registeredSessions = new WeakSet<object>()
+  appWebContentsListenerRegistered = false
 }
 
 export function registerPluginProtocolForSession(targetSession: SessionLike, extensionsPath: string): void {
@@ -86,7 +97,8 @@ export function registerPluginProtocol(extensionsPath: string): void {
     registerPluginProtocolForSession({ protocol: Electron.protocol }, extensionsPath)
   }
 
-  if (Electron.app && typeof Electron.app.on === 'function') {
+  if (Electron.app && typeof Electron.app.on === 'function' && !appWebContentsListenerRegistered) {
+    appWebContentsListenerRegistered = true
     Electron.app.on('web-contents-created', (_, contents) => {
       if (contents.getType() === 'webview' && contents.session) {
         registerPluginProtocolForSession(contents.session, extensionsPath)

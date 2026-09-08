@@ -168,7 +168,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.electron.smartchat')
 
   // Register plugin protocol handler BEFORE creating windows or loading webviews
@@ -275,7 +275,11 @@ app.whenReady().then(() => {
   })
 
   registerIpcHandlers(services, getSock, waConnectionManager, secureRegistry)
-  initVectorDb(services.vectorSyncService)
+  // S13-04: await the vector-store barrier before starting the API server / deep
+  // search path. `initVectorDb` catches internally and resolves (never rejects),
+  // setting `vectorDbReady`, so a fresh/self-healing `vec_messages` table can't be
+  // queried mid-CREATE by a `deepSearch` IPC or a parallel `VectorSyncService.sync`.
+  await initVectorDb(services.vectorSyncService)
 
   try {
     services.apiServer.start()

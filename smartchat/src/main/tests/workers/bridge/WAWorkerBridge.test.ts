@@ -68,7 +68,7 @@ describe('WAWorkerBridge', () => {
     }))
   })
 
-  it('should route domain events to bus and window emitter', () => {
+  it('should route domain events to bus and window emitter', async () => {
     bridge.start(true, true)
 
     ;(Worker as any)._triggerMessage({
@@ -80,6 +80,8 @@ describe('WAWorkerBridge', () => {
     })
 
     expect(mockWindowEmitter.send).toHaveBeenCalledWith('wa-qr', 'qr-code-data')
+    // bus.emit is chained on emitChain (P2-S13-03) — resolves on a later microtask.
+    await new Promise((r) => setTimeout(r, 0))
     expect(mockBus.emit).toHaveBeenCalledWith('wa-qr', 'qr-code-data')
   })
 
@@ -149,6 +151,28 @@ describe('WAWorkerBridge', () => {
     await vi.advanceTimersByTimeAsync(30_000)
     expect(await settled).toMatch(/timed out/i)
     vi.useRealTimers()
+  })
+
+  it('serialises bus.emit across successive worker messages (P2-S13-03)', async () => {
+    let resolveFirst: () => void = () => {}
+    mockBus.emit
+      .mockImplementationOnce(() => new Promise<void>((r) => { resolveFirst = r }))
+      .mockResolvedValue(undefined)
+
+    bridge.start(true, true)
+
+    ;(Worker as any)._triggerMessage({ type: 'domain_event', payload: { event: 'message:incoming', data: { id: 'a' } } })
+    ;(Worker as any)._triggerMessage({ type: 'domain_event', payload: { event: 'message:edited', data: { id: 'a' } } })
+
+    // First emit is in flight; the second must not have started yet.
+    await Promise.resolve()
+    expect(mockBus.emit).toHaveBeenCalledTimes(1)
+    expect(mockBus.emit).toHaveBeenNthCalledWith(1, 'message:incoming', expect.objectContaining({ id: 'a' }))
+
+    resolveFirst()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mockBus.emit).toHaveBeenCalledTimes(2)
+    expect(mockBus.emit).toHaveBeenNthCalledWith(2, 'message:edited', expect.objectContaining({ id: 'a' }))
   })
 
   it('emits wa-disconnected and invokes the supervisor on unexpected worker exit (S13-04)', () => {

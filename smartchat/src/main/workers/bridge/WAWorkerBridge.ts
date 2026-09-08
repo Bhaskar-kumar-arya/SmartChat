@@ -36,6 +36,15 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
    *  unexpected-exit supervision path. */
   private stopping = false;
   private unexpectedExitHandler: ((code: number) => void) | null = null;
+  /**
+   * Serialises `bus.emit(...)` calls across successive worker messages (S13-03).
+   * `WAEventBus.emit` awaits its handler chain sequentially *within one call*, but
+   * the `worker.on('message')` listener returns immediately, so without this queue
+   * event B's handler chain could start (and finish) while event A's is still in
+   * flight — e.g. an edited/decrypted/reaction update racing ahead of the insert
+   * broadcast during a reconnect catch-up burst.
+   */
+  private emitChain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly workerPath: string,
@@ -152,9 +161,13 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
                 busPayload = { ...(data as object), sock: this };
               }
             }
-            bus.emit(typedEventName, busPayload as WAEventMap[typeof typedEventName]).catch((err: unknown) => {
-              console.error(`[WAWorkerBridge] Failed to emit domain event ${domainEvent} on Main process bus:`, err);
-            });
+            // Chain onto emitChain so the per-call ordering guarantee of
+            // WAEventBus.emit extends across the whole worker event stream. (S13-03)
+            this.emitChain = this.emitChain.then(() =>
+              bus.emit(typedEventName, busPayload as WAEventMap[typeof typedEventName]).catch((err: unknown) => {
+                console.error(`[WAWorkerBridge] Failed to emit domain event ${domainEvent} on Main process bus:`, err);
+              })
+            );
           }
           break;
         }
