@@ -1,26 +1,24 @@
 import { useCallback } from 'react'
+import { navigate } from '../utils/navigationBus'
 
 /**
  * Provides imperative navigation methods usable from any component
  * without coupling to ChatLayout's internal state.
  *
- * Mechanism: emits custom DOM events that ChatLayout listens to.
- * This avoids prop-drilling across the AI sidebar boundary.
+ * Mechanism: routes through the app navigation bus (`utils/navigationBus`),
+ * which retains the last intent and replays it when a listener mounts — so an
+ * intent fired before `ChatLayout` is mounted (or during its listener churn on
+ * a chat switch) is no longer dropped (F12-02). Supersedes the minimal F4-04
+ * fix to the raw window-event listener.
  */
 export function useChatNavigation() {
   const navigateToChat = useCallback(async (chatJid: string): Promise<void> => {
-    // We emit a synthetic event that ChatLayout's existing listener handles.
-    window.dispatchEvent(
-      new CustomEvent('smartchat:open-chat', { detail: { jid: chatJid } })
-    )
+    navigate({ jid: chatJid })
   }, [])
 
   const navigateToMessage = useCallback(
     async (chatJid: string, messageId: string): Promise<void> => {
-      // Step 1: open the chat (reuse existing event)
-      window.dispatchEvent(
-        new CustomEvent('smartchat:open-chat', { detail: { jid: chatJid, targetMessageId: messageId } })
-      )
+      navigate({ jid: chatJid, targetMessageId: messageId })
     },
     []
   )

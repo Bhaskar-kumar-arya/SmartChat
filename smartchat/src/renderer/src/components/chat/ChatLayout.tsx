@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { subscribeNavigation } from '../../utils/navigationBus'
 import { useAPI } from '../../context/APIContext'
 import ChatList from './ChatList'
 import MessageView from './MessageView'
@@ -156,13 +157,21 @@ export default function ChatLayout() {
     }
   }, [handleSelectChat, handleOpenExtensionChat, api])
 
+  // Keep `activeJid` readable from the navigation listener without making the
+  // subscription effect depend on it (it changes on every chat switch — an
+  // intent dispatched in the teardown/re-add gap would be lost). F12-02.
+  const activeJidRef = useRef(activeJid)
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { jid, targetMessageId: newTarget } = (e as CustomEvent<{ jid: string; targetMessageId?: string }>).detail
+    activeJidRef.current = activeJid
+  }, [activeJid])
+
+  useEffect(() => {
+    return subscribeNavigation((intent) => {
+      const { jid, targetMessageId: newTarget } = intent
       const chatName = '' // ChatList resolves name from its own data
-      
+
       // If we are already in this chat and just need to jump to a message
-      if (activeJid === jid && newTarget) {
+      if (activeJidRef.current === jid && newTarget) {
         jumpToMessage(newTarget)
           .then(() => {
             setTargetMessageId(newTarget)
@@ -170,18 +179,14 @@ export default function ChatLayout() {
           .catch((err) => {
             console.error('Failed to jump to message:', err)
           })
+      } else if (jid.startsWith('extension:')) {
+        const extId = jid.replace('extension:', '')
+        handleOpenExtensionChat(extId, chatName)
       } else {
-        if (jid.startsWith('extension:')) {
-          const extId = jid.replace('extension:', '')
-          handleOpenExtensionChat(extId, chatName)
-        } else {
-          handleSelectChat(jid, chatName, null, newTarget ?? null)
-        }
+        handleSelectChat(jid, chatName, null, newTarget ?? null)
       }
-    }
-    window.addEventListener('smartchat:open-chat', handler)
-    return () => window.removeEventListener('smartchat:open-chat', handler)
-  }, [handleSelectChat, handleOpenExtensionChat, activeJid, jumpToMessage])
+    })
+  }, [handleSelectChat, handleOpenExtensionChat, jumpToMessage])
 
   useEffect(() => {
     if (!activeJid) return

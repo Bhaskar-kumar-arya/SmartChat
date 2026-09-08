@@ -587,6 +587,11 @@ still clear/indicate on failure.
 `smartchat:open-chat` effect deps; `jumpToMessage(newTarget)` now has a
 `.catch` that logs the failure. Kept minimal per note (F12-02 will rework the
 bus). typecheck green.
+**Reconciled (F12-02):** superseded — the raw `window.addEventListener(
+'smartchat:open-chat')` effect in `ChatLayout` is gone, replaced by
+`subscribeNavigation` from `utils/navigationBus` in a stable effect. The lying
+dep array is moot (no `activeJid` dep; `activeJid` read from a ref) and the
+`jumpToMessage` `.catch` is carried over. See F12-02 fix status.
 **Status:** fixed
 
 ### [F4-05] low — ExtensionChatListItem.tsx:27,33
@@ -2269,7 +2274,7 @@ nested boundaries around (a) each `MessageView` row / the message list, (b) each
 AI bubble / the AI list, (c) `SidebarPluginMainStage` / panel webviews, so one
 bad item degrades to a placeholder instead of taking the pane.
 **Status:** fixed
-**Fix status:** fixed in <C1> — new generic
+**Fix status:** fixed in 9fc47fb — new generic
 `components/common/ErrorBoundary.tsx` (full-screen recoverable fallback with a
 Reload button by default; `compact` prop → inline pane placeholder). Wired as the
 ROOT boundary in `main.tsx` (outermost, around `APIProvider`), and as nested
@@ -2303,7 +2308,18 @@ navigation bus.
 **Fix idea:** route navigation through a context/provider method (or a tiny
 event bus that retains the last unhandled intent and replays it when a listener
 mounts). Keep the listener effect stable (read `activeJid` from a ref).
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <C2> — new `utils/navigationBus.ts`: `navigate(intent)`
++ `subscribeNavigation(listener)`. The bus retains the last intent when no
+listener is mounted and replays it on the next `subscribeNavigation` (fixes the
+QR/sync/`connected`-screen drop and the chat-switch listener-churn gap); it
+de-dupes identical back-to-back intents within 400 ms (double-clicked citation);
+it still emits the legacy `smartchat:open-chat` window event for any external
+listener. `useChatNavigation` now calls `navigate()`; `ChatLayout` subscribes via
+`subscribeNavigation` in a **stable** effect (deps: the callbacks only) and reads
+`activeJid` from `activeJidRef`. Supersedes the minimal F4-04 fix. New test
+`tests/utils/navigationBus.test.ts`. Existing `useChatNavigation` /
+`useCitationActions` tests still green. typecheck:web green.
 
 ### [F12-03] med — tree-wide: "await IPC → setState" with no is-mounted / still-current guard is the dominant data-loading pattern
 **What:** the same unguarded shape — `const x = await api.getSomething(id);
