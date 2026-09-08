@@ -753,6 +753,11 @@ takes out the entire chat.
 `<MessageItem>` in it (`.message-render-error` placeholder). App-wide + nested
 boundary policy still owned by **F12-01** — F12 should decide whether this local
 boundary stays or folds into the shared hierarchy.
+**Reconciled (F12-01):** `MessageErrorBoundary` STAYS as the dedicated leaf/row
+boundary (per `<MessageItem>`). F12-01 added a separate generic `ErrorBoundary`
+for the root + pane levels rather than folding this in — a per-row boundary wants
+a compact inline placeholder and no Reload CTA, which is exactly what this
+component already does. No code change needed here; the two coexist by design.
 
 ### [F5-07] low — src/renderer/src/components/chat/MessageView.tsx:253-255
 **What:** `ReactionDetailsModal` does
@@ -1463,6 +1468,11 @@ a KaTeX/markdown throw over model output renders a `.message-render-error`
 placeholder instead of blanking the panel. App-wide/nested boundary policy still
 owned by **F12-01** — F12 should decide whether this local boundary stays or
 folds into the shared hierarchy (same note as F5-06). typecheck:web green.
+**Reconciled (F12-01):** `MessageErrorBoundary` STAYS as the leaf boundary per AI
+bubble. F12-01 additionally wraps the whole `AIChatSidebar` in the generic
+`ErrorBoundary` (`compact`, in `ChatLayout`), so a throw outside a bubble (the
+sidebar chrome, options load, etc.) degrades to an inline placeholder instead of
+blanking the pane. Both layers intentionally retained.
 
 ### [F8-08] low — src/renderer/src/components/ai/AIChatSidebar.tsx:88-90
 **What:** the auto-scroll effect is keyed on `[messages.length, loading]`. During
@@ -2258,7 +2268,18 @@ that there is also no top-level safety net.
 nested boundaries around (a) each `MessageView` row / the message list, (b) each
 AI bubble / the AI list, (c) `SidebarPluginMainStage` / panel webviews, so one
 bad item degrades to a placeholder instead of taking the pane.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <C1> — new generic
+`components/common/ErrorBoundary.tsx` (full-screen recoverable fallback with a
+Reload button by default; `compact` prop → inline pane placeholder). Wired as the
+ROOT boundary in `main.tsx` (outermost, around `APIProvider`), and as nested
+`compact` boundaries around `SidebarPluginMainStage` and `AIChatSidebar` in
+`ChatLayout`. The leaf-level `MessageErrorBoundary` (per WA message row, per AI
+bubble) is kept as-is — it stays the dedicated row boundary; `ErrorBoundary` is
+the app-level + pane-level net (see reconciled F5-06 / F8-07). New test
+`tests/components/common/ErrorBoundary.test.tsx` (throwing child → fallback +
+Reload; compact placeholder keeps siblings alive; passthrough). typecheck:web
+green.
 
 ### [F12-02] high — src/renderer/src/hooks/useChatNavigation.ts:10-29 & src/renderer/src/components/chat/ChatLayout.tsx:157-178
 **What:** cross-component navigation ("go to chat" / "go to message" from AI

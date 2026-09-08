@@ -20,6 +20,7 @@ import { useSidebarResize } from './hooks/useSidebarResize'
 import { ExtensionChatView } from './ExtensionChat/ExtensionChatView'
 import { useExtensionManager } from '../../hooks/useExtensionManager'
 import { SidebarPluginMainStage, useSidebarPanelFocus } from '../panels/SidebarPluginTabs'
+import { ErrorBoundary } from '../common/ErrorBoundary'
 
 
 export default function ChatLayout() {
@@ -270,7 +271,9 @@ export default function ChatLayout() {
       />
       <div className="chat-main" {...dragHandlers}>
         {activeSidebarPanelId ? (
-          <SidebarPluginMainStage activePanelId={activeSidebarPanelId} />
+          <ErrorBoundary compact label="Plugin panel">
+            <SidebarPluginMainStage activePanelId={activeSidebarPanelId} />
+          </ErrorBoundary>
         ) : activeJid ? (
 
           isExtensionChat && activeExtensionId ? (
@@ -377,7 +380,9 @@ export default function ChatLayout() {
         />
       )}
 
-      <AIChatSidebar isOpen={isAIOpen} onClose={handleCloseAI} />
+      <ErrorBoundary compact label="AI assistant">
+        <AIChatSidebar isOpen={isAIOpen} onClose={handleCloseAI} />
+      </ErrorBoundary>
 
       {activeJid && (
         <ChatSearchSidebar
