@@ -1,4 +1,5 @@
 import { ExtendedChatItem } from '../../types/chat.types'
+import { EmojiText } from '../common/EmojiText'
 
 interface ExtensionChatListItemProps {
   chat: ExtendedChatItem // carries extensionEmoji, name, jid
@@ -24,12 +25,12 @@ export function ExtensionChatListItem({ chat, isActive, onSelect }: ExtensionCha
       </div>
       <div className="chat-item-content">
         <div className="chat-item-top">
-          <span className="chat-item-name">{chat.name}</span>
+          <span className="chat-item-name"><EmojiText text={chat.name} /></span>
           <span className="extension-badge">Extension</span>
         </div>
         <div className="chat-item-bottom">
           <span className="chat-item-preview chat-item-preview-text">
-            {chat.lastMessage || 'Start a conversation…'}
+            <EmojiText text={chat.lastMessage || 'Start a conversation…'} />
           </span>
         </div>
       </div>

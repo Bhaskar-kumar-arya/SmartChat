@@ -135,10 +135,11 @@ export default function ChatLayout() {
   // Focus listener — extension calls ctx.dedicatedChat.focus()
   useEffect(() => {
     const unsubscribe = api.onExtensionFocus((id) => {
-      handleOpenExtensionChat(id, id) // name resolved on next render
+      const name = extensions.find((e) => e.id === id)?.manifest.name ?? id
+      handleOpenExtensionChat(id, name)
     })
     return () => unsubscribe()
-  }, [handleOpenExtensionChat, api])
+  }, [handleOpenExtensionChat, api, extensions])
 
   useEffect(() => {
     const unsubscribe = api.onOpenChat((chat) => {
@@ -161,9 +162,13 @@ export default function ChatLayout() {
       
       // If we are already in this chat and just need to jump to a message
       if (activeJid === jid && newTarget) {
-        jumpToMessage(newTarget).then(() => {
-          setTargetMessageId(newTarget)
-        })
+        jumpToMessage(newTarget)
+          .then(() => {
+            setTargetMessageId(newTarget)
+          })
+          .catch((err) => {
+            console.error('Failed to jump to message:', err)
+          })
       } else {
         if (jid.startsWith('extension:')) {
           const extId = jid.replace('extension:', '')
@@ -175,7 +180,7 @@ export default function ChatLayout() {
     }
     window.addEventListener('smartchat:open-chat', handler)
     return () => window.removeEventListener('smartchat:open-chat', handler)
-  }, [handleSelectChat, activeJid, jumpToMessage])
+  }, [handleSelectChat, handleOpenExtensionChat, activeJid, jumpToMessage])
 
   useEffect(() => {
     if (!activeJid) return

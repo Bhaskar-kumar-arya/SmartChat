@@ -82,7 +82,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | F1 | 2 | DONE (57876a2) — F1-02, F1-03 + F1-04/05/06 lows |
 | F2 | 2 | DONE (d19178c) — F2-01, F2-02 + F2-03/04/05/06/07 lows |
 | F3 | 6 | DONE (141a819) — F3-02..F3-10 (9 findings: 6 med + F3-08/09/10 low); F3-11 wontfix-for-now |
-| F4 | 2 | TODO |
+| F4 | 2 | DONE (F4 all 7 findings fixed on main) |
 | F5 | 5 | TODO |
 | F6 | 6 | TODO |
 | F7 | 3 | TODO |

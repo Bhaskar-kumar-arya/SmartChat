@@ -34,4 +34,27 @@ describe('useSidebarResize', () => {
       document.dispatchEvent(mouseUpEvent)
     })
   })
+
+  it('detaches the mousemove listener when unmounted mid-drag (F4-02)', () => {
+    const removeSpy = vi.spyOn(document, 'removeEventListener')
+    const { result, unmount } = renderHook(() => useSidebarResize(500))
+
+    act(() => {
+      result.current.startResizing({ preventDefault: vi.fn(), clientX: 500 } as any)
+    })
+
+    unmount()
+
+    expect(removeSpy).toHaveBeenCalledWith('mousemove', expect.any(Function))
+    expect(removeSpy).toHaveBeenCalledWith('mouseup', expect.any(Function))
+
+    // A late mousemove must not update state / throw after unmount.
+    const widthBefore = result.current.sidebarWidth
+    act(() => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 100 }))
+    })
+    expect(result.current.sidebarWidth).toBe(widthBefore)
+
+    removeSpy.mockRestore()
+  })
 })

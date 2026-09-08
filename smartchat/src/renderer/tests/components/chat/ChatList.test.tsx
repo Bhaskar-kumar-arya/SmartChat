@@ -140,6 +140,66 @@ describe('ChatList', () => {
     expect(screen.getByText('Logout and delete all data?')).toBeInTheDocument()
   })
 
+  it('does not fire two overlapping loadMore fetches on a fast scroll (F4-07)', async () => {
+    const page1 = Array.from({ length: 50 }, (_, i) => ({
+      jid: `${i}@s.whatsapp.net`,
+      name: `Chat ${i}`,
+      unreadCount: 0,
+      lastMessage: 'hi',
+      lastMessageTimestamp: `${1600000000 + i}`,
+      pinned: 0,
+      muteExpiration: 0,
+      profilePictureUrl: null
+    }))
+    const mockApi = createMockApiService()
+    const getChats = vi.fn().mockResolvedValue(page1)
+    mockApi.getChats = getChats
+
+    const { container } = renderWithProviders(<ChatList {...defaultProps} />, { apiService: mockApi })
+
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 50))
+    })
+
+    expect(getChats).toHaveBeenCalledTimes(1) // initial page 1
+
+    const list = container.querySelector('.chat-list') as HTMLElement
+    await act(async () => {
+      fireEvent.scroll(list)
+      fireEvent.scroll(list)
+      await new Promise(r => setTimeout(r, 50))
+    })
+
+    // Two synchronous scroll events => exactly one additional (page 2) fetch.
+    expect(getChats).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears the indexing-complete timer on unmount (F4-01)', async () => {
+    vi.useFakeTimers()
+    try {
+      const mockApi = createMockApiService()
+      mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)
+      let emit: ((pct: number) => void) | undefined
+      mockApi.onEmbeddingProgress = vi.fn((cb: (pct: number) => void) => {
+        emit = cb
+        return () => {}
+      })
+
+      const { unmount } = renderWithProviders(<ChatList {...defaultProps} />, { apiService: mockApi })
+
+      act(() => {
+        emit?.(100)
+      })
+
+      const clearSpy = vi.spyOn(global, 'clearTimeout')
+      unmount()
+      expect(clearSpy).toHaveBeenCalled()
+      clearSpy.mockRestore()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('opens settings modal when settings button is clicked', async () => {
     const mockApi = createMockApiService()
     mockApi.getChats = vi.fn().mockResolvedValue(dummyChats)

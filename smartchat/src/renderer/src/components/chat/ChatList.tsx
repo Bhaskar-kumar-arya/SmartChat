@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useChats } from './hooks/useChats'
 import { usePresence } from '../../hooks/usePresence'
 import { useSearch } from './hooks/useSearch'
@@ -61,12 +61,19 @@ export default function ChatList({
   } = useChats(activeJid)
   const { lookupPresence } = usePresence()
 
+  // Synchronous in-flight guard: two scroll events in the same frame both pass
+  // `useChats`'s state-based guard before `loadingMore` re-renders (F4-07).
+  const loadMoreInFlightRef = useRef(false)
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget
     const threshold = 50
     const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + threshold
-    if (isAtBottom) {
-      loadMore()
+    if (isAtBottom && !loadMoreInFlightRef.current) {
+      loadMoreInFlightRef.current = true
+      Promise.resolve(loadMore()).finally(() => {
+        loadMoreInFlightRef.current = false
+      })
     }
   }
   
@@ -94,21 +101,36 @@ export default function ChatList({
 
   const isSearchActive = searchQuery.trim().length > 0
 
+  const indexingDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
+    const clearDoneTimer = () => {
+      if (indexingDoneTimerRef.current) {
+        clearTimeout(indexingDoneTimerRef.current)
+        indexingDoneTimerRef.current = null
+      }
+    }
     const unSubPrg = api.onEmbeddingProgress((pct) => {
+      // Cancel any pending "clear the bar" timer from a previous 100% event so
+      // stacked timeouts can't null a subsequent run's progress bar (F4-01).
+      clearDoneTimer()
       setIndexingProgress(pct)
       if (pct === 100) {
-        setTimeout(() => setIndexingProgress(null), 3000)
+        indexingDoneTimerRef.current = setTimeout(() => {
+          indexingDoneTimerRef.current = null
+          setIndexingProgress(null)
+        }, 3000)
       }
     })
     const unSubState = api.onEmbeddingState((active) => {
       setIsAiIndexing(active)
     })
     return () => {
+      clearDoneTimer()
       unSubPrg()
       unSubState()
     }
-  }, [])
+  }, [api])
 
   const handleLogoutClick = () => {
     setShowLogoutConfirm(true)
@@ -480,12 +502,21 @@ export default function ChatList({
                         {isRoot ? (
                           <div className="community-subgroups-preview">
                             {(chat.children || []).map((child: ChatItem) => (
-                              <span 
-                                key={child.jid} 
+                              <span
+                                key={child.jid}
+                                role="button"
+                                tabIndex={0}
                                 className={`subgroup-tag ${child.unreadCount > 0 ? 'has-unread' : ''}`}
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   onSelectChat(child.jid, child.name, child.profilePictureUrl)
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    onSelectChat(child.jid, child.name, child.profilePictureUrl)
+                                  }
                                 }}
                               >
                                 {child.unreadCount > 0 && <span className="unread-dot" />}
