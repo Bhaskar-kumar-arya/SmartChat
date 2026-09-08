@@ -44,7 +44,20 @@ export class AIService implements IAIService {
   }
 
   getProviderKeys(): Record<string, string> {
-    return this.aiKeyService.getKeys() as unknown as Record<string, string>;
+    // F1-02: never expose the plaintext keys to the renderer — it only needs to
+    // render whether a provider is configured. Return a masked preview (last 4
+    // chars); the real key stays in main. Callers that need to change a key send
+    // the full new value via setProviderKey().
+    const keys = this.aiKeyService.getKeys() as unknown as Record<string, string>;
+    const masked: Record<string, string> = {};
+    for (const [provider, value] of Object.entries(keys ?? {})) {
+      if (typeof value === 'string' && value.length > 0) {
+        masked[provider] = value.length > 4 ? `••••${value.slice(-4)}` : '••••';
+      } else {
+        masked[provider] = '';
+      }
+    }
+    return masked;
   }
 
   setProviderKey(provider: string, key: string): boolean {

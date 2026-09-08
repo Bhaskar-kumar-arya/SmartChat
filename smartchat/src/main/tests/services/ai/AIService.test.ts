@@ -65,6 +65,19 @@ describe('AIService', () => {
     expect(models).toBeDefined()
   })
 
+  it('F1-02: getProviderKeys masks stored keys to a last-4 preview', () => {
+    ;(mockKeyService.getKeys as any).mockReturnValue({
+      gemini: 'sk-abcdefghijkl',
+      groq: 'xyz',
+      mistral: ''
+    })
+    const result = aiService.getProviderKeys()
+    expect(result.gemini).toBe('••••ijkl')
+    expect(result.gemini).not.toContain('abcdef')
+    expect(result.groq).toBe('••••')
+    expect(result.mistral).toBe('')
+  })
+
   it('should set provider key and update instance if possible', () => {
     const success = aiService.setProviderKey('mock', 'new-key')
     expect(success).toBe(true)

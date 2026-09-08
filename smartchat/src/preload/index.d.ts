@@ -1,4 +1,3 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
 import {
   ChatItem,
   MessageItem,
@@ -20,7 +19,9 @@ import { CitationEntity } from '../renderer/src/types/ai/citation.types'
 
 declare global {
   interface Window {
-    electron: ElectronAPI
+    // F1-01: minimal bridge — only process.versions is exposed, not the full
+    // @electron-toolkit electronAPI (unrestricted ipcRenderer + process.env).
+    electron: { process: { versions: NodeJS.ProcessVersions } }
     api: {
       // Phase 1 & 2
       onWaQr: (callback: (qr: string) => void) => () => void

@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { createKernelApiBridge } from '../../packages/sdk/src/bridge'
 
 let panelId = ''
+// F1-06: `events.on()` calls made during panel module init (before `_init`
+// supplies the real panelId) must not fire a subscribe with an empty panelId.
+// Queue them and flush once `_init` runs.
+const pendingSubscribes: Array<() => void> = []
 
 function request<T = unknown>(type: string, payload?: unknown): Promise<T> {
   return ipcRenderer
@@ -52,6 +56,9 @@ const bridge = createKernelApiBridge(request)
 contextBridge.exposeInMainWorld('__smartchat', {
   _init(id: string, tokens: Record<string, string>) {
     panelId = id
+    while (pendingSubscribes.length) {
+      pendingSubscribes.shift()!()
+    }
     applyTokens(tokens)
     try {
       window.dispatchEvent(new CustomEvent('smartchat:ready', { detail: { panelId, tokens } }))
@@ -62,7 +69,20 @@ contextBridge.exposeInMainWorld('__smartchat', {
     ...bridge,
     events: {
       on(event: string, handler: (payload: unknown) => void): () => void {
-        void ipcRenderer.invoke('kernel:panel:events:subscribe', { panelId, eventName: event })
+        let disposed = false
+        const subscribe = (): void => {
+          if (disposed) return
+          ipcRenderer
+            .invoke('kernel:panel:events:subscribe', { panelId, eventName: event })
+            .catch((err: unknown) =>
+              console.error(`[panel] event subscribe '${event}' failed:`, err)
+            )
+        }
+        if (panelId) {
+          subscribe()
+        } else {
+          pendingSubscribes.push(subscribe)
+        }
         const listener = (_: unknown, msg: { event: string; payload: unknown }) => {
           if (msg && msg.event === event) {
             handler(msg.payload)
@@ -70,7 +90,10 @@ contextBridge.exposeInMainWorld('__smartchat', {
         }
         ipcRenderer.on('smartchat:event', listener)
         return () => {
-          ipcRenderer.send('kernel:panel:events:unsubscribe', { panelId, eventName: event })
+          disposed = true
+          if (panelId) {
+            ipcRenderer.send('kernel:panel:events:unsubscribe', { panelId, eventName: event })
+          }
           ipcRenderer.removeListener('smartchat:event', listener)
         }
       }

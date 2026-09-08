@@ -35,19 +35,29 @@ function applyTokens(tokens: Record<string, string>): void {
   }
 }
 
+// F1-03: relay IPC payloads to the guest page on its OWN origin, not '*', so a
+// guest that navigates to / embeds a third-party origin never receives overlay
+// payloads. Keep `send` and `receive` as distinct one-directional channels
+// instead of cross-posting each payload under both names.
+function relayToGuest(channel: string, payload: unknown): void {
+  // Opaque origins (file://, data:) serialize to the string "null", which is not
+  // a valid postMessage targetOrigin — fall back to '*' only in that case.
+  const origin = window.location.origin
+  const targetOrigin = origin && origin !== 'null' ? origin : '*'
+  window.postMessage({ channel, args: [payload] }, targetOrigin)
+}
+
 ipcRenderer.on('smartchat:init', (_event, payload) => {
   if (payload && payload.tokens) {
     applyTokens(payload.tokens)
   }
-  window.postMessage({ channel: 'smartchat:init', args: [payload] }, '*')
+  relayToGuest('smartchat:init', payload)
 })
 
 ipcRenderer.on('smartchat:send', (_event, payload) => {
-  window.postMessage({ channel: 'smartchat:send', args: [payload] }, '*')
-  window.postMessage({ channel: 'smartchat:receive', args: [payload] }, '*')
+  relayToGuest('smartchat:send', payload)
 })
 
 ipcRenderer.on('smartchat:receive', (_event, payload) => {
-  window.postMessage({ channel: 'smartchat:send', args: [payload] }, '*')
-  window.postMessage({ channel: 'smartchat:receive', args: [payload] }, '*')
+  relayToGuest('smartchat:receive', payload)
 })

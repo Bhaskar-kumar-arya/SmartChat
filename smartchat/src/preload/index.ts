@@ -1,7 +1,19 @@
 import { contextBridge, ipcRenderer, webUtils, IpcRendererEvent } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
+
+// F1-01: do NOT expose `@electron-toolkit/preload`'s `electronAPI` — it ships an
+// unrestricted `ipcRenderer` (any channel reachable) and a `process` object with
+// a `get env()` that copies the whole main/preload `process.env` into renderer
+// JS. The renderer only ever reads `window.electron.process.versions`
+// (components/common/Versions.tsx). Expose exactly that and nothing else.
+const electron = {
+  process: { versions: { ...process.versions } }
+}
+
+// F1-04/F1-05: per-stream listener disposers so `abortAiChat` (or a hung stream
+// that never emits `-end`) can tear the three channel listeners down.
+const aiChatStreamDisposers = new Map<string, () => void>()
 
 // Custom APIs for renderer
 const api = {
@@ -207,20 +219,24 @@ const api = {
     return ipcRenderer.invoke('ai-chat', prompt, contextChats, history, mentions, options)
   },
   aiChatStream: (prompt: string, contextChats: unknown[] | undefined, history: unknown[] | undefined, mentions: unknown[] | undefined, options: unknown | undefined, onChunk: (chunk: string) => void, onEnd: () => void, onError: (err: Error) => void) => {
-    const channelId = `ai-chat-${Date.now()}`;
+    // F1-04: timestamp alone collides for streams started in the same ms.
+    const channelId = `ai-chat-${Date.now()}-${crypto.randomUUID()}`;
     const chunkListener = (_event: IpcRendererEvent, chunk: string) => onChunk(chunk);
-    const endListener = () => {
+    const dispose = () => {
       ipcRenderer.removeAllListeners(`${channelId}-chunk`);
       ipcRenderer.removeAllListeners(`${channelId}-end`);
       ipcRenderer.removeAllListeners(`${channelId}-error`);
+      aiChatStreamDisposers.delete(channelId);
+    };
+    const endListener = () => {
+      dispose();
       onEnd();
     };
     const errorListener = (_event: IpcRendererEvent, err: unknown) => {
-      ipcRenderer.removeAllListeners(`${channelId}-chunk`);
-      ipcRenderer.removeAllListeners(`${channelId}-end`);
-      ipcRenderer.removeAllListeners(`${channelId}-error`);
+      dispose();
       onError(err as Error);
     };
+    aiChatStreamDisposers.set(channelId, dispose);
 
     ipcRenderer.on(`${channelId}-chunk`, chunkListener);
     ipcRenderer.on(`${channelId}-end`, endListener);
@@ -231,6 +247,9 @@ const api = {
   },
 
   abortAiChat: (channelId: string) => {
+    // F1-05: drop the per-stream listeners on abort so they don't outlive the
+    // window if the backend never emits a terminating `-end`/`-error`.
+    aiChatStreamDisposers.get(channelId)?.();
     return ipcRenderer.invoke('abort-ai-chat', channelId);
   },
 
@@ -430,14 +449,14 @@ const api = {
 // just add to the DOM global.
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
+    contextBridge.exposeInMainWorld('electron', electron)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error(error)
   }
 } else {
   // @ts-ignore (define in dts)
-  window.electron = electronAPI
+  window.electron = electron
   // @ts-ignore (define in dts)
   window.api = api
 }
