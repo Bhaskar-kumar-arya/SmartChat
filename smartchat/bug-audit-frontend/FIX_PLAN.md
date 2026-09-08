@@ -67,7 +67,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | ID | Summary | Status |
 |---|---|---|
 | F1-01 | `window.electron` exposes full ipcRenderer + `process.env` | DONE (57876a2) |
-| F3-01 | useMessages out-of-order response overwrites active chat | TODO |
+| F3-01 | useMessages out-of-order response overwrites active chat | DONE (c544c87) |
 | F5-01 | TextMessage markdown identity `urlTransform` → `javascript:`/`data:` link XSS | TODO |
 | F6-01 | Voice note delivered to wrong chat after switch mid-record | TODO |
 | F7-01 | ChatSearchSidebar out-of-order search responses | TODO |
@@ -81,7 +81,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 |---|---|---|
 | F1 | 2 | DONE (57876a2) — F1-02, F1-03 + F1-04/05/06 lows |
 | F2 | 2 | DONE (d19178c) — F2-01, F2-02 + F2-03/04/05/06/07 lows |
-| F3 | 6 | TODO |
+| F3 | 6 | DONE (141a819) — F3-02..F3-10 (9 findings: 6 med + F3-08/09/10 low); F3-11 wontfix-for-now |
 | F4 | 2 | TODO |
 | F5 | 5 | TODO |
 | F6 | 6 | TODO |

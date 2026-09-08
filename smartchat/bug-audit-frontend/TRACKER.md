@@ -13,7 +13,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |---|-------|--------|--------------|-------|
 | F1 | Preload bridge & IPC surface | DONE (6 findings) — ALL FIXED in 57876a2 | 2026-09-08 | 1 high, 2 med, 3 low |
 | F2 | App shell, providers, contributions | DONE (7 findings) — ALL FIXED in d19178c | 2026-09-08 | 2 med, 5 low |
-| F3 | Chat data hooks (backend event sync) | DONE (11 findings) | 2026-09-07 | 1 high, 6 med, 4 low — async races, presence expiry/JID, hierarchy orphans |
+| F3 | Chat data hooks (backend event sync) | DONE (11 findings) — FIXED (c544c87 + 141a819) | 2026-09-08 | 10 fixed, F3-11 wontfix-for-now (pairs w/ F12-05) |
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F5 | Message view & rendering | DONE (14 findings) | 2026-09-07 | 1 high, 5 med, 8 low — markdown link XSS, template-button URL scheme, pagination lock-up, reaction self-JID |
 | F6 | Message input & composition | DONE (14 findings) | 2026-09-07 | 1 high, 6 med, 7 low — voice note mis-delivery on chat switch, mouse mention pick broken, stale mentions |
@@ -321,7 +321,7 @@ response bug — the checklist's headline case.
 **Fix idea:** capture a request id / `AbortController` per load; in the `.then`
 bail if `jid !== activeJidRef.current` (add an `activeJidRef`) or the id is stale.
 **Status:** fixed
-**Fix status:** fixed in d90d4b8 — added `activeJidRef` (updated synchronously in
+**Fix status:** fixed in c544c87 — added `activeJidRef` (updated synchronously in
 the hook body). `loadInitialMessages` / `performJump` now bail after their await
 (and skip the `finally` `setLoading(false)`) when `jid !== activeJidRef.current`.
 New test `useMessages.test.tsx` "F3-01: a late getMessages response for a previous
@@ -340,7 +340,7 @@ messages, with `currentPage` also advanced against the wrong chat.
 longer matches `activeJidRef.current`; reset pagination on chat switch (already
 done in the effect, but the in-flight call must also be invalidated).
 **Status:** fixed
-**Fix status:** fixed in d90d4b8 (with F3-01) — `loadMore` snapshots `jid` at call
+**Fix status:** fixed in c544c87 (with F3-01) — `loadMore` snapshots `jid` at call
 time and returns `0` without touching state if `jid !== activeJidRef.current`
 after the await. New test "F3-02: a late loadMore page for a previous chat is
 discarded". 31/31 pass; typecheck:web green.
@@ -358,7 +358,12 @@ Self-heals only on the next event for that chat.
 **Fix idea:** queue/coalesce events for a jid whose `getChat` is in flight, or
 re-read the latest message after the fetch resolves; don't mark `chatJidsRef`
 until the row is actually in state.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 141a819 — `handleNewMessage` (extracted from the inline
+`onNewMessage` cb) now tracks `inFlightChatFetchRef`; a second `new-message` for
+the same not-yet-inserted chat is stored in `pendingNewMsgRef` (latest wins) and
+replayed in the `finally` once the row lands. Manual reasoning; covered indirectly
+by existing useChats realtime tests (11/11 pass).
 
 ### [F3-04] med — src/renderer/src/components/chat/hooks/useChats.ts:73-96
 **What:** the initial `loadChats(1,false)` resolves to `setChats(data)` — a full
@@ -372,7 +377,12 @@ message/unread bump and then reverts until the next event.
 **Fix idea:** merge the fetched page into existing state (like the `append` path
 does) instead of replacing, or buffer events received before the first load
 completes and replay them.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 141a819 — the non-append branch of `loadChats` now merges:
+for a chat in both `prev` and the fetched page it keeps whichever copy has the
+newer last-message timestamp, and chats present only in `prev` (added by an event
+during the fetch window) are preserved. Empty `prev` → `sortChats(data)`. New test
+"F3-04: an event arriving during the initial load is not clobbered…" 14/14 pass.
 
 ### [F3-05] med — src/renderer/src/components/chat/hooks/useChatHierarchy.ts:21-33, 70-103
 **What:** Pass 1 puts every chat with a `linkedParentJid` into `childrenByParent`
@@ -386,7 +396,12 @@ disappears from the sidebar completely. The user loses access to an active group
 with no indication it exists.
 **Fix idea:** after Pass 5, emit any `childrenByParent` entries whose parent was
 never rendered as standalone rows (or synthesize a placeholder root).
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 141a819 — added "Pass 6": any `childrenByParent` entry
+whose parent jid is not a rendered community root and whose child was not already
+emitted is appended to `finalItems` as a standalone row, so an orphaned subgroup
+no longer vanishes. New test "F3-05: surfaces a subgroup whose community root is
+not in the loaded set". 14/14 pass.
 
 ### [F3-06] med — src/renderer/src/hooks/usePresence.ts:27-49
 **What:** the 2s expiry interval only downgrades entries whose
@@ -398,7 +413,13 @@ presence when a contact goes offline, `getActivePresence` keeps returning
 available/composing/recording). Chat header / list show a stale "online".
 **Fix idea:** also expire `available` after a bounded TTL (e.g. 60s) without a
 refresh, or have the hook re-request presence on a timer for the active chat.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 141a819 — the 2s expiry sweep now also downgrades an
+`available` sub-entry to `unavailable` once `now - timestamp > 60s`
+(`AVAILABLE_TTL_MS`), so a missing `unavailable` push no longer keeps a contact
+"online" forever. Entries with no `timestamp` are left alone (can't age what
+isn't dated). New test "F3-06: expires stale `available` presence after the TTL".
+16/16 pass.
 
 ### [F3-07] med — src/renderer/src/hooks/usePresence.ts:57-59 & src/renderer/src/components/chat/ChatList.tsx:146
 **What:** presence is stored keyed by the raw `update.remoteJid` and read with an
@@ -410,7 +431,13 @@ with `isSameJid` (case-insensitive, device-suffix tolerant).
 typing / online indicator silently never appears even though the data is present.
 **Fix idea:** normalize JIDs to a canonical form on write and on read, or expose a
 `getActivePresence` that scans with `isSameJid`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 141a819 — added `lookupPresence(jid)` which returns
+`presences[jid]` or, failing that, the first entry whose key `isSameJid(k, jid)`.
+`getActivePresence` uses it and it is exposed for `ChatList.tsx:146`
+(`getPresenceStatusText(chat, lookupPresence(chat.jid))`) — replaces the exact
+`presences[chat.jid]` lookup. Uses the shared `isSameJid` (F11-03 will fix its
+LID/PN collision). New test "F3-07: matches presence by JID identity". 16/16 pass.
 
 ### [F3-08] low — src/renderer/src/components/chat/hooks/useChats.ts:73-80
 **What:** the non-append branch returns `data` verbatim; only the `append` branch
@@ -421,7 +448,12 @@ timestamp comparator.
 backend returned; if that ordering ever diverges from `sortChats` semantics the
 list visibly reshuffles the moment the first event arrives.
 **Fix idea:** `return sortChats(data)` in the replace branch too.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 141a819 — the replace/merge branch of `loadChats` now
+always returns `sortChats(...)` (both the empty-`prev` fast path and the merge
+path), so the initial order matches every realtime update path. Existing test
+"should load chat list sorted by timestamp" assertion updated (Bob ts 2000 now
+sorts before Alice ts 1000). 14/14 pass.
 
 ### [F3-09] low — src/renderer/src/components/chat/hooks/useSearch.ts:12,47
 **What:** the debounce effect's dep array is `[query, mode, filters]`; `filters`
@@ -434,7 +466,11 @@ typing / the parent is re-rendering, the debounce timer keeps resetting and the
 search request may never fire.
 **Fix idea:** memoize `filters` inside the hook (e.g. `JSON.stringify` key) or
 document that callers must pass a stable reference.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 141a819 — the debounce effect now depends on
+`filtersKey = JSON.stringify(filters ?? null)` instead of the `filters` reference,
+so an inline `filters={{…}}` no longer resets the timer every render. Existing
+useSearch tests 5/5 pass; typecheck:web green.
 
 ### [F3-10] low — src/renderer/src/components/chat/hooks/useChats.ts:19-20 & useChatHierarchy.ts:39,46-50,80
 **What:** timestamp fields are fed straight into `BigInt(...)` in the `sortChats`
@@ -444,7 +480,13 @@ comparator and the `useChatHierarchy` memo.
 from the backend takes down the whole `useMemo` / the `onNewMessage` handler, and
 there is no error boundary around `ChatList` — white sidebar.
 **Fix idea:** parse defensively (`/^\d+$/` check, or `try/catch` → `0n`).
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 141a819 — new `utils/bigintTime.ts#toBigIntTime` (regex
+guard + try/catch → `0n`) replaces every raw `BigInt(...)` on a timestamp field in
+`useChats` (sortChats, onMessageEdited) and `useChatHierarchy` (all four sites).
+New tests "F3-10: a malformed lastMessageTimestamp does not crash the list"
+(useChats) and "F3-10: a malformed timestamp does not throw" (useChatHierarchy).
+14/14 + 14/14 pass.
 
 ### [F3-11] low — src/renderer/src/hooks/usePresence.ts:13-55 (via ChatLayout.tsx:62 & ChatList.tsx:62)
 **What:** `usePresence()` is instantiated separately in both `ChatLayout` and
@@ -455,7 +497,14 @@ there is no error boundary around `ChatList` — white sidebar.
 mid-expiry sweep). Minor constant overhead + a duplicated subscription.
 **Fix idea:** lift presence into a context/provider (or a shared store) consumed
 by both, so there is a single subscription and interval.
-**Status:** open
+**Status:** wontfix (for now)
+**Fix status:** wontfix in this slice — lifting `usePresence` into a context and
+rewiring `ChatLayout` + `ChatList` is more invasive than a data-hooks slice
+should carry, and it pairs with F12-05 (tree-wide "hoist duplicated
+subscriptions" cross-cutting work). The concrete correctness bug in this area
+(F3-07 JID lookup) is fixed in place. Left for the F12 fix phase / a dedicated
+presence-context change. Impact is bounded: 2 subscriptions + 2 timers, no data
+loss.
 
 ## Slice F4 — Chat list & layout & nav UI
 
