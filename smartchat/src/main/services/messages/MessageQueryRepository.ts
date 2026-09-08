@@ -86,6 +86,42 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
   }
 
   /**
+   * P2-S11-03: batch last-message lookup for many chats in a single query.
+   */
+  async findLastMessagesForChats(chatJids: string[]): Promise<Map<string, LastMessageWithSender>> {
+    const map = new Map<string, LastMessageWithSender>()
+    if (chatJids.length === 0) return map
+    const rows = await this.prisma.message.findMany({
+      where: { chatJid: { in: chatJids } },
+      orderBy: { timestamp: 'desc' },
+      distinct: ['chatJid'],
+      select: {
+        id: true,
+        chatJid: true,
+        textContent: true,
+        messageType: true,
+        timestamp: true,
+        fromMe: true,
+        participant: true,
+        status: true,
+        sender: {
+          select: {
+            displayName: true,
+            pushName: true,
+            verifiedName: true,
+            phoneNumber: true
+          }
+        }
+      }
+    })
+    for (const row of rows) {
+      const { chatJid, ...rest } = row
+      map.set(chatJid, rest as unknown as LastMessageWithSender)
+    }
+    return map
+  }
+
+  /**
    * Batch-find multiple messages with chat and sender details.
    */
   async findMessagesByIdsWithChatAndSender(ids: string[]): Promise<MessageWithChatAndSender[]> {

@@ -61,5 +61,15 @@ describe('MessageVectorRepository.searchVectorMatch (S2-03)', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0].sql).not.toContain('messageId IN')
     expect(calls[0].params).toEqual(['[0.1]'])
+    expect(calls[0].sql).toMatch(/k\s*=\s*30/)
+  })
+
+  it('P2-S11-02: widens the KNN scan for scoped queries so the post-scan IN filter can hit', async () => {
+    await repo.searchVectorMatch('[0.1]', ['a', 'b', 'c'])
+    expect(calls).toHaveLength(1)
+    // scoped queries must NOT use the narrow global k=30 (the IN filter is
+    // applied after the scan, so k=30 would keep ~0 in-scope rows)
+    expect(calls[0].sql).not.toMatch(/k\s*=\s*30\b/)
+    expect(calls[0].sql).toMatch(/k\s*=\s*4000/)
   })
 })

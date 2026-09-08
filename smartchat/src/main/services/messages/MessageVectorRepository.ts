@@ -9,6 +9,14 @@ export class MessageVectorRepository implements IMessageVectorRepository {
   // `messageId IN (...)` scope filter can always be applied — chunked for larger
   // candidate sets rather than silently dropped.
   private static readonly CANDIDATE_CHUNK_SIZE = 900
+  // P2-S11-02: sqlite-vec applies ordinary `WHERE` predicates (our
+  // `messageId IN (...)` scope) AFTER the `k`-nearest scan, not during it. With
+  // k=30 a chat-/date-scoped deep search would keep only whichever of the 30
+  // GLOBAL nearest rows happen to fall in scope — routinely 0. Widen the KNN
+  // scan for scoped queries so the post-scan intersection actually contains the
+  // in-scope nearest neighbours. (A fully correct fix needs sqlite-vec
+  // metadata-column filtering so the scan itself is scoped.)
+  private static readonly SCOPED_MATCH_K = 4000
 
   /**
    * Performs the native vector MATCH query against the vec_messages table.
@@ -48,9 +56,12 @@ export class MessageVectorRepository implements IMessageVectorRepository {
   ): Promise<Array<{ messageId: string; distance: number }>> {
     const params: unknown[] = [queryVectorJson]
     let filterSql = ''
+    let k = MessageVectorRepository.VECTOR_MATCH_K
     if (candidateIds && candidateIds.length > 0) {
       filterSql = `AND messageId IN (${candidateIds.map(() => '?').join(',')})`
       params.push(...candidateIds)
+      // P2-S11-02: widen the scan for scoped queries (see SCOPED_MATCH_K note).
+      k = MessageVectorRepository.SCOPED_MATCH_K
     }
 
     const sql = `
@@ -58,7 +69,7 @@ export class MessageVectorRepository implements IMessageVectorRepository {
       FROM vec_messages
       WHERE vector MATCH ?
       ${filterSql}
-      AND k = ${MessageVectorRepository.VECTOR_MATCH_K}
+      AND k = ${k}
       ORDER BY distance ASC
     `
     return this.prisma.$queryRawUnsafe<Array<{ messageId: string; distance: number }>>(sql, ...params)

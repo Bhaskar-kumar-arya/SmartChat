@@ -61,40 +61,40 @@ export class SearchService implements ISearchService {
     // ── 1. Search chats ────────────────────────────────────────────────────────
     let chatResults: SearchResultItem[] = []
     if (q) {
-      const allChats = await this.chatRepository.findChats(filters?.jids)
-      
+      // P2-S11-03: push the name/jid match + chat-scope + LIMIT into SQL rather
+      // than loading the entire chat table and scanning it in JS on every
+      // (debounced-per-keystroke) search. Trade-off: a DM whose stored name is
+      // null but whose *resolved* contact name matches the query is no longer
+      // surfaced here — normal message search and mention search still cover it.
+      const matchingChats = await this.chatRepository.searchChats(q, 50, filters?.jids)
+
       // We only need to resolve names for DMs that lack a name
-      const jidsToResolve = allChats.filter(c => !c.name && c.type === 'DM').map(c => c.jid)
+      const jidsToResolve = matchingChats.filter(c => !c.name && c.type === 'DM').map(c => c.jid)
       const nameMap = await this.contactService.batchResolveNames(jidsToResolve, sock)
 
-      const matchingChats = allChats.filter((chat) => {
-        const name = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0]
-        return (
-          name.toLowerCase().includes(q.toLowerCase()) ||
-          chat.jid.toLowerCase().includes(q.toLowerCase())
-        )
-      })
-
-      chatResults = await Promise.all(
-        matchingChats.map(async (chat) => {
-          const name = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0]
-          const lastMsg = await this.messageRepository.findLastMessage(chat.jid)
-          return {
-            type: 'chat' as const,
-            jid: chat.jid,
-            name,
-            lastMessage:
-              lastMsg?.messageType === 'stickerMessage' ? 'Sticker' :
-              lastMsg?.messageType === 'lottieStickerMessage' ? 'Sticker' :
-              lastMsg?.messageType === 'imageMessage' ? 'Photo' :
-              lastMsg?.messageType === 'videoMessage' ? 'Video' :
-              lastMsg?.messageType === 'ptvMessage' ? 'Video' :
-              lastMsg?.messageType === 'documentMessage' ? 'Document' :
-              lastMsg?.textContent || '',
-            timestamp: lastMsg?.timestamp?.toString()
-          }
-        })
+      // P2-S11-03: one batched query instead of one findLastMessage per match.
+      const lastMsgMap = await this.messageRepository.findLastMessagesForChats(
+        matchingChats.map((c) => c.jid)
       )
+
+      chatResults = matchingChats.map((chat) => {
+        const name = chat.name || nameMap.get(chat.jid) || chat.jid.split('@')[0]
+        const lastMsg = lastMsgMap.get(chat.jid)
+        return {
+          type: 'chat' as const,
+          jid: chat.jid,
+          name,
+          lastMessage:
+            lastMsg?.messageType === 'stickerMessage' ? 'Sticker' :
+            lastMsg?.messageType === 'lottieStickerMessage' ? 'Sticker' :
+            lastMsg?.messageType === 'imageMessage' ? 'Photo' :
+            lastMsg?.messageType === 'videoMessage' ? 'Video' :
+            lastMsg?.messageType === 'ptvMessage' ? 'Video' :
+            lastMsg?.messageType === 'documentMessage' ? 'Document' :
+            lastMsg?.textContent || '',
+          timestamp: lastMsg?.timestamp?.toString()
+        }
+      })
     }
 
     // ── 2. Search messages ─────────────────────────────────────────────────

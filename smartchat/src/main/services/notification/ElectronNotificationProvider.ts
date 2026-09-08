@@ -3,7 +3,6 @@ import { INotificationProvider } from './INotificationProvider'
 
 export class ElectronNotificationProvider implements INotificationProvider {
   name = 'electron'
-  private activeNotifications = new Set<Notification>()
 
   isSupported(): boolean {
     return Notification.isSupported()
@@ -22,22 +21,18 @@ export class ElectronNotificationProvider implements INotificationProvider {
       icon: options?.icon
     })
 
-    this.activeNotifications.add(notification)
-
+    // P2-S11-07: previously each Notification was held in an `activeNotifications`
+    // Set that was only pruned on the `click`/`close` events. On platforms where
+    // the OS dismisses a notification without emitting `close` the entry (and its
+    // retained onClick closure capturing getMainWindow) leaked forever. The Set
+    // was never read, so it's gone — Electron/Chromium owns the notification
+    // lifetime and GCs it once no listeners remain reachable.
     notification.on('click', () => {
       try {
-        if (onClick) {
-          onClick()
-        }
+        onClick?.()
       } catch (err) {
         console.error('Error in notification onClick:', err)
-      } finally {
-        this.activeNotifications.delete(notification)
       }
-    })
-
-    notification.on('close', () => {
-      this.activeNotifications.delete(notification)
     })
 
     notification.show()

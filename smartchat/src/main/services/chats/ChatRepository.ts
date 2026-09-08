@@ -1,4 +1,4 @@
-import { PrismaClient, Chat } from '@prisma/client'
+import { PrismaClient, Chat, Prisma } from '@prisma/client'
 import { IChatRepository, ChatUpsertData, ChatWithCommunity } from './IChatRepository'
 
 /**
@@ -204,14 +204,20 @@ export class ChatRepository implements IChatRepository {
   /**
    * Search chats by name or JID.
    */
-  async searchChats(query: string, take: number = 20): Promise<Array<{ jid: string; name: string | null; type: string; profilePictureUrl: string | null }>> {
+  async searchChats(query: string, take: number = 20, jids?: string[]): Promise<Array<{ jid: string; name: string | null; type: string; profilePictureUrl: string | null }>> {
+    const where: Prisma.ChatWhereInput = {
+      OR: [
+        { name: { contains: query } },
+        { jid: { contains: query } }
+      ]
+    }
+    // P2-S11-03: honour a chat-scope filter so the search box doesn't pull the
+    // whole chat table into the main process on every keystroke.
+    if (jids && jids.length > 0) {
+      where.jid = { in: jids }
+    }
     return this.prisma.chat.findMany({
-      where: {
-        OR: [
-          { name: { contains: query } },
-          { jid: { contains: query } }
-        ]
-      },
+      where,
       select: {
         jid: true,
         name: true,

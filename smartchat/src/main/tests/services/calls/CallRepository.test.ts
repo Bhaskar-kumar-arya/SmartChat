@@ -56,4 +56,20 @@ describe('CallRepository.upsertCallLog (S11-05)', () => {
     expect(m.update.mock.calls[0][0].data.timestamp).toBe(100n)
     expect(m.update.mock.calls[0][0].data.status).toBe('terminate')
   })
+
+  it('P2-S11-04: rethrows a non-P2002 create failure instead of recursing forever', async () => {
+    const m = makePrisma(null)
+    m.create.mockRejectedValue(Object.assign(new Error('db is locked'), { code: 'P2010' }))
+    await expect(new CallRepository(m.prisma).upsertCallLog(base)).rejects.toThrow('db is locked')
+    // one initial + no infinite retry
+    expect(m.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('P2-S11-04: retries a P2002 race a bounded number of times', async () => {
+    const m = makePrisma(null)
+    m.create.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }))
+    await expect(new CallRepository(m.prisma).upsertCallLog(base)).rejects.toThrow('unique')
+    // initial + 2 bounded retries = 3
+    expect(m.create).toHaveBeenCalledTimes(3)
+  })
 })

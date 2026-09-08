@@ -30,12 +30,28 @@ export class APIConfigProvider implements IAPIConfigProvider {
       safeToWrite = false
     }
 
-    let port = 3003
+    // P2-S11-10: validate the configured port. An out-of-range / NaN / float
+    // value used to flow straight into `server.listen` and either throw (API
+    // silently down) or bind an unexpected port.
+    const DEFAULT_PORT = 3003
+    const isValidPort = (n: unknown): n is number =>
+      typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 65535
+
+    let port = DEFAULT_PORT
     const envPort = process.env.SMARTCHAT_API_PORT
     if (envPort) {
-      port = parseInt(envPort, 10) || 3003
-    } else if (typeof config.externalApiPort === 'number') {
-      port = config.externalApiPort
+      const parsed = parseInt(envPort, 10)
+      port = isValidPort(parsed) ? parsed : DEFAULT_PORT
+    } else if (config.externalApiPort !== undefined) {
+      if (isValidPort(config.externalApiPort)) {
+        port = config.externalApiPort
+      } else {
+        console.warn(
+          `[APIConfigProvider] Ignoring invalid externalApiPort (${String(config.externalApiPort)}); using ${DEFAULT_PORT}`
+        )
+        port = DEFAULT_PORT
+        config.externalApiPort = DEFAULT_PORT
+      }
     } else {
       config.externalApiPort = port
     }

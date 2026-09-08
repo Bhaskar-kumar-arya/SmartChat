@@ -22,7 +22,7 @@ export class CallRepository implements ICallRepository {
     }
   }
 
-  async upsertCallLog(entry: CallLogEntry): Promise<void> {
+  async upsertCallLog(entry: CallLogEntry, retriesLeft = 2): Promise<void> {
     // S11-05: Baileys re-delivers queued `call` events on reconnect and call
     // state can arrive out of order. Never let a stale event clobber a newer /
     // terminal row: skip the update when the incoming event is older, or when
@@ -63,9 +63,19 @@ export class CallRepository implements ICallRepository {
           timestamp: entry.timestamp
         }
       })
-    } catch {
-      // Lost a race to a concurrent insert — re-run through the guarded path.
-      await this.upsertCallLog(entry)
+    } catch (err) {
+      // P2-S11-04: only a unique-constraint violation (P2002) means "someone
+      // else inserted this row first" — re-run through the guarded update path,
+      // with a bounded retry count so a persistent failure can't recurse
+      // infinitely on the main thread. Anything else (DB locked, FK violation,
+      // disk full, bad data) is rethrown.
+      const code = (err as { code?: string })?.code
+      if (code === 'P2002' && retriesLeft > 0) {
+        await this.upsertCallLog(entry, retriesLeft - 1)
+        return
+      }
+      console.error('[CallRepository] Failed to create call log:', err)
+      throw err
     }
   }
 

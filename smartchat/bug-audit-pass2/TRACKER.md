@@ -20,7 +20,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 8 | Kernel plugins, contributions, permissions | DONE (7 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 4 low |
 | 9 | Kernel storage, channels, ipc, ui | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 10 | App IPC & auth | DONE (7 findings) | 2026-09-08 | 0 crit, 0 high, 3 med, 4 low — all 7 fixed 2026-09-08 (slice 10) |
-| 11 | apiServer, search, notification, calls, audio | DONE (10 findings) | 2026-09-07 | 0 crit, 1 high, 2 med, 7 low |
+| 11 | apiServer, search, notification, calls, audio | DONE (10 findings) | 2026-09-08 | 0 crit, 1 high, 2 med, 7 low — all 10 fixed 2026-09-08 (slice 11); S11-01 embedding pipeline restored + gated, S11-02/03 correctness+perf, runtime model-load not unit-tested |
 | 12 | SDK, tools, data wipe, domain, db, protocol | DONE (11 findings) | 2026-09-07 | 0 crit, 0 high, 4 med, 7 low |
 | 13 | Cross-cutting pass | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
 
@@ -1122,7 +1122,18 @@ re-index. No error is logged anywhere; the feature silently does nothing useful.
 **Fix idea:** restore the real pipeline implementation (or wire a maintained
 embedding backend), and gate `deepSearch` / bulk indexing behind a "model ready"
 check so it degrades visibly instead of writing zero vectors.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** Restored the real `@xenova/transformers` feature-extraction pipeline in
+`embedding.worker.ts` (added `@xenova/transformers` to the electron-vite `main`
+externals so it isn't bundled). The worker now only replies `init_done` once the
+model has actually loaded, emits a global `error` (id:null) if it fails to load
+so `EmbeddingWorkerManager.ensureWorker()` rejects, and rejects any `embed`
+before the model is ready — the zero-vector reply is gone. Gated bulk indexing:
+`EmbeddingService.indexAll` now rethrows if `ensureWorker` fails (instead of
+walking the whole table logging per-row) and bails mid-run on a worker/model
+error. `deepSearch` already propagates an embed() throw to the caller. Remaining
+work: model-download UX / offline handling not built here; runtime model load
+not exercisable in unit tests (needs network + model cache).
 
 ### [P2-S11-02] med — src/main/services/messages/MessageVectorRepository.ts:45-65
 **What:** `runVectorMatch` issues `SELECT ... FROM vec_messages WHERE vector
@@ -1145,7 +1156,14 @@ filter is present, or pre-join: materialise the candidate ids into a temp
 table / use sqlite-vec metadata-column filtering so the KNN scan itself is
 scoped. (Currently masked by P2-S11-01 — all distances equal — but a real bug
 the moment embeddings work.)
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `runVectorMatch` now uses `k = SCOPED_MATCH_K` (4000) instead of the
+global `k=30` whenever a `messageId IN (...)` scope is present, so the post-scan
+`WHERE` intersection actually contains the in-scope nearest neighbours rather
+than whichever ~0 of the global top-30 happen to fall in scope. Unscoped
+queries keep `k=30`. Regression test in `MessageVectorRepository.test.ts`. A
+fully correct fix still needs sqlite-vec metadata-column filtering (noted in
+code) so the scan itself is scoped.
 
 ### [P2-S11-03] med — src/main/services/search/SearchService.ts:63-98
 **What:** The chat half of `searchAll` calls `chatRepository.findChats(filters?.jids)`
@@ -1161,7 +1179,16 @@ grows with account age, for a result set the UI caps at a screenful.
 **Fix idea:** push the name/jid `LIKE` filter and a `LIMIT` into the repository
 query, and fetch last-messages in a single `WHERE chatJid IN (...)` grouped
 query (or join) instead of per-chat.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `SearchService.searchAll` chat half now calls
+`chatRepository.searchChats(q, 50, filters?.jids)` — name/jid `LIKE` + chat-scope
++ `LIMIT 50` pushed into SQL (`searchChats` gained an optional `jids` filter) —
+instead of `findChats()` (whole table) + JS scan. Last-messages fetched via one
+new batched `messageRepository.findLastMessagesForChats(jids)`
+(`findMany` + `distinct: ['chatJid']`) instead of N+1 `findLastMessage`.
+Trade-off (noted in code): a DM with a null stored name whose *resolved* contact
+name matches is no longer surfaced in the chat list — message/mention search
+still cover it. Regression test in `SearchService.test.ts`.
 
 ### [P2-S11-04] low — src/main/services/calls/CallRepository.ts:52-67
 **What:** `upsertCallLog`'s `create()` is wrapped in `try { … } catch { await
@@ -1175,7 +1202,12 @@ a single inbound `call` event. Even the intended race case busy-loops until the
 competing transaction commits.
 **Fix idea:** only retry on the Prisma unique-constraint code (`P2002`), cap
 retries, and rethrow/log anything else.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `upsertCallLog` `catch` now inspects the error code: only `P2002`
+(unique constraint) re-runs through the guarded path, and only via a bounded
+`retriesLeft` counter (default 2) passed recursively. Any other error is logged
+and rethrown — no more delay-free infinite recursion / stack overflow on the
+main thread. Regression tests in `CallRepository.test.ts`.
 
 ### [P2-S11-05] low — src/main/services/notification/NotificationService.ts:82,182-200
 **What:** `notify()` calls `this.readPreferences()` first thing, which does
@@ -1189,7 +1221,12 @@ file is tiny but the syscalls still serialize against everything else on the
 main loop.
 **Fix idea:** read prefs once, cache in memory, invalidate on
 `setPreferences` / an fs.watch; `initPreferences` already holds the only writer.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `NotificationService` now caches the parsed prefs in `prefsCache`;
+`readPreferences()` returns the cache after the first read, `writePreferences()`
+(the only writer, via `initPreferences`/`setPreferences`) updates the cache
+before touching disk. The message-receive hot path no longer does a synchronous
+stat+read+parse per notification.
 
 ### [P2-S11-06] low — src/main/services/notification/NotificationService.ts:154-178
 **What:** `getIconFromUrl(options.profilePicUrl)` does a bare `fetch(url)` from
@@ -1207,7 +1244,13 @@ notification icon.
 **Fix idea:** restrict to `https:`, add an `AbortSignal` timeout and a byte
 cap, and reuse the `ProfileSyncService` image cache / a stored local path
 instead of refetching.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `getIconFromUrl` now rejects non-`https:` URLs, bounds the fetch with a
+4s `AbortSignal` timeout and a 2MB cap (checked against `content-length` and the
+actual buffer), follows redirects explicitly, and memoises the decoded
+`NativeImage` (and misses) in a size-capped `iconCache` so repeat notifications
+don't re-fetch. Not wired to `ProfileSyncService`'s on-disk cache (larger change)
+— the in-process cache covers the repeated-fetch cost; note kept.
 
 ### [P2-S11-07] low — src/main/services/notification/ElectronNotificationProvider.ts:6,25-44
 **What:** `activeNotifications` is a `Set<Notification>` that entries are added
@@ -1221,7 +1264,12 @@ a long-lived app that shows many notifications this is a slow unbounded leak of
 **Fix idea:** also delete on the `failed` event and on a `show`+timeout
 fallback, or drop the Set entirely (it isn't read anywhere — nothing dedupes or
 closes via it).
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** Dropped the `activeNotifications` Set entirely (it was never read —
+nothing dedupes or closes via it). No more per-notification entry that leaks
+when the OS dismisses without a `close` event, and the retained `onClick`
+closures are no longer pinned by a Set. Chromium owns the `Notification`
+lifetime.
 
 ### [P2-S11-08] low — src/main/services/notification/NotificationService.ts:25-48
 **What:** On first launch (no `notification_preferences.json` yet) `initPreferences`
@@ -1234,7 +1282,11 @@ discover the toggle.
 **Fix idea:** default `launchOnStartup` to `false`, or defer the
 `setLoginItemSettings` call until the user visits notification settings /
 completes onboarding.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `launchOnStartup` now defaults to `false` (both the `initPreferences`
+seed and the `readPreferences` fallback), and `initPreferences` no longer calls
+`app.setLoginItemSettings` at first launch. The hidden auto-start OS entry is
+only registered once the user enables the toggle (`setPreferences`, unchanged).
 
 ### [P2-S11-09] low — src/main/services/audio/AudioTranscoderService.ts:34-66
 **What:** `transcodeToWAPtt` wraps `ffmpeg(...)` in a Promise that only settles
@@ -1247,7 +1299,12 @@ running/orphaned.
 **Fix idea:** add a watchdog timer that calls `command.kill('SIGKILL')` and
 rejects after N seconds; keep a handle to the `ffmpeg` command so it can be
 aborted.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `transcodeToWAPtt` keeps a handle to the `ffmpeg` command and arms a
+60s watchdog that `command.kill('SIGKILL')`s it and rejects if neither `end`
+nor `error` fires. A `settled` guard + `finish()` helper ensures the promise
+settles exactly once and the timer is always cleared. A hung ffmpeg no longer
+wedges `MessageSenderService`'s `await` forever or orphans the child.
 
 ### [P2-S11-10] low — src/main/services/apiServer/APIServer.ts:42-45,56-69 / APIConfigProvider.ts:37-38
 **What:** (a) The API replies `Access-Control-Allow-Origin: *` to every request,
@@ -1267,7 +1324,15 @@ value and leave the API silently down.
 **Fix idea:** echo back a specific allowed origin (or drop CORS entirely — local
 clients don't need it), use `crypto.timingSafeEqual` for the token, and clamp /
 validate the configured port.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** (a) `APIServer` no longer sends `Access-Control-Allow-Origin` (or the
+other CORS headers) — local CLI/native clients don't enforce CORS, so the
+wildcard only ever helped a browser page that learned the token; `OPTIONS` still
+204s. (b) Token check now `APIServer.tokensMatch()` → length guard +
+`crypto.timingSafeEqual`. (c) `APIConfigProvider` validates the port
+(integer, 1–65535) from env and prefs; an invalid value logs a warning and
+falls back to 3003 (and rewrites the prefs value) instead of flowing into
+`server.listen`. Regression tests in `APIConfigProvider.test.ts`.
 
 ## Slice 12 — SDK, tools, data wipe, domain, db, protocol
 

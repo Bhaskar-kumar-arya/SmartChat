@@ -126,7 +126,15 @@ export class EmbeddingService implements IEmbeddingService {
       return
     }
     
-    await this.workerManager.ensureWorker(this.modelName)
+    // P2-S11-01: if the embedding model can't load, fail loudly here instead of
+    // walking the whole message table logging one error per row (and never
+    // persisting anything useful).
+    try {
+      await this.workerManager.ensureWorker(this.modelName)
+    } catch (err) {
+      console.error('[EmbeddingService] Bulk indexing aborted — embedding model unavailable:', err)
+      throw err instanceof Error ? err : new Error(String(err))
+    }
 
     const indexedIds = await this.messageVectorRepository.getAllIndexedMessageIds()
     const indexedSet = new Set<string>(indexedIds)
@@ -163,6 +171,12 @@ export class EmbeddingService implements IEmbeddingService {
           await this.messageVectorRepository.insertIntoVecMessages(m.id, vectorJson)
         } catch (err) {
           console.error(`[EmbeddingService] Failed to index message ${m.id}:`, err)
+          // P2-S11-01: a failed embed here means the worker/model is down for
+          // this run — bail rather than logging thousands of identical errors.
+          if (err instanceof Error && /worker|model/i.test(err.message)) {
+            console.error('[EmbeddingService] Bulk indexing aborted mid-run (embedding worker unavailable).')
+            break
+          }
         }
 
         done++

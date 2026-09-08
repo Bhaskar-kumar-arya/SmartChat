@@ -1,4 +1,5 @@
 import http from 'http'
+import crypto from 'crypto'
 import { IAPIServer } from './IAPIServer'
 import { IAPIConfigProvider } from './IAPIConfigProvider'
 import { Router } from './Router'
@@ -39,11 +40,12 @@ export class APIServer implements IAPIServer {
     const chatsController = new ChatsController(this.chatService, this.messageActionService, this.getSock)
 
     // 1. CORS Middleware
+    // P2-S11-10: this is a credential-bearing API bound to 127.0.0.1 for local
+    // programs (curl / native helpers), which do not enforce CORS. Replying
+    // `Access-Control-Allow-Origin: *` only served to let arbitrary web pages
+    // the user visits read the responses if they ever learned the token. No
+    // ACAO header is sent, so browsers cannot read cross-origin responses.
     this.router.use((req, res, next) => {
-      res.setHeader('Access-Control-Allow-Origin', '*')
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-      
       if (req.method === 'OPTIONS') {
         res.writeHead(204)
         res.end()
@@ -61,7 +63,7 @@ export class APIServer implements IAPIServer {
       }
 
       const reqToken = authHeader.substring(7).trim()
-      if (reqToken !== this.token) {
+      if (!APIServer.tokensMatch(reqToken, this.token)) {
         this.sendJSON(res, 401, { error: 'Unauthorized: Invalid token' })
         return
       }
@@ -121,6 +123,15 @@ export class APIServer implements IAPIServer {
 
   getPort(): number {
     return this.port
+  }
+
+  // P2-S11-10: constant-time token comparison so response timing isn't a
+  // (weak) oracle for guessing the bearer token byte by byte.
+  private static tokensMatch(a: string, b: string): boolean {
+    const bufA = Buffer.from(a)
+    const bufB = Buffer.from(b)
+    if (bufA.length !== bufB.length) return false
+    return crypto.timingSafeEqual(bufA, bufB)
   }
 
   private handleUnhandledError(res: http.ServerResponse, err: unknown): void {

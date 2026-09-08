@@ -66,6 +66,28 @@ describe('APIConfigProvider', () => {
     expect(fs.writeFileSync).not.toHaveBeenCalled()
   })
 
+  it('P2-S11-10: falls back to the default port for an out-of-range configured value', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      externalApiPort: 99999,
+      externalApiToken: 'existing_token'
+    }))
+
+    const config = provider.loadOrCreateConfig()
+
+    expect(config.port).toBe(3003)
+  })
+
+  it('P2-S11-10: falls back to the default port for a NaN / float configured value', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      externalApiPort: 3003.5,
+      externalApiToken: 'existing_token'
+    }))
+
+    expect(provider.loadOrCreateConfig().port).toBe(3003)
+  })
+
   it('should override port with environment variable', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true)
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
