@@ -902,7 +902,12 @@ composer (B can't type until the recording is trashed).
 **Fix idea:** in the `activeJid` effect call `cancelRecording()` (and close any
 staged blob); or key `useAudioRecorder` state by jid; snapshot the jid at
 record-start and pass it explicitly to the send.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in a802146 — `recordingJidRef` snapshots the jid at
+record-start; the `activeJid` effect calls `cancelRecording()`/`stopPreview()`;
+`handleSendVoice` bails (and `ChatLayout.handleSendMediaMessage` refuses) when
+the originating jid no longer matches the active chat. Test: MessageInput
+"voice note chat-switch safety (F6-01)" — cancel on switch + no mis-delivery.
 
 ### [F6-02] med — src/renderer/src/components/chat/MentionMenu.tsx:57-62 + MessageInput.tsx:181-205
 **What:** mention rows are `<div … onClick={() => onSelect(p)}>` with no
@@ -919,7 +924,9 @@ keeps focus in the editor) works.
 **Fix idea:** add `onMouseDown={e => e.preventDefault()}` to the mention rows so
 the editor keeps focus/selection; or capture the caret offset on editor
 `blur`/`input` and use `lastCaretOffsetRef` as the fallback.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 — mention rows now `onMouseDown={e => e.preventDefault()}`.
+Test: MentionMenu "prevents default on row mousedown" (fireEvent returns false).
 
 ### [F6-03] med — src/renderer/src/hooks/useMentions.ts:20,42-67
 **What:** `mentionedJids` is a `Set` that only ever grows (via `addMention`); it
@@ -935,7 +942,10 @@ reconciliation; `useMentions` has none.
 **Fix idea:** on every `handleInputChange`, rebuild the mention set from the
 `@<number>` tokens still present in the text (intersect with known participants),
 or drop a JID when its token is no longer found.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 — `handleInputChange` rebuilds `mentionedJids`
+from the `@<number>` tokens still present in the text. Test: useMentions
+"drops a mention once its @token is edited out of the text (F6-03)".
 
 ### [F6-04] med — src/renderer/src/hooks/useAudioRecorder.ts:94-102
 **What:** `updateVisualizer` calls `setVisualizerData(<32-element array>)` on every
@@ -948,7 +958,9 @@ fps. On lower-end machines the composer visibly janks during recording.
 **Fix idea:** throttle the state push (e.g. update every 3rd–4th frame or on a
 ~66 ms timer), and/or write the data into a ref that the visualizer reads via its
 own rAF, keeping React out of the loop.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 — `updateVisualizer` only pushes state every 4th
+rAF frame (~15fps). Covered by existing useAudioRecorder tests (still green).
 
 ### [F6-05] med — src/renderer/src/components/chat/MessageInput.tsx:483
 **What:** the send/mic button does `onClick={text.trim() ? handleSend : startRecording}`.
@@ -960,7 +972,11 @@ device), clicking the mic button produces an unhandled promise rejection and
 that permission is the problem.
 **Fix idea:** wrap the call, and on `NotAllowedError` / `NotFoundError` show a
 toast / inline hint ("Microphone access is blocked — enable it in settings").
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in a802146 — `handleStartRecording` wraps `startRecording`
+and sets an inline `micError` state (rendered as `.composer-inline-error`) for
+`NotAllowedError`/`SecurityError`/`NotFoundError`/other. No toast primitive
+exists (F12-06); inline error used per fix notes.
 
 ### [F6-06] med — src/renderer/src/hooks/useDragAndDrop.ts:36-47
 **What:** `dragCounter` is incremented on `dragenter` and decremented on
@@ -973,7 +989,11 @@ and message list until the user does another full enter→leave cycle.
 **Fix idea:** also reset `dragCounter.current = 0` / `setIsDraggingOver(false)` on
 a `window` `dragend`/`drop` and on `mouseleave` of the document, or use a short
 "no dragover seen recently" timeout to auto-clear.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 — a `useEffect` resets `dragCounter`/`isDraggingOver`
+on window `dragend`/`drop` and on a `dragleave` with no `relatedTarget`; the
+per-element counter is also clamped at 0. Test: useDragAndDrop "clears a stuck
+overlay when a drag ends without a balancing dragleave (F6-06)".
 
 ### [F6-07] med — src/renderer/src/components/picker/EmojiStickerGifPicker.tsx:136-140,262-263
 **What:** `api.getFavoriteStickers().then(setFavoriteStickers)` runs in an effect
@@ -988,7 +1008,11 @@ also calls `fetchGiphy(searchQuery, 'stickers')` with a lying dep array (missing
 alongside the line-53 debounce effect.
 **Fix idea:** add an `alive` flag to the favorites fetch; consolidate the two
 GIPHY-sticker trigger effects into one with honest deps.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 — the `[activeTab]` favorites effect now has an
+`alive` guard + cleanup; the redundant `[selectedPackIndex, activeTab]` GIPHY
+sticker effect was removed (the debounce effect already lists `selectedPackIndex`).
+The favorites pack-button onClick refetch (user-driven, mounted) left as-is.
 
 ### [F6-08] low — src/renderer/src/components/picker/EmojiStickerGifPicker.tsx:104
 **What:** `handleStickerClick` does `stickerUrl.replace('.gif', '.webp')` to force
@@ -1001,7 +1025,11 @@ CDN path without an extension). A non-matching URL is then downloaded as-is and
 may reject or send as a document.
 **Fix idea:** replace only a trailing `/\.gif(\?|$)/i`, or derive the webp URL
 from the sticker object's typed fields like `handleGiphyStickerClick` does.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 — extracted `toWebpStickerUrl()` which rewrites
+only a real trailing `.gif` path extension (splitting query/hash off first),
+leaving `.webp`, extensionless, and query-only-`.gif` URLs untouched. Test:
+`toWebpStickerUrl.test.ts` (5 cases).
 
 ### [F6-09] low — src/renderer/src/hooks/useGiphy.ts:3
 **What:** a GIPHY API key is hard-coded as the fallback when
@@ -1014,7 +1042,11 @@ sticker tabs silently 401 for every user who didn't configure `.env` (the error
 UI blames the user's missing `.env`).
 **Fix idea:** no fallback — when the env var is missing, render a clear
 "GIF search not configured" state instead of calling GIPHY with a dead key.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 — hard-coded fallback key removed; `fetchGiphy`
+sets `giphyError = 'GIF search is not configured.'` and returns without a network
+call when `VITE_GIPHY_API_KEY` is unset (picker already renders `giphyError`).
+Test: useGiphy "does not call GIPHY ... when the key is missing".
 
 ### [F6-10] low — src/renderer/src/hooks/useMultiFileQueue.ts:23 + components/chat/MultiFilePreview.tsx:113
 **What:** the queue silently caps at `maxFiles` (default 30) inside the `setStagedFiles`
@@ -1027,7 +1059,11 @@ gate, so the "+" button and the actual accept limit can disagree.
 **Fix idea:** return a `maxFiles` / `droppedCount` from the hook; have
 `MultiFilePreview` gate on `files.length < maxFiles`; surface a toast when files
 are dropped over the limit.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 — single `MAX_STAGED_FILES` const exported from
+`useMultiFileQueue` and consumed by `MultiFilePreview` (no more duplicated `30`);
+hook also returns `maxFiles`. Over-limit toast deferred — no toast primitive
+(F12-06); `droppedCount` surfacing left as a follow-up.
 
 ### [F6-11] low — src/renderer/src/components/chat/MentionMenu.tsx:31-51
 **What:** the `keydown` effect depends on `[filtered, selectedIndex, onSelect, onClose]`.
@@ -1041,7 +1077,12 @@ and a small window where a keypress can land between removal and re-add.
 after the hooks), and `(prev ± 1) % 0` → `NaN` selectedIndex.
 **Fix idea:** wrap `handleSelectParticipant` / the close handler in `useCallback`;
 guard the arrow-key math when `filtered.length === 0`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 (+ a802146 for MessageInput) — `handleKeyDown`
+early-returns when `filtered.length === 0` (no more `% 0` → NaN);
+`handleSelectParticipant` + `closeMentionMenu` memoised in MessageInput and
+`addMention`/`clearMentions` memoised in `useMentions`, cutting the listener
+churn. Test: MentionMenu "does not throw on arrow keys when nothing matches".
 
 ### [F6-12] low — src/renderer/src/components/chat/MessageInput.tsx:173-179,264-281
 **What:** `handleSelectGif` / `handleSelectSticker` / `handleSendVoice` call
@@ -1054,7 +1095,11 @@ text-send and multi-file paths call `setReplyingTo(null)`), so the next plain
 message is unexpectedly also a reply to the same message.
 **Fix idea:** clear the reply state in the media/voice/gif/sticker send paths too
 (lift a single `onSent` callback that resets reply + input).
-**Status:** open
+**Status:** fixed
+**Fix status:** already resolved before this slice — `ChatLayout.handleSendMediaMessage`
+(the `onSendMedia` prop for gif/sticker/voice) calls `setReplyingTo(null)` after
+every send (ChatLayout.tsx:~209, likely from the F4 slice). No change needed;
+verified by reading the current consumer. Covered by ChatLayout tests (green).
 
 ### [F6-13] low — src/renderer/src/utils/editorUtils.ts:56-73,78-94 (via MessageInput.handleEditorInput)
 **What:** `handleEditorInput` runs `hasRawEmojis(editor)` on every `input` event
@@ -1069,7 +1114,13 @@ chars) can drift, jumping the cursor mid-typing.
 **Fix idea:** only re-render when a raw emoji was actually just inserted (diff the
 last input), hoist the `emojiRegex()` instances to module scope, and debounce the
 HTML re-sync.
-**Status:** open
+**Status:** fixed (partial)
+**Fix status:** fixed in ecfc4d7 — cheap part done: single module-scope
+`EMOJI_REGEX` in `editorUtils` (was recompiled per helper call per keystroke),
+`lastIndex` reset before each stateful use. Deferred: the caret-offset rework
+(plain-text offset counting an emoji `img` as `data-emoji.length`) and diffing
+last-input to skip the `innerHTML` re-sync — deeper, low severity; carry forward.
+Existing editorUtils tests still green.
 
 ### [F6-14] low — src/renderer/src/components/chat/EmojiStickerGifPicker.tsx:53-67 & useGiphy.ts:11-44
 **What:** GIPHY search has a 500 ms debounce but no request-sequencing; `fetchGiphy`
@@ -1081,7 +1132,11 @@ shared by search and by download, so clicking a GIF shows the full-panel spinner
 over the whole grid.
 **Fix idea:** capture a request id / `AbortController` per `fetchGiphy` call and
 ignore stale resolutions.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in ecfc4d7 — `requestIdRef` incremented per `fetchGiphy`
+call; response, error and `setLoading(false)` are all ignored unless the id is
+still current. Test: useGiphy "ignores a stale response when a newer query is in
+flight (F6-14)". `loading` split from download not changed (cosmetic).
 
 ## Slice F7 — Search UI
 
