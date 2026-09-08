@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAPI } from '../context/APIContext'
 import { LoadedExtension } from '../types/extension.types'
 
@@ -11,22 +11,28 @@ export function useExtensionManager() {
   const [extensions, setExtensions] = useState<LoadedExtension[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const aliveRef = useRef(true)
 
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const list = await api.extensionList()
+      if (!aliveRef.current) return
       setExtensions(list as LoadedExtension[])
     } catch (err) {
-      setError(String(err))
+      if (aliveRef.current) setError(String(err))
     } finally {
-      setLoading(false)
+      if (aliveRef.current) setLoading(false)
     }
   }, [api])
 
   useEffect(() => {
+    aliveRef.current = true
     refresh()
+    return () => {
+      aliveRef.current = false
+    }
   }, [refresh])
 
   const install = useCallback(

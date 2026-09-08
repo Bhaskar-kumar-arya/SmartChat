@@ -235,7 +235,8 @@
   transition: background 0.15s;
 }
 
-.ext-slash-item:hover {
+.ext-slash-item:hover,
+.ext-slash-item--active {
   background: var(--wa-bg-hover);
 }
 

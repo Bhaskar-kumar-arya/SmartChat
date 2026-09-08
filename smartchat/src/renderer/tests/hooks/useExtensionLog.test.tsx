@@ -55,4 +55,23 @@ describe('useExtensionLog', () => {
 
     expect(result.current).toBe('Log line 1\nLog line 2')
   })
+
+  it('F9-06: does not start an overlapping fetch while one is still pending', async () => {
+    let pending = 0
+    mockApi.extensionGetLog = vi.fn().mockImplementation(
+      () => new Promise<string>(() => { pending++ })
+    )
+
+    renderHook(() => useExtensionLog('ext-1'), { wrapper: createWrapper() })
+
+    await act(async () => { await Promise.resolve() })
+    expect(pending).toBe(1)
+
+    // Several intervals elapse but the first fetch never resolves
+    await act(async () => {
+      vi.advanceTimersByTime(6000)
+      await Promise.resolve()
+    })
+    expect(pending).toBe(1)
+  })
 })

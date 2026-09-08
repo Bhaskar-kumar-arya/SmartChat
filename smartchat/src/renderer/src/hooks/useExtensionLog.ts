@@ -14,19 +14,32 @@ export function useExtensionLog(extensionId: string | null): string {
       setLog('')
       return
     }
-    // Fetch immediately on mount
-    api.extensionGetLog(extensionId).then(setLog).catch(() => setLog(''))
 
-    const intervalId = setInterval(async () => {
+    let alive = true
+    let fetching = false
+
+    const poll = async () => {
+      // Skip this tick if the previous fetch is still in flight — prevents
+      // overlapping requests landing out of order on a slow backend.
+      if (fetching) return
+      fetching = true
       try {
         const text = await api.extensionGetLog(extensionId)
-        setLog(text)
+        if (alive) setLog(text)
       } catch {
         // silently ignore polling errors
+      } finally {
+        fetching = false
       }
-    }, 2000)
+    }
 
-    return () => clearInterval(intervalId)
+    void poll()
+    const intervalId = setInterval(poll, 2000)
+
+    return () => {
+      alive = false
+      clearInterval(intervalId)
+    }
   }, [extensionId, api])
 
   return log

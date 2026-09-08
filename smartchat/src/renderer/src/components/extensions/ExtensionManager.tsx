@@ -20,17 +20,24 @@ export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat 
   const { extensions, loading, error, install, unload, reload, uninstall } = useExtensionManager()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
+  const [installError, setInstallError] = useState<string | null>(null)
 
   if (!isOpen) return null
 
   const handleInstall = async () => {
+    setInstallError(null)
     try {
       const paths = await api.selectFile()
       if (!paths || paths.length === 0) return
+      if (!paths[0].toLowerCase().endsWith('.scext')) {
+        setInstallError('Please select a .scext extension package.')
+        return
+      }
       setInstalling(true)
       await install(paths[0])
     } catch (err) {
       console.error('Failed to install extension:', err)
+      setInstallError(`Failed to install extension: ${String(err)}`)
     } finally {
       setInstalling(false)
     }
@@ -75,6 +82,12 @@ export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat 
             </button>
           </div>
         </div>
+
+        {installError && (
+          <div className="ext-manager-install-error" role="alert">
+            {installError}
+          </div>
+        )}
 
         {/* Body: two-panel layout */}
         <div className="ext-manager-body">

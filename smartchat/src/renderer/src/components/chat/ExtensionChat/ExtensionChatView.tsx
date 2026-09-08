@@ -25,8 +25,12 @@ export function ExtensionChatView({ extensionId, commands }: ExtensionChatViewPr
   }, [messages])
 
   const handleAction = (buttonId: string) => {
-    // Button press — route as a special message prefixed with button id
-    api.extensionChatSend(extensionId, `__button:${buttonId}`)
+    // Button press — route as a special message prefixed with button id.
+    // TODO(F9-05): replace the `__button:` text sentinel with a structured field
+    // so a user message starting with `__button:` can't be spoofed as a press.
+    Promise.resolve(api.extensionChatSend(extensionId, `__button:${buttonId}`)).catch(
+      console.error
+    )
   }
 
   return (

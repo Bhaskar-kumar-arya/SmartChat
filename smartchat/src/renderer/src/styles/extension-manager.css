@@ -185,6 +185,15 @@
   color: var(--wa-danger);
 }
 
+.ext-manager-install-error {
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--wa-danger);
+  background: color-mix(in srgb, var(--wa-danger) 12%, transparent);
+}
+
 /* ── Extension Card ─────────────────────────────────────────────────── */
 .ext-card-list {
   padding: 8px;

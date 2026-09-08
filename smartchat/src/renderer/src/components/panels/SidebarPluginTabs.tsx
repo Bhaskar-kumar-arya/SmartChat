@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useContributions } from '../../hooks/useContributions'
 import { useContributionSnapshot } from '../../context/ContributionContext'
 import { PluginIcon } from '../common/PluginIcon'
@@ -50,6 +50,15 @@ export function SidebarPluginMainStage({ activePanelId }: SidebarPluginMainStage
   const snapshot = useContributionSnapshot()
   const panelIds = snapshot.panelIds || {}
 
+  // F9-01: don't spin up a <webview> (a full renderer process + preload + the
+  // plugin's timers/network) for every declared panel at app start. Lazy-mount a
+  // panel's webview the first time it's opened, then keep it alive (MRU keep-all)
+  // so its in-memory state survives tab switches. Panels never opened this
+  // session cost nothing.
+  const mountedRef = useRef<Set<string>>(new Set())
+  if (activePanelId) mountedRef.current.add(activePanelId)
+  const mounted = mountedRef.current
+
   if (!panels || panels.length === 0) return null
 
   return (
@@ -58,6 +67,9 @@ export function SidebarPluginMainStage({ activePanelId }: SidebarPluginMainStage
         const resolvedPanelId = panelIds[p.id] || p.id
         const panelUrl = p.panel ? `plugin://${p.pluginId}/${p.panel}` : ''
         const isVisible = p.id === activePanelId
+
+        // Skip panels that have never been opened this session.
+        if (!isVisible && !mounted.has(p.id)) return null
 
         if (!panelUrl) {
           if (!isVisible) return null

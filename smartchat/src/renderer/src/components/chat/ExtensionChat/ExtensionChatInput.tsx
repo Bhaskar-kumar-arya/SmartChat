@@ -14,6 +14,7 @@ export function ExtensionChatInput({ commands, onSend }: ExtensionChatInputProps
   const [text, setText] = useState('')
   const [showAutocomplete, setShowAutocomplete] = useState(false)
   const [filteredCmds, setFilteredCmds] = useState<SlashCommand[]>([])
+  const [highlightIdx, setHighlightIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -24,17 +25,41 @@ export function ExtensionChatInput({ commands, onSend }: ExtensionChatInputProps
       )
       setFilteredCmds(matches)
       setShowAutocomplete(matches.length > 0)
+      setHighlightIdx(0)
     } else {
       setShowAutocomplete(false)
     }
   }, [text, commands])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showAutocomplete && filteredCmds.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightIdx((i) => (i + 1) % filteredCmds.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightIdx((i) => (i - 1 + filteredCmds.length) % filteredCmds.length)
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        selectCommand(filteredCmds[highlightIdx])
+        return
+      }
+      if (e.key === 'Escape') {
+        // Consume it so an ancestor close-on-Escape handler doesn't also fire.
+        e.preventDefault()
+        e.stopPropagation()
+        setShowAutocomplete(false)
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       submit()
     }
-    if (e.key === 'Escape') setShowAutocomplete(false)
   }
 
   const submit = useCallback(() => {
@@ -55,10 +80,11 @@ export function ExtensionChatInput({ commands, onSend }: ExtensionChatInputProps
     <div className="ext-chat-input-wrapper">
       {showAutocomplete && (
         <div className="ext-slash-autocomplete">
-          {filteredCmds.map((cmd) => (
+          {filteredCmds.map((cmd, i) => (
             <div
               key={cmd.name}
-              className="ext-slash-item"
+              className={`ext-slash-item ${i === highlightIdx ? 'ext-slash-item--active' : ''}`}
+              onMouseEnter={() => setHighlightIdx(i)}
               onClick={() => selectCommand(cmd)}
             >
               <span className="ext-slash-command">/{cmd.name}</span>
