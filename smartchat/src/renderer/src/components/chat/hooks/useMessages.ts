@@ -13,6 +13,12 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
   const api = useAPI()
   const [messages, setMessages] = useState<MessageItem[]>([])
   const messagesRef = useRef<MessageItem[]>([])
+
+  // Track the currently-active chat synchronously so async loads (getMessages /
+  // getMessagesAround) can detect that they resolved after the user already
+  // switched chats and bail instead of clobbering the new chat's list (F3-01/F3-02).
+  const activeJidRef = useRef<string | null>(activeJid)
+  activeJidRef.current = activeJid
   
   // Keep ref in sync without triggering hook dependencies
   useEffect(() => {
@@ -33,12 +39,14 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
 
     try {
       const msgs = await api.getMessages(jid, 1, 50)
+      if (jid !== activeJidRef.current) return
       setMessages(msgs)
     } catch (err) {
+      if (jid !== activeJidRef.current) return
       console.error('Failed to load messages:', err)
       setMessages([])
     } finally {
-      setLoading(false)
+      if (jid === activeJidRef.current) setLoading(false)
     }
   }, [])
 
@@ -46,14 +54,16 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     setIsJumping(true)
     try {
       const msgs = await api.getMessagesAround(jid, messageId)
+      if (jid !== activeJidRef.current) return
       setMessages(msgs)
       setCurrentPage(1)
       setHasMore(true)
     } catch (err) {
+      if (jid !== activeJidRef.current) return
       console.error('[useMessages] performJump failed, falling back:', err)
       await loadInitialMessages(jid)
     } finally {
-      setIsJumping(false)
+      if (jid === activeJidRef.current) setIsJumping(false)
     }
   }, [api, loadInitialMessages])
 
@@ -79,8 +89,12 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     if (!activeJid || !hasMore || loading) return 0
 
     const nextPage = currentPage + 1
+    const jid = activeJid
     try {
-      const olderMsgs = await api.getMessages(activeJid, nextPage, 50)
+      const olderMsgs = await api.getMessages(jid, nextPage, 50)
+      // Bail if the user switched chats while this page was in flight, otherwise
+      // chat A's older page gets prepended onto chat B's list (F3-02).
+      if (jid !== activeJidRef.current) return 0
       if (olderMsgs.length > 0) {
         setMessages((prev) => [...olderMsgs, ...prev])
         setCurrentPage(nextPage)

@@ -100,6 +100,72 @@ describe('useMessages', () => {
     expect(result.current.messages[1].id).toBe('msg-2')
   })
 
+  it('F3-01: a late getMessages response for a previous chat does not overwrite the active chat', async () => {
+    const chatAMsgs: MessageItem[] = [{ ...sampleMessages[0], id: 'a1', chatJid: 'a@s.whatsapp.net' }]
+    const chatBMsgs: MessageItem[] = [{ ...sampleMessages[0], id: 'b1', chatJid: 'b@s.whatsapp.net' }]
+    let resolveA: (v: MessageItem[]) => void = () => {}
+
+    const api = createMockApiService({
+      getMessages: vi.fn().mockImplementation((jid: string) => {
+        if (jid === 'a@s.whatsapp.net') return new Promise((r) => { resolveA = r })
+        return Promise.resolve(chatBMsgs)
+      }),
+      getMessagesAround: vi.fn().mockResolvedValue([]),
+      markRead: vi.fn().mockResolvedValue(true),
+      onNewMessage: vi.fn().mockReturnValue(() => {}),
+      onMessageEdited: vi.fn().mockReturnValue(() => {}),
+      onMessageDeleted: vi.fn().mockReturnValue(() => {}),
+      onMessageStatusUpdated: vi.fn().mockReturnValue(() => {}),
+    })
+
+    const { result, rerender } = renderHook(({ jid }) => useMessages(jid), {
+      wrapper: createWrapper(api),
+      initialProps: { jid: 'a@s.whatsapp.net' as string },
+    })
+
+    await act(async () => { await Promise.resolve() })
+
+    rerender({ jid: 'b@s.whatsapp.net' })
+    await act(async () => { await Promise.resolve() })
+    expect(result.current.messages).toEqual(chatBMsgs)
+
+    // Chat A's fetch resolves after the user already switched to B.
+    await act(async () => { resolveA(chatAMsgs); await Promise.resolve() })
+    expect(result.current.messages).toEqual(chatBMsgs)
+  })
+
+  it('F3-02: a late loadMore page for a previous chat is discarded', async () => {
+    const older: MessageItem[] = [{ ...sampleMessages[0], id: 'old-1' }]
+    let resolveMore: (v: MessageItem[]) => void = () => {}
+
+    const api = createMockApiService({
+      getMessages: vi.fn().mockImplementation((jid: string, page: number) => {
+        if (page > 1) return new Promise((r) => { resolveMore = r })
+        return Promise.resolve(jid === 'a@s.whatsapp.net' ? sampleMessages : [])
+      }),
+      markRead: vi.fn().mockResolvedValue(true),
+      onNewMessage: vi.fn().mockReturnValue(() => {}),
+      onMessageEdited: vi.fn().mockReturnValue(() => {}),
+      onMessageDeleted: vi.fn().mockReturnValue(() => {}),
+      onMessageStatusUpdated: vi.fn().mockReturnValue(() => {}),
+    })
+
+    const { result, rerender } = renderHook(({ jid }) => useMessages(jid), {
+      wrapper: createWrapper(api),
+      initialProps: { jid: 'a@s.whatsapp.net' as string },
+    })
+    await act(async () => { await Promise.resolve() })
+
+    let morePromise: Promise<number> | undefined
+    act(() => { morePromise = result.current.loadMore() })
+
+    rerender({ jid: 'b@s.whatsapp.net' })
+    await act(async () => { await Promise.resolve() })
+
+    await act(async () => { resolveMore(older); await morePromise })
+    expect(result.current.messages.some((m) => m.id === 'old-1')).toBe(false)
+  })
+
   it('should send message via API and append to message list', async () => {
     const { result } = renderHook(() => useMessages('user@s.whatsapp.net'), {
       wrapper: createWrapper(),

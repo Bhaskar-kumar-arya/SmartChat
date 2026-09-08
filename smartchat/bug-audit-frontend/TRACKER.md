@@ -320,7 +320,13 @@ still say B. Also `loading` can be left in the wrong state. Classic out-of-order
 response bug — the checklist's headline case.
 **Fix idea:** capture a request id / `AbortController` per load; in the `.then`
 bail if `jid !== activeJidRef.current` (add an `activeJidRef`) or the id is stale.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in d90d4b8 — added `activeJidRef` (updated synchronously in
+the hook body). `loadInitialMessages` / `performJump` now bail after their await
+(and skip the `finally` `setLoading(false)`) when `jid !== activeJidRef.current`.
+New test `useMessages.test.tsx` "F3-01: a late getMessages response for a previous
+chat does not overwrite the active chat" — reproduces then verifies. 31/31 pass;
+typecheck:web green.
 
 ### [F3-02] med — src/renderer/src/components/chat/hooks/useMessages.ts:78-95
 **What:** `loadMore` awaits `api.getMessages(activeJid, nextPage,…)` then
@@ -333,7 +339,11 @@ messages, with `currentPage` also advanced against the wrong chat.
 **Fix idea:** snapshot `activeJid` at call time and discard the result if it no
 longer matches `activeJidRef.current`; reset pagination on chat switch (already
 done in the effect, but the in-flight call must also be invalidated).
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in d90d4b8 (with F3-01) — `loadMore` snapshots `jid` at call
+time and returns `0` without touching state if `jid !== activeJidRef.current`
+after the await. New test "F3-02: a late loadMore page for a previous chat is
+discarded". 31/31 pass; typecheck:web green.
 
 ### [F3-03] med — src/renderer/src/components/chat/hooks/useChats.ts:135-190
 **What:** in `onNewMessage`, for a chat not yet in the list the handler
