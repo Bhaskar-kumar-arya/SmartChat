@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { useAPI } from '../../context/APIContext'
 import { EmojiText } from './EmojiText'
+import { BaseModal } from '../overlays/BaseModal'
 
 interface ProfilePicOverlayProps {
   jid: string
@@ -19,27 +20,39 @@ export const ProfilePicOverlay: React.FC<ProfilePicOverlayProps> = ({
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let alive = true
     const fetchImage = async () => {
       try {
         const url = await api.getProfilePicture(jid, 'image')
-        setImageUrl(url)
+        if (alive) setImageUrl(url)
       } catch (err) {
         console.error('[ProfilePicOverlay] Error fetching full image:', err)
       } finally {
-        setLoading(false)
+        if (alive) setLoading(false)
       }
     }
     fetchImage()
+    return () => {
+      alive = false
+    }
   }, [jid])
 
+  // BaseModal (F11-05): Escape to close, focus trap + restore, role="dialog",
+  // and a real backdrop-click target (the previous `-z-10` catcher sat behind
+  // the dimmer and never received clicks).
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+    <BaseModal
+      onClose={onClose}
+      label={name}
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+    >
       <div className="relative max-w-2xl w-full mx-4 flex flex-col items-center">
         {/* Header */}
         <div className="absolute -top-12 left-0 right-0 flex justify-between items-center text-white px-2">
           <span className="text-lg font-medium"><EmojiText text={name} /></span>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="p-1 hover:bg-white/10 rounded-full transition-colors"
           >
             <X size={24} />
@@ -66,9 +79,6 @@ export const ProfilePicOverlay: React.FC<ProfilePicOverlayProps> = ({
           )}
         </div>
       </div>
-
-      {/* Click outside to close */}
-      <div className="absolute inset-0 -z-10" onClick={onClose} />
-    </div>
+    </BaseModal>
   )
 }

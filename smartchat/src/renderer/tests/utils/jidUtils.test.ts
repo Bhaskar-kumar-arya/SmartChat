@@ -21,6 +21,15 @@ describe('jidUtils utility', () => {
       expect(isSameJid('11111@lid', '22222@lid')).toBe(false)
     })
 
+    it('does not collide identifiers across unrelated domain namespaces (F11-03)', () => {
+      // Same digits in a person namespace vs a group / newsletter / broadcast
+      // namespace are unrelated entities.
+      expect(isSameJid('12345@s.whatsapp.net', '12345@g.us')).toBe(false)
+      expect(isSameJid('12345@lid', '12345@g.us')).toBe(false)
+      expect(isSameJid('12345@newsletter', '12345@s.whatsapp.net')).toBe(false)
+      expect(isSameJid('12345@broadcast', '12345@lid')).toBe(false)
+    })
+
     it('returns false when either JID is null or undefined or empty', () => {
       expect(isSameJid(null, '12345@s.whatsapp.net')).toBe(false)
       expect(isSameJid('12345@s.whatsapp.net', undefined)).toBe(false)

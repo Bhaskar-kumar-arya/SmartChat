@@ -17,7 +17,10 @@ export const getAvatarColor = (jid: string): { bg: string; fg: string } => {
   for (let i = 0; i < jid.length; i++) {
     hash = jid.charCodeAt(i) + ((hash << 5) - hash)
   }
-  const index = Math.abs(hash) % DEFAULT_AVATAR_COLORS.length
+  // `((h % n) + n) % n` — `Math.abs(-2147483648)` stays negative (INT_MIN),
+  // which would index out of bounds and return `undefined` (F11-04).
+  const n = DEFAULT_AVATAR_COLORS.length
+  const index = ((hash % n) + n) % n
   return DEFAULT_AVATAR_COLORS[index]
 }
 

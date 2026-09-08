@@ -33,12 +33,22 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
       onClose()
     }
 
+    // Escape-to-close (F11-06) — previously only outside-click / scroll closed it.
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
+    }
+
     document.addEventListener('mousedown', handleClickOutside)
     document.addEventListener('scroll', handleScroll, true)
+    document.addEventListener('keydown', handleKeyDown, true)
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
       document.removeEventListener('scroll', handleScroll, true)
+      document.removeEventListener('keydown', handleKeyDown, true)
     }
   }, [onClose])
 
@@ -77,7 +87,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
     >
       <ul className="context-menu-list">
         {items.map((item, idx) => (
-          <ContextMenuItemRow key={idx} item={item} onClose={onClose} />
+          <ContextMenuItemRow key={`${item.label}:${idx}`} item={item} onClose={onClose} />
         ))}
       </ul>
     </div>
@@ -176,7 +186,7 @@ const ContextMenuItemRow: React.FC<ContextMenuItemRowProps> = ({ item, onClose }
         >
           <ul className="context-menu-list">
             {item.subMenu.map((subItem, idx) => (
-              <ContextMenuItemRow key={idx} item={subItem} onClose={onClose} />
+              <ContextMenuItemRow key={`${subItem.label}:${idx}`} item={subItem} onClose={onClose} />
             ))}
           </ul>
         </div>

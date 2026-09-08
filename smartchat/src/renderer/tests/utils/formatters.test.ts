@@ -20,6 +20,10 @@ describe('formatters utility', () => {
     it('returns empty string for invalid timestamp strings', () => {
       expect(formatTime('invalid')).toBe('')
     })
+
+    it('treats a millisecond epoch (> 1e12) the same as the equivalent seconds epoch (F11-07)', () => {
+      expect(formatTime('1672531200000')).toBe(formatTime('1672531200'))
+    })
   })
 
   describe('formatDate', () => {
@@ -54,6 +58,16 @@ describe('formatters utility', () => {
 
     it('returns empty string for invalid timestamp', () => {
       expect(formatDate('not-a-number')).toBe('')
+    })
+
+    it('appends the year for a date in a previous year (F11-07)', () => {
+      const priorYearSec = Math.floor(new Date('2025-03-03T10:00:00Z').getTime() / 1000).toString()
+      expect(formatDate(priorYearSec)).toMatch(/2025/)
+    })
+
+    it('omits the year for a date in the current year', () => {
+      const thisYearSec = Math.floor(new Date('2026-01-02T10:00:00Z').getTime() / 1000).toString()
+      expect(formatDate(thisYearSec)).not.toMatch(/2026/)
     })
   })
 

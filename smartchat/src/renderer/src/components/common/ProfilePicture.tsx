@@ -34,16 +34,23 @@ export const ProfilePicture: React.FC<ProfilePictureProps> = ({
 
   useEffect(() => {
     if (!url && jid && !loadError) {
+      let alive = true
       const fetchPreview = async () => {
         try {
           const previewUrl = await api.getProfilePicture(jid, 'preview')
-          if (previewUrl) setUrl(previewUrl)
+          // Bail if the component unmounted or switched to a different contact
+          // while the IPC was in flight (avoids painting A's photo onto B).
+          if (alive && previewUrl) setUrl(previewUrl)
         } catch (err) {
           console.error('[ProfilePicture] Error fetching preview:', err)
         }
       }
       fetchPreview()
+      return () => {
+        alive = false
+      }
     }
+    return undefined
   }, [jid, url, loadError])
 
   const handleImageError = async () => {
