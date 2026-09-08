@@ -80,7 +80,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | Slice | Med count | Status |
 |---|---|---|
 | F1 | 2 | DONE (57876a2) — F1-02, F1-03 + F1-04/05/06 lows |
-| F2 | 2 | TODO |
+| F2 | 2 | DONE (d19178c) — F2-01, F2-02 + F2-03/04/05/06/07 lows |
 | F3 | 6 | TODO |
 | F4 | 2 | TODO |
 | F5 | 5 | TODO |

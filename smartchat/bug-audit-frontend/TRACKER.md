@@ -12,7 +12,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | # | Slice | Status | Last touched | Notes |
 |---|-------|--------|--------------|-------|
 | F1 | Preload bridge & IPC surface | DONE (6 findings) — ALL FIXED in 57876a2 | 2026-09-08 | 1 high, 2 med, 3 low |
-| F2 | App shell, providers, contributions | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
+| F2 | App shell, providers, contributions | DONE (7 findings) — ALL FIXED in d19178c | 2026-09-08 | 2 med, 5 low |
 | F3 | Chat data hooks (backend event sync) | DONE (11 findings) | 2026-09-07 | 1 high, 6 med, 4 low — async races, presence expiry/JID, hierarchy orphans |
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F5 | Message view & rendering | DONE (14 findings) | 2026-09-07 | 1 high, 5 med, 8 low — markdown link XSS, template-button URL scheme, pagination lock-up, reaction self-JID |
@@ -204,7 +204,13 @@ spinner forever — the user can't link the device without restarting the app. A
 unhandled promise rejection.
 **Fix idea:** wrap in `try { ... } finally { }` (or reset `isRegeneratingQr` on the next
 `onWaQr`), and have the backend guarantee a QR re-emit; surface an error toast on reject.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in d19178c — `handleSetSyncFullHistory` now wraps
+`api.setSyncFullHistory` in try/catch; on reject it `console.error`s and resets
+`isRegeneratingQr` so the QR pane un-sticks (on success the spinner intentionally
+stays until `onWaQr` fires, which already resets the flag at App.tsx:40). No toast
+primitive yet (F12-06). Manual reasoning + covered indirectly by existing App
+flow; not unit-tested (App QR screen has no test harness). typecheck:web green.
 
 ### [F2-02] med — src/renderer/src/context/ContributionContext.tsx:15-38
 **What:** the effect fires `api.getContributions().then(setSnapshot)` and *then* registers
@@ -217,7 +223,12 @@ snapshot and clobbers it. The UI then shows stale contributions (missing menu it
 until the next update. `mounted` guards unmount but not this ordering.
 **Fix idea:** track whether an update has already been applied (or a request seq) and ignore the
 initial `.then` if so; or subscribe before fetching and treat the fetch as lowest priority.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in d19178c — effect now keeps an `updateApplied` flag set by
+the `onContributionsUpdated` handler; the initial `getContributions().then` bails
+if `updateApplied` (or unmounted). New test in `ContributionContext.test.tsx`
+("does not let a slow initial fetch clobber a snapshot already set by an update
+event") — 5/5 pass. typecheck:web green.
 
 ### [F2-03] low — src/renderer/src/App.tsx:27-33
 **What:** initial `api.getSyncFullHistory().then((full) => setSyncFullHistory(full))` effect has
@@ -226,7 +237,10 @@ no mounted/abort guard.
 StrictMode remount in dev), `setSyncFullHistory` runs after unmount → React warning; harmless in
 prod but inconsistent with the guarded pattern used elsewhere.
 **Fix idea:** add a `let alive = true` flag with cleanup, matching `ContributionContext`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in d19178c — the initial-config effect now uses a
+`let alive = true` flag with a cleanup that clears it; `setSyncFullHistory` is
+guarded on `alive`. Manual review; typecheck:web green.
 
 ### [F2-04] low — src/renderer/src/App.tsx:43-51, 132-316
 **What:** `onWaConnected` can set `appState = 'connected'` (when `data.isCatchup`), but the render
@@ -237,7 +251,11 @@ whatever text `syncStatus` currently holds (often the stale "Initializing connec
 leftover sync status), which misrepresents the state to the user.
 **Fix idea:** give `'connected'` its own copy ("Reconnecting / catching up…") or map it to the
 `'syncing'` visual.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in d19178c — render now has an explicit `appState === 'connected'`
+branch showing an init-style card with copy "Reconnecting and catching up on
+missed messages…" instead of falling through to the else branch with stale
+`syncStatus`. Manual review; typecheck:web green.
 
 ### [F2-05] low — src/renderer/src/utils/contributionUtils.tsx:27-31
 **What:** `subMenu: sub.subMenu ? mapSubMenuItems(...) : undefined` and the matching
@@ -246,7 +264,12 @@ leftover sync status), which misrepresents the state to the user.
 out upstream) produces a menu entry with an empty submenu and no `onClick` — a dead, unclickable
 item with a hover arrow.
 **Fix idea:** check `sub.subMenu && sub.subMenu.length > 0`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in d19178c — `mapSubMenuItems` computes
+`hasSubMenu = Array.isArray(sub.subMenu) && sub.subMenu.length > 0` and uses it
+for both the `subMenu` and `onClick` branches, so an empty array renders as a
+normal clickable leaf. New test in `contributionUtils.test.tsx` (F2-05 case) —
+4/4 pass. typecheck:web green.
 
 ### [F2-06] low — src/renderer/src/hooks/useContributions.ts:7-9
 **What:** on the "no contributions for this slot" path the hook returns a freshly-allocated `[]`
@@ -255,7 +278,11 @@ literal every render.
 pass it as a prop to a memoized child) see a new reference every render → effect re-runs / child
 re-renders on every parent render while the slot is empty (the common case).
 **Fix idea:** return a module-level frozen `EMPTY: [] as const` for the empty path.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in d19178c — module-level `const EMPTY = Object.freeze([])`
+returned (cast) on the no-list path, giving a stable reference every render. New
+test in `ContributionContext.test.tsx` ("returns a stable reference for an
+unpopulated slot across re-renders") — passes. typecheck:web green.
 
 ### [F2-07] low — src/renderer/src/utils/whenCondition.ts:42-45
 **What:** `neq` is `ctxValue !== value`; when `condition.field` is absent from the context,
@@ -265,7 +292,12 @@ contribution when `x === 'foo'`, but it also *passes* (shows it) for any context
 lacks `x` — likely not the plugin author's intent, and asymmetric with `eq`.
 **Fix idea:** treat a missing field as a non-match for `neq`/`nin` (require `condition.field in
 context`), or document the semantics explicitly.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in d19178c — `evaluateWhen` computes
+`hasField = condition.field in ctx`; `neq` returns `hasField && ctxValue !== value`
+and `nin` returns `hasField && …`. `eq`/`in`/numeric ops unchanged. New
+`whenCondition.test.ts` (6 cases incl. absent-field neq/nin) — 6/6 pass.
+typecheck:web green.
 
 ## Slice F3 — Chat data hooks
 
