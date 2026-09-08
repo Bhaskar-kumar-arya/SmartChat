@@ -6,7 +6,7 @@ import { IKernelAPIRouter } from '../IKernelAPIRouter'
 import { IContributionRegistry } from '../contributions/IContributionRegistry'
 import { ContributionSlot } from '../contributions/ContributionPoints'
 import { DirectPluginChannel } from '../channels/DirectPluginChannel'
-import { isBidirectionalPluginChannel } from '../channels/IPluginChannel'
+import { isBidirectionalPluginChannel, KernelResponse } from '../channels/IPluginChannel'
 import { PluginContext } from './PluginContext'
 import { ContributionsDeclaration } from './PluginManifest'
 import {
@@ -117,6 +117,8 @@ export type ContributionHandler = (...args: any[]) => Promise<unknown> | unknown
 export class PluginHost implements IPluginHost {
   private builtinPlugins = new Map<string, IBuiltinPlugin>()
   private handlers = new Map<string, ContributionHandler>()
+  /** Per-plugin disposers for timers created via `ctx.scheduler`, cleared on unload. (S8-06) */
+  private schedulerDisposers = new Map<string, Set<() => void>>()
 
   constructor(
     private readonly loader: IPluginLoader,
@@ -129,6 +131,31 @@ export class PluginHost implements IPluginHost {
 
   /** Grace period for a worker plugin to run its onDeactivate before we terminate it. (S8-07) */
   private static readonly DEACTIVATE_TIMEOUT_MS = 2000
+
+  /** Ceiling for a worker plugin to acknowledge `plugin:activate`. (S8-02) */
+  private static readonly ACTIVATE_TIMEOUT_MS = 10000
+
+  private trackSchedulerDisposer(pluginId: string, dispose: () => void): void {
+    let set = this.schedulerDisposers.get(pluginId)
+    if (!set) {
+      set = new Set()
+      this.schedulerDisposers.set(pluginId, set)
+    }
+    set.add(dispose)
+  }
+
+  private disposeScheduler(pluginId: string): void {
+    const set = this.schedulerDisposers.get(pluginId)
+    if (!set) return
+    for (const dispose of set) {
+      try {
+        dispose()
+      } catch (err) {
+        console.error(`[PluginHost] scheduler disposer for '${pluginId}' threw:`, err)
+      }
+    }
+    this.schedulerDisposers.delete(pluginId)
+  }
 
   async registerBuiltin(plugin: IBuiltinPlugin): Promise<void> {
     if (this.registry.get(plugin.id)) {
@@ -146,7 +173,13 @@ export class PluginHost implements IPluginHost {
         const handlers = eventHandlers.get(event)
         if (handlers) {
           for (const h of handlers) {
-            await h(payload)
+            // One throwing handler must not stop siblings from receiving the
+            // payload, nor prevent the ack below. (S8-05)
+            try {
+              await h(payload)
+            } catch (err) {
+              console.error(`[Plugin:${plugin.id}] event handler for '${event}' threw:`, err)
+            }
           }
         }
         channel.sendResponseToPlugin({ id: req.id, ok: true, payload: null })
@@ -297,13 +330,26 @@ export class PluginHost implements IPluginHost {
       scheduler: {
         setInterval: (ms: number, fn: () => void | Promise<void>) => {
           const id = setInterval(fn, ms)
-          return () => clearInterval(id)
+          const dispose = () => clearInterval(id)
+          this.trackSchedulerDisposer(plugin.id, dispose)
+          return () => {
+            this.schedulerDisposers.get(plugin.id)?.delete(dispose)
+            dispose()
+          }
         },
         setTimeout: (ms: number, fn: () => void | Promise<void>) => {
           const id = setTimeout(fn, ms)
-          return () => clearInterval(id)
+          const dispose = () => clearTimeout(id)
+          this.trackSchedulerDisposer(plugin.id, dispose)
+          return () => {
+            this.schedulerDisposers.get(plugin.id)?.delete(dispose)
+            dispose()
+          }
         },
         onCron: (name: string, fn: () => void | Promise<void>) => {
+          // NOTE: no scheduler currently emits `cron:<name>` events, so these
+          // handlers never fire. Kept as a registered no-op until a cron source
+          // exists; the closure-local map is released with the channel. (S8-06)
           const key = `cron:${name}`
           if (!eventHandlers.has(key)) {
             eventHandlers.set(key, new Set())
@@ -429,11 +475,48 @@ export class PluginHost implements IPluginHost {
       }
     }
 
-    channel.sendToPlugin({
+    const activateReq = {
       id: `activate-${Date.now()}`,
       type: 'plugin:activate',
       payload: {}
-    })
+    }
+
+    if (isBidirectionalPluginChannel(channel)) {
+      // Await the activation ack so a plugin that throws while registering its
+      // handlers doesn't end up "loaded" with every contribution a silent
+      // no-op. On failure, roll back the registration and surface the error to
+      // the installer. (S8-02)
+      try {
+        const res = (await Promise.race([
+          channel.sendRequestToPlugin(activateReq),
+          new Promise<KernelResponse>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Plugin '${id}' did not acknowledge activation`)),
+              PluginHost.ACTIVATE_TIMEOUT_MS
+            )
+          )
+        ])) as KernelResponse
+        if (res && res.ok === false) {
+          throw new Error(res.error?.message || `Plugin '${id}' failed to activate`)
+        }
+      } catch (err) {
+        this.contributionRegistry.unregisterAll(id)
+        this.registry.unregister(id)
+        try {
+          channel.destroy()
+        } catch {
+          /* best-effort */
+        }
+        try {
+          this.onPluginUnload?.(id)
+        } catch {
+          /* best-effort */
+        }
+        throw err
+      }
+    } else {
+      channel.sendToPlugin(activateReq)
+    }
   }
 
   async unload(id: string): Promise<void> {
@@ -442,52 +525,77 @@ export class PluginHost implements IPluginHost {
       return
     }
 
-    if (metadata.isBuiltin) {
-      const builtin = this.builtinPlugins.get(id)
-      if (builtin) {
-        await builtin.deactivate()
-        this.builtinPlugins.delete(id)
-      }
-    } else {
-      // Give the worker a chance to actually run its onDeactivate cleanup
-      // (flush storage, close connections) before the channel — and, for
-      // WorkerPluginChannel, the worker thread itself — is torn down. The SDK
-      // responds to plugin:deactivate once its callbacks resolve. (S8-07)
-      const deactivateReq = {
-        id: `deactivate-${Date.now()}`,
-        type: 'plugin:deactivate',
-        payload: {}
-      }
-      if (isBidirectionalPluginChannel(metadata.channel)) {
-        await Promise.race([
-          metadata.channel.sendRequestToPlugin(deactivateReq).catch(() => undefined),
-          new Promise((resolve) => setTimeout(resolve, PluginHost.DEACTIVATE_TIMEOUT_MS))
-        ])
-      } else {
-        metadata.channel.sendToPlugin(deactivateReq)
-      }
-    }
-
     try {
-      this.onPluginUnload?.(id)
-    } catch (err) {
-      console.error(`[PluginHost] onPluginUnload hook failed for '${id}':`, err)
-    }
+      if (metadata.isBuiltin) {
+        const builtin = this.builtinPlugins.get(id)
+        if (builtin) {
+          // A throwing deactivate() must not skip the teardown below (channel,
+          // WA subs, AI tools, contributions). (S8-03)
+          try {
+            await builtin.deactivate()
+          } catch (err) {
+            console.error(`[PluginHost] builtin '${id}' deactivate() threw:`, err)
+          }
+          this.builtinPlugins.delete(id)
+        }
+      } else {
+        // Give the worker a chance to actually run its onDeactivate cleanup
+        // (flush storage, close connections) before the channel — and, for
+        // WorkerPluginChannel, the worker thread itself — is torn down. The SDK
+        // responds to plugin:deactivate once its callbacks resolve. (S8-07)
+        const deactivateReq = {
+          id: `deactivate-${Date.now()}`,
+          type: 'plugin:deactivate',
+          payload: {}
+        }
+        if (isBidirectionalPluginChannel(metadata.channel)) {
+          await Promise.race([
+            metadata.channel.sendRequestToPlugin(deactivateReq).catch(() => undefined),
+            new Promise((resolve) => setTimeout(resolve, PluginHost.DEACTIVATE_TIMEOUT_MS))
+          ])
+        } else {
+          metadata.channel.sendToPlugin(deactivateReq)
+        }
+      }
+    } finally {
+      // Teardown always runs even if deactivate above threw. (S8-03)
+      try {
+        this.onPluginUnload?.(id)
+      } catch (err) {
+        console.error(`[PluginHost] onPluginUnload hook failed for '${id}':`, err)
+      }
 
-    this.contributionRegistry.unregisterAll(id)
-    metadata.channel.destroy()
-    this.registry.unregister(id)
+      this.disposeScheduler(id)
+      this.contributionRegistry.unregisterAll(id)
+      metadata.channel.destroy()
+      this.registry.unregister(id)
 
-    for (const key of this.handlers.keys()) {
-      if (key.startsWith(`${id}:`)) {
-        this.handlers.delete(key)
+      for (const key of this.handlers.keys()) {
+        if (key.startsWith(`${id}:`)) {
+          this.handlers.delete(key)
+        }
       }
     }
   }
 
   async reload(id: string): Promise<void> {
+    const existing = this.registry.get(id)
+    if (existing?.isBuiltin) {
+      // reload() reloads from `extensions/<id>/manifest.json`, which a built-in
+      // does not have — unloading then failing to re-load would leave it dead
+      // until an app restart. (S8-04)
+      throw new Error(`Cannot reload built-in plugin '${id}'`)
+    }
     await this.unload(id)
-    await this.load(id)
+    try {
+      await this.load(id)
+    } catch (err) {
+      console.error(
+        `[PluginHost] reload('${id}') unloaded the plugin but re-load failed; it is now unloaded:`,
+        err
+      )
+      throw err
+    }
   }
 
   async loadAll(): Promise<void> {

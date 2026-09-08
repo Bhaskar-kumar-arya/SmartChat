@@ -757,6 +757,11 @@ in `removePlugin` hard-wired.
 
 ## Slice 8 — Kernel plugins, contributions, permissions
 
+<!-- FIX PHASE 2026-09-08: all 7 findings (S8-01..S8-07) fixed. Regression tests
+in src/main/tests/kernel/plugins/{PluginLoader,PluginHost}.test.ts. typecheck
+clean; kernel e2e baseline unchanged (same 3 pre-existing failures). "Summary
+counts" table left for final reconciliation. -->
+
 ### [P2-S8-01] med — src/main/kernel/plugins/PluginLoader.ts:54-75 (+ ipc/contributionIpc.ts:135-143, KernelBootstrapper.ts:196-200)
 **What:** `install()` accepts any `manifest.id` that passes `validateManifest`
 (`PLUGIN_ID_RE` allows dots, so `com.smartchat.builtin.whatsapp-core` is valid) — there is
@@ -776,7 +781,7 @@ manually removed.
 **Fix idea:** in `install()` (and before `registerPluginManifest` in the install handler),
 reject any `manifest.id` that collides with a registered/built-in plugin id; keep builtin
 capability registrations authoritative.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S8-02] med — src/main/kernel/plugins/PluginHost.ts:417-437
 **What:** For worker plugins, `load()` registers all manifest contributions into the
@@ -792,7 +797,7 @@ never registered its handlers. Contrast `registerBuiltin`, which `await plugin.a
 **Fix idea:** send `plugin:activate` as a bidirectional request (like `plugin:deactivate`
 already is), await it with a timeout, and on failure roll back the contribution
 registration + registry entry and surface the error to the installer.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S8-03] med — src/main/kernel/plugins/PluginHost.ts:445-469
 **What:** In `unload()`, `await builtin.deactivate()` (builtin branch) and the worker
@@ -808,7 +813,7 @@ host.unload(id)` with no per-iteration catch, so one throwing plugin aborts shut
 every plugin after it.
 **Fix idea:** wrap `deactivate()` in try/catch (log and continue), and/or run the
 post-deactivate teardown in a `finally`; make `dispose()`'s loop catch per plugin.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S8-04] low — src/main/kernel/plugins/PluginHost.ts:488-491
 **What:** `reload(id)` is `await this.unload(id); await this.load(id)` with no rollback.
@@ -821,7 +826,7 @@ plugin is now fully unloaded (contributions gone, channel destroyed) with no way
 except an app restart.
 **Fix idea:** guard `reload` against builtin ids; on `load()` failure during reload,
 re-register the previous state or at minimum report that the plugin is now unloaded.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S8-05] low — src/main/kernel/plugins/PluginHost.ts:143-154
 **What:** In `registerBuiltin`, the `kernel:events:emit` branch runs
@@ -833,7 +838,7 @@ sent, so the emit rejects back to the kernel emitter (recovered only by the 30 s
 timeout) instead of completing.
 **Fix idea:** wrap each `h(payload)` in try/catch, log per-handler failures, always send
 the ack.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S8-06] low — src/main/kernel/plugins/PluginHost.ts:297-313
 **What:** `ctx.scheduler.setInterval/setTimeout/onCron` create real Node timers /
@@ -847,7 +852,7 @@ it does) leaks a live repeating timer in the kernel process for the life of the 
 dead (no emitter).
 **Fix idea:** track every timer created via `ctx.scheduler` per plugin and clear them in
 `unload()`; use `clearTimeout` for `setTimeout`; wire or remove `onCron`.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S8-07] low — src/main/kernel/plugins/PluginLoader.ts:69-73, 117-139
 **What:** `install()` does `zip.extractAllTo(pluginDir, true)` over an existing plugin
@@ -860,7 +865,7 @@ disappears from `extension:list` with no log line, so the user has no idea why t
 installed plugin vanished.
 **Fix idea:** `fs.rmSync(pluginDir, { recursive: true, force: true })` before extract
 (after the zip-slip check); log a warning in `listInstalled()` when a manifest is skipped.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ## Slice 9 — Kernel storage, channels, ipc, ui
 

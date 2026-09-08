@@ -139,6 +139,73 @@ describe('PluginLoader', () => {
     expect(validateManifest({ ...base, id: 'com.smartchat.foo-bar', main: 'index.js' }).id).toBe('com.smartchat.foo-bar')
   })
 
+  const makeScext = (manifest: Record<string, unknown>, files: Record<string, string> = {}): string => {
+    const zip = new AdmZip()
+    zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest)))
+    for (const [name, body] of Object.entries({ 'index.js': '//', ...files })) {
+      zip.addFile(name, Buffer.from(body))
+    }
+    const zipPath = path.join(tmpDir, `${String(manifest.id).replace(/[^\w.-]/g, '_')}.scext`)
+    zip.writeZip(zipPath)
+    return zipPath
+  }
+
+  it('install() rejects an id reserved by a built-in plugin (S8-01)', async () => {
+    const reserved = new PluginLoader(tmpDir, (id) => id === 'com.smartchat.builtin.whatsapp-core')
+    const zipPath = makeScext({
+      id: 'com.smartchat.builtin.whatsapp-core',
+      name: 'Impostor',
+      version: '1.0.0',
+      apiVersion: '2',
+      main: 'index.js',
+      permissions: [],
+      contributions: {}
+    })
+    await expect(reserved.install(zipPath)).rejects.toThrow(ManifestValidationError)
+    expect(fs.existsSync(path.join(tmpDir, 'com.smartchat.builtin.whatsapp-core'))).toBe(false)
+  })
+
+  it('load() and listInstalled() ignore an on-disk dir whose id is reserved (S8-01)', async () => {
+    const dir = path.join(tmpDir, 'com.smartchat.builtin.notifications')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'manifest.json'),
+      JSON.stringify({
+        id: 'com.smartchat.builtin.notifications',
+        name: 'Impostor',
+        version: '1.0.0',
+        apiVersion: '2',
+        main: 'index.js',
+        permissions: [],
+        contributions: {}
+      })
+    )
+    fs.writeFileSync(path.join(dir, 'index.js'), '//')
+
+    const reserved = new PluginLoader(tmpDir, (id) => id === 'com.smartchat.builtin.notifications')
+    expect(await reserved.listInstalled()).toHaveLength(0)
+    await expect(reserved.load('com.smartchat.builtin.notifications')).rejects.toThrow(ManifestValidationError)
+  })
+
+  it('install() over an existing install clears stale files first (S8-07)', async () => {
+    const manifest = {
+      id: 'com.acme.upgrade',
+      name: 'Upgrade',
+      version: '1.0.0',
+      apiVersion: '2',
+      main: 'index.js',
+      permissions: [],
+      contributions: {}
+    }
+    await loader.install(makeScext(manifest, { 'old-file.js': 'stale' }))
+    const dir = path.join(tmpDir, 'com.acme.upgrade')
+    expect(fs.existsSync(path.join(dir, 'old-file.js'))).toBe(true)
+
+    await loader.install(makeScext({ ...manifest, version: '2.0.0' }, { 'new-file.js': 'fresh' }))
+    expect(fs.existsSync(path.join(dir, 'old-file.js'))).toBe(false)
+    expect(fs.existsSync(path.join(dir, 'new-file.js'))).toBe(true)
+  })
+
   it('uninstall() removes the plugin directory', async () => {
     const pluginDir = path.join(tmpDir, 'com.acme.to-remove')
     fs.mkdirSync(pluginDir, { recursive: true })

@@ -100,7 +100,14 @@ export class KernelBootstrapper {
       services.favoriteStickerService,
       services.messageQueryRepository
     )
-    const loader = new PluginLoader(extensionsPath)
+    const builtins = [
+      new WhatsappCorePlugin(),
+      new AIAssistantPlugin(services.toolRegistry),
+      new NotificationsPlugin()
+    ]
+    const builtinIds = new Set<string>(builtins.map((p) => p.id))
+
+    const loader = new PluginLoader(extensionsPath, (id) => builtinIds.has(id))
     const pluginRegistry = new PluginRegistry()
 
     const contactsModule = new KernelContactsModule(permissions, services.contactService, services.aliasRepository)
@@ -181,13 +188,6 @@ export class KernelBootstrapper {
       panelHost.deregisterPlugin(pluginId)
     })
 
-    const builtins = [
-      new WhatsappCorePlugin(),
-      new AIAssistantPlugin(services.toolRegistry),
-      new NotificationsPlugin()
-    ]
-
-
     for (const plugin of builtins) {
       permissions.registerPluginManifest(plugin.id, plugin.manifest.permissions)
       await host.registerBuiltin(plugin)
@@ -205,7 +205,11 @@ export class KernelBootstrapper {
       overlayHost.dispose()
       const loaded = host.listLoaded()
       for (const id of loaded) {
-        await host.unload(id)
+        // One plugin whose deactivate/teardown throws must not abort shutdown
+        // for every plugin after it. (S8-03)
+        await host.unload(id).catch((err) => {
+          console.error(`[KernelBootstrapper] unload('${id}') failed during dispose:`, err)
+        })
       }
     }
 

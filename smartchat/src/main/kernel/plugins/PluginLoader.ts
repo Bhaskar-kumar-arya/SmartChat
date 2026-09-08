@@ -8,7 +8,16 @@ import { WorkerPluginChannel } from '../channels/WorkerPluginChannel'
 import { IPluginLoader } from './IPluginLoader'
 
 export class PluginLoader implements IPluginLoader {
-  constructor(private readonly baseDir: string) {
+  /**
+   * @param isReservedId returns true for any plugin id owned by a built-in
+   *   plugin. A sideloaded `.scext` that reuses a builtin id would otherwise
+   *   overwrite the builtin's registered capability set (last-write-wins in
+   *   PermissionStore) and disable the real plugin. (S8-01)
+   */
+  constructor(
+    private readonly baseDir: string,
+    private readonly isReservedId: (id: string) => boolean = () => false
+  ) {
     if (!fs.existsSync(this.baseDir)) {
       fs.mkdirSync(this.baseDir, { recursive: true })
     }
@@ -53,6 +62,12 @@ export class PluginLoader implements IPluginLoader {
 
     const manifest = validateManifest(manifestRaw)
 
+    if (this.isReservedId(manifest.id)) {
+      throw new ManifestValidationError(
+        `Plugin id "${manifest.id}" is reserved by a built-in plugin and cannot be installed`
+      )
+    }
+
     const pluginDir = this.resolveWithin(manifest.id)
 
     // Zip-Slip: reject any archive entry that would land outside pluginDir
@@ -66,9 +81,13 @@ export class PluginLoader implements IPluginLoader {
       }
     }
 
-    if (!fs.existsSync(pluginDir)) {
-      fs.mkdirSync(pluginDir, { recursive: true })
+    // Clear any previous install first: extractAllTo merges into an existing
+    // directory, so files removed in the new version would otherwise linger and
+    // a stale `main` could be `new Worker()`-ed. (S8-07)
+    if (fs.existsSync(pluginDir)) {
+      fs.rmSync(pluginDir, { recursive: true, force: true })
     }
+    fs.mkdirSync(pluginDir, { recursive: true })
 
     zip.extractAllTo(pluginDir, true)
 
@@ -99,6 +118,12 @@ export class PluginLoader implements IPluginLoader {
 
     const manifest = validateManifest(manifestRaw)
 
+    if (this.isReservedId(manifest.id)) {
+      throw new ManifestValidationError(
+        `Plugin id "${manifest.id}" is reserved by a built-in plugin and cannot be loaded from disk`
+      )
+    }
+
     const entryPath = this.resolveWithin(id, manifest.main)
     if (!fs.existsSync(entryPath)) {
       throw new ManifestValidationError(`Plugin entry point not found at ${entryPath}`)
@@ -127,9 +152,19 @@ export class PluginLoader implements IPluginLoader {
           try {
             const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
             const manifest = validateManifest(raw)
+            if (this.isReservedId(manifest.id)) {
+              console.warn(
+                `[PluginLoader] ignoring installed directory "${entry.name}": its manifest id ` +
+                  `"${manifest.id}" collides with a built-in plugin (S8-01)`
+              )
+              continue
+            }
             manifests.push(manifest)
-          } catch {
-            // Skip invalid manifests gracefully
+          } catch (err) {
+            console.warn(
+              `[PluginLoader] skipping "${entry.name}": manifest.json failed to parse/validate`,
+              err
+            )
           }
         }
       }
