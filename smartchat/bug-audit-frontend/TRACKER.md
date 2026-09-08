@@ -17,7 +17,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F5 | Message view & rendering | DONE (14 findings) | 2026-09-07 | 1 high, 5 med, 8 low — markdown link XSS, template-button URL scheme, pagination lock-up, reaction self-JID |
 | F6 | Message input & composition | DONE (14 findings) | 2026-09-07 | 1 high, 6 med, 7 low — voice note mis-delivery on chat switch, mouse mention pick broken, stale mentions |
-| F7 | Search UI | DONE (8 findings) | 2026-09-08 | 1 high, 3 med, 4 low — ChatSearchSidebar out-of-order responses, date-range timezone/inclusive-end |
+| F7 | Search UI | DONE (8 findings) — FIXED (737b13d + 3c2ba28) | 2026-09-08 | 1 high, 3 med, 4 low — all fixed; F7-06 select-all cap deferred, F7-08 sync-clear partial |
 | F8 | AI chat UI | DONE (13 findings) | 2026-09-08 | 1 high, 6 med, 6 low — no stream abort on session switch (answer lost), citation IPC storm, per-keystroke key persist; markdown XSS checked clean |
 | F9 | Extensions / plugins UI | DONE (12 findings) | 2026-09-08 | 4 med, 8 low — plugin webview unsandboxed + no will-navigate lock, all sidebar-panel webviews mounted at once, stale panel theme after toggle, extension-chat history race; plugin content rendered as text (no XSS sink) |
 | F10 | Overlays & modals | DONE (13 findings) | 2026-09-08 | 6 med, 7 low — webview insecure-content pref, send/receive cross-wiring, no Escape/focus-trap on common modals, required-checkbox validation gap, optimistic-toggle no-revert |
@@ -1164,7 +1164,14 @@ checklist's headline "search-as-you-type out-of-order responses" case.
 **Fix idea:** add `let ignored = false` in the effect, set it in cleanup, and
 gate `setResults`/`setIsSearching` on `!ignored` (mirror `useSearch.ts`), or
 capture a request-seq ref.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 737b13d — the debounce effect now declares
+`let ignored = false`, sets it `true` in the cleanup, and gates
+`setResults`/`setIsSearching` on `!ignored` (mirrors `useSearch.ts`). Also
+covers the F7-08 unmount guard. New test `ChatSearchSidebar.test.tsx`
+"does not let an out-of-order search response overwrite newer results (F7-01)"
+— resolves the newer request first, then the stale one, asserts newer results
+stay. typecheck:web green; 6 F7 test files / 41 tests pass.
 
 ### [F7-02] med — src/renderer/src/components/chat/ChatSearchSidebar.tsx:46-49 & SearchFiltersPanel.tsx:149,156
 **What:** date-input values (`YYYY-MM-DD`) are converted with
@@ -1178,7 +1185,12 @@ ending today and today's messages are all missed. (b) For users east of UTC
 the range is off by up to a day at both ends.
 **Fix idea:** build the bounds from local time — `fromDate` → local 00:00:00,
 `toDate` → local 23:59:59.999 — before `toISOString()`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3c2ba28 — new `utils/dateRange.ts`
+(`toLocalDayStartISO` / `toLocalDayEndISO`) builds the bounds from local
+time; `toDate` is now the inclusive end-of-day. Wired into `ChatSearchSidebar`
+(effect) and `SearchFiltersPanel` (date inputs + quick ranges). New
+`tests/utils/dateRange.test.ts` (6 cases incl. "15th to 15th is not empty").
 
 ### [F7-03] med — src/renderer/src/components/chat/ChatSearchSidebar.tsx:65-81 & SearchFiltersPanel.tsx:50-63
 **What:** `setQuickRange` computes `from`/`to` with local-time mutators
@@ -1192,7 +1204,11 @@ without the `.split` but still anchors "today" at local-midnight→UTC.
 **Fix idea:** format the date parts from local getters
 (`` `${y}-${pad(m)}-${pad(d)}` ``) rather than round-tripping through
 `toISOString()`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3c2ba28 — `dateRange.ts#formatLocalDate` /
+`isoToLocalDateInput` format from local getters. `ChatSearchSidebar.setQuickRange`
+and `SearchFiltersPanel` (quick ranges + `type=date` value) no longer round-trip
+through `toISOString().split('T')[0]`. Covered by `dateRange.test.ts`.
 
 ### [F7-04] med — src/renderer/src/components/chat/ChatList.tsx:319-320, 362 (+ SearchFiltersPanel clear paths)
 **What:** every "clear" path in `SearchFiltersPanel` sets keys to `undefined`
@@ -1206,7 +1222,14 @@ to reset it short of never having touched filters. `useSearch`'s `filters` dep
 also churns a new object on each of these no-op clears.
 **Fix idea:** delete keys instead of assigning `undefined` (or compute "active"
 from `filters.jids?.length || filters.fromDate || filters.toDate`).
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3c2ba28 — both applied. `SearchFiltersPanel` routes
+every change through `pruneFilters()` which drops empty `jids` / falsy
+`fromDate` / `toDate`, so a fully-cleared filter set serializes back to `{}`
+(also stops the `useSearch` dep churn noted in F3-09). `ChatList`'s
+filter-toggle "active" class now derives from
+`filters.jids?.length || filters.fromDate || filters.toDate`. New tests in
+`SearchFiltersPanel.test.tsx` ("drops the jids key entirely…", clear → `{}`).
 
 ### [F7-05] low — src/renderer/src/components/chat/SearchFiltersPanel.tsx:131
 **What:** `checked={filters.jids?.includes(chat.jid)}` evaluates to `undefined`
@@ -1216,7 +1239,9 @@ uncontrolled → dev-console warning "changing an uncontrolled input to controll
 the first time any chat is selected, and the box can briefly retain a
 browser-set state out of sync with `filters`.
 **Fix idea:** `checked={!!filters.jids?.includes(chat.jid)}`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3c2ba28 — `checked={!!filters.jids?.includes(chat.jid)}`;
+the checkbox is always controlled now.
 
 ### [F7-06] low — src/renderer/src/components/chat/SearchFiltersPanel.tsx:23-48, 87-140
 **What:** the chat-select dropdown (`showChatDropdown`) has no outside-click /
@@ -1228,7 +1253,14 @@ content. (b) With >100 matching chats, "Select All" silently selects only the
 first 100 and the user gets no indication the rest were skipped.
 **Fix idea:** add a `mousedown` outside-click listener (removed on unmount) +
 `Escape`; either raise/remove the 100 cap for select-all or surface the count.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3c2ba28 (outside-click/Escape) — `SearchFiltersPanel`
+adds `mousedown` + `keydown(Escape)` listeners while the dropdown is open,
+removed on close/unmount, closing it on an outside click or Escape (via a
+`custom-dropdown` ref). New test "closes the chat dropdown on Escape (F7-06)".
+**Deferred:** the 100-chat `Select All` cap is left as-is (no count surfaced) —
+low impact, needs a UX decision on whether to lift the cap or show "showing
+first 100"; noted for a later search-UX pass.
 
 ### [F7-07] low — src/renderer/src/components/chat/SearchResultsPanel.tsx:133,135 & 105,107
 **What:** message rows use `key={`msg-${item.messageId}`}` and call
@@ -1242,7 +1274,12 @@ score shown, lost highlight); clicking such a row opens the chat but
 **Fix idea:** filter out message results lacking `messageId`, or fall back to a
 composite key (`msg-${item.jid}-${idx}`) and skip the jump when `messageId` is
 absent.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3c2ba28 — `SearchResultsPanel` message rows use
+`` `msg-${item.messageId}` `` when present, else `` `msg-${item.jid}-${idx}` ``,
+and pass `item.messageId || null` to `onSelectChat` so a `messageId`-less row
+opens the chat without a jump (`ChatLayout` already no-ops a null target).
+`ChatSearchSidebar` result keys got the same `${item.jid}-${idx}` fallback.
 
 ### [F7-08] low — src/renderer/src/components/chat/ChatSearchSidebar.tsx:29-63, 104
 **What:** the debounce effect has no `mounted` guard and the component is
@@ -1255,7 +1292,14 @@ and a brief window where the sidebar shows another chat's search hits with the
 new chat's header.
 **Fix idea:** reuse the F7-01 `ignored` flag for the unmount guard; clear
 `results` synchronously when `activeJid` changes.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 737b13d — the F7-01 `ignored` flag also gates the
+post-`searchAll` `setResults`/`setIsSearching` on unmount (cleanup runs, sets
+`ignored = true`). **Partial:** `results` is not cleared synchronously on
+`activeJid` change — the stale-response guard already prevents the previous
+chat's hits from sticking once the new request resolves, and the interim
+`isSearching` spinner covers the gap; a synchronous clear is a cosmetic
+follow-up.
 
 ## Slice F8 — AI chat UI
 

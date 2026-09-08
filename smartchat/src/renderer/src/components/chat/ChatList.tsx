@@ -339,7 +339,7 @@ export default function ChatList({
             className="search-input"
           />
           <button 
-            className={`search-filter-toggle ${showFilters || Object.keys(filters).length > 0 ? 'active' : ''}`}
+            className={`search-filter-toggle ${showFilters || filters.jids?.length || filters.fromDate || filters.toDate ? 'active' : ''}`}
             onClick={() => setShowFilters(!showFilters)}
             title="Search Filters"
           >

@@ -128,11 +128,11 @@ export function SearchResultsPanel({
       {messages.length > 0 && (
         <div className="search-results-section">
           <div className="search-results-section-header">Messages</div>
-          {messages.map((item) => (
+          {messages.map((item, idx) => (
             <div
-              key={`msg-${item.messageId}`}
+              key={item.messageId ? `msg-${item.messageId}` : `msg-${item.jid}-${idx}`}
               className={`search-result-item ${activeJid === item.jid ? 'active' : ''}`}
-              onClick={() => onSelectChat(item.jid, item.name, item.messageId)}
+              onClick={() => onSelectChat(item.jid, item.name, item.messageId || null)}
             >
               <div className="search-result-avatar msg-avatar">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

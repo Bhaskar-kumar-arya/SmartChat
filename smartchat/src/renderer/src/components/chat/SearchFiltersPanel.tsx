@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SearchFilters, SearchMode } from '../../types/chatTypes'
+import { toLocalDayStartISO, toLocalDayEndISO, isoToLocalDateInput, formatLocalDate } from '../../utils/dateRange'
 
 interface SearchFiltersPanelProps {
   filters: SearchFilters
@@ -10,39 +11,74 @@ interface SearchFiltersPanelProps {
 }
 
 /**
+ * Drop empty/undefined filter keys so a cleared filter set serializes back to
+ * `{}` — otherwise `{ jids: undefined, fromDate: undefined }` keeps the filter
+ * toggle lit and churns `useSearch`'s deps (F7-04).
+ */
+function pruneFilters(next: SearchFilters): SearchFilters {
+  const out: SearchFilters = {}
+  if (next.jids && next.jids.length > 0) out.jids = next.jids
+  if (next.fromDate) out.fromDate = next.fromDate
+  if (next.toDate) out.toDate = next.toDate
+  return out
+}
+
+/**
  * SRP: This component solely manages the search filters UI.
  * Handles chat multi-select and date range picking.
  */
-export function SearchFiltersPanel({ 
-  filters, 
-  onFiltersChange, 
+export function SearchFiltersPanel({
+  filters,
+  onFiltersChange,
   chats,
   mode,
   onModeChange
 }: SearchFiltersPanelProps) {
   const [showChatDropdown, setShowChatDropdown] = useState(false)
   const [dropdownSearch, setDropdownSearch] = useState('')
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const emit = (next: SearchFilters) => onFiltersChange(pruneFilters(next))
+
+  // Close the chat dropdown on outside click / Escape (F7-06).
+  useEffect(() => {
+    if (!showChatDropdown) return
+    const onPointer = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowChatDropdown(false)
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowChatDropdown(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [showChatDropdown])
 
   const toggleJid = (jid: string) => {
     const currentJids = filters.jids || []
     const newJids = currentJids.includes(jid)
       ? currentJids.filter((j) => j !== jid)
       : [...currentJids, jid]
-    onFiltersChange({ ...filters, jids: newJids.length > 0 ? newJids : undefined })
+    emit({ ...filters, jids: newJids })
   }
 
   const selectAllFiltered = () => {
     const filteredJids = filteredDropdownChats.map(c => c.jid)
     const currentJids = filters.jids || []
     const combined = [...new Set([...currentJids, ...filteredJids])]
-    onFiltersChange({ ...filters, jids: combined })
+    emit({ ...filters, jids: combined })
   }
 
   const clearAllSelected = () => {
-    onFiltersChange({ ...filters, jids: undefined })
+    emit({ ...filters, jids: undefined })
   }
 
-  const filteredDropdownChats = chats.filter(c => 
+  const filteredDropdownChats = chats.filter(c =>
     c.name.toLowerCase().includes(dropdownSearch.toLowerCase()) ||
     c.jid.toLowerCase().includes(dropdownSearch.toLowerCase())
   ).slice(0, 100)
@@ -55,10 +91,10 @@ export function SearchFiltersPanel({
     else if (range === 'month') from.setMonth(from.getMonth() - 1)
     else if (range === 'year') from.setFullYear(from.getFullYear() - 1)
 
-    onFiltersChange({
+    emit({
       ...filters,
-      fromDate: from.toISOString(),
-      toDate: to.toISOString()
+      fromDate: toLocalDayStartISO(formatLocalDate(from)),
+      toDate: toLocalDayEndISO(formatLocalDate(to))
     })
   }
 
@@ -67,9 +103,9 @@ export function SearchFiltersPanel({
       <div className="filter-section">
         <label className="filter-label">Search Mode</label>
         <label className="dropdown-item mode-toggle-item" style={{ padding: '0 4px' }}>
-          <input 
-            type="checkbox" 
-            checked={mode === 'deep'} 
+          <input
+            type="checkbox"
+            checked={mode === 'deep'}
             onChange={(e) => onModeChange(e.target.checked ? 'deep' : 'normal')}
             style={{ width: '18px', height: '18px' }}
           />
@@ -84,22 +120,22 @@ export function SearchFiltersPanel({
 
       <div className="filter-section">
         <label className="filter-label">Chats / Contacts</label>
-        <div className="custom-dropdown">
-          <button 
+        <div className="custom-dropdown" ref={dropdownRef}>
+          <button
             className="dropdown-toggle"
             onClick={() => setShowChatDropdown(!showChatDropdown)}
           >
-            {filters.jids?.length 
-              ? `${filters.jids.length} selected` 
+            {filters.jids?.length
+              ? `${filters.jids.length} selected`
               : 'All chats'}
           </button>
-          
+
           {showChatDropdown && (
             <div className="dropdown-menu">
               <div className="dropdown-search-item">
-                <input 
-                  type="text" 
-                  placeholder="Filter chats..." 
+                <input
+                  type="text"
+                  placeholder="Filter chats..."
                   className="dropdown-search"
                   value={dropdownSearch}
                   onChange={(e) => setDropdownSearch(e.target.value)}
@@ -108,14 +144,14 @@ export function SearchFiltersPanel({
                 />
               </div>
               <div className="dropdown-actions">
-                <button 
-                  className="dropdown-action-btn" 
+                <button
+                  className="dropdown-action-btn"
                   onClick={(e) => { e.stopPropagation(); selectAllFiltered(); }}
                 >
                   Select All
                 </button>
-                <button 
-                  className="dropdown-action-btn" 
+                <button
+                  className="dropdown-action-btn"
                   onClick={(e) => { e.stopPropagation(); clearAllSelected(); }}
                 >
                   Clear
@@ -126,9 +162,9 @@ export function SearchFiltersPanel({
                   <div className="dropdown-empty-text">No matching chats</div>
                 ) : filteredDropdownChats.map(chat => (
                   <label key={chat.jid} className="dropdown-item" onClick={(e) => e.stopPropagation()}>
-                    <input 
-                      type="checkbox" 
-                      checked={filters.jids?.includes(chat.jid)}
+                    <input
+                      type="checkbox"
+                      checked={!!filters.jids?.includes(chat.jid)}
                       onChange={() => toggleJid(chat.jid)}
                     />
                     <span>{chat.name}</span>
@@ -143,17 +179,17 @@ export function SearchFiltersPanel({
       <div className="filter-section">
         <label className="filter-label">Date Range</label>
         <div className="date-inputs">
-          <input 
-            type="date" 
-            value={filters.fromDate?.split('T')[0] || ''}
-            onChange={(e) => onFiltersChange({ ...filters, fromDate: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+          <input
+            type="date"
+            value={isoToLocalDateInput(filters.fromDate)}
+            onChange={(e) => emit({ ...filters, fromDate: e.target.value ? toLocalDayStartISO(e.target.value) : undefined })}
             className="date-input"
           />
           <span className="date-separator">to</span>
-          <input 
-            type="date" 
-            value={filters.toDate?.split('T')[0] || ''}
-            onChange={(e) => onFiltersChange({ ...filters, toDate: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+          <input
+            type="date"
+            value={isoToLocalDateInput(filters.toDate)}
+            onChange={(e) => emit({ ...filters, toDate: e.target.value ? toLocalDayEndISO(e.target.value) : undefined })}
             className="date-input"
           />
         </div>
@@ -163,7 +199,7 @@ export function SearchFiltersPanel({
           <button className="range-chip" onClick={() => setQuickRange('month')}>Last 30d</button>
           <button className="range-chip" onClick={() => setQuickRange('year')}>This Year</button>
           {(filters.fromDate || filters.toDate) && (
-             <button className="range-chip clear" onClick={() => onFiltersChange({ ...filters, fromDate: undefined, toDate: undefined })}>Clear</button>
+             <button className="range-chip clear" onClick={() => emit({ ...filters, fromDate: undefined, toDate: undefined })}>Clear</button>
           )}
         </div>
       </div>

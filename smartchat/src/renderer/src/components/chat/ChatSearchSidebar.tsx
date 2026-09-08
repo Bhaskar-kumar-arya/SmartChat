@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useAPI } from '../../context/APIContext'
 import { SearchResultItem, SearchFilters } from '../../types/chatTypes'
 import { formatChatTime } from '../../utils/formatters'
+import { toLocalDayStartISO, toLocalDayEndISO, formatLocalDate } from '../../utils/dateRange'
 
 interface ChatSearchSidebarProps {
   activeJid: string
@@ -46,12 +47,12 @@ export default function ChatSearchSidebar({
         const filters: SearchFilters = {
           jids: [activeJid]
         }
-        if (fromDate) {
-          filters.fromDate = new Date(fromDate).toISOString()
-        }
-        if (toDate) {
-          filters.toDate = new Date(toDate).toISOString()
-        }
+        // Build bounds from LOCAL time (F7-02): fromDate → local 00:00:00.000,
+        // toDate → local 23:59:59.999 (inclusive end-of-day).
+        const fromISO = fromDate ? toLocalDayStartISO(fromDate) : undefined
+        const toISO = toDate ? toLocalDayEndISO(toDate) : undefined
+        if (fromISO) filters.fromDate = fromISO
+        if (toISO) filters.toDate = toISO
 
         const data = await api.searchAll(query, 'normal', filters)
         if (!ignored) setResults(data.messages || [])
@@ -82,9 +83,10 @@ export default function ChatSearchSidebar({
       from.setFullYear(from.getFullYear() - 1)
     }
 
-    // Format to YYYY-MM-DD for standard date input controls
-    setFromDate(from.toISOString().split('T')[0])
-    setToDate(to.toISOString().split('T')[0])
+    // Format from local getters (F7-03) — toISOString() would shift the date
+    // for non-UTC offsets.
+    setFromDate(formatLocalDate(from))
+    setToDate(formatLocalDate(to))
   }
 
   const clearFilters = (): void => {

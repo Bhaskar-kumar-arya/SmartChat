@@ -114,6 +114,36 @@ describe('SearchFiltersPanel', () => {
     const clearBtn = screen.getByText('Clear')
     await user.click(clearBtn)
 
-    expect(onFiltersChange).toHaveBeenCalledWith({ fromDate: undefined, toDate: undefined })
+    // F7-04: cleared keys are dropped, not set to undefined
+    expect(onFiltersChange).toHaveBeenCalledWith({})
+  })
+
+  it('drops the jids key entirely when the last selected chat is unchecked (F7-04)', async () => {
+    const user = userEvent.setup()
+    const onFiltersChange = vi.fn()
+    renderWithProviders(
+      <SearchFiltersPanel
+        {...defaultProps}
+        filters={{ jids: ['123@s.whatsapp.net'] }}
+        onFiltersChange={onFiltersChange}
+      />
+    )
+
+    await user.click(screen.getByText('1 selected'))
+    const aliceCheckbox = screen.getAllByRole('checkbox')[1]
+    await user.click(aliceCheckbox)
+
+    expect(onFiltersChange).toHaveBeenCalledWith({})
+  })
+
+  it('closes the chat dropdown on Escape (F7-06)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SearchFiltersPanel {...defaultProps} />)
+
+    await user.click(screen.getByText('All chats'))
+    expect(screen.getByPlaceholderText('Filter chats...')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByPlaceholderText('Filter chats...')).not.toBeInTheDocument()
   })
 })
