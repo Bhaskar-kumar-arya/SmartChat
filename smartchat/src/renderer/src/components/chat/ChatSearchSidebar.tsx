@@ -37,6 +37,10 @@ export default function ChatSearchSidebar({
 
     setIsSearching(true)
     const delay = 300
+    // Guard against out-of-order responses and setState-after-unmount: a
+    // `searchAll` call already in flight can't be cancelled, so gate its
+    // resolution on this flag (mirrors useSearch.ts) — F7-01 / F7-08.
+    let ignored = false
     const timer = setTimeout(async () => {
       try {
         const filters: SearchFilters = {
@@ -50,16 +54,19 @@ export default function ChatSearchSidebar({
         }
 
         const data = await api.searchAll(query, 'normal', filters)
-        setResults(data.messages || [])
+        if (!ignored) setResults(data.messages || [])
       } catch (err: unknown) {
         console.error('[ChatSearchSidebar] Search failed:', err)
-        setResults([])
+        if (!ignored) setResults([])
       } finally {
-        setIsSearching(false)
+        if (!ignored) setIsSearching(false)
       }
     }, delay)
 
-    return () => clearTimeout(timer)
+    return () => {
+      ignored = true
+      clearTimeout(timer)
+    }
   }, [query, fromDate, toDate, activeJid, isOpen])
 
   const setQuickRange = (range: 'today' | 'week' | 'month' | 'year'): void => {
@@ -183,9 +190,9 @@ export default function ChatSearchSidebar({
               <p style={{ marginTop: '8px' }}>Searching messages...</p>
             </div>
           ) : results.length > 0 ? (
-            results.map((item) => (
+            results.map((item, idx) => (
               <div
-                key={item.messageId}
+                key={item.messageId || `${item.jid}-${idx}`}
                 className="search-result-item"
                 onClick={() => item.messageId && onSelectMessage(item.messageId)}
               >

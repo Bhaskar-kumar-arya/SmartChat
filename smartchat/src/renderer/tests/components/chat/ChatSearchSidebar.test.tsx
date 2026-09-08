@@ -117,6 +117,38 @@ describe('ChatSearchSidebar', () => {
     expect(onSelectMessage).toHaveBeenCalledWith('target-msg-123')
   })
 
+  it('does not let an out-of-order search response overwrite newer results (F7-01)', async () => {
+    const { apiService } = renderWithProviders(<ChatSearchSidebar {...defaultProps} />)
+
+    let resolveA!: (v: unknown) => void
+    let resolveB!: (v: unknown) => void
+    const pA = new Promise((r) => { resolveA = r })
+    const pB = new Promise((r) => { resolveB = r })
+    apiService.searchAll = vi
+      .fn()
+      .mockReturnValueOnce(pA)
+      .mockReturnValueOnce(pB)
+
+    const input = screen.getByPlaceholderText('Search messages...')
+
+    fireEvent.change(input, { target: { value: 'a' } })
+    await act(async () => { vi.advanceTimersByTime(350) }) // request A in flight
+
+    fireEvent.change(input, { target: { value: 'ab' } })
+    await act(async () => { vi.advanceTimersByTime(350) }) // request B in flight
+
+    // Newer request B resolves first
+    await act(async () => {
+      resolveB({ messages: [{ jid: 'x', messageId: 'b1', snippet: 'result AB' }] })
+    })
+    // Stale request A resolves later — must NOT clobber B
+    await act(async () => {
+      resolveA({ messages: [{ jid: 'x', messageId: 'a1', snippet: 'result A' }] })
+    })
+
+    expect(document.querySelector('.search-result-snippet')?.textContent).toBe('result AB')
+  })
+
   it('triggers onClose when close button is clicked', async () => {
     const onClose = vi.fn()
     renderWithProviders(<ChatSearchSidebar {...defaultProps} onClose={onClose} />)
