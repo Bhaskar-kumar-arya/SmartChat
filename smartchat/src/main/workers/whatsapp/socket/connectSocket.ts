@@ -1,4 +1,4 @@
-import makeWASocketImport, { Browsers, BufferJSON } from '@whiskeysockets/baileys'
+import makeWASocketImport, { Browsers, BufferJSON, proto } from '@whiskeysockets/baileys'
 import type { WASocket, AuthenticationState } from '@whiskeysockets/baileys'
 import { PrismaClient } from '@prisma/client'
 import NodeCache from 'node-cache'
@@ -34,7 +34,12 @@ export function connectSocket({
     generateHighQualityLinkPreview: true,
     browser: Browsers.macOS('Desktop'),
     syncFullHistory,
-    shouldSyncHistoryMessage: () => currentShouldSyncHistory,
+    // ON_DEMAND history pages (user scrolled past the local backlog) must always
+    // be processed, even after the initial sync has completed and
+    // currentShouldSyncHistory has gone false — otherwise Baileys drops the
+    // response to sock.fetchMessageHistory() before it reaches messaging-history.set.
+    shouldSyncHistoryMessage: (msg) =>
+      msg?.syncType === proto.HistorySync.HistorySyncType.ON_DEMAND || currentShouldSyncHistory,
     cachedGroupMetadata: async (jid) => groupCache.get(jid) ?? undefined,
     getMessage: async (key) => {
       if (!key.id) return undefined

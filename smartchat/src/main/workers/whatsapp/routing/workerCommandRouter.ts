@@ -192,11 +192,16 @@ export class WorkerCommandRouter {
           // asynchronously as `messaging-history.set` chunks (syncType ON_DEMAND)
           // and are persisted by WorkerHistorySyncManager, which then emits
           // `wa-history-appended` for the renderer to re-query.
+          console.log(
+            `[WhatsAppWorker] fetch_message_history: requesting ${count} older messages for ${jid} ` +
+            `(anchor id=${oldestMsgId} fromMe=${oldestMsgFromMe} ts=${oldestMsgTimestampMs})`
+          )
           const requestId = await sock.fetchMessageHistory(
             count,
             { remoteJid: jid, id: oldestMsgId, fromMe: oldestMsgFromMe },
             oldestMsgTimestampMs
           )
+          console.log(`[WhatsAppWorker] fetch_message_history: request dispatched (requestId=${requestId})`)
           parentPort?.postMessage({
             type: 'reply',
             correlationId: command.correlationId,
