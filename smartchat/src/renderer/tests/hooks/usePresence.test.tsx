@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { usePresence } from '@renderer/hooks/usePresence'
 import { APIProvider } from '@renderer/context/APIContext'
+import { PresenceProvider } from '@renderer/context/PresenceContext'
 import { createMockApiService } from '../mocks/mockApiService'
 import { PresenceUpdate } from '@renderer/types/chatTypes'
 
@@ -12,7 +13,9 @@ describe('usePresence', () => {
 
   const createWrapper = (api = mockApi) => {
     return ({ children }: { children: React.ReactNode }) => (
-      <APIProvider service={api}>{children}</APIProvider>
+      <APIProvider service={api}>
+        <PresenceProvider>{children}</PresenceProvider>
+      </APIProvider>
     )
   }
 

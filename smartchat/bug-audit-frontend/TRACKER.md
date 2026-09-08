@@ -497,14 +497,12 @@ New tests "F3-10: a malformed lastMessageTimestamp does not crash the list"
 mid-expiry sweep). Minor constant overhead + a duplicated subscription.
 **Fix idea:** lift presence into a context/provider (or a shared store) consumed
 by both, so there is a single subscription and interval.
-**Status:** wontfix (for now)
-**Fix status:** wontfix in this slice — lifting `usePresence` into a context and
-rewiring `ChatLayout` + `ChatList` is more invasive than a data-hooks slice
-should carry, and it pairs with F12-05 (tree-wide "hoist duplicated
-subscriptions" cross-cutting work). The concrete correctness bug in this area
-(F3-07 JID lookup) is fixed in place. Left for the F12 fix phase / a dedicated
-presence-context change. Impact is bounded: 2 subscriptions + 2 timers, no data
-loss.
+**Status:** fixed
+**Fix status:** deferred in F3 → **fixed in F12-05 (<C3>)**. Presence is now
+owned by `context/PresenceContext.tsx` (`PresenceProvider` in `main.tsx`): one
+`onPresenceUpdate` subscription, one 2s interval, one `presences` map shared by
+`ChatLayout` + `ChatList`. `hooks/usePresence.ts` re-exports the context hook so
+no consumer import changed.
 
 ## Slice F4 — Chat list & layout & nav UI
 
@@ -2309,7 +2307,7 @@ navigation bus.
 event bus that retains the last unhandled intent and replays it when a listener
 mounts). Keep the listener effect stable (read `activeJid` from a ref).
 **Status:** fixed
-**Fix status:** fixed in <C2> — new `utils/navigationBus.ts`: `navigate(intent)`
+**Fix status:** fixed in dd1fcd2 — new `utils/navigationBus.ts`: `navigate(intent)`
 + `subscribeNavigation(listener)`. The bus retains the last intent when no
 listener is mounted and replays it on the next `subscribeNavigation` (fixes the
 QR/sync/`connected`-screen drop and the chat-switch listener-churn gap); it
@@ -2370,7 +2368,23 @@ expiry/refresh tick.
 **Fix idea:** lift the genuinely global ones (presence, extension-manager list)
 into context providers with a single subscription/interval; keep per-view hooks
 only for view-local state.
-**Status:** open
+**Status:** fixed (presence) / partial (extension-manager)
+**Fix status:** fixed in <C3> — presence lifted into `context/PresenceContext.tsx`
+(`PresenceProvider` added in `main.tsx` inside the provider stack). It owns the
+single `onPresenceUpdate` subscription + single 2s expiry interval; `usePresence`
+is now `useContext(PresenceContext)`, re-exported from `hooks/usePresence.ts` for
+back-compat, so `ChatLayout` and `ChatList` share one copy of `presences`. The
+sweep interval is also gated on `document.visibilityState` (F12-08). Test wrapper
+(`testUtils.renderWithProviders` + `usePresence.test.tsx`) wraps in
+`PresenceProvider`; all presence tests green.
+**`useExtensionManager` duplication — deliberately NOT lifted this slice:** it is
+instantiated in `ChatLayout` (reads `extensions` for name resolution) and
+`ExtensionManager` (the management UI, rarely open). Unlike presence there is no
+interval and the subscription is a single `onExtensionsChanged`-style listener;
+the cost is one extra listener + one extra list fetch while the manager modal is
+open. Lifting it needs an audit of every `useExtensionManager` consumer's
+expectations (mutations, refresh) — out of scope for a conservative cross-cutting
+pass. Flagged here as a follow-up; low impact.
 
 ### [F12-06] med — no user-visible error surface in the entire renderer; failed IPC is swallowed with `console.error`
 **What:** there is no toast / snackbar / notification primitive anywhere in
