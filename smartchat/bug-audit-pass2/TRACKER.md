@@ -484,6 +484,10 @@ aliased — name resolution keeps treating them as two contacts permanently.
 
 ## Slice 6 — AI
 
+<!-- FIX PHASE 2026-09-08: S6-01/02/03/05/06 fixed, S6-04 wontfix (renderer-loop
+concern). Regression tests in src/main/tests/services/ai/. "Summary counts" table
+left for final reconciliation. -->
+
 ### [P2-S6-01] med — src/main/services/ai/AIService.ts:125-151, 153-169
 **What:** `formatChatHistory` / `buildFullPrompt` interpolate attacker-controllable
 WhatsApp data — `chat.name`, `msg.participantName`, `msg.textContent` — straight into
@@ -502,7 +506,10 @@ a message into a chat the user later adds as AI context can steer tool calls.
 **Fix idea:** run every interpolated field through `escapeXml` (reuse
 `mentions/xmlEscape.ts`) and/or wrap message text in CDATA-style fences; treat the
 whole block as untrusted data in the surrounding prompt wording.
-**Status:** open
+**Fix:** `AIService.formatChatHistory` now runs `chat.name`, participant names,
+`senderId` and `msg.textContent` through `escapeXml`; the participant JSON block is
+escaped too. Unparseable timestamps render `unknown time` instead of `Invalid Date`.
+**Status:** fixed 2026-09-08
 
 ### [P2-S6-02] low — src/main/services/ai/providers/LMStudioProvider.ts:20,90,158 vs src/main/services/ai/AIChatSessionService.ts:174
 **What:** `getAIOptions()` exposes a user-configurable `contextLength` (default 24576),
@@ -516,7 +523,12 @@ tokens, and longer histories are silently truncated / rejected by LM Studio. The
 is dead for the one provider it could affect (cloud providers ignore it entirely).
 **Fix idea:** add `contextLength` to the options type, forward it in
 `prepareGenerationContext`, and populate it from `getAIOptions()` at the IPC layer.
-**Status:** open
+**Fix:** `contextLength?: number` added to the `IAIService.generateResponse*` option
+types and threaded through `AIService` (it already spreads `options` into the provider
+call). The `ai-chat` / `ai-chat-stream` IPC handlers now read
+`aiChatSessionService.getAIOptions().contextLength` and pass it through, so
+`LMStudioProvider.getOrLoadModel` loads the model at the configured length.
+**Status:** fixed 2026-09-08
 
 ### [P2-S6-03] low — src/main/services/ai/AIService.ts:25, 437-438
 **What:** `abortResponse(requestId)` does `this.abortedRequests.add(requestId)` and
@@ -529,7 +541,14 @@ reachable from IPC — never do.
 heavy AI user. Harmless correctness-wise but a slow leak.
 **Fix idea:** delete from `abortedRequests` in the `finally` of `generateResponse`
 and `generateResponseStream` (keyed on `options.requestId`).
-**Status:** open
+**Fix:** `generateResponseStream` now deletes `options.requestId` from
+`abortedRequests` in its `finally` — this is the leak path the finding describes
+("every time a user cancels a streaming AI response"). `generateResponse` is
+deliberately left alone: it is also the per-turn call inside
+`generateResponseWithTools`, whose between-turn abort check reads the same set, so
+clearing it there would defeat that check. `generateResponseWithTools` already
+clears the set in its own `finally`.
+**Status:** fixed 2026-09-08
 
 ### [P2-S6-04] low — src/main/services/ai/AIService.ts:358-435
 **What:** `generateResponseWithTools` — the entire agentic tool-execution loop,
@@ -545,7 +564,22 @@ abort-between-turns, and tool results are not labelled `[SYSTEM]` the way the sy
 prompt promises. Dead code that looks like the safety net but isn't wired in.
 **Fix idea:** either route the real tool loop through this method, or delete it and
 move the turn cap / abort logic to wherever the renderer-driven loop lives.
-**Status:** open
+**Investigation:** The production tool loop lives in the renderer
+(`src/renderer/src/components/ai/hooks/useAIStream.ts`): after each stream ends it
+matches the first `<tool_call>` block, auto-executes it via the `execute-tool` IPC
+only when `tool.requiresPermission === false`, appends the result and re-streams —
+with no turn cap and the same non-global first-match regex as S6-05.
+`generateResponseWithTools` is fully implemented and covered by
+`tests/ai/AIService.test.ts` + `tests/services/ai/AIService.test.ts` (turn-cap and
+between-turn-abort tests) and is exposed on `IAIService`; it is the only correct
+implementation of the `MAX_TOOL_TURNS_CAP` ceiling and is the right entry point for
+a future non-renderer caller (plugin / apiServer agentic use). Deleting it would
+remove the safer path without fixing anything; wiring the renderer through it is a
+renderer change out of scope for this backend slice and tracked in the frontend
+audit (missing renderer-loop turn cap).
+**Status:** wontfix 2026-09-08 — not a backend defect; the missing turn cap is in
+the renderer-driven loop (frontend audit). Method retained as the canonical
+capped/abortable tool loop for non-renderer callers.
 
 ### [P2-S6-05] low — src/main/services/ai/prompts/ReactProtocolStrategy.ts:9-20, src/main/services/ai/AIService.ts:391
 **What:** The React protocol block's "CRITICAL TOOL RULES" list is numbered 2..12 —
@@ -559,7 +593,11 @@ discarded (no error, no result) — the model then sees only one result and reas
 from an incomplete picture.
 **Fix idea:** restore rule 1 in `ReactProtocolStrategy`, and/or detect multiple
 `<tool_call>` blocks and either execute all or return an explicit error.
-**Status:** open
+**Fix:** restored rule 1 in `ReactProtocolStrategy` ("You can only emit ONE tool
+call per response"), spelling out that only the first `<tool_call>` block is
+executed. The extractor change is deferred: the production extractor is the
+renderer's non-global regex in `useAIStream.ts` (see S6-04) — a frontend concern.
+**Status:** fixed 2026-09-08
 
 ### [P2-S6-06] low — src/main/services/ai/providers/GroqProvider.ts:155-173, MistralProvider.ts:156-174, DeepSeekProvider.ts:183-201
 **What:** Streaming tool-call reassembly does `const idx = toolCallDelta.index;
@@ -573,7 +611,11 @@ non-streaming path reads `message.tool_calls` directly and is unaffected), so th
 same request "works" un-streamed and drops the tool call streamed.
 **Fix idea:** default a missing `index` to `toolCalls.length` (or accumulate into a
 `Map` keyed by `id`), and guard the final emit accordingly.
-**Status:** open
+**Fix:** Groq/Mistral/DeepSeek streaming reassembly now resolves a missing
+`index` by matching `toolCallDelta.id` against the accumulated calls (new call →
+appended at `toolCalls.length`, continuation fragment with no id → last open
+slot), so fragments are never written to a string key and dropped.
+**Status:** fixed 2026-09-08
 
 ## Slice 7 — Kernel API modules & router
 

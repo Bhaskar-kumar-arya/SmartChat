@@ -14,6 +14,7 @@ import { IToolRegistry } from './IToolRegistry'
 import { ISystemInstructionBuilder } from './ISystemInstructionBuilder'
 import { UserDetails } from './ISystemPromptBuilder'
 import { IAIMentionEnricher } from './mentions/IAIMentionEnricher'
+import { escapeXml } from './mentions/xmlEscape'
 
 export class AIService implements IAIService {
   private providers: Record<string, IBaseAIProvider> = {}
@@ -123,7 +124,12 @@ export class AIService implements IAIService {
 
 
   private formatChatHistory(chat: AIChatContext): string {
-    let contextSection = `\n<chat_history id="${chat.jid}" name="${chat.name || 'Unknown'}">\n`
+    // Every interpolated field below (chat name, participant names, message text,
+    // jids) is attacker-controllable WhatsApp data. Escape it so a crafted group
+    // name / message body cannot close the <chat_history>/<messages> block and
+    // inject instructions into the model context (prompt injection — S6-01,
+    // same class as the mentions hardening in S6-06).
+    let contextSection = `\n<chat_history id="${escapeXml(chat.jid)}" name="${escapeXml(chat.name || 'Unknown')}">\n`
     const participantMap: Record<string, string> = {}
     chat.messages.forEach((msg) => {
        const senderId = msg.participant || (msg.fromMe ? 'me' : msg.chatJid)
@@ -134,15 +140,17 @@ export class AIService implements IAIService {
     })
 
     if (Object.keys(participantMap).length > 0) {
-      contextSection += `<participants>\n${JSON.stringify(participantMap, null, 2)}\n</participants>\n\n`
+      contextSection += `<participants>\n${escapeXml(JSON.stringify(participantMap, null, 2))}\n</participants>\n\n`
     }
-    
+
     contextSection += `<messages>\n`
     chat.messages.forEach((msg) => {
        const senderId = msg.participant || (msg.fromMe ? 'me' : msg.chatJid)
        const senderName = msg.fromMe ? 'Me' : (msg.participantName || senderId.split('@')[0])
        const content = msg.textContent || '[Non-text message]'
-       contextSection += `[${new Date(Number(msg.timestamp) * 1000).toLocaleString()}] ${senderName} (${senderId}): ${content}\n`
+       const tsMs = Number(msg.timestamp) * 1000
+       const when = Number.isFinite(tsMs) && tsMs > 0 ? new Date(tsMs).toLocaleString() : 'unknown time'
+       contextSection += `[${when}] ${escapeXml(senderName)} (${escapeXml(senderId)}): ${escapeXml(content)}\n`
     })
     contextSection += `</messages>\n`
 
@@ -187,7 +195,7 @@ export class AIService implements IAIService {
     contextFiles?: AIChatContext[],
     history?: AIHistoryMessage[],
     mentions?: AIMention[],
-    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string }
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string, contextLength?: number }
   ): Promise<{
     modelId: string
     provider: IBaseAIProvider
@@ -254,7 +262,7 @@ export class AIService implements IAIService {
     contextFiles?: AIChatContext[],
     history?: AIHistoryMessage[],
     mentions?: AIMention[],
-    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string }
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string, contextLength?: number }
   ): Promise<string> {
     try {
       const {
@@ -293,7 +301,7 @@ export class AIService implements IAIService {
       if (options?.requestId) {
         this.activeRequests.delete(options.requestId);
       }
-      
+
       return result;
     } catch (error) {
       if (options?.requestId) {
@@ -309,7 +317,7 @@ export class AIService implements IAIService {
     contextFiles?: AIChatContext[],
     history?: AIHistoryMessage[],
     mentions?: AIMention[],
-    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string },
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string, contextLength?: number },
     onChunk: (chunk: string) => void = () => {}
   ): Promise<void> {
     try {
@@ -347,6 +355,7 @@ export class AIService implements IAIService {
       } finally {
         if (options?.requestId) {
           this.activeRequests.delete(options.requestId);
+          this.abortedRequests.delete(options.requestId);
         }
       }
     } catch (error) {

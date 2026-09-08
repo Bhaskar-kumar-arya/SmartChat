@@ -42,15 +42,15 @@ export interface IAIService {
     contextFiles?: AIChatContext[],
     history?: AIHistoryMessage[],
     mentions?: AIMention[],
-    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string }
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string, contextLength?: number }
   ): Promise<string>
-  
+
   generateResponseStream(
     prompt: string,
     contextFiles?: AIChatContext[],
     history?: AIHistoryMessage[],
     mentions?: AIMention[],
-    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string },
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string, contextLength?: number },
     onChunk?: (chunk: string) => void
   ): Promise<void>
 

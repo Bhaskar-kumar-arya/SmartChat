@@ -7,6 +7,7 @@ export class ReactProtocolStrategy implements IProtocolStrategy {
 You have the freedom to choose your response method — use a tool or respond conversationally, whichever best serves the user's request.
 
 CRITICAL TOOL RULES:
+1. You can only emit ONE tool call per response. Only the first <tool_call> block is executed; any additional blocks in the same response are silently discarded.
 2. You may make multiple sequential tool calls across multiple turns (tool -> result -> tool -> result).
 3. The "CAN BE USED FOR" guidelines in tool descriptions are just examples. Use tools open-endedly and creatively for any task where their core capabilities apply.
 4. Tool results are processed entirely in the background. The user only sees a brief execution status, not the raw data. Do not restrict data gathering out of concern for visual overwhelm.

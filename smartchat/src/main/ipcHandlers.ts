@@ -385,9 +385,16 @@ function registerAIServiceHandlers(
       contextChats?: AIChatContext[],
       history?: AIHistoryMessage[],
       mentions?: AIMention[],
-      options?: { model?: string; useThinkMode?: boolean; isSystem?: boolean; requestId?: string }
+      options?: { model?: string; useThinkMode?: boolean; isSystem?: boolean; requestId?: string; contextLength?: number }
     ) => {
-      return await services.aiService.generateResponse(prompt, contextChats, history, mentions, options);
+      // S6-02: the user-configurable context length only affects local (LM Studio)
+      // models and is not carried in `options` from the renderer — source it from
+      // the persisted AI preferences here so the knob actually takes effect.
+      const aiOptions = await services.aiChatSessionService.getAIOptions();
+      return await services.aiService.generateResponse(prompt, contextChats, history, mentions, {
+        contextLength: aiOptions.contextLength,
+        ...options
+      });
     }
   )
 
@@ -409,16 +416,18 @@ function registerAIServiceHandlers(
     contextChats?: AIChatContext[];
     history?: AIHistoryMessage[];
     mentions?: AIMention[];
-    options?: { model?: string; useThinkMode?: boolean; isSystem?: boolean; requestId?: string };
+    options?: { model?: string; useThinkMode?: boolean; isSystem?: boolean; requestId?: string; contextLength?: number };
   }) => {
     const { channelId, prompt, contextChats, history, mentions, options } = args;
     try {
+      // S6-02: carry the persisted context-length preference through to the provider.
+      const aiOptions = await services.aiChatSessionService.getAIOptions();
       await services.aiService.generateResponseStream(
         prompt,
         contextChats,
         history,
         mentions,
-        { ...options, requestId: channelId },
+        { contextLength: aiOptions.contextLength, ...options, requestId: channelId },
         (chunk) => {
           event.sender.send(`${channelId}-chunk`, chunk);
         }

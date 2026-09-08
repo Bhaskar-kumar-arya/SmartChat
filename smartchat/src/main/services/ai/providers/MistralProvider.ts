@@ -154,7 +154,20 @@ export class MistralProvider implements IStreamingProvider, IFullResponseProvide
 
       if (delta?.tool_calls) {
         for (const toolCallDelta of delta.tool_calls) {
-          const idx = toolCallDelta.index;
+          // Some OpenAI-compatible endpoints omit `index` on tool-call deltas
+          // (S6-06). Fall back to matching on id, else append, so the fragment
+          // isn't written to toolCalls["undefined"] and dropped by the array
+          // iteration below.
+          const rawIdx = (toolCallDelta as { index?: number }).index;
+          let idx: number;
+          if (typeof rawIdx === 'number') {
+            idx = rawIdx;
+          } else if (toolCallDelta.id) {
+            const existing = toolCalls.findIndex(t => t?.id === toolCallDelta.id);
+            idx = existing >= 0 ? existing : toolCalls.length;
+          } else {
+            idx = Math.max(0, toolCalls.length - 1);
+          }
           if (!toolCalls[idx]) {
             toolCalls[idx] = {
               id: toolCallDelta.id || '',
