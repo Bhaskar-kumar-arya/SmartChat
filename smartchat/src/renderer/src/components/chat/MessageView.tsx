@@ -5,6 +5,7 @@ import { formatDate } from '../../utils/formatters'
 import MessageItem from './MessageItem'
 import { emojiToUnified } from '../../utils/emojiUtils'
 import { MessageErrorBoundary } from '../common/MessageErrorBoundary'
+import { BaseModal } from '../overlays/BaseModal'
 
 interface MessageViewProps {
   messages: IMessageItem[]
@@ -302,8 +303,7 @@ function ReactionDetailsModal({ message, onClose }: { message: IMessageItem, onC
   }, [message.reactions])
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="reaction-modal" onClick={e => e.stopPropagation()}>
+    <BaseModal onClose={onClose} label="Reactions" containerClassName="reaction-modal">
         <div className="reaction-modal-header">
           <h3>Reactions</h3>
           <button className="close-btn" onClick={onClose}>&times;</button>
@@ -324,7 +324,6 @@ function ReactionDetailsModal({ message, onClose }: { message: IMessageItem, onC
             </div>
           ))}
         </div>
-      </div>
-    </div>
+    </BaseModal>
   )
 }

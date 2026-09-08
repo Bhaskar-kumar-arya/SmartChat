@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { AIChatSessionItem } from '../../types/aiTypes'
+import { BaseModal } from '../overlays/BaseModal'
 
 interface AIChatHistoryModalProps {
   isOpen: boolean
@@ -76,8 +77,12 @@ export default function AIChatHistoryModal({
   }
 
   return (
-    <div className="ai-modal-overlay" onClick={onClose}>
-      <div className="ai-modal-container" onClick={e => e.stopPropagation()}>
+    <BaseModal
+      onClose={() => (confirmDeleteId ? setConfirmDeleteId(null) : onClose())}
+      label="Chat History"
+      overlayClassName="ai-modal-overlay"
+      containerClassName="ai-modal-container"
+    >
         {confirmDeleteId && (
           <div className="ai-modal-confirm-overlay">
             <p className="ai-modal-confirm-text">Delete this session?</p>
@@ -166,7 +171,6 @@ export default function AIChatHistoryModal({
             </>
           )}
         </div>
-      </div>
-    </div>
+    </BaseModal>
   )
 }

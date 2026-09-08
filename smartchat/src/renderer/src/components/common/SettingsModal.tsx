@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAPI } from '../../context/APIContext'
 import { useContributions } from '../../hooks/useContributions'
 import { SettingsPluginPage } from '../panels/SettingsPluginPage'
+import { BaseModal } from '../overlays/BaseModal'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -22,35 +23,55 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [loading, setLoading] = useState(true)
 
 
+  // F10-08: guard the async fetch against unmount / re-close, and show the
+  // spinner again on every re-open instead of the previous session's values.
   useEffect(() => {
-    if (isOpen) {
-      api.getNotificationPreferences()
-        .then((data) => {
-          setPrefs(data)
-          setLoading(false)
-        })
-        .catch((err) => {
-          console.error('Failed to load notification preferences:', err)
-          setLoading(false)
-        })
+    if (!isOpen) return
+    let alive = true
+    setLoading(true)
+    api.getNotificationPreferences()
+      .then((data) => {
+        if (!alive) return
+        setPrefs(data)
+        setLoading(false)
+      })
+      .catch((err) => {
+        if (!alive) return
+        console.error('Failed to load notification preferences:', err)
+        setLoading(false)
+      })
+    return () => {
+      alive = false
     }
   }, [isOpen, api])
+
+  // F10-09: if the active plugin settings page disappears (plugin disabled while
+  // the modal is open) fall back to the General tab instead of a blank body.
+  useEffect(() => {
+    if (activeTab === 'general') return
+    if (!pluginSettingsPages.some((p) => p.id === activeTab)) {
+      setActiveTab('general')
+    }
+  }, [activeTab, pluginSettingsPages])
 
   if (!isOpen) return null
 
   const handleToggle = async (key: keyof typeof prefs) => {
+    const previous = prefs
     const updated = { ...prefs, [key]: !prefs[key] }
     setPrefs(updated)
     try {
       await api.setNotificationPreferences(updated)
     } catch (err) {
+      // F10-06: the save failed — revert the optimistic toggle so the UI does
+      // not claim a preference that was never persisted.
       console.error('Failed to save notification preferences:', err)
+      setPrefs(previous)
     }
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-container settings-modal" onClick={(e) => e.stopPropagation()}>
+    <BaseModal onClose={onClose} label="Settings" containerClassName="modal-container settings-modal">
         <div className="modal-header">
           <h3>Settings</h3>
           <button className="modal-close-icon-btn" onClick={onClose} title="Close">
@@ -199,7 +220,6 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         <button className="settings-save-btn" onClick={onClose}>
           Done
         </button>
-      </div>
-    </div>
+    </BaseModal>
   )
 }

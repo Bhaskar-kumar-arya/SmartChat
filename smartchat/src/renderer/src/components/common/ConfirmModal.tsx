@@ -1,3 +1,5 @@
+import { BaseModal } from '../overlays/BaseModal'
+
 interface ConfirmModalProps {
   isOpen: boolean
   title: string
@@ -24,8 +26,12 @@ export default function ConfirmModal({
   if (!isOpen) return null
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-container" onClick={e => e.stopPropagation()} style={{ maxWidth: '380px' }}>
+    <BaseModal
+      onClose={onCancel}
+      label={title}
+      containerClassName="modal-container"
+      containerStyle={{ maxWidth: '380px' }}
+    >
         <div style={{ padding: '20px' }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', fontWeight: '600', color: 'var(--wa-text-primary)' }}>
             {title}
@@ -69,7 +75,6 @@ export default function ConfirmModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </BaseModal>
   )
 }

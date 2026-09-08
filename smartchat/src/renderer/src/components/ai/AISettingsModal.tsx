@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { AIChatOptions, ModelInfo } from '../../types/aiTypes';
 import { useAPI } from '../../context/APIContext';
+import { BaseModal } from '../overlays/BaseModal';
 
 interface AISettingsModalProps {
   isOpen: boolean;
@@ -91,12 +92,27 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
     });
 
   return (
-    <div className="ai-modal-overlay" onClick={onClose}>
-      <div className="ai-modal-container" onClick={e => e.stopPropagation()}>
+    <BaseModal
+      onClose={onClose}
+      label="AI Preferences"
+      overlayClassName="ai-modal-overlay"
+      containerClassName="ai-modal-container"
+    >
         <div className="ai-modal-header">
           <h3>AI Preferences</h3>
+          <button
+            type="button"
+            className="ai-modal-close-icon-btn"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
-        
+
         <div className="ai-settings-scroll-content">
           <div className="ai-settings-row">
             <span className="ai-settings-label">Thinking Mode (ReAct)</span>
@@ -256,7 +272,6 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
         <button className="ai-settings-save-btn" onClick={onClose}>
           Done
         </button>
-      </div>
-    </div>
+    </BaseModal>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAPI } from '../../context/APIContext'
+import { BaseModal } from '../overlays/BaseModal'
 
 interface AIChatExportButtonProps {
   activeSessionId: string | null
@@ -81,8 +82,13 @@ export default function AIChatExportButton({
   return (
     <>
       {showConfirmDelete && (
-        <div className="ai-modal-overlay" onClick={() => setShowConfirmDelete(false)}>
-          <div className="ai-modal-container" onClick={e => e.stopPropagation()} style={{ maxWidth: '300px' }}>
+        <BaseModal
+          onClose={() => setShowConfirmDelete(false)}
+          label="Remove from exports?"
+          overlayClassName="ai-modal-overlay"
+          containerClassName="ai-modal-container"
+          containerStyle={{ maxWidth: '300px' }}
+        >
             <div className="ai-modal-confirm-overlay" style={{ position: 'static', padding: '20px' }}>
               <p className="ai-modal-confirm-text">Remove from exports?</p>
               <div className="ai-modal-btn-group">
@@ -96,8 +102,7 @@ export default function AIChatExportButton({
                 >Delete</button>
               </div>
             </div>
-          </div>
-        </div>
+        </BaseModal>
       )}
 
       <div style={{

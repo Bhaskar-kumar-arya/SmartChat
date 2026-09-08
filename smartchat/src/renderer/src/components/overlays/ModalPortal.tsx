@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom'
 import { useAPI } from '../../context/APIContext'
 import { FormModal } from './FormModal'
 import { ConfirmModal, ConfirmModalOpts } from './ConfirmModal'
 import { AlertModal, AlertModalOpts } from './AlertModal'
 import { OverlayShell } from './OverlayShell'
+import { BaseModal } from './BaseModal'
 import { OverlayFormSchema } from '@smartchat/sdk'
 import { WebviewOverlayRequest } from '../../../../main/kernel/ui/IOverlayHost'
 
@@ -12,6 +13,12 @@ export interface ModalRequest {
   type: 'form' | 'confirm' | 'alert'
   modalId: string
   payload: unknown
+}
+
+function cancelValueForType(type: ModalRequest['type']): unknown {
+  if (type === 'form') return null
+  if (type === 'confirm') return false
+  return undefined
 }
 
 export function ModalPortal() {
@@ -23,7 +30,10 @@ export function ModalPortal() {
     if (!api.onModalShow) return
 
     const unsubscribe = api.onModalShow((req: ModalRequest) => {
-      setModals((prev) => [...prev, req])
+      // F10-12: a backend re-send of the same request must not stack a duplicate.
+      setModals((prev) =>
+        prev.some((m) => m.modalId === req.modalId) ? prev : [...prev, req]
+      )
     })
     return unsubscribe
   }, [api])
@@ -47,7 +57,11 @@ export function ModalPortal() {
 
   const handleResolve = (modalId: string, data: unknown) => {
     setModals((prev) => prev.filter((m) => m.modalId !== modalId))
-    api.resolveModal(modalId, data)
+    // F10-10: don't fire-and-forget — a rejected resolve is otherwise an
+    // unhandled rejection and the plugin-side promise hangs silently.
+    Promise.resolve(api.resolveModal(modalId, data)).catch((err) =>
+      console.error('[ModalPortal] resolveModal failed:', err)
+    )
   }
 
   const handleWebviewClose = (overlayId: string) => {
@@ -56,21 +70,14 @@ export function ModalPortal() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (modals.length > 0) {
-          const top = modals[modals.length - 1]
-          if (top.type === 'form') {
-            handleResolve(top.modalId, null)
-          } else if (top.type === 'confirm') {
-            handleResolve(top.modalId, false)
-          } else if (top.type === 'alert') {
-            handleResolve(top.modalId, undefined)
-          }
-        } else if (webviews.length > 0) {
-          const top = webviews[webviews.length - 1]
-          api.overlayDismiss?.(top.overlayId)
-          handleWebviewClose(top.overlayId)
-        }
+      if (e.key !== 'Escape') return
+      // F10-11: the tier1 modal renders visually on top of any webview overlay
+      // and owns Escape while it is open; BaseModal handles that case.
+      if (modals.length > 0) return
+      if (webviews.length > 0) {
+        const top = webviews[webviews.length - 1]
+        api.overlayDismiss?.(top.overlayId)
+        handleWebviewClose(top.overlayId)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -80,18 +87,6 @@ export function ModalPortal() {
   if (modals.length === 0 && webviews.length === 0) return null
 
   const activeModal = modals.length > 0 ? modals[modals.length - 1] : null
-
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget && activeModal) {
-      if (activeModal.type === 'form') {
-        handleResolve(activeModal.modalId, null)
-      } else if (activeModal.type === 'confirm') {
-        handleResolve(activeModal.modalId, false)
-      } else if (activeModal.type === 'alert') {
-        handleResolve(activeModal.modalId, undefined)
-      }
-    }
-  }
 
   const modalContent = (() => {
     if (!activeModal) return null
@@ -127,18 +122,20 @@ export function ModalPortal() {
 
   return ReactDOM.createPortal(
     <>
-      {activeModal && (
-        <div
-          className="modal-overlay"
-          onClick={handleOverlayClick}
-          data-testid="tier1-modal-overlay"
-        >
-          {modalContent}
-        </div>
-      )}
       {webviews.map((req) => (
         <OverlayShell key={req.overlayId} request={req} onClose={handleWebviewClose} />
       ))}
+      {activeModal && (
+        <BaseModal
+          key={activeModal.modalId}
+          onClose={() =>
+            handleResolve(activeModal.modalId, cancelValueForType(activeModal.type))
+          }
+          overlayTestId="tier1-modal-overlay"
+        >
+          {modalContent}
+        </BaseModal>
+      )}
     </>,
     document.body
   )

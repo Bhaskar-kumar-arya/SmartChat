@@ -36,13 +36,13 @@ describe('MessageInfoModal', () => {
 
   it('triggers onClose when close button or backdrop is clicked', () => {
     const handleClose = vi.fn()
-    const { container } = render(<MessageInfoModal receipts={[]} onClose={handleClose} />)
+    render(<MessageInfoModal receipts={[]} onClose={handleClose} />)
 
     const closeBtn = screen.getByRole('button')
     fireEvent.click(closeBtn)
     expect(handleClose).toHaveBeenCalledTimes(1)
 
-    const backdrop = container.querySelector('.info-modal-backdrop')!
+    const backdrop = document.querySelector('.info-modal-backdrop')!
     fireEvent.click(backdrop)
     expect(handleClose).toHaveBeenCalledTimes(2)
   })

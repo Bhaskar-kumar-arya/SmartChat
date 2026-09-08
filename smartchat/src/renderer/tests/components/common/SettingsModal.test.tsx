@@ -57,6 +57,33 @@ describe('SettingsModal', () => {
     )
   })
 
+  it('reverts an optimistic toggle when the save rejects (F10-06)', async () => {
+    const mockApi = createMockApiService()
+    mockApi.getNotificationPreferences = vi.fn().mockResolvedValue({
+      enabled: true,
+      soundEnabled: true,
+      notifyWhenFocused: false,
+      minimizeToTray: true,
+      launchOnStartup: true
+    })
+    mockApi.setNotificationPreferences = vi.fn().mockRejectedValue(new Error('disk full'))
+
+    renderWithProviders(<SettingsModal isOpen={true} onClose={vi.fn()} />, { apiService: mockApi })
+
+    await waitFor(() => {
+      expect(screen.getByText('General Settings')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox') as HTMLInputElement[]
+    expect(checkboxes[0].checked).toBe(true) // minimizeToTray
+    fireEvent.click(checkboxes[0])
+
+    await waitFor(() => {
+      const after = screen.getAllByRole('checkbox') as HTMLInputElement[]
+      expect(after[0].checked).toBe(true) // reverted
+    })
+  })
+
   it('calls onClose when Done button is clicked', async () => {
     const handleClose = vi.fn()
     const mockApi = createMockApiService()

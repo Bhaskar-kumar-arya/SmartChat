@@ -1,6 +1,7 @@
 import { MessageReceiptInfo } from '../../types/chatTypes'
 import { formatReceiptTime, formatReceiptDate } from '../../utils/formatters'
 import { EmojiText } from '../common/EmojiText'
+import { BaseModal } from '../overlays/BaseModal'
 
 interface MessageInfoModalProps {
   receipts: MessageReceiptInfo[]
@@ -9,8 +10,12 @@ interface MessageInfoModalProps {
 
 export default function MessageInfoModal({ receipts, onClose }: MessageInfoModalProps) {
   return (
-    <div className="info-modal-backdrop" onClick={onClose}>
-      <div className="info-modal-container" onClick={(e) => e.stopPropagation()}>
+    <BaseModal
+      onClose={onClose}
+      label="Message Info"
+      overlayClassName="info-modal-backdrop"
+      containerClassName="info-modal-container"
+    >
         <div className="info-modal-header">
           <h3>Message Info</h3>
           <button className="info-modal-close" onClick={onClose}>
@@ -53,7 +58,6 @@ export default function MessageInfoModal({ receipts, onClose }: MessageInfoModal
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </BaseModal>
   )
 }

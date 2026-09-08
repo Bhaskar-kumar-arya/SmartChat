@@ -51,7 +51,7 @@ describe('ConfirmModal', () => {
 
   it('triggers onCancel when backdrop overlay is clicked', () => {
     const handleCancel = vi.fn()
-    const { container } = render(
+    render(
       <ConfirmModal
         isOpen={true}
         title="Title"
@@ -61,10 +61,8 @@ describe('ConfirmModal', () => {
       />
     )
 
-    const overlay = container.querySelector('.modal-overlay')
-    if (overlay) {
-      fireEvent.click(overlay)
-      expect(handleCancel).toHaveBeenCalledTimes(1)
-    }
+    const overlay = document.querySelector('.modal-overlay')!
+    fireEvent.click(overlay)
+    expect(handleCancel).toHaveBeenCalledTimes(1)
   })
 })

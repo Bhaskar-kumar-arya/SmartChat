@@ -115,6 +115,27 @@ describe('ModalPortal', () => {
     expect(mockApi.resolveModal).toHaveBeenCalledWith('modal-alert-1', undefined)
   })
 
+  it('does not stack a duplicate modal when the same request id is re-sent (F10-12)', () => {
+    let onModalShowCallback: ((req: any) => void) | null = null
+    const mockApi = createMockApiService({
+      onModalShow: vi.fn().mockImplementation((cb) => {
+        onModalShowCallback = cb
+        return () => {}
+      }),
+      resolveModal: vi.fn()
+    })
+
+    renderWithProviders(<ModalPortal />, { apiService: mockApi })
+
+    const req = { type: 'confirm', modalId: 'dup-1', payload: { title: 'Only Once' } }
+    act(() => {
+      onModalShowCallback!(req)
+      onModalShowCallback!(req)
+    })
+
+    expect(screen.getAllByTestId('confirm-modal')).toHaveLength(1)
+  })
+
   it('dismisses active modal on Escape key press', () => {
     let onModalShowCallback: ((req: any) => void) | null = null
 
