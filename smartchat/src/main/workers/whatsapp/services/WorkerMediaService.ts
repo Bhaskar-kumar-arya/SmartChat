@@ -55,6 +55,10 @@ export class WorkerMediaService implements IMediaService {
     this.favoriteStickerQueue = []
     this.activeDownloadsCount = 0
     this.isProcessingQueue = false
+    // S1-05: a reconnect mid-sync calls clear() while the queue is paused. If we
+    // don't reset this, the queue stays paused forever and favorite stickers are
+    // never downloaded again for the life of the worker.
+    this.queuePaused = false
     this.queueGeneration++
   }
 

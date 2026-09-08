@@ -126,6 +126,7 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
           if (
             domainEvent === 'wa-qr' ||
             domainEvent === 'wa-logged-out' ||
+            domainEvent === 'wa-session-replaced' ||
             domainEvent === 'wa-connected' ||
             domainEvent === 'wa-sync-progress' ||
             domainEvent === 'wa-sync-status' ||

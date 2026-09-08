@@ -6,6 +6,6 @@ export interface IHistorySyncManager {
   setInProgress(val: boolean): void
   clear(): void
   handleSyncChunk(data: unknown, syncFullHistory: boolean, sock: WASocket): Promise<void>
-  finishSync(sock: WASocket, syncFullHistory: boolean): Promise<void>
-  skipSync(sock: WASocket): Promise<void>
+  finishSync(sock: WASocket, syncFullHistory: boolean): Promise<'completed' | 'deferred'>
+  skipSync(sock: WASocket): Promise<'completed' | 'deferred'>
 }

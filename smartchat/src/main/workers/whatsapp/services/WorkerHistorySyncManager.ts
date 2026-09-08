@@ -167,15 +167,15 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
     }
   }
 
-  async finishSync(sock: WASocket, syncFullHistory: boolean): Promise<void> {
-    if (this.syncComplete) return
+  async finishSync(sock: WASocket, syncFullHistory: boolean): Promise<'completed' | 'deferred'> {
+    if (this.syncComplete) return 'completed'
     if (this.activeChunks > 0) {
       // A chunk is still writing to the DB. Defer completion (dedup, group
       // hydration, history_sync_completed) until it settles — running them now
       // would corrupt identity dedup against a half-imported dataset and persist
       // history_sync_completed before the sync actually finished.
       this.pendingFinish = true
-      return
+      return 'deferred'
     }
     this.syncComplete = true
     this.isInitialSyncInProgress = false
@@ -228,10 +228,11 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       syncFullHistory
     })
     this.eventPublisher.publish('wa-sync-complete')
+    return 'completed'
   }
 
-  async skipSync(sock: WASocket): Promise<void> {
+  async skipSync(sock: WASocket): Promise<'completed' | 'deferred'> {
     const syncFullHistory = await this.authSettingsService.getSyncFullHistory()
-    await this.finishSync(sock, syncFullHistory)
+    return this.finishSync(sock, syncFullHistory)
   }
 }

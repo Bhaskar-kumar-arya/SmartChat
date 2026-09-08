@@ -26,6 +26,7 @@ declare global {
       onWaQr: (callback: (qr: string) => void) => () => void
       onWaConnected: (callback: () => void) => () => void
       onWaLoggedOut: (callback: () => void) => () => void
+      onWaSessionReplaced: (callback: () => void) => () => void
       onWaSyncProgress: (callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void) => () => void
       onWaSyncStatus: (callback: (status: string) => void) => () => void
       onWaSyncComplete: (callback: () => void) => () => void

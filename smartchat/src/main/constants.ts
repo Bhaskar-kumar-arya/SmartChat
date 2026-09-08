@@ -24,6 +24,8 @@ export const HISTORY_SYNC_TIMEOUT_MS = 180_000
 export const RECONNECT_DELAY_RESTART_MS = 500
 /** Reconnect delay for all other transient disconnects. */
 export const RECONNECT_DELAY_DEFAULT_MS = 3_000
+/** Ceiling for the exponential backoff applied to close-without-open loops. */
+export const RECONNECT_DELAY_MAX_MS = 60_000
 
 // ── Media MIME type map (extension → MIME) ────────────────────────────────
 export const MEDIA_MIME_MAP: Record<string, string> = {

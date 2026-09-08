@@ -57,6 +57,7 @@ export interface IAPIService {
   onWaQr(callback: (qr: string) => void): (() => void)
   onWaConnected(callback: (data?: { isCatchup?: boolean }) => void): (() => void)
   onWaLoggedOut(callback: () => void): (() => void)
+  onWaSessionReplaced(callback: () => void): (() => void)
   onWaSyncProgress(
     callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void
   ): (() => void)

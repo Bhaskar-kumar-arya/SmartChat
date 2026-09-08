@@ -54,7 +54,7 @@ on "waiting for this message".
 **Fix idea:** `JSON.parse(msg.content, BufferJSON.reviver)` (import `BufferJSON` from
 `@whiskeysockets/baileys`); its reviver already understands the `{type:'Buffer',data}`
 shape produced by plain stringify.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S1-02] med — src/main/workers/whatsapp/socket/workerConnectionHandler.ts:125-126
 **What:** On a 440/409 "conflict" close (WhatsApp opened on another desktop), the
@@ -67,7 +67,7 @@ branch publishes progress, but the conflict branch emits nothing except the gene
 manually restart the app.
 **Fix idea:** publish a dedicated event (e.g. `wa-session-replaced`) so the renderer can
 show a reconnect CTA, and/or schedule a delayed reconnect attempt.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S1-03] low — src/main/workers/whatsapp/socket/workerConnectionHandler.ts:121-124
 **What:** Every `connection === 'close'` with `shouldReconnect` schedules a reconnect at
@@ -77,7 +77,7 @@ a fixed `RECONNECT_DELAY_DEFAULT_MS`. Exponential backoff in
 **Why it's a bug:** a server-side close loop (transient ban, bad app-state) produces a
 tight fixed-interval reconnect loop with no backoff and no ceiling on attempts.
 **Fix idea:** track consecutive close-without-open events and grow the delay.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S1-04] low — src/main/workers/whatsapp/services/WorkerHistorySyncManager.ts:233-236
 **What:** `skipSync` calls `finishSync`, which returns immediately (setting
@@ -88,7 +88,7 @@ ingestion keeps running until in-flight chunks drain and only then does completi
 fire. The reported state and actual state diverge for the duration.
 **Fix idea:** have `finishSync`/`skipSync` resolve only once completion actually runs, or
 return a "deferred" status the caller surfaces.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S1-05] low — src/main/workers/whatsapp/services/WorkerMediaService.ts:45-52
 **What:** `queuePaused` is set true during history sync
@@ -100,7 +100,7 @@ queue and generation but never unpauses.
 the process and favorite-sticker downloads from live messages silently never run.
 **Fix idea:** reset `queuePaused = false` inside `clearFavoriteStickerQueue()` (or in
 `WorkerHistorySyncManager.clear()`).
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ## Slice 2 — Message pipeline
 

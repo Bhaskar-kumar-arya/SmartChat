@@ -16,6 +16,7 @@ export function App() {
   const [syncFullHistory, setSyncFullHistory] = useState<boolean>(false)
   const [syncType, setSyncType] = useState<number>(0)
   const [isRegeneratingQr, setIsRegeneratingQr] = useState<boolean>(false)
+  const [sessionReplaced, setSessionReplaced] = useState<boolean>(false)
 
   const appStateRef = useRef<AppState>(appState)
 
@@ -58,6 +59,15 @@ export function App() {
       setSyncStatus('Initializing connection...')
     })
 
+    const unSubSessionReplaced = api.onWaSessionReplaced(() => {
+      setQr(null)
+      setSyncProgress(0)
+      setSyncType(0)
+      setSessionReplaced(true)
+      setAppState('initializing')
+      setSyncStatus('This session was opened on another device. SmartChat has stopped syncing.')
+    })
+
     const unSubSyncPrg = api.onWaSyncProgress((data) => {
       setSyncProgress(data.progress)
       setSyncType(data.syncType)
@@ -80,6 +90,7 @@ export function App() {
       unSubQr()
       unSubConn()
       unSubLogout()
+      unSubSessionReplaced()
       unSubSyncPrg()
       unSubSyncStatus()
       unSubSyncComp()
@@ -312,6 +323,14 @@ export function App() {
               <div className="init-spinner-glow" />
             </div>
             <p className="init-text">{syncStatus}</p>
+            {sessionReplaced && (
+              <button
+                onClick={() => window.location.reload()}
+                className="sync-skip-btn"
+              >
+                Reconnect this device →
+              </button>
+            )}
           </div>
         )}
       </div>

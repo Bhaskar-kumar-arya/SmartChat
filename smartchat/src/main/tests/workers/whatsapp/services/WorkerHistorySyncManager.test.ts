@@ -76,4 +76,40 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     await vi.advanceTimersByTimeAsync(180_000)
     expect(mockAuthSettings.setHistorySyncCompleted).toHaveBeenCalled()
   })
+
+  // P2-S1-04: skipSync/finishSync reply {status:'success'} unconditionally even
+  // when completion was only deferred (activeChunks > 0). They must report a
+  // distinct 'deferred' result so the command router can surface it.
+  it("P2-S1-04: finishSync returns 'deferred' while a chunk is writing, 'completed' otherwise", async () => {
+    const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+    let resolveSync: (v: any) => void = () => {}
+    vi.mocked(handleHistorySync).mockReturnValue(new Promise((r) => { resolveSync = r }) as any)
+
+    const chunkPromise = manager.handleSyncChunk({ progress: 10, syncType: 3 }, true, sock)
+
+    await expect(manager.finishSync(sock, true)).resolves.toBe('deferred')
+
+    resolveSync({ importedMessages: [] })
+    await chunkPromise
+
+    expect(manager.isComplete).toBe(true)
+    await expect(manager.finishSync(sock, true)).resolves.toBe('completed')
+  })
+
+  it("P2-S1-04: skipSync returns 'completed' when no chunk is in flight", async () => {
+    const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+    await expect(manager.skipSync(sock)).resolves.toBe('completed')
+  })
+
+  it("P2-S1-04: skipSync returns 'deferred' when a chunk is still writing", async () => {
+    const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+    let resolveSync: (v: any) => void = () => {}
+    vi.mocked(handleHistorySync).mockReturnValue(new Promise((r) => { resolveSync = r }) as any)
+
+    const chunkPromise = manager.handleSyncChunk({ progress: 10, syncType: 3 }, true, sock)
+    await expect(manager.skipSync(sock)).resolves.toBe('deferred')
+
+    resolveSync({ importedMessages: [] })
+    await chunkPromise
+  })
 })

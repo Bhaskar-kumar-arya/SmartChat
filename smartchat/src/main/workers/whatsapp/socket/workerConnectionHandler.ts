@@ -3,7 +3,7 @@ import { DisconnectReason } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import { IWorkerBootstrap } from '../IWorkerBootstrap'
 import { IWorkerEventPublisher } from '../events/IWorkerEventPublisher'
-import { RECONNECT_DELAY_RESTART_MS, RECONNECT_DELAY_DEFAULT_MS } from '../../../constants'
+import { RECONNECT_DELAY_RESTART_MS, RECONNECT_DELAY_DEFAULT_MS, RECONNECT_DELAY_MAX_MS } from '../../../constants'
 
 /**
  * WorkerConnectionHandler
@@ -15,6 +15,10 @@ export class WorkerConnectionHandler {
   private isWaitingForCatchUp = false
   private catchUpTimeout: NodeJS.Timeout | null = null
   private hasReceivedPendingNotifications = false
+  // S1-03: number of consecutive 'close' events without an intervening 'open'.
+  // Used to grow the reconnect delay exponentially (with a ceiling) so a socket
+  // that keeps closing immediately after opening does not hammer WhatsApp.
+  private consecutiveCloses = 0
 
   constructor(
     private readonly eventPublisher: IWorkerEventPublisher,
@@ -119,11 +123,22 @@ export class WorkerConnectionHandler {
       console.log(`[WhatsAppWorker] Closed | statusCode=${statusCode} | isRestart=${isRestartRequired} | isConflict=${isConflict} | shouldReconnect=${shouldReconnect}`)
 
       if (shouldReconnect) {
-        const delay = isRestartRequired ? RECONNECT_DELAY_RESTART_MS : RECONNECT_DELAY_DEFAULT_MS
-        console.log(`[WhatsAppWorker] Scheduling reconnect in ${delay}ms...`)
+        let delay: number
+        if (isRestartRequired) {
+          delay = RECONNECT_DELAY_RESTART_MS
+        } else {
+          // Exponential backoff for close-without-open loops, capped at the ceiling.
+          delay = Math.min(
+            RECONNECT_DELAY_DEFAULT_MS * Math.pow(2, this.consecutiveCloses),
+            RECONNECT_DELAY_MAX_MS
+          )
+          this.consecutiveCloses++
+        }
+        console.log(`[WhatsAppWorker] Scheduling reconnect in ${delay}ms (consecutiveCloses=${this.consecutiveCloses})...`)
         this.onReconnect(delay)
       } else if (isConflict) {
-        console.warn('[WhatsAppWorker] Replaced by another session (440 conflict). Standing down.')
+        console.warn('[WhatsAppWorker] Replaced by another session (440/409 conflict). Standing down.')
+        this.eventPublisher.publish('wa-session-replaced')
       } else {
         console.log('[WhatsAppWorker] Logged out — wiping all data for fresh QR...')
         this.eventPublisher.publish('wa-logged-out')
@@ -131,6 +146,8 @@ export class WorkerConnectionHandler {
       }
     } else if (connection === 'open') {
       console.log('[WhatsAppWorker] Connected to WhatsApp!')
+      // A successful open breaks any close-without-open loop; reset the backoff.
+      this.consecutiveCloses = 0
       if (sock && sock.user && repos) {
         await repos.contactService.registerMe(sock.user).catch((err) => {
           console.error('[WhatsAppWorker] Failed to register logged-in user identity:', err)

@@ -1,4 +1,4 @@
-import makeWASocketImport, { Browsers } from '@whiskeysockets/baileys'
+import makeWASocketImport, { Browsers, BufferJSON } from '@whiskeysockets/baileys'
 import type { WASocket, AuthenticationState } from '@whiskeysockets/baileys'
 import { PrismaClient } from '@prisma/client'
 import NodeCache from 'node-cache'
@@ -41,7 +41,7 @@ export function connectSocket({
       try {
         const msg = await prisma.message.findUnique({ where: { id: key.id } })
         if (msg && msg.content) {
-          return JSON.parse(msg.content)
+          return JSON.parse(msg.content, BufferJSON.reviver)
         }
       } catch (err) {
         console.error('[WhatsAppWorker] Error fetching message for retry/reaction:', err)

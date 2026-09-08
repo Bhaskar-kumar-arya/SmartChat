@@ -165,11 +165,19 @@ export class WorkerCommandRouter {
         case 'skip_sync': {
           const sock = this.getSocketOrThrow()
           const repos = this.getReposOrThrow()
-          await repos.historySyncManager.skipSync(sock)
+          const skipResult = await repos.historySyncManager.skipSync(sock)
           parentPort?.postMessage({
             type: 'reply',
             correlationId: command.correlationId,
-            payload: { result: { status: 'success' } }
+            payload: {
+              result: {
+                // 'deferred' means chunk ingestion is still in flight; completion
+                // (dedup, group hydration, history_sync_completed) will run once
+                // the active chunks settle. The caller must not treat the sync as
+                // finished yet.
+                status: skipResult === 'deferred' ? 'deferred' : 'success'
+              }
+            }
           })
           break
         }

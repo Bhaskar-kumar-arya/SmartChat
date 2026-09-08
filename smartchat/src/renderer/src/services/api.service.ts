@@ -93,6 +93,9 @@ export const api: IAPIService = {
   onWaLoggedOut: (callback: () => void) =>
     window.api.onWaLoggedOut(callback),
 
+  onWaSessionReplaced: (callback: () => void) =>
+    window.api.onWaSessionReplaced(callback),
+
   onWaSyncProgress: (callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void) =>
     window.api.onWaSyncProgress(callback),
 

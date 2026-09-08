@@ -130,4 +130,18 @@ describe('WorkerMediaService', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((service as any).activeDownloadsCount).toBe(0)
   })
+
+  // P2-S1-05: queuePaused was set true during history sync but only cleared in
+  // finishSync. clear() (every reconnect) never unpaused, so a reconnect after a
+  // sync that never reached finishSync left the queue paused forever.
+  it('P2-S1-05: clearFavoriteStickerQueue() resets queuePaused to false', () => {
+    service.setFavoriteStickerQueuePaused(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((service as any).queuePaused).toBe(true)
+
+    service.clearFavoriteStickerQueue()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((service as any).queuePaused).toBe(false)
+  })
 })

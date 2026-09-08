@@ -58,6 +58,7 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
     onWaQr: vi.fn().mockReturnValue(() => {}),
     onWaConnected: vi.fn().mockReturnValue(() => {}),
     onWaLoggedOut: vi.fn().mockReturnValue(() => {}),
+    onWaSessionReplaced: vi.fn().mockReturnValue(() => {}),
     onWaSyncProgress: vi.fn().mockReturnValue(() => {}),
     onWaSyncStatus: vi.fn().mockReturnValue(() => {}),
     onWaSyncComplete: vi.fn().mockReturnValue(() => {}),

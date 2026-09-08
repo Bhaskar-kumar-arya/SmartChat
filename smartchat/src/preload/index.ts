@@ -21,6 +21,11 @@ const api = {
     ipcRenderer.on('wa-logged-out', listener)
     return () => { ipcRenderer.removeListener('wa-logged-out', listener) }
   },
+  onWaSessionReplaced: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('wa-session-replaced', listener)
+    return () => { ipcRenderer.removeListener('wa-session-replaced', listener) }
+  },
   onWaSyncProgress: (callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void) => {
     const listener = (_event: IpcRendererEvent, data: unknown) => {
       // Handle backward compatibility if it's sent as a plain number
