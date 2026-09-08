@@ -1404,7 +1404,7 @@ churn.
 **Fix idea:** cache negative results too (store `null`, or a sentinel), and/or
 dedupe in-flight requests per `(sessionId,index)` with a promise map.
 **Status:** fixed
-**Fix status:** fixed in ed1650c — `useCitation.resolve` now caches the
+**Fix status:** fixed in 2cb46c9 — `useCitation.resolve` now caches the
 resolved value (including `null`) in `globalCitationCache`, so an unresolvable
 citation is hit at most once per session; a module-level `inFlightCitations`
 `Map<'sid:index', Promise>` dedupes concurrent resolves. New tests
@@ -1421,7 +1421,7 @@ as F2-03 / F5-13, but here it fires many times per answer.
 **Fix idea:** `let alive = true` flag with cleanup, or an `AbortController` /
 ignore-stale pattern.
 **Status:** fixed
-**Fix status:** fixed in ed1650c — `CitationPill`'s resolve effect uses an
+**Fix status:** fixed in 2cb46c9 — `CitationPill`'s resolve effect uses an
 `alive` flag with cleanup so a late `resolve` can't `setEntity` after unmount.
 CitationPill.test.tsx still 3/3.
 
@@ -1436,7 +1436,7 @@ that silently breaks the provider until they retype it fully.
 **Fix idea:** keep the field local and persist on blur / debounced (500 ms) /
 explicit Save.
 **Status:** fixed
-**Fix status:** fixed in ed1650c — the API-key `<input>` is now edited locally
+**Fix status:** fixed in 2cb46c9 — the API-key `<input>` is now edited locally
 and persisted only `onBlur` / on Enter, via `commitProviderKey`, which no-ops
 when the value is unchanged from what `getProviderKeys` returned or still
 contains a `•` (the F1-02 masked placeholder) — so the masked value is never
@@ -1456,7 +1456,7 @@ is in persisted history it recurs on reload). Same class as F5-06.
 **Fix idea:** wrap each bubble (or the list) in an error boundary that renders a
 "couldn't display this message" fallback.
 **Status:** fixed
-**Fix status:** fixed in ed1650c — each `<AIMessageBubble>` in `AIChatSidebar`
+**Fix status:** fixed in 2cb46c9 — each `<AIMessageBubble>` in `AIChatSidebar`
 is wrapped in the reusable `components/common/MessageErrorBoundary` (from F5), so
 a KaTeX/markdown throw over model output renders a `.message-render-error`
 placeholder instead of blanking the panel. App-wide/nested boundary policy still
@@ -1473,7 +1473,7 @@ and jumping back to bottom only happens on the next message.
 **Fix idea:** also depend on the active message's content length, or observe the
 scroll container size, and only auto-scroll when already near the bottom.
 **Status:** fixed
-**Fix status:** fixed in ed1650c — the auto-scroll effect now also depends on
+**Fix status:** fixed in 2cb46c9 — the auto-scroll effect now also depends on
 `messages[messages.length - 1]?.content.length`, so the view follows the growing
 streaming text, not just message-count / loading transitions. (Near-bottom-only
 gating left as a nicety; not implemented.) typecheck:web green.
@@ -1501,7 +1501,7 @@ absolute file paths / internal JIDs instead of a human label; minor info leak
 and poor UX.
 **Fix idea:** format a friendly title per type (e.g. "Go to file: report.pdf").
 **Status:** fixed
-**Fix status:** fixed in ed1650c — `CitationPill` `title` is now a friendly
+**Fix status:** fixed in 2cb46c9 — `CitationPill` `title` is now a friendly
 per-type string ("Go to file: <basename>", "Go to message", "Go to chat"); the
 raw `JSON.stringify(entity)` dump (absolute paths / JIDs) is gone. typecheck:web
 green.
@@ -1518,7 +1518,7 @@ same ms, and inconsistent with `crypto.randomUUID()` everywhere else.
 **Fix idea:** memoise `saveCurrentMessages` with `useCallback`; use
 `crypto.randomUUID()` for the error message id.
 **Status:** fixed
-**Fix status:** fixed in ed1650c — (a) `saveCurrentMessages` in
+**Fix status:** fixed in 2cb46c9 — (a) `saveCurrentMessages` in
 `useAIChatSessions` is now `useCallback`-memoised (`[api, refreshSessions]`), so
 the ref `startStream` closes over is stable. (b) `handleSend`'s catch branch uses
 `crypto.randomUUID()` for the error message id. The empty-dep-array on
@@ -1534,7 +1534,7 @@ the user just made in Settings if it resolves late.
 **Fix idea:** load once on mount (or when actually stale); add an `alive` guard;
 don't overwrite `aiOptions` from a background fetch after the user edits it.
 **Status:** fixed
-**Fix status:** fixed in ed1650c — the load effect is now gated by a
+**Fix status:** fixed in 2cb46c9 — the load effect is now gated by a
 `hasLoadedRef` (runs once, on first open) and every `.then` is guarded by a local
 `alive` flag cleared on cleanup. `getAiOptions`/tools/models are no longer
 refetched on every re-open, so a background resolve can't stomp a Settings edit.
@@ -1551,7 +1551,7 @@ user clicks Approve on the card before the timer fires, the tool runs twice).
 off the parsed result rather than a timer, and guard against double execution
 with `executingToolId` / a per-message "handled" flag.
 **Status:** fixed
-**Fix status:** fixed in ed1650c — new `utils/parseToolCall.ts` is the single
+**Fix status:** fixed in 2cb46c9 — new `utils/parseToolCall.ts` is the single
 `<tool_call>` parser, used by both `useAIStream` (auto-exec) and `AIMessageBubble`
 (the two verbatim copies are gone). Auto-exec now guards against double execution
 with an `autoExecutedToolIds` ref Set AND a check that the message has no
