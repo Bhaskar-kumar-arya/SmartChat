@@ -20,7 +20,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F7 | Search UI | DONE (8 findings) — FIXED (737b13d + 96e8b6a) | 2026-09-08 | 1 high, 3 med, 4 low — all fixed; F7-06 select-all cap deferred, F7-08 sync-clear partial |
 | F8 | AI chat UI | DONE (13 findings) | 2026-09-08 | 1 high, 6 med, 6 low — no stream abort on session switch (answer lost), citation IPC storm, per-keystroke key persist; markdown XSS checked clean |
 | F9 | Extensions / plugins UI | DONE (12 findings) — FIXED (b129aea + bceb3b3) | 2026-09-08 | 4 med, 8 low. 10 fixed, F9-05/F9-06 partial (sentinel rework / log-delta push deferred), F9-02 wontfix-deferred (no theme toggle in app). F9-04 webview hardening = own commit bceb3b3 |
-| F10 | Overlays & modals | DONE (13 findings) | 2026-09-08 | 6 med, 7 low — webview insecure-content pref, send/receive cross-wiring, no Escape/focus-trap on common modals, required-checkbox validation gap, optimistic-toggle no-revert |
+| F10 | Overlays & modals | DONE (13 findings) — ALL FIXED (98827f0 + 7a898b1); also closed deferred F5-14 + F8-09 via shared BaseModal | 2026-09-08 | 6 med, 7 low — shared modal primitive (BaseModal: Escape/focus-trap/restore/aria/scroll-lock), webview security prefs + plugin:// CSP, send/receive cross-wiring, required-checkbox validation, optimistic-toggle revert |
 | F11 | Common components & utils | DONE (8 findings) | 2026-09-08 | 1 high, 2 med, 5 low — plugin SVG XSS, stale avatar on chat switch, isSameJid LID/PN collision |
 | F12 | Cross-cutting pass | DONE (8 findings) | 2026-09-08 | 1 crit, 1 high, 4 med, 2 low — no error boundary anywhere (crit), navigation-via-window-event bus loses intents (high), tree-wide unguarded await→setState + fetch-clobbers-events patterns, no error-surface primitive |
 
@@ -872,11 +872,12 @@ modal from the dropdown but cannot dismiss it with `Escape`, and focus is left
 behind the overlay. (F10 owns overlay policy; noted here as these live in F5.)
 **Fix idea:** shared modal primitive with focus-trap + `Escape`, as F10 will
 define.
-**Status:** deferred
-**Fix status:** deferred to **F10-05** — `MessageInfoModal` and
-`ReactionDetailsModal` should adopt the shared modal primitive (Escape + focus
-trap + focus restore + `role="dialog"`/`aria-modal`) rather than each growing a
-one-off handler.
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — both `MessageInfoModal` and
+`ReactionDetailsModal` (in `MessageView.tsx`) now render through the shared
+`BaseModal` primitive built for F10-05, so they get `Escape`, focus trap, focus
+restore and `role="dialog"`/`aria-modal`. `MessageInfoModal.test.tsx` updated
+for the portal (query `document` not `container`) and green.
 
 ## Slice F6 — Message input & composition
 
@@ -1487,10 +1488,13 @@ button in its header (only the "Done" button at the bottom and the backdrop).
 dismiss with `Escape`, and focus is left behind the overlay. Consistent with
 F5-14; F10 owns the shared fix.
 **Fix idea:** shared modal primitive with focus-trap + `Escape`.
-**Status:** deferred
-**Fix status:** deferred to **F10-05** (shared modal primitive with focus-trap +
-Escape + focus restore). Same call as F5-14; not worth three bespoke handlers
-here when F10 owns the shared fix.
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — `AISettingsModal`, `AIChatHistoryModal` and
+the `AIChatExportButton` confirm-delete dialog now render through the shared
+`BaseModal` primitive (F10-05): `Escape`, focus trap, focus restore,
+`role="dialog"`/`aria-modal`. `AISettingsModal` also gained the header close
+button it was missing. Existing AI-modal test suites updated for the portal and
+green.
 
 ### [F8-10] low — src/renderer/src/components/ai/CitationPill.tsx:32
 **What:** `title={entity ? \`Go to ${entity.type}: ${JSON.stringify(entity)}\` : …}`
@@ -1846,7 +1850,16 @@ means a future Electron/tooling default change silently widens plugin privilege.
 **Fix idea:** drop `allowrunninginsecurecontent`; set `sandbox=yes`,
 `nodeintegration=no`, `nodeIntegrationInSubFrames=no`, `webSecurity` on
 explicitly. Add a CSP for the `plugin://` protocol.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 7a898b1 — `OverlayShell` webview tag is now
+`webpreferences="contextIsolation=yes, nodeIntegration=no,
+nodeIntegrationInSubFrames=no, sandbox=yes, webSecurity=yes"` (no
+`allowrunninginsecurecontent`); main-side `will-attach-webview` (F9-04) already
+force-pins these. `pluginProtocol.ts` now sets a `Content-Security-Policy`
+response header on every `plugin://` response (`default-src 'self' plugin:`,
+no remote script/img/connect/font/media origins; keeps `'unsafe-inline'`/
+`'unsafe-eval'` for bundled plugin code). Manual review + typecheck:node green;
+existing `pluginProtocol.test.ts` 3/3 pass.
 
 ### [F10-02] med — src/renderer/src/components/overlays/OverlayShell.tsx:99-110
 **What:** on every inbound `api.onOverlaySend` payload the shell calls
@@ -1861,7 +1874,12 @@ event is delivered twice. A plugin can't distinguish direction, and idempotency
 bugs in plugin handlers get triggered by the duplicate.
 **Fix idea:** send host→guest only on `smartchat:receive`; keep `smartchat:send`
 guest→host only; remove the cross-posting in the preload.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 7a898b1 — `OverlayShell` `onOverlaySend` handler now
+calls `webview.send('smartchat:receive', …)` only; the `webview.send('smartchat:send', …)`
+line is removed. (Preload half was already fixed in F1-03 / 57876a2.) New test
+`OverlayShell.test.tsx` "relays an inbound payload to the guest only on
+smartchat:receive (F10-02)". 6/6 pass.
 
 ### [F10-03] med — src/renderer/src/components/overlays/OverlayShell.tsx:76-79
 **What:** the `did-fail-load` handler only `console.error`s.
@@ -1871,7 +1889,12 @@ the panel throws during load, the user is left staring at an empty overlay shell
 looks like a hung app. No retry affordance.
 **Fix idea:** on `did-fail-load` (main frame) render an inline error state in the
 body with a retry/close button, or auto-`onClose` after surfacing a toast.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 7a898b1 — `did-fail-load` (ignoring `-3` ABORTED) sets
+`loadError`; the body then renders "This panel failed to load" + the error text
+with Close and Retry buttons. Retry bumps a `reloadKey` that remounts the
+`<webview>` and rebinds listeners; `dom-ready` clears `loadError`. Manual
+review; typecheck:web green (jsdom can't exercise a real webview load).
 
 ### [F10-04] med — src/renderer/src/components/overlays/FormModal.tsx:44-51
 **What:** required-field validation flags a field only when its value is
@@ -1883,7 +1906,12 @@ fires with the box `false`. The plugin author's `required: true` is silently
 ignored for the one field type where it matters most.
 **Fix idea:** special-case `field.type === 'checkbox'` → require `val === true`;
 also treat `radio` with no option selected explicitly.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 7a898b1 — `FormModal.handleSubmit` now flags a required
+`checkbox` unless `val === true` and a required `radio` unless a value is set,
+keeping the existing empty-string/null check for text-like fields. New test
+`FormModal.test.tsx` (F10-04): required unchecked checkbox blocks submit +
+shows error; optional unchecked checkbox still submits `false`. 2/2 pass.
 
 ### [F10-05] med — src/renderer/src/components/common/ConfirmModal.tsx:26 & src/renderer/src/components/common/SettingsModal.tsx:52
 **What:** neither modal has an `Escape` handler, focus trap, focus restore to the
@@ -1898,7 +1926,19 @@ dialog — it lands on `<body>`.
 **Fix idea:** a shared modal primitive (the one F5-14 also asks for): portal +
 `Escape` + focus trap + `aria-modal="true"` + focus save/restore. Route the
 `overlays/*` set and these two through it.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — new `components/overlays/BaseModal.tsx`:
+portals to `document.body`, `role="dialog"`/`aria-modal="true"`, `Escape` close
+(module-level stack → only the top-most modal reacts), Tab/Shift+Tab focus
+trap, focus saved on open and restored to the opener on unmount, plus the
+F10-07 body-scroll-lock + `inert #root`. Routed through it: `common/ConfirmModal`,
+`common/SettingsModal`, `chat/MessageInfoModal`, `MessageView/ReactionDetailsModal`,
+`ai/AISettingsModal` (+ a header close button it lacked), `ai/AIChatHistoryModal`,
+`ai/AIChatExportButton` confirm, and `ModalPortal`'s tier1 Form/Confirm/Alert
+modals. New `BaseModal.test.tsx` (aria-modal, Escape, backdrop vs content click,
+focus restore, top-most-only Escape, scroll lock) 6/6; existing ModalPortal /
+OverlayShell / ConfirmModal / SettingsModal / MessageInfoModal / AI-modal suites
+updated for the portal and green.
 
 ### [F10-06] med — src/renderer/src/components/common/SettingsModal.tsx:41-49
 **What:** `handleToggle` does `setPrefs(updated)` optimistically, then
@@ -1910,7 +1950,12 @@ believes "Launch on startup" / "Desktop notifications" is set; after restart it
 is back to the old value with no warning.
 **Fix idea:** snapshot the previous value, revert `setPrefs` on `catch`, and show
 an inline "couldn't save" message.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — `handleToggle` snapshots `prefs` before the
+optimistic `setPrefs` and restores it in the `catch` when
+`api.setNotificationPreferences` rejects. No inline error surface yet (F12-06
+owns the toast primitive). New test `SettingsModal.test.tsx` "reverts an
+optimistic toggle when the save rejects (F10-06)". Passes.
 
 ### [F10-07] low — overlays/* + common/{ConfirmModal,SettingsModal} (modals.css:2)
 **What:** no modal locks body scroll or `aria-hidden`/`inert`s the app root while
@@ -1922,7 +1967,13 @@ order, so focus and scroll leak to the obscured UI.
 **Fix idea:** on mount add `overflow:hidden` to `document.body` (restore on
 unmount) and `inert` / `aria-hidden` the `#root` sibling; centralize in the
 shared primitive from F10-05.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — centralized in `BaseModal`: a module-level
+open-modal stack applies `document.body { overflow: hidden }` and
+`#root[inert][aria-hidden]` while the first modal is open and restores both when
+the last one closes (ref-counted, so nested modals are safe). Every routed modal
+portals to `body` so `inert` on `#root` never disables the dialog itself.
+Covered by `BaseModal.test.tsx` "locks body scroll while open and restores it".
 
 ### [F10-08] low — src/renderer/src/components/common/SettingsModal.tsx:25-37
 **What:** the `getNotificationPreferences` effect (`[isOpen, api]`) has no
@@ -1935,7 +1986,12 @@ the modal shows the previous session's `prefs` for a beat before the refetch
 lands instead of a spinner.
 **Fix idea:** `let alive = true` cleanup guard; `setLoading(true)` at the top of
 the `isOpen` branch.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — the `getNotificationPreferences` effect now
+uses a `let alive = true` flag (cleared in cleanup; every `set*` guarded) and
+calls `setLoading(true)` at the top of the `isOpen` branch so re-opening shows
+the spinner again instead of last session's values. Manual review; existing
+SettingsModal tests green.
 
 ### [F10-09] low — src/renderer/src/components/common/SettingsModal.tsx:106-115
 **What:** if `activeTab` holds a plugin settings-page id and that page later
@@ -1945,7 +2001,10 @@ open), `activePage` is `undefined` and the body renders `null`.
 with an empty body — no content, no fallback to the "general" tab.
 **Fix idea:** in an effect, if `activeTab !== 'general'` and no matching page
 exists, `setActiveTab('general')`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — an effect on `[activeTab, pluginSettingsPages]`
+resets `activeTab` to `'general'` whenever the selected plugin settings page is
+no longer present, so the body never renders empty. Manual review.
 
 ### [F10-10] low — src/renderer/src/components/overlays/ModalPortal.tsx:48-51
 **What:** `handleResolve` calls `api.resolveModal(modalId, data)` fire-and-forget
@@ -1955,7 +2014,13 @@ the main-side modal promise that a plugin is `await`ing may hang forever while t
 renderer has already torn the dialog down — the plugin flow stalls with no error.
 **Fix idea:** `.catch(console.error)` at minimum; ideally keep the modal until the
 resolve round-trips or surface the failure.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — `ModalPortal.handleResolve` now wraps
+`api.resolveModal(...)` in `Promise.resolve(...).catch(console.error)` so a
+rejected resolve is logged rather than an unhandled rejection. Keeping the modal
+mounted until the round-trip completes was judged out of scope (would need a
+pending state + spinner); the dialog still tears down optimistically. Manual
+review.
 
 ### [F10-11] low — src/renderer/src/components/overlays/ModalPortal.tsx:128-144 vs :57-78
 **What:** the tier1 `.modal-overlay` is rendered *before* the webview
@@ -1967,7 +2032,13 @@ of an open tier1 modal — but the `Escape` handler resolves the tier1 modal fir
 inconsistent "which dialog is active".
 **Fix idea:** enforce one policy: either block new tier1 modals while a webview
 overlay is up, or make `Escape` act on whichever overlay is visually top-most.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — policy chosen: the tier1 modal renders
+*after* the webview `OverlayShell`s in the portal fragment (so it is visually
+on top) and owns `Escape` and backdrop clicks while open. `ModalPortal`'s own
+keydown handler now `return`s early when `modals.length > 0` (BaseModal handles
+that case) and only dismisses the top webview when no tier1 modal is open — so
+"which dialog is active" is consistent between click and Escape.
 
 ### [F10-12] low — src/renderer/src/components/overlays/ModalPortal.tsx:25-29
 **What:** `onModalShow` appends each `ModalRequest` with no dedupe on `modalId`.
@@ -1977,7 +2048,10 @@ removes all rows with that id), but the user briefly sees two identical dialogs
 and only the top one is interactive.
 **Fix idea:** `setModals(prev => prev.some(m => m.modalId === req.modalId) ? prev
 : [...prev, req])`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 98827f0 — `onModalShow` now applies exactly that
+`some(...)` dedupe guard. New test `ModalPortal.test.tsx` "does not stack a
+duplicate modal when the same request id is re-sent (F10-12)". Passes.
 
 ### [F10-13] low — src/renderer/src/components/overlays/OverlayShell.tsx:26,175-195
 **What:** `width` / `height` come straight from the plugin's `request` (defaults
@@ -1987,7 +2061,11 @@ they are sane positive numbers.
 or zero-size overlay body. Contained by `maxWidth/maxHeight: 90vw/90vh` on the
 container so it can't cover the whole screen — cosmetic / robustness only.
 **Fix idea:** clamp to a `[min, maxViewport]` range before applying.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 7a898b1 — `OverlayShell` runs `request.width`/`height`
+through `clampDim` (non-finite / ≤0 → default; otherwise clamped to
+`[200, 4000]px`, rounded) before applying to the body. Container `90vw/90vh`
+cap still limits the visible size. Manual review; typecheck:web green.
 
 ## Slice F11 — Common components & utils
 
