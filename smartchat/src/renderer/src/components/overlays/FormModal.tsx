@@ -44,7 +44,15 @@ export function FormModal({ schema, onSubmit }: FormModalProps) {
     for (const field of schema.fields) {
       if (field.required) {
         const val = formValues[field.id]
-        if (val === undefined || val === null || val === '') {
+        // F10-04: a required checkbox must be ticked (`false` is not "filled"),
+        // and a required radio must have an option chosen.
+        const missing =
+          field.type === 'checkbox'
+            ? val !== true
+            : field.type === 'radio'
+              ? val === undefined || val === null || val === ''
+              : val === undefined || val === null || val === ''
+        if (missing) {
           newErrors[field.id] = `${field.label} is required`
         }
       }

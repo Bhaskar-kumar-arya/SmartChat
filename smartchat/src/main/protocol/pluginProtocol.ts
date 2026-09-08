@@ -67,6 +67,23 @@ export function registerPluginProtocolForSession(targetSession: SessionLike, ext
         const res = await Electron.net.fetch(pathToFileURL(resolvedPath).href)
         const headers = new Headers(res.headers)
         headers.set('Access-Control-Allow-Origin', '*')
+        // F10-01: constrain plugin panel/overlay content — allow its own bundled
+        // resources and inline code, but no remote (http/https/ws) sub-resources
+        // or connections, so a plugin UI can't beacon out or pull mixed content.
+        if (!headers.has('Content-Security-Policy')) {
+          headers.set(
+            'Content-Security-Policy',
+            [
+              "default-src 'self' plugin:",
+              "script-src 'self' plugin: 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' plugin: 'unsafe-inline'",
+              "img-src 'self' plugin: data: blob:",
+              "font-src 'self' plugin: data:",
+              "media-src 'self' plugin: data: blob:",
+              "connect-src 'self' plugin:"
+            ].join('; ')
+          )
+        }
 
         return new Response(res.body, {
           status: res.status,

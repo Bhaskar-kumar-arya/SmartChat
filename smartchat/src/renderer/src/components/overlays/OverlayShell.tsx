@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useAPI } from '../../context/APIContext'
 import { WebviewOverlayRequest } from '../../../../main/kernel/ui/IOverlayHost'
@@ -23,13 +23,28 @@ export function OverlayShell({ request, onClose }: OverlayShellProps) {
   const api = useAPI()
   const webviewRef = useRef<HTMLWebViewElement | null>(null)
 
-  const { overlayId, pluginId, panel, title, width = 480, height = 360, context } = request
+  const { overlayId, pluginId, panel, title, context } = request
+  // F10-13: clamp plugin-supplied dimensions to a sane range (container already
+  // caps the visible size at 90vw/90vh).
+  const clampDim = (v: unknown, fallback: number): number => {
+    const n = typeof v === 'number' ? v : Number(v)
+    if (!Number.isFinite(n) || n <= 0) return fallback
+    return Math.min(Math.max(Math.round(n), 200), 4000)
+  }
+  const width = clampDim(request.width, 480)
+  const height = clampDim(request.height, 360)
   const webviewSrc = `plugin://${pluginId}/${panel.replace(/^\//, '')}`
   const partition = `persist:plugin-${pluginId}`
+
+  // F10-03: surface a load failure instead of leaving a blank shell.
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const handleDomReady = () => {
     const webview = webviewRef.current as (HTMLWebViewElement & { send?: (channel: string, data: unknown) => void }) | null
     if (!webview) return
+
+    setLoadError(null)
 
     const style = getComputedStyle(document.documentElement)
     const tokens: Record<string, string> = {}
@@ -75,7 +90,10 @@ export function OverlayShell({ request, onClose }: OverlayShellProps) {
 
     const handleDidFailLoad = (e: Event) => {
       const evt = e as WebviewDidFailLoadEvent
+      // errorCode -3 is ABORTED (e.g. a superseded in-page load) — not a real failure.
+      if (evt.errorCode === -3) return
       console.error(`[OverlayShell] webview did-fail-load for overlayId '${overlayId}':`, evt.errorCode, evt.errorDescription, evt.validatedURL)
+      setLoadError(evt.errorDescription || `Failed to load (${evt.errorCode})`)
     }
 
     if (typeof webview.addEventListener === 'function') {
@@ -91,7 +109,7 @@ export function OverlayShell({ request, onClose }: OverlayShellProps) {
         webview.removeEventListener('did-fail-load', handleDidFailLoad)
       }
     }
-  }, [api, overlayId, context, onClose])
+  }, [api, overlayId, context, onClose, reloadKey])
 
   useEffect(() => {
     if (!api.onOverlaySend) return
@@ -104,8 +122,9 @@ export function OverlayShell({ request, onClose }: OverlayShellProps) {
             event: payload.event,
             data: payload.data
           }
+          // F10-02: host→guest inbound data goes ONLY on `smartchat:receive`.
+          // `smartchat:send` stays guest→host so a guest can't confuse the two.
           webview.send('smartchat:receive', payloadData)
-          webview.send('smartchat:send', payloadData)
         }
       }
     })
@@ -182,16 +201,65 @@ export function OverlayShell({ request, onClose }: OverlayShellProps) {
             overflow: 'hidden'
           }}
         >
-          {/* @ts-ignore Electron webview tag */}
-          <webview
-            ref={webviewRef}
-            src={webviewSrc}
-            partition={partition}
-            preload={api.getOverlayPreloadPath?.()}
-            webpreferences="allowrunninginsecurecontent=yes, contextIsolation=yes"
-            style={{ width: '100%', height: '100%', border: 'none' }}
-            data-testid={`webview-element-${overlayId}`}
-          />
+          {loadError ? (
+            <div
+              className="tier2-overlay-error"
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                padding: '24px',
+                textAlign: 'center',
+                color: 'var(--wa-text-secondary)'
+              }}
+              data-testid={`webview-overlay-error-${overlayId}`}
+            >
+              <p style={{ margin: 0, fontSize: '13px' }}>
+                This panel failed to load.
+                <br />
+                <span style={{ opacity: 0.7 }}>{loadError}</span>
+              </p>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="tier1-btn tier1-btn-secondary"
+                  onClick={handleDismiss}
+                  data-testid={`webview-overlay-error-close-${overlayId}`}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="tier1-btn tier1-btn-primary"
+                  onClick={() => {
+                    setLoadError(null)
+                    setReloadKey((k) => k + 1)
+                  }}
+                  data-testid={`webview-overlay-error-retry-${overlayId}`}
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* @ts-ignore Electron webview tag */}
+              <webview
+                key={reloadKey}
+                ref={webviewRef}
+                src={webviewSrc}
+                partition={partition}
+                preload={api.getOverlayPreloadPath?.()}
+                webpreferences="contextIsolation=yes, nodeIntegration=no, nodeIntegrationInSubFrames=no, sandbox=yes, webSecurity=yes"
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                data-testid={`webview-element-${overlayId}`}
+              />
+            </>
+          )}
         </div>
       </div>
     </div>

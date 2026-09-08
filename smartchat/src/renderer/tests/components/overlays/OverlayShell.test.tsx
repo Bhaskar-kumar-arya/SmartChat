@@ -52,6 +52,26 @@ describe('OverlayShell', () => {
     expect(mockOnClose).toHaveBeenCalledWith('ov-123')
   })
 
+  it('relays an inbound payload to the guest only on smartchat:receive (F10-02)', () => {
+    let sendCallback: ((p: any) => void) | null = null
+    mockApi.onOverlaySend = vi.fn((cb) => {
+      sendCallback = cb
+      return () => {}
+    })
+
+    renderWithAPI(<OverlayShell request={request} onClose={mockOnClose} />)
+
+    const el = screen.getByTestId('webview-element-ov-123') as any
+    const send = vi.fn()
+    el.send = send
+
+    sendCallback!({ overlayId: 'ov-123', event: 'ping', data: { a: 1 } })
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith('smartchat:receive', { event: 'ping', data: { a: 1 } })
+    expect(send).not.toHaveBeenCalledWith('smartchat:send', expect.anything())
+  })
+
   it('calls overlayDismiss and onClose when backdrop is clicked', () => {
     renderWithAPI(<OverlayShell request={request} onClose={mockOnClose} />)
 
