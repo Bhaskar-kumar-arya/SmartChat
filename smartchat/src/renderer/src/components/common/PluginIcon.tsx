@@ -23,31 +23,27 @@ export const PluginIcon: React.FC<PluginIconProps> = ({ icon, className = 'indic
 
   const trimmed = icon.trim()
 
-  // 1. Raw inline SVG string (provided by plugin manifest)
+  // 1. Raw inline SVG string (provided by an untrusted plugin manifest).
+  //    Render it as an <img> data URI rather than via dangerouslySetInnerHTML:
+  //    an <img>-hosted SVG document runs no scripts and fires no event-handler
+  //    attributes (onload/onerror/onbegin/...), so a hostile manifest icon
+  //    cannot get renderer-origin code execution (F11-01).
   if (trimmed.startsWith('<svg')) {
-    const scaledSvgHtml = trimmed.replace(/<svg\b([^>]*)>/i, (_match, attrs) => {
-      const cleanedAttrs = attrs.replace(/\b(width|height)=["'][^"']*["']/gi, '')
-      return `<svg ${cleanedAttrs} style="width: 100%; height: 100%; display: block;" >`
-    })
-
+    const dataUri = `data:image/svg+xml,${encodeURIComponent(trimmed)}`
     return (
-      <span
+      <img
+        src={dataUri}
+        alt=""
         className={`plugin-svg-icon ${className}`}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: size,
-          height: size,
-          flexShrink: 0
-        }}
-        dangerouslySetInnerHTML={{ __html: scaledSvgHtml }}
+        style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }}
       />
     )
   }
 
-  // 2. Image URL or Base64 Data URI
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/')) {
+  // 2. Base64 / data-URI image only. Bare http(s) plugin icons are rejected:
+  //    a remote URL is a load-time beacon (author learns when/where the app
+  //    renders + the user's IP) and http:// is mixed content (F11-08).
+  if (trimmed.startsWith('data:image/')) {
     return (
       <img
         src={trimmed}
