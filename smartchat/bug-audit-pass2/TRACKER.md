@@ -887,7 +887,10 @@ and the second can never register. Contrast `KernelAIModule.ts:34`, which *does*
 **Fix idea:** track tool names registered per plugin and unregister them on
 `registry.onChange` when the contribution is gone (and in the teardown fn); namespace the
 registered name by `pluginId` to avoid cross-plugin squatting.
-**Status:** open
+**Status:** fixed 2026-09-08 — tools now tracked per-registration and unregistered
+on contribution removal / signature change / teardown; the AI-tool executor also
+tolerates a rejecting channel. Name-namespacing NOT done (would change the tool
+name the model sees — a contract change); first-declaration-wins retained.
 
 ### [P2-S9-02] med — src/main/kernel/ui/PanelHost.ts:41-55
 **What:** `getPanel(panelId)` first does a direct `panels.get(panelId)` (keyed by random
@@ -906,7 +909,7 @@ supposed to bind a panel to its owner is bypassable by passing the shared contri
 have only a contributionId should use `findPanel(pluginId, contributionId)` with an
 explicit pluginId), or keep a separate `contributionId → panelId` index that is only used
 where the pluginId is already known.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S9-03] low — src/main/kernel/ipc/contributionIpc.ts:172 vs 192
 **What:** Handler is registered as `ipcMain.handle('extension:get-log', …)` but the
@@ -917,7 +920,7 @@ that disposes and re-initializes the kernel contribution IPC in the same process
 harness, plugin-system reload) then hits Electron's "Attempted to register a second
 handler for 'extension:get-log'" throw, or leaks the stale closure.
 **Fix idea:** use the literal `'extension:get-log'` in `removeHandler`.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S9-04] low — src/main/kernel/channels/DirectPluginChannel.ts:46-71 vs src/main/kernel/channels/WorkerPluginChannel.ts:99-114
 **What:** The two `IBidirectionalPluginChannel` implementations disagree on the failure
@@ -934,7 +937,7 @@ timeout also NPEs since the promise rejected rather than resolving a response ob
 **Fix idea:** make both impls resolve a `KernelResponse` (`ok:false`, `error.code`
 `CHANNEL_DESTROYED` / `PLUGIN_TIMEOUT`) for all non-exceptional failures, or document and
 enforce reject-based errors in both.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S9-05] low — src/main/kernel/channels/WorkerPluginChannel.ts:39-50
 **What:** `assertSerializable` walks the payload with unbounded recursion over
@@ -949,7 +952,7 @@ prototype are fine, but e.g. a live `MessagePort`/`WeakMap`/DOM-ish object slips
 `typeof === 'object'` branch). The guard gives false confidence.
 **Fix idea:** track visited objects (WeakSet) and cap depth; or drop the hand-rolled check
 and rely on a single `try/structuredClone(payload)` probe with a wrapped error.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S9-06] low — src/main/kernel/ipc/panelIpc.ts:150-168, src/main/kernel/ui/PanelHost.ts:58-64
 **What:** `eventsSubscribeHandler` registers a fresh `sender.once('destroyed', …)` listener
@@ -966,7 +969,7 @@ panel whose plugin is gone.
 **Fix idea:** register the `destroyed` cleanup once per `senderId` (guard on a `Set`), and
 have plugin unload / `deregisterPlugin` call into the `PanelIpcRegistration` to
 `removeSubscriptionsWhere(s => s.pluginId === id)`.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ## Slice 10 — App IPC & auth
 

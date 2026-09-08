@@ -36,15 +36,31 @@ function isKernelResponse(msg: unknown): msg is KernelResponse {
   )
 }
 
-function assertSerializable(val: unknown, path = 'payload'): void {
+/** Cap on payload nesting — deeper than this is almost certainly a mistake and
+ *  would risk a stack overflow before `postMessage` ever sees it. (P2-S9-05) */
+const MAX_SERIALIZABLE_DEPTH = 100
+
+function assertSerializable(
+  val: unknown,
+  path = 'payload',
+  seen: WeakSet<object> = new WeakSet(),
+  depth = 0
+): void {
   if (val === null || val === undefined) return
   const type = typeof val
   if (type === 'function' || type === 'symbol') {
     throw new Error(`Non-serializable value of type '${type}' found at ${path}`)
   }
   if (type === 'object') {
+    if (seen.has(val as object)) {
+      throw new Error(`Circular reference in payload at ${path}`)
+    }
+    if (depth >= MAX_SERIALIZABLE_DEPTH) {
+      throw new Error(`Payload nested deeper than ${MAX_SERIALIZABLE_DEPTH} levels at ${path}`)
+    }
+    seen.add(val as object)
     for (const key of Object.keys(val as object)) {
-      assertSerializable((val as Record<string, unknown>)[key], `${path}.${key}`)
+      assertSerializable((val as Record<string, unknown>)[key], `${path}.${key}`, seen, depth + 1)
     }
   }
 }
@@ -98,7 +114,13 @@ export class WorkerPluginChannel implements IBidirectionalPluginChannel {
 
   sendRequestToPlugin(msg: KernelRequest): Promise<KernelResponse> {
     if (this.isDestroyed) {
-      return Promise.reject(new Error('Channel destroyed'))
+      // Resolve a KernelResponse (not reject) so callers get the same failure
+      // shape DirectPluginChannel gives them for a destroyed channel. (P2-S9-04)
+      return Promise.resolve({
+        id: msg.id,
+        ok: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Channel destroyed' }
+      })
     }
     assertSerializable(msg.payload)
     return new Promise<KernelResponse>((resolve, reject) => {

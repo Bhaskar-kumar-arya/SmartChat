@@ -237,6 +237,43 @@ describe('panelIpc', () => {
     expect(mockEventBus.off).toHaveBeenCalledWith('message:incoming', expect.any(Function))
   })
 
+  // P2-S9-06
+  it('registers the destroyed cleanup hook only once per webContents across multiple subscriptions', async () => {
+    registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus)
+
+    const sender = {
+      id: 7,
+      isDestroyed: () => false,
+      send: vi.fn(),
+      once: vi.fn()
+    }
+
+    for (const eventName of ['message:incoming', 'message:outgoing', 'chat:updated']) {
+      await (ipcMain as unknown as { _invokeHandle: Function })._invokeHandle(
+        'kernel:panel:events:subscribe',
+        { sender },
+        { panelId: 'panel-1', eventName }
+      )
+    }
+
+    expect(sender.once).toHaveBeenCalledTimes(1)
+  })
+
+  // P2-S9-06
+  it('detaches a plugin\'s panel subscriptions on onPluginUnloaded', async () => {
+    const reg = registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus)
+
+    await (ipcMain as unknown as { _invokeHandle: Function })._invokeHandle(
+      'kernel:panel:events:subscribe',
+      { sender: { id: 9, isDestroyed: () => false, send: vi.fn(), once: vi.fn() } },
+      { panelId: 'panel-1', eventName: 'message:incoming' }
+    )
+
+    reg.onPluginUnloaded('com.acme.plugin')
+
+    expect(mockEventBus.off).toHaveBeenCalledWith('message:incoming', expect.any(Function))
+  })
+
   it('cleans up handlers when unbind disposer is called', () => {
     const { dispose } = registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus)
     dispose()

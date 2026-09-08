@@ -132,6 +132,37 @@ describe('WorkerPluginChannel', () => {
     await expect(pendingPromise).rejects.toThrow('Channel destroyed')
   })
 
+  // P2-S9-04
+  it('resolves a KernelResponse (ok:false) when sendRequestToPlugin is called on a destroyed channel', async () => {
+    const { port1, port2 } = new MessageChannel()
+    const channel = new WorkerPluginChannel(port1)
+    channel.destroy()
+    port2.close()
+
+    const res = await channel.sendRequestToPlugin({ id: 'r-dead', type: 't', payload: {} })
+    expect(res).toEqual({
+      id: 'r-dead',
+      ok: false,
+      error: { code: 'INTERNAL_ERROR', message: 'Channel destroyed' }
+    })
+  })
+
+  // P2-S9-05
+  it('throws a clean error (not a RangeError) for a circular payload', () => {
+    const { port1, port2 } = new MessageChannel()
+    const channel = new WorkerPluginChannel(port1)
+
+    const cyclic: Record<string, unknown> = { a: 1 }
+    cyclic.self = cyclic
+
+    expect(() => {
+      channel.sendToPlugin({ id: 'r-cyc', type: 't', payload: cyclic })
+    }).toThrow(/Circular reference/)
+
+    channel.destroy()
+    port2.close()
+  })
+
   // S9-04
   it('rejects a pending request with PLUGIN_TIMEOUT when the plugin never replies', async () => {
     vi.useFakeTimers()

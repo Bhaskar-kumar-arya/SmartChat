@@ -52,13 +52,46 @@ export function registerContributionIpcHandlers(
   panelHost?: IPanelHost
 ): () => void {
 
+  // Tool names this handler has registered into the shared toolRegistry, keyed
+  // to a signature of the contribution that produced them. Add-only sync left a
+  // plugin's `ai-tool` entries live in the registry forever after it unloaded
+  // (invoking them returned "Plugin <id> is not loaded"), and a reload with a
+  // changed schema/description kept the stale definition. (P2-S9-01)
+  const registeredAiTools = new Map<string, string>()
+
+  const aiToolSignature = (contrib: {
+    pluginId: string
+    description: string
+    schema?: unknown
+  }): string => `${contrib.pluginId}::${contrib.description}::${JSON.stringify(contrib.schema ?? {})}`
+
   const syncAiTools = () => {
     if (!toolRegistry) return
+
     const aiTools = registry.getAll('ai-tool')
+    const desired = new Map<string, { contrib: (typeof aiTools)[number]; sig: string }>()
     for (const contrib of aiTools) {
-      if (toolRegistry.getTool(contrib.name)) {
-        continue
+      // First declaration of a given name wins (matches previous behaviour).
+      if (!desired.has(contrib.name)) {
+        desired.set(contrib.name, { contrib, sig: aiToolSignature(contrib) })
       }
+    }
+
+    // Drop tools we own that the contribution registry no longer backs, or whose
+    // defining contribution changed (schema/description/owner).
+    for (const [name, sig] of Array.from(registeredAiTools.entries())) {
+      const next = desired.get(name)
+      if (!next || next.sig !== sig) {
+        toolRegistry.unregisterTool(name)
+        registeredAiTools.delete(name)
+      }
+    }
+
+    for (const [name, { contrib, sig }] of desired) {
+      if (registeredAiTools.has(name)) continue
+      // A name already claimed by a builtin or another subsystem is not ours to
+      // overwrite — leave it and let the conflict surface elsewhere.
+      if (toolRegistry.getTool(name)) continue
       toolRegistry.registerTool({
         name: contrib.name,
         description: contrib.description,
@@ -73,19 +106,25 @@ export function registerContributionIpcHandlers(
             return { text: `Plugin ${contrib.pluginId} channel does not support bidirectional requests` }
           }
           const reqId = `ai-tool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-          const res = await plugin.channel.sendRequestToPlugin({
-            id: reqId,
-            type: 'contribution:execute:ai-tool',
-            payload: { name: contrib.name, args }
-          })
-          if (res.ok) {
-            const out = typeof res.payload === 'string' ? res.payload : JSON.stringify(res.payload)
-            return { text: out }
-          } else {
+          try {
+            const res = await plugin.channel.sendRequestToPlugin({
+              id: reqId,
+              type: 'contribution:execute:ai-tool',
+              payload: { name: contrib.name, args }
+            })
+            if (res.ok) {
+              const out = typeof res.payload === 'string' ? res.payload : JSON.stringify(res.payload)
+              return { text: out }
+            }
             return { text: `Error: ${res.error?.message || 'Tool execution failed'}` }
+          } catch (err) {
+            // A worker-backed channel rejects (timeout / destroyed) rather than
+            // resolving `ok:false`; don't let that throw out of the tool executor. (P2-S9-04)
+            return { text: `Error: ${err instanceof Error ? err.message : 'Tool execution failed'}` }
           }
         }
       })
+      registeredAiTools.set(name, sig)
     }
   }
 
@@ -189,7 +228,13 @@ export function registerContributionIpcHandlers(
     ipcMain.removeHandler('extension:unload')
     ipcMain.removeHandler('extension:reload')
     ipcMain.removeHandler('extension:uninstall')
-    ipcMain.removeHandler('extension:getLog')
+    ipcMain.removeHandler('extension:get-log')
     unsubscribeRegistry()
+    if (toolRegistry) {
+      for (const name of registeredAiTools.keys()) {
+        toolRegistry.unregisterTool(name)
+      }
+      registeredAiTools.clear()
+    }
   }
 }

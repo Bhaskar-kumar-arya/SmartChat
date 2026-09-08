@@ -68,6 +68,30 @@ describe('PanelHost', () => {
     expect(panelHost.getPanel(id1)?.panelPath).toBe('panels/new.html')
   })
 
+  // P2-S9-02
+  it('does not resolve getPanel / getPluginId by a shared contributionId', () => {
+    const idA = panelHost.registerPanel({
+      contributionId: 'settings',
+      pluginId: 'com.a.plugin',
+      panelPath: 'a.html',
+      type: 'settings'
+    })
+    panelHost.registerPanel({
+      contributionId: 'settings',
+      pluginId: 'com.b.plugin',
+      panelPath: 'b.html',
+      type: 'settings'
+    })
+
+    // Passing the author-chosen contribution id must NOT resolve to another
+    // plugin's descriptor / identity.
+    expect(panelHost.getPanel('settings')).toBeUndefined()
+    expect(panelHost.getPluginId('settings')).toBeUndefined()
+
+    // The real per-panel UUID still resolves.
+    expect(panelHost.getPluginId(idA)).toBe('com.a.plugin')
+  })
+
   it('finds panel by pluginId and contributionId', () => {
     const panelId = panelHost.registerPanel({
       contributionId: 'settings-1',

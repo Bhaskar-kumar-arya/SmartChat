@@ -32,6 +32,13 @@ interface PanelSubscription {
 export interface PanelIpcRegistration {
   dispose: () => void
   /**
+   * Call when a plugin is unloaded/uninstalled so its panels' live bus
+   * subscriptions are detached immediately, rather than lingering (still
+   * delivering events, still holding the bus `on` registration) until the
+   * panel's webContents is independently destroyed. (P2-S9-06)
+   */
+  onPluginUnloaded: (pluginId: string) => void
+  /**
    * Call when a fresh WAEventBus becomes available (WhatsApp connect/reconnect).
    * `connect()` swaps in a brand-new bus instance on every reconnect, so every
    * live panel subscription must be re-attached to it or panel event delivery
@@ -47,6 +54,10 @@ export function registerPanelIpcHandlers(
   permissions?: IPermissionStore
 ): PanelIpcRegistration {
   const panelSubscriptions = new Map<string, PanelSubscription>()
+  // webContents ids we have already attached a one-shot 'destroyed' cleanup to.
+  // Without this a panel subscribing to N events stacks N identical listeners on
+  // the same webContents, tripping MaxListenersExceededWarning. (P2-S9-06)
+  const sendersWithDestroyHook = new Set<number>()
 
   const resolveBus = (): IWAEventBus | null => {
     if (typeof getBus === 'function') return getBus()
@@ -160,9 +171,11 @@ export function registerPanelIpcHandlers(
 
     // Clean up if the panel's webContents is torn down without a
     // kernel:panel:closed / unsubscribe message (navigation, crash). (S9-03)
-    if (typeof sender.once === 'function' && sub.senderId != null) {
+    if (typeof sender.once === 'function' && sub.senderId != null && !sendersWithDestroyHook.has(sub.senderId)) {
       const senderId = sub.senderId
+      sendersWithDestroyHook.add(senderId)
       sender.once('destroyed', () => {
+        sendersWithDestroyHook.delete(senderId)
         removeSubscriptionsWhere((s) => s.senderId === senderId)
       })
     }
@@ -194,6 +207,9 @@ export function registerPanelIpcHandlers(
   }
 
   return {
+    onPluginUnloaded: (pluginId: string) => {
+      removeSubscriptionsWhere((s) => s.pluginId === pluginId)
+    },
     onBusConnected: (bus: IWAEventBus) => {
       for (const sub of panelSubscriptions.values()) {
         sub.rebind(bus)

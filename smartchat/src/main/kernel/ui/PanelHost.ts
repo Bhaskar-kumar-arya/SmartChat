@@ -39,15 +39,13 @@ export class PanelHost implements IPanelHost {
   }
 
   getPanel(panelId: string): PanelDescriptor | undefined {
-    const direct = this.panels.get(panelId)
-    if (direct) return direct
-
-    for (const panel of this.panels.values()) {
-      if (panel.contributionId === panelId) {
-        return panel
-      }
-    }
-    return undefined
+    // Resolve strictly by the per-panel UUID. The old `contributionId` fallback
+    // let a panel page send its author-chosen (non-unique) contribution id over
+    // `kernel:panel:api` and be resolved to whichever plugin's descriptor
+    // iterated first — running its kernel calls under another plugin's identity
+    // and permission set. Callers that only have a contributionId must use
+    // `findPanel(pluginId, contributionId)` with an explicit pluginId. (P2-S9-02)
+    return this.panels.get(panelId)
   }
 
   getPluginId(panelId: string): string | undefined {

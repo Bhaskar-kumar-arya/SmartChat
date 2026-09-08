@@ -183,6 +183,9 @@ export class KernelBootstrapper {
       // subscriptions (S8-06) and remove any AI tools it registered (S7-04).
       eventsModule.removePlugin(pluginId)
       aiModule.removePlugin(pluginId)
+      // Detach the plugin's panel bus subscriptions now, not whenever the panel
+      // webContents happens to be destroyed. (P2-S9-06)
+      panelIpc.onPluginUnloaded(pluginId)
       // Drop the plugin's panel descriptors so stale panelIds stop resolving
       // and a reload with a changed panel path re-registers cleanly. (S9-06)
       panelHost.deregisterPlugin(pluginId)

@@ -113,6 +113,83 @@ describe('contributionIpc', () => {
     cleanup()
   })
 
+  // P2-S9-01
+  it('unregisters a plugin ai-tool from the toolRegistry when its contribution goes away', () => {
+    const tools = new Map<string, unknown>()
+    const toolRegistry = {
+      registerTool: vi.fn((t: { name: string }) => tools.set(t.name, t)),
+      unregisterTool: vi.fn((name: string) => tools.delete(name)),
+      getTool: vi.fn((name: string) => tools.get(name)),
+      getAllTools: vi.fn(() => Array.from(tools.values())),
+      getToolDefinitions: vi.fn(() => [])
+    }
+
+    registry.register('ai-tool', {
+      pluginId: 'p1',
+      name: 'p1_do_thing',
+      description: 'does a thing',
+      schema: { type: 'object', properties: {} }
+    })
+
+    const cleanup = registerContributionIpcHandlers(
+      registry,
+      mockHost,
+      undefined,
+      undefined,
+      undefined,
+      toolRegistry as any
+    )
+
+    expect(toolRegistry.registerTool).toHaveBeenCalledWith(expect.objectContaining({ name: 'p1_do_thing' }))
+    expect(tools.has('p1_do_thing')).toBe(true)
+
+    // Plugin unloads: its contribution is removed.
+    registry.unregisterAll('p1')
+
+    expect(toolRegistry.unregisterTool).toHaveBeenCalledWith('p1_do_thing')
+    expect(tools.has('p1_do_thing')).toBe(false)
+
+    cleanup()
+  })
+
+  // P2-S9-01
+  it('re-registers an ai-tool when its schema/description changes on reload', () => {
+    const tools = new Map<string, unknown>()
+    const toolRegistry = {
+      registerTool: vi.fn((t: { name: string }) => tools.set(t.name, t)),
+      unregisterTool: vi.fn((name: string) => tools.delete(name)),
+      getTool: vi.fn((name: string) => tools.get(name)),
+      getAllTools: vi.fn(() => Array.from(tools.values())),
+      getToolDefinitions: vi.fn(() => [])
+    }
+
+    registry.register('ai-tool', {
+      pluginId: 'p1',
+      name: 'p1_tool',
+      description: 'v1',
+      schema: {}
+    })
+
+    const cleanup = registerContributionIpcHandlers(
+      registry, mockHost, undefined, undefined, undefined, toolRegistry as any
+    )
+    expect(tools.get('p1_tool')).toMatchObject({ description: 'v1' })
+
+    registry.unregisterAll('p1')
+    registry.register('ai-tool', { pluginId: 'p1', name: 'p1_tool', description: 'v2', schema: {} })
+
+    expect(tools.get('p1_tool')).toMatchObject({ description: 'v2' })
+    cleanup()
+  })
+
+  // P2-S9-03
+  it('removes the extension:get-log handler (not extension:getLog) on teardown', () => {
+    const cleanup = registerContributionIpcHandlers(registry, mockHost)
+    expect(handlers.get('extension:get-log')).toBeDefined()
+    cleanup()
+    expect(handlers.get('extension:get-log')).toBeUndefined()
+  })
+
   it('notifies webContents when registry changes', () => {
     const mockSend = vi.fn()
     const getWebContents = () => ({ send: mockSend } as any)
