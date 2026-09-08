@@ -50,6 +50,12 @@ export interface WorkerPluginRuntimeOptions {
   requestTimeoutMs?: number
 }
 
+// Absolute ceiling for an otherwise un-timed request (e.g. showForm/showOverlay
+// which pass 0 so the user can take their time). Without a ceiling, a kernel
+// that never replies (overlay window destroyed, handler threw) leaks the
+// pendingRequests entry and hangs the awaiting plugin promise forever.
+const MAX_REQUEST_TIMEOUT_MS = 30 * 60 * 1000
+
 function isKernelResponse(msg: unknown): msg is KernelResponse {
   return (
     typeof msg === 'object' &&
@@ -90,6 +96,9 @@ export class WorkerPluginRuntime {
 
   private incomingHandlers = new Map<string, RequestHandler>()
   private requestTimeoutMs: number
+  // Raw scheduler timers created via ctx.scheduler — tracked so they can be
+  // cleared on plugin:deactivate instead of leaking for the life of the worker.
+  private schedulerTimers = new Set<NodeJS.Timeout>()
 
   constructor(
     private readonly port: MessagePort,
@@ -99,6 +108,17 @@ export class WorkerPluginRuntime {
     this.requestTimeoutMs = options?.requestTimeoutMs ?? 10000
     this.registerDefaultHandlers()
     this.port.on('message', (msg: unknown) => this.handlePortMessage(msg))
+    // If the port is torn down mid-dialog, settle every outstanding request so
+    // no plugin promise hangs and no Map entry leaks.
+    this.port.on('close', () => this.rejectAllPending('Plugin channel closed'))
+  }
+
+  private rejectAllPending(reason: string): void {
+    for (const [id, pending] of this.pendingRequests) {
+      if (pending.timer) clearTimeout(pending.timer)
+      this.pendingRequests.delete(id)
+      pending.reject(new Error(reason))
+    }
   }
 
   public registerIncomingHandler(type: string, handler: RequestHandler): void {
@@ -116,6 +136,12 @@ export class WorkerPluginRuntime {
       for (const fn of this.deactivateCallbacks) {
         await fn()
       }
+      // Reclaim any scheduler timers the plugin forgot to dispose.
+      for (const t of this.schedulerTimers) {
+        clearInterval(t)
+        clearTimeout(t)
+      }
+      this.schedulerTimers.clear()
     })
 
     this.registerIncomingHandler('kernel:events:emit', async (req) => {
@@ -296,13 +322,14 @@ export class WorkerPluginRuntime {
     const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
     return new Promise<T>((resolve, reject) => {
       let timer: NodeJS.Timeout | undefined
-      const effectiveTimeout = timeoutMs !== undefined ? timeoutMs : this.requestTimeoutMs
-      if (effectiveTimeout > 0) {
-        timer = setTimeout(() => {
-          this.pendingRequests.delete(id)
-          reject(new Error(`Request '${type}' timed out after ${effectiveTimeout}ms`))
-        }, effectiveTimeout)
-      }
+      const requested = timeoutMs !== undefined ? timeoutMs : this.requestTimeoutMs
+      // A non-positive timeout means "don't time out on the user" (dialogs), but
+      // still apply an absolute ceiling so a never-sent response can't leak.
+      const effectiveTimeout = requested > 0 ? requested : MAX_REQUEST_TIMEOUT_MS
+      timer = setTimeout(() => {
+        this.pendingRequests.delete(id)
+        reject(new Error(`Request '${type}' timed out after ${effectiveTimeout}ms`))
+      }, effectiveTimeout)
 
       this.pendingRequests.set(id, { resolve, reject, timer })
       const req: KernelRequest = { id, type, payload }
@@ -393,14 +420,19 @@ export class WorkerPluginRuntime {
     const schedulerAPI: IPluginSchedulerAPI = {
       setInterval: (ms, fn) => {
         const id = setInterval(fn, ms)
-        return () => clearInterval(id)
+        self.schedulerTimers.add(id)
+        return () => {
+          clearInterval(id)
+          self.schedulerTimers.delete(id)
+        }
       },
       setTimeout: (ms, fn) => {
         const id = setTimeout(fn, ms)
-        return () => clearTimeout(id)
-      },
-      onCron: (name, fn) => {
-        self.eventHandlers.set(`cron:${name}`, [fn])
+        self.schedulerTimers.add(id)
+        return () => {
+          clearTimeout(id)
+          self.schedulerTimers.delete(id)
+        }
       }
     }
 
@@ -425,6 +457,20 @@ export class WorkerPluginRuntime {
       },
       registerMessageSendInterceptor: (id, intercept) => {
         self.sendInterceptors.set(id, intercept)
+      },
+      // Panel / renderer contributions are declared in the manifest and
+      // registered kernel-side from there (MANIFEST_TO_SLOT_MAPPINGS in
+      // PluginHost) — there is no per-handler wiring for a worker plugin, so
+      // these exist only to satisfy the interface and keep the call a
+      // predictable no-op instead of an `undefined` method. (P2-S12-11)
+      registerSidebarPanel: () => {
+        /* manifest-declarative — see note above */
+      },
+      registerSettingsPage: () => {
+        /* manifest-declarative — see note above */
+      },
+      registerMessageRenderer: () => {
+        /* manifest-declarative — see note above */
       },
       exposeAPI: (exportName, api) => {
         self.exposedAPIs.set(exportName, api)

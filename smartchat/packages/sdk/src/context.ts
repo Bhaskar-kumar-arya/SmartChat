@@ -149,8 +149,8 @@ export interface IPluginMessagesAPI {
   getMessagesAroundId(jid: string, messageId: string, lookBehind?: number): Promise<PluginMessageItem[]>
   send(jid: string, text: string, options?: SendMessageOptions): Promise<PluginMessageItem>
   sendMedia(jid: string, filePath: string, caption?: string, options?: SendMessageOptions): Promise<PluginMessageItem>
-  edit(messageId: string, newText: string, jid?: string): Promise<PluginMessageItem>
-  forward(messageId: string, targetJids: string[], jid?: string): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }>
+  edit(jid: string, messageId: string, newText: string): Promise<PluginMessageItem>
+  forward(jid: string, messageId: string, targetJids: string[]): Promise<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }>
   delete(jid: string, messageId: string): Promise<void>
   react(jid: string, messageId: string, emoji: string): Promise<void>
   downloadMedia(messageId: string): Promise<{ success: boolean; localURI?: string; filePath?: string; message?: unknown }>
@@ -207,7 +207,9 @@ export interface IPluginStorageAPI {
 export interface IPluginSchedulerAPI {
   setInterval(ms: number, fn: () => void | Promise<void>): () => void
   setTimeout(ms: number, fn: () => void | Promise<void>): () => void
-  onCron(name: string, fn: () => void | Promise<void>): void
+  // NOTE: `onCron` was removed — no kernel component ever emitted `cron:<name>`
+  // events, so registered handlers never fired. Use `setInterval` instead, or
+  // a manifest `scheduler.intervals` entry once that is wired end-to-end.
 }
 
 export interface OverlayFormField {

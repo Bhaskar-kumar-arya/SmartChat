@@ -46,10 +46,13 @@ export class SecureFileRegistry implements ISecureFileRegistry {
   }
 
   public grantFile(absolutePath: string): void {
-    this.grantedFiles.add(path.resolve(absolutePath));
+    // Key on the case-normalized path (win32) for the same reason resolvePath
+    // normalizes: a granted path and a later request can differ only in drive-
+    // letter / segment casing, which must not cause a false denial.
+    this.grantedFiles.add(SecureFileRegistry.normalizeForCompare(path.resolve(absolutePath)));
   }
 
   public isFileGranted(absolutePath: string): boolean {
-    return this.grantedFiles.has(path.resolve(absolutePath));
+    return this.grantedFiles.has(SecureFileRegistry.normalizeForCompare(path.resolve(absolutePath)));
   }
 }

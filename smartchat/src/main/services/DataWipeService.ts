@@ -4,29 +4,100 @@ import { IDataWipeService } from './IDataWipeService'
 export class DataWipeService implements IDataWipeService {
   constructor(private prisma: PrismaClient) {}
 
-  private clearDirectory(dirPath: string): void {
+  /**
+   * Recursively delete every file/subdir under `dirPath`, then recreate the
+   * empty dir. Returns the number of entries that could NOT be removed (e.g. a
+   * media file held open by a thumbnailer / AV scanner on Windows → EBUSY).
+   * A non-zero return means the on-disk wipe is incomplete — the caller must
+   * surface that rather than reporting success.
+   */
+  private clearDirectory(dirPath: string): number {
+    const fs = require('fs')
+    if (!fs.existsSync(dirPath)) return 0
+
+    // First try the fast path.
     try {
-      const fs = require('fs')
-      if (fs.existsSync(dirPath)) {
-        fs.rmSync(dirPath, { recursive: true, force: true })
-        fs.mkdirSync(dirPath, { recursive: true })
-      }
+      fs.rmSync(dirPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+      fs.mkdirSync(dirPath, { recursive: true })
+      return 0
     } catch (e) {
-      console.error(`[DataWipeService] Failed to clear directory ${dirPath}:`, e)
+      console.error(`[DataWipeService] rmSync failed for ${dirPath}, falling back to per-file unlink:`, e)
+    }
+
+    // Fallback: unlink entries individually so one locked file doesn't leave the
+    // whole tree behind, and count what survived.
+    let failures = 0
+    const walk = (target: string): void => {
+      let stat
+      try {
+        stat = fs.lstatSync(target)
+      } catch {
+        return
+      }
+      if (stat.isDirectory()) {
+        for (const entry of fs.readdirSync(target)) {
+          const path = require('path')
+          walk(path.join(target, entry))
+        }
+        if (target !== dirPath) {
+          try {
+            fs.rmdirSync(target)
+          } catch {
+            failures++
+          }
+        }
+      } else {
+        try {
+          fs.rmSync(target, { force: true, maxRetries: 3, retryDelay: 100 })
+        } catch (e) {
+          failures++
+          console.error(`[DataWipeService] Could not delete ${target}:`, e)
+        }
+      }
+    }
+    walk(dirPath)
+    try {
+      fs.mkdirSync(dirPath, { recursive: true })
+    } catch {
+      /* dir still exists — fine */
+    }
+    return failures
+  }
+
+  /** Resolve the Electron userData directory; returns null if unavailable. */
+  private getUserDataPath(): string | null {
+    try {
+      const { app } = require('electron')
+      return app.getPath('userData')
+    } catch (e) {
+      console.error('[DataWipeService] Could not resolve userData path for folder wipe:', e)
+      return null
     }
   }
 
   private wipeAllFolders(): void {
-    try {
-      const { app } = require('electron')
-      const path = require('path')
-      const userDataPath = app.getPath('userData')
-      this.clearDirectory(path.join(userDataPath, 'favourites'))
-      this.clearDirectory(path.join(userDataPath, 'media'))
-      this.clearDirectory(path.join(userDataPath, 'temp'))
-      this.clearDirectory(path.join(userDataPath, 'temp_stickers'))
-    } catch (e) {
-      console.error('[DataWipeService] Failed to clear folders:', e)
+    const path = require('path')
+    const userDataPath = this.getUserDataPath()
+    if (!userDataPath) return
+    const dirs = ['favourites', 'media', 'temp', 'temp_stickers']
+
+    const failedDirs: string[] = []
+    for (const name of dirs) {
+      let survived = 0
+      try {
+        survived = this.clearDirectory(path.join(userDataPath, name))
+      } catch (e) {
+        survived = -1
+        console.error(`[DataWipeService] Failed to clear ${name}:`, e)
+      }
+      if (survived !== 0) failedDirs.push(name)
+    }
+
+    if (failedDirs.length > 0) {
+      throw new Error(
+        `[DataWipeService] Incomplete data wipe: could not fully clear on-disk folder(s): ${failedDirs.join(', ')}. ` +
+          `Some cached media may still be present (files may be locked by another process).`
+      )
     }
   }
 

@@ -40,8 +40,8 @@ export function createKernelApiBridge(request: RequestFn): KernelApiBridge {
       getMessagesAroundId: (jid: string, messageId: string, lookBehind = 20) => request('kernel:messages:getMessagesAroundId', { jid, messageId, lookBehind }),
       send: (jid: string, text: string, options?: SendMessageOptions) => request('kernel:messages:send', { jid, text, options }),
       sendMedia: (jid: string, filePath: string, caption?: string, options?: SendMessageOptions) => request('kernel:messages:sendMedia', { jid, filePath, caption, options }),
-      edit: (messageId: string, newText: string, jid?: string) => request('kernel:messages:edit', { messageId, newText, jid }),
-      forward: (messageId: string, targetJids: string[], jid?: string) => request('kernel:messages:forward', { messageId, targetJids, jid }),
+      edit: (jid: string, messageId: string, newText: string) => request('kernel:messages:edit', { messageId, newText, jid }),
+      forward: (jid: string, messageId: string, targetJids: string[]) => request('kernel:messages:forward', { messageId, targetJids, jid }),
       delete: (jid: string, messageId: string) => request('kernel:messages:delete', { jid, messageId }),
       react: (jid: string, messageId: string, emoji: string) => request('kernel:messages:react', { jid, messageId, emoji }),
       downloadMedia: (messageId: string) => request('kernel:messages:downloadMedia', { messageId }),
@@ -75,9 +75,12 @@ export function createKernelApiBridge(request: RequestFn): KernelApiBridge {
       keys: () => request<string[]>('kernel:storage:keys', {})
     },
     log: {
-      info: (msg: string, ...d: unknown[]) => request('kernel:log', { level: 'info', message: msg, data: d }),
-      warn: (msg: string, ...d: unknown[]) => request('kernel:log', { level: 'warn', message: msg, data: d }),
-      error: (msg: string, ...d: unknown[]) => request('kernel:log', { level: 'error', message: msg, data: d })
+      // Fire-and-forget: the caller never awaits a log, so swallow the response
+      // promise (and any rejection from a torn-down channel) instead of leaving
+      // it floating.
+      info: (msg: string, ...d: unknown[]) => void Promise.resolve(request('kernel:log', { level: 'info', message: msg, data: d })).catch(() => {}),
+      warn: (msg: string, ...d: unknown[]) => void Promise.resolve(request('kernel:log', { level: 'warn', message: msg, data: d })).catch(() => {}),
+      error: (msg: string, ...d: unknown[]) => void Promise.resolve(request('kernel:log', { level: 'error', message: msg, data: d })).catch(() => {})
     }
 
   }

@@ -209,6 +209,40 @@ describe('WorkerPluginRuntime', () => {
     })
   })
 
+  it('rejects all pending requests when the port closes (P2-S12-07)', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest, { requestTimeoutMs: 0 })
+    const ctx = runtime.getContext()
+    const pending = ctx.ui!.showForm({ title: 't', fields: [] })
+    port1.close()
+    await expect(pending).rejects.toThrow(/channel closed/i)
+  })
+
+  it('clears untracked scheduler timers on plugin:deactivate (P2-S12-08)', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest)
+    const ctx = runtime.getContext()
+    const fn = vi.fn()
+    ctx.scheduler!.setInterval(10, fn) // disposer intentionally discarded
+
+    const responsePromise = new Promise<any>((resolve) => {
+      const listener = (res: any) => {
+        if (res.id === 'deact-1') { port2.off('message', listener); resolve(res) }
+      }
+      port2.on('message', listener)
+    })
+    port2.postMessage({ id: 'deact-1', type: 'plugin:deactivate', payload: {} })
+    await responsePromise
+
+    fn.mockClear()
+    await new Promise((r) => setTimeout(r, 60))
+    expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('scheduler API no longer exposes the dead onCron method (P2-S12-08)', () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest)
+    const ctx = runtime.getContext()
+    expect((ctx.scheduler as unknown as Record<string, unknown>).onCron).toBeUndefined()
+  })
+
   it('should not time out showOverlay requests waiting for user interaction even with short requestTimeoutMs', async () => {
     const runtime = new WorkerPluginRuntime(port1, manifest, { requestTimeoutMs: 50 })
     const ctx = runtime.getContext()

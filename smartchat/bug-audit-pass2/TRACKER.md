@@ -21,7 +21,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 9 | Kernel storage, channels, ipc, ui | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
 | 10 | App IPC & auth | DONE (7 findings) | 2026-09-08 | 0 crit, 0 high, 3 med, 4 low — all 7 fixed 2026-09-08 (slice 10) |
 | 11 | apiServer, search, notification, calls, audio | DONE (10 findings) | 2026-09-08 | 0 crit, 1 high, 2 med, 7 low — all 10 fixed 2026-09-08 (slice 11); S11-01 embedding pipeline restored + gated, S11-02/03 correctness+perf, runtime model-load not unit-tested |
-| 12 | SDK, tools, data wipe, domain, db, protocol | DONE (11 findings) | 2026-09-07 | 0 crit, 0 high, 4 med, 7 low |
+| 12 | SDK, tools, data wipe, domain, db, protocol | DONE (11 findings) | 2026-09-08 | 0 crit, 0 high, 4 med, 7 low — all 11 fixed 2026-09-08 (slice 12); tools row-cap + SQL denylist tightening, DataWipe partial-wipe now throws, LocalFileStorage/SecureFileRegistry path hardening, SDK manifest gate + channel timeout/timer-leak fixes, messages API signature uniformity |
 | 13 | Cross-cutting pass | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
 
 ## Summary counts
@@ -1350,7 +1350,8 @@ tens of thousands of rows synchronously in the main process, producing a
 multi-megabyte tool result. Main-thread stall + oversized AI context.
 **Fix idea:** cap `msgIds` (e.g. slice to a few thousand) or wrap the query like
 `QueryDatabaseTool` does, and tell the caller the result was truncated.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `getMessagesBySql` caps ids at `LIMIT_MAX_SQL_ROWS` (3000) and slices before `findMessagesByIds`, so only that many rows are fetched and run through the transcript formatter on the main thread; the SQL path threads a `truncated` flag through as `hasMore` and the non-jid output header prints a "result truncated to the first 3000 messages — narrow the query" notice. Regression test `src/main/tests/tools/ReadMessagesTool.sqlcap.test.ts`.
 
 ### [P2-S12-02] med — src/main/services/DataWipeService.ts:7-31
 **What:** `clearDirectory` wraps `fs.rmSync` / `fs.mkdirSync` in `try/catch` that
@@ -1366,7 +1367,8 @@ everything" support flow) this is a silent, security-relevant incomplete wipe.
 **Fix idea:** collect per-directory failures and throw (or return a
 partial-failure result the UI surfaces); retry with backoff for Windows lock
 churn; at minimum unlink files individually and report the count that survived.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `clearDirectory` now returns the count of entries it could not delete (fast `rmSync` with retries, then a per-file unlink fallback so one locked file doesn't leave the whole tree). `wipeAllFolders` aggregates per-directory failures and throws `Incomplete data wipe: ...` so `wipeAllData` / `wipeUserDataOnly` no longer log success and resolve on a partial on-disk wipe. userData resolution moved to a `getUserDataPath()` seam. Regression tests in `DataWipeService.test.ts`.
 
 ### [P2-S12-03] med — src/main/services/storage/LocalFileStorage.ts:67-77
 **What:** `resolveMediaPath` does `appUri.replace('app://media/', '')` (and the
@@ -1383,7 +1385,8 @@ values read back from persisted message `content`. A value like
 arbitrary-file exfiltration if any caller can influence `localURI`.
 **Fix idea:** `path.basename` after stripping the scheme, reject names containing
 separators or `..`, and assert `path.resolve(result).startsWith(mediaDir + sep)`.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `resolveMediaPath` reduces the URI to a `path.basename` (after decoding), rejects any residual separator / `.` / `..` / NUL and asserts `resolve()` containment inside `<userData>/<media|favourites>`; it throws on a violation instead of returning an escaping path. Regression test `src/main/tests/services/LocalFileStorage.test.ts`.
 
 ### [P2-S12-04] med — packages/sdk/src/manifest.ts:185-217
 **What:** `ManifestSchema` validates `id` and `main` only as `z.string()` — no
@@ -1399,7 +1402,8 @@ a file outside its extracted directory.
 **Fix idea:** constrain `id` with the same `PLUGIN_ID_RE` the loader uses; require
 `main` to match a safe relative-path regex and reject `..` segments / absolute
 paths in `validateManifest`.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** SDK `ManifestSchema` now `.refine()`s `id` with `PLUGIN_ID_RE` (+ no `..`) and requires `main` to be a non-escaping relative path (no `..`, no absolute or drive-letter paths) — matching the app's `kernel/plugins/PluginManifest.ts` gate, so the packaging CLI and any SDK consumer get the same contract. Tests added to `packages/sdk/tests/manifest.test.ts`.
 
 ### [P2-S12-05] low — src/main/tools/QueryDatabaseTool.ts:7-11, 273-280 / src/main/tools/ReadMessagesTool.ts:14-18, 215-222
 **What:** `REPLACE` is in `FORBIDDEN_KEYWORDS`, matched with `\bREPLACE\b` against
@@ -1414,7 +1418,8 @@ model then can't do server-side text shaping and has to pull raw rows.
 **Fix idea:** drop `REPLACE` from the blanket list and instead reject the
 mutating forms specifically (`REPLACE\s+INTO`, `INSERT\s+OR\s+REPLACE`), or rely
 on the SELECT/WITH prefix gate plus a read-only connection.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** removed the blanket `REPLACE` entry from `FORBIDDEN_KEYWORDS` in both `QueryDatabaseTool` and `ReadMessagesTool`; added `FORBIDDEN_PATTERNS` that reject only the mutating `REPLACE\s+INTO` / `INSERT\s+OR\s+REPLACE` forms. The read-only `REPLACE(x,y,z)` scalar is now accepted. Tests in `QueryDatabaseTool.test.ts`.
 
 ### [P2-S12-06] low — src/main/tools/QueryDatabaseTool.ts:262-281, 321-328
 **What:** The safety gate is a keyword denylist + SELECT/WITH prefix check. It
@@ -1430,7 +1435,8 @@ file disclosure needs no extension if a future build links it.
 **Fix idea:** add `load_extension` / `readfile` / `writefile` / `edit` to the
 forbidden set, and/or execute tool queries over an explicitly read-only
 connection (`PRAGMA query_only = ON` on a dedicated handle).
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** added `LOAD_EXTENSION`, `READFILE`, `WRITEFILE`, `FSDIR` to `FORBIDDEN_KEYWORDS` in both `QueryDatabaseTool` and `ReadMessagesTool` so a pure `SELECT` can no longer reach those side-effecting / filesystem functions regardless of driver config. Tests in `QueryDatabaseTool.test.ts`.
 
 ### [P2-S12-07] low — packages/sdk/src/channel.ts:295-311, 377-386
 **What:** `request()` only installs a timeout timer when `effectiveTimeout > 0`.
@@ -1444,7 +1450,8 @@ deleted and the plugin's `await ui.showForm()` never settles. Every such event
 permanently leaks a Map entry + a hung promise in the worker.
 **Fix idea:** always register a (generous) ceiling timeout, or reject all
 outstanding `pendingRequests` when the port emits `close`.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `request()` always registers a timer now — a non-positive `timeoutMs` (showForm/showConfirm/showAlert/showOverlay) uses a 30-minute `MAX_REQUEST_TIMEOUT_MS` ceiling instead of no timer; added `port.on('close')` → `rejectAllPending()` so a torn-down channel settles every outstanding promise and drops its Map entry. Regression test in `packages/sdk/tests/WorkerPluginRuntime.test.ts`.
 
 ### [P2-S12-08] low — packages/sdk/src/channel.ts:393-405
 **What:** In `WorkerPluginRuntime.getContext`, `schedulerAPI.setInterval` /
@@ -1460,7 +1467,8 @@ it's a documented API, so plugins relying on it silently do nothing.
 **Fix idea:** track scheduler timers per runtime and clear them in the
 `plugin:deactivate` handler; either implement `onCron` end-to-end or remove it
 from `IPluginSchedulerAPI`.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** scheduler `setInterval` / `setTimeout` timers are tracked in a per-runtime `schedulerTimers` set and cleared in the `plugin:deactivate` handler. The dead `onCron` (no kernel emitter, `set()` clobbered handlers) is removed from `IPluginSchedulerAPI`, the SDK `channel.ts`, `PluginHost.ts` and `generatedDocs.ts`. Regression test in `WorkerPluginRuntime.test.ts`.
 
 ### [P2-S12-09] low — src/main/services/protocol/SecureFileRegistry.ts:48-54 vs 10-12, 38-43
 **What:** `resolvePath` case-normalizes both sides on win32 before the
@@ -1475,7 +1483,8 @@ the request 404s — user-picked attachments / previews intermittently fail to
 load.
 **Fix idea:** normalize with the same `normalizeForCompare` helper when inserting
 into and querying `grantedFiles`.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `grantFile` / `isFileGranted` now key the set on `SecureFileRegistry.normalizeForCompare(path.resolve(...))`, the same case-normalization `resolvePath` already applies, so a win32 drive-letter / path-segment casing difference between grant and request no longer 404s a user-picked file. Regression test in `AppProtocolHandler.test.ts`.
 
 ### [P2-S12-10] low — packages/sdk/src/bridge.ts:38-51 (+ context.ts:147-160)
 **What:** The `messages` bridge API is inconsistent about where the chat jid
@@ -1488,7 +1497,8 @@ reacts against the wrong target at runtime. An action API operating on someone
 else's chats deserves an unambiguous, uniform signature.
 **Fix idea:** settle on one argument order (jid first everywhere, or an options
 object) across the `messages` API.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `messages.edit` and `messages.forward` are now jid-first and non-optional — `edit(jid, messageId, newText)`, `forward(jid, messageId, targetJids)` — matching `send` / `delete` / `react`, updated in `packages/sdk/src/context.ts`, `bridge.ts` and `PluginHost.ts`. The wire payload shape is unchanged.
 
 ### [P2-S12-11] low — packages/sdk/src/channel.ts:407-435 vs context.ts:288-325
 **What:** `IPluginContributionsAPI` declares `registerSidebarPanel`,
@@ -1504,7 +1514,8 @@ trap as P2-S8-02.
 **Fix idea:** implement the three `register*` methods (forwarding to the kernel
 like the others) or remove them from the interface if panels are purely
 manifest-declarative.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `WorkerPluginRuntime`'s `contributionsAPI` now implements `registerSidebarPanel` / `registerSettingsPage` / `registerMessageRenderer` as explicit, documented no-ops — for a worker plugin these contributions are registered kernel-side from the manifest (`MANIFEST_TO_SLOT_MAPPINGS` in `PluginHost`), so the methods exist and behave predictably instead of being `undefined`.
 
 ## Slice 13 — Cross-cutting pass
 

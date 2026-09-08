@@ -7,7 +7,18 @@ import { prisma } from '../auth';
 const FORBIDDEN_KEYWORDS = [
   'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER',
   'CREATE', 'ATTACH', 'DETACH', 'PRAGMA', 'VACUUM',
-  'REPLACE', 'TRUNCATE', 'GRANT', 'REVOKE'
+  'TRUNCATE', 'GRANT', 'REVOKE',
+  // Side-effecting / filesystem SQLite functions — a pure SELECT can still call
+  // these. `REPLACE` is intentionally NOT here: `REPLACE(x,y,z)` is a read-only
+  // scalar; only the `REPLACE INTO` / `INSERT OR REPLACE` mutating forms are
+  // rejected below.
+  'LOAD_EXTENSION', 'READFILE', 'WRITEFILE', 'FSDIR'
+];
+
+// Mutating statement forms that the bare keyword scan above no longer catches.
+const FORBIDDEN_PATTERNS: Array<{ re: RegExp; label: string }> = [
+  { re: /\bREPLACE\s+INTO\b/, label: 'REPLACE INTO' },
+  { re: /\bINSERT\s+OR\s+REPLACE\b/, label: 'INSERT OR REPLACE' }
 ];
 
 // Hard cap on returned rows to prevent memory issues
@@ -275,6 +286,14 @@ export class QueryDatabaseTool implements AITool {
       if (wordBoundaryRegex.test(normalized)) {
         throw new Error(
           `Query rejected: Forbidden keyword detected — "${kw}". Only read operations are permitted.`
+        );
+      }
+    }
+
+    for (const { re, label } of FORBIDDEN_PATTERNS) {
+      if (re.test(normalized)) {
+        throw new Error(
+          `Query rejected: Forbidden statement detected — "${label}". Only read operations are permitted.`
         );
       }
     }

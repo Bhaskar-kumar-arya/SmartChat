@@ -43,6 +43,19 @@ describe('validateManifest', () => {
     expect(() => validateManifest(v1Manifest)).toThrow(ManifestValidationError)
   })
 
+  it('should reject an id that is not a safe path segment (P2-S12-04)', () => {
+    expect(() => validateManifest({ ...validV2Manifest, id: 'a/b' })).toThrow(ManifestValidationError)
+    expect(() => validateManifest({ ...validV2Manifest, id: '../evil' })).toThrow(ManifestValidationError)
+    expect(() => validateManifest({ ...validV2Manifest, id: '.hidden' })).toThrow(ManifestValidationError)
+  })
+
+  it('should reject a "main" that escapes the plugin directory (P2-S12-04)', () => {
+    expect(() => validateManifest({ ...validV2Manifest, main: '../../../../etc/x.js' })).toThrow(ManifestValidationError)
+    expect(() => validateManifest({ ...validV2Manifest, main: '/abs/path.js' })).toThrow(ManifestValidationError)
+    expect(() => validateManifest({ ...validV2Manifest, main: 'C:\\x.js' })).toThrow(ManifestValidationError)
+    expect(validateManifest({ ...validV2Manifest, main: 'dist/index.js' }).main).toBe('dist/index.js')
+  })
+
   it('should throw ApiVersionError when apiVersion is not "2"', () => {
     const wrongVersion = {
       ...validV2Manifest,

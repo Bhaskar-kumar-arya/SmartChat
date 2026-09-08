@@ -237,8 +237,8 @@ export class PluginHost implements IPluginHost {
         getMessagesAroundId: (jid: string, messageId: string, lookBehind = 20) => request<PluginMessageItem[]>('kernel:messages:getMessagesAroundId', { jid, messageId, lookBehind }),
         send: (jid: string, text: string, options?: SendMessageOptions) => request<PluginMessageItem>('kernel:messages:send', { jid, text, options }),
         sendMedia: (jid: string, filePath: string, caption?: string, options?: SendMessageOptions) => request<PluginMessageItem>('kernel:messages:sendMedia', { jid, filePath, caption, options }),
-        edit: (messageId: string, newText: string, jid?: string) => request<PluginMessageItem>('kernel:messages:edit', { messageId, newText, jid }),
-        forward: (messageId: string, targetJids: string[], jid?: string) => request<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }>('kernel:messages:forward', { messageId, targetJids, jid }),
+        edit: (jid: string, messageId: string, newText: string) => request<PluginMessageItem>('kernel:messages:edit', { messageId, newText, jid }),
+        forward: (jid: string, messageId: string, targetJids: string[]) => request<{ success: boolean; detail: string; results: Array<{ jid: string; messageId: string }> }>('kernel:messages:forward', { messageId, targetJids, jid }),
         delete: (jid: string, messageId: string) => request<void>('kernel:messages:delete', { jid, messageId }),
         react: (jid: string, messageId: string, emoji: string) => request<void>('kernel:messages:react', { jid, messageId, emoji }),
         downloadMedia: (messageId: string) => request<{ success: boolean; localURI?: string; filePath?: string; message?: unknown }>('kernel:messages:downloadMedia', { messageId }),
@@ -346,16 +346,6 @@ export class PluginHost implements IPluginHost {
             dispose()
           }
         },
-        onCron: (name: string, fn: () => void | Promise<void>) => {
-          // NOTE: no scheduler currently emits `cron:<name>` events, so these
-          // handlers never fire. Kept as a registered no-op until a cron source
-          // exists; the closure-local map is released with the channel. (S8-06)
-          const key = `cron:${name}`
-          if (!eventHandlers.has(key)) {
-            eventHandlers.set(key, new Set())
-          }
-          eventHandlers.get(key)!.add(fn)
-        }
       },
       contributions: {
         registerChatAction: (id, handler) => {

@@ -14,7 +14,16 @@ import { proto } from '@whiskeysockets/baileys';
 const FORBIDDEN_KEYWORDS = [
   'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER',
   'CREATE', 'ATTACH', 'DETACH', 'PRAGMA', 'VACUUM',
-  'REPLACE', 'TRUNCATE', 'GRANT', 'REVOKE'
+  'TRUNCATE', 'GRANT', 'REVOKE',
+  // Side-effecting / filesystem SQLite functions. `REPLACE` is intentionally
+  // NOT here — `REPLACE(x,y,z)` is a read-only scalar; only the mutating
+  // `REPLACE INTO` / `INSERT OR REPLACE` forms are rejected (see FORBIDDEN_PATTERNS).
+  'LOAD_EXTENSION', 'READFILE', 'WRITEFILE', 'FSDIR'
+];
+
+const FORBIDDEN_PATTERNS: Array<{ re: RegExp; label: string }> = [
+  { re: /\bREPLACE\s+INTO\b/, label: 'REPLACE INTO' },
+  { re: /\bINSERT\s+OR\s+REPLACE\b/, label: 'INSERT OR REPLACE' }
 ];
 
 const KEYWORD_ME = 'Me';
@@ -29,6 +38,10 @@ const LOCALE_EN_US = 'en-US';
 
 const LIMIT_DEFAULT_MESSAGE = 100;
 const LIMIT_MAX_MESSAGE = 20000;
+// Row cap for the custom-SQL path. Without this a broad predicate (`SELECT id
+// FROM Message`) loads the whole message table and runs the transcript
+// formatter over every row synchronously on the main thread.
+const LIMIT_MAX_SQL_ROWS = 3000;
 const TRUNCATE_LIMIT_REPLY = 35;
 
 interface ChatRun {
@@ -170,11 +183,11 @@ EXAMPLES:
     }
 
     if (sql) {
-      const messagesToFormat = await this.getMessagesBySql(sql, params);
+      const { messagesToFormat, truncated } = await this.getMessagesBySql(sql, params);
       return {
         messagesToFormat,
         isJidMode: false,
-        hasMore: false
+        hasMore: truncated
       };
     }
 
@@ -220,9 +233,20 @@ EXAMPLES:
         );
       }
     }
+
+    for (const { re, label } of FORBIDDEN_PATTERNS) {
+      if (re.test(normalized)) {
+        throw new Error(
+          `[ReadMessagesTool] Query rejected: Forbidden statement detected — "${label}". Only read operations are permitted.`
+        );
+      }
+    }
   }
 
-  private async getMessagesBySql(sql: string, params: unknown[] | undefined): Promise<Message[]> {
+  private async getMessagesBySql(
+    sql: string,
+    params: unknown[] | undefined
+  ): Promise<{ messagesToFormat: Message[]; truncated: boolean }> {
     const trimmed = sql.trim();
     this.validateSqlQuery(trimmed);
 
@@ -231,13 +255,18 @@ EXAMPLES:
       throw new Error('[ReadMessagesTool] Query rejected: The SQL query must return a column named "id" containing the message IDs.');
     }
 
-    const msgIds = rows.map((r) => r.id as string).filter(Boolean);
+    const allIds = rows.map((r) => r.id as string).filter(Boolean);
+    const truncated = allIds.length > LIMIT_MAX_SQL_ROWS;
+    const msgIds = truncated ? allIds.slice(0, LIMIT_MAX_SQL_ROWS) : allIds;
     if (msgIds.length > 0) {
       const fetched = await this.messageRepository.findMessagesByIds(msgIds);
       const idToMsg = new Map(fetched.map(m => [m.id, m]));
-      return msgIds.map(id => idToMsg.get(id)).filter((m): m is Message => m !== undefined);
+      return {
+        messagesToFormat: msgIds.map(id => idToMsg.get(id)).filter((m): m is Message => m !== undefined),
+        truncated
+      };
     }
-    return [];
+    return { messagesToFormat: [], truncated: false };
   }
 
   private async getMessagesByJid(
@@ -332,7 +361,11 @@ EXAMPLES:
         formattedResponse += `> [... history continues before message ${oldest.id} ...]\n\n`;
       }
     } else {
-      formattedResponse += `Results: ${messagesToFormat.length} messages.\n\n`;
+      formattedResponse += `Results: ${messagesToFormat.length} messages.\n`;
+      if (hasMore) {
+        formattedResponse += `> [... result truncated to the first ${LIMIT_MAX_SQL_ROWS} messages — narrow the query (add a WHERE / LIMIT clause) to see the rest ...]\n`;
+      }
+      formattedResponse += `\n`;
     }
 
     for (const run of chatRuns) {

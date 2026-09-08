@@ -70,4 +70,12 @@ describe('SecureFileRegistry — traversal guard (audit S12-02)', () => {
     // resolves to C:\data\MEDIA\a.png — same dir on win32, different case
     expect(reg.resolvePath('media', '/../MEDIA/a.png')).not.toBeNull()
   })
+
+  // P2-S12-09: grantFile / isFileGranted must be case-insensitive on win32 so a
+  // file the user picked in a native dialog isn't denied over drive-letter casing.
+  it.runIf(process.platform === 'win32')('grantFile match is case-insensitive on win32', () => {
+    const reg = new SecureFileRegistry()
+    reg.grantFile('C:\\Users\\me\\Pictures\\photo.png')
+    expect(reg.isFileGranted('c:\\Users\\me\\Pictures\\photo.png')).toBe(true)
+  })
 })

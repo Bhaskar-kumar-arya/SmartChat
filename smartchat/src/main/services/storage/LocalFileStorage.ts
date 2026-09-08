@@ -1,5 +1,5 @@
 import fs from 'fs'
-import { join } from 'path'
+import { join, basename, resolve, sep } from 'path'
 import { app } from 'electron'
 
 /**
@@ -65,15 +65,45 @@ export class LocalFileStorage {
    * callers can safely pass through raw file-system paths as well.
    */
   resolveMediaPath(appUri: string): string {
-    if (appUri.startsWith('app://favourites/')) {
-      const fileName = appUri.replace('app://favourites/', '')
-      return join(app.getPath('userData'), 'favourites', fileName)
+    const scheme = appUri.startsWith('app://favourites/')
+      ? { prefix: 'app://favourites/', dir: 'favourites' }
+      : appUri.startsWith('app://media/')
+        ? { prefix: 'app://media/', dir: 'media' }
+        : null
+
+    if (!scheme) {
+      return appUri
     }
-    if (appUri.startsWith('app://media/')) {
-      const fileName = appUri.replace('app://media/', '')
-      return join(app.getPath('userData'), 'media', fileName)
+
+    // Reduce to a bare basename and reject anything that still looks like a
+    // traversal attempt — the raw value can originate from persisted message
+    // `content` (`localURI`), so a crafted `app://media/..\..\x.exe` must not
+    // resolve outside the managed directory. (P2-S12-03)
+    let rawName: string
+    try {
+      rawName = decodeURIComponent(appUri.slice(scheme.prefix.length))
+    } catch {
+      rawName = appUri.slice(scheme.prefix.length)
     }
-    return appUri
+    const fileName = basename(rawName)
+    if (
+      !fileName ||
+      fileName !== rawName ||
+      fileName === '.' ||
+      fileName === '..' ||
+      fileName.includes('/') ||
+      fileName.includes('\\') ||
+      fileName.includes('\0')
+    ) {
+      throw new Error(`[LocalFileStorage] Rejected unsafe media URI: ${appUri}`)
+    }
+
+    const baseDir = resolve(join(app.getPath('userData'), scheme.dir))
+    const resolved = resolve(join(baseDir, fileName))
+    if (resolved !== join(baseDir, fileName) || !resolved.startsWith(baseDir + sep)) {
+      throw new Error(`[LocalFileStorage] Rejected out-of-directory media URI: ${appUri}`)
+    }
+    return resolved
   }
 
   /**

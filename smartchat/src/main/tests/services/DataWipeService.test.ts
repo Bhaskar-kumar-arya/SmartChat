@@ -50,6 +50,22 @@ describe('DataWipeService', () => {
     expect(txArg).toHaveLength(2) // Identity + Message
   })
 
+  it('P2-S12-02: a folder that cannot be cleared makes wipeAllData reject (no silent partial wipe)', async () => {
+    // clearDirectory returns the count of entries it could not delete (e.g. a
+    // media file locked by another process on Windows). Any non-zero count must
+    // surface as a rejection rather than a logged-and-ignored partial wipe.
+    ;(service as unknown as { getUserDataPath(): string }).getUserDataPath = () => '/mock/userData'
+    ;(service as unknown as { clearDirectory(p: string): number }).clearDirectory = (p: string) =>
+      p.endsWith('media') ? 3 : 0
+    await expect(service.wipeAllData()).rejects.toThrow(/Incomplete data wipe/)
+  })
+
+  it('P2-S12-02: wipeAllData resolves when every folder clears cleanly', async () => {
+    ;(service as unknown as { getUserDataPath(): string }).getUserDataPath = () => '/mock/userData'
+    ;(service as unknown as { clearDirectory(p: string): number }).clearDirectory = () => 0
+    await expect(service.wipeAllData()).resolves.toBeUndefined()
+  })
+
   it('S12-05: a failed DELETE aborts the wipe — throws, restores foreign_keys, skips folder wipe', async () => {
     prisma.$executeRawUnsafe.mockImplementation((sql: string) => {
       if (sql === 'DELETE FROM "Message";') return Promise.reject(new Error('database is locked'))

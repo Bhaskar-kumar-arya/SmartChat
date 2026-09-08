@@ -26,6 +26,21 @@ describe('QueryDatabaseTool.validateSqlQuery (S12-08)', () => {
   it('ignores keywords hidden in comments but still validates the code', () => {
     expect(() => validate("SELECT id FROM Message -- DROP TABLE Message\n WHERE id = '1'")).not.toThrow();
   });
+
+  it('allows the read-only REPLACE() scalar function (P2-S12-05)', () => {
+    expect(() => validate("SELECT REPLACE(textContent, x'0a', ' ') AS t FROM Message")).not.toThrow();
+  });
+
+  it('still rejects the mutating REPLACE INTO / INSERT OR REPLACE forms (P2-S12-05)', () => {
+    expect(() => validate("SELECT 1; REPLACE INTO Message VALUES (1)")).toThrow(/REPLACE INTO/);
+    expect(() => validate("SELECT 1; INSERT OR REPLACE INTO Message VALUES (1)")).toThrow(/Forbidden/);
+  });
+
+  it('rejects side-effecting filesystem functions (P2-S12-06)', () => {
+    expect(() => validate("SELECT load_extension('evil.so')")).toThrow(/LOAD_EXTENSION/);
+    expect(() => validate("SELECT readfile('/etc/passwd')")).toThrow(/READFILE/);
+    expect(() => validate("SELECT writefile('/tmp/x', 'y')")).toThrow(/WRITEFILE/);
+  });
 });
 
 describe('QueryDatabaseTool row-cap enforcement (S12-09)', () => {
