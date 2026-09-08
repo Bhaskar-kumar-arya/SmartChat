@@ -30,6 +30,7 @@ export default function MentionMenu({ participants, query, onSelect, onClose }: 
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (filtered.length === 0) return
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setSelectedIndex(prev => (prev + 1) % filtered.length)
@@ -58,6 +59,9 @@ export default function MentionMenu({ participants, query, onSelect, onClose }: 
         <div
           key={p.jid}
           className={`mention-item ${idx === selectedIndex ? 'active' : ''}`}
+          // Keep focus/selection in the contenteditable so the caret lookup in
+          // handleSelectParticipant still sees the `@` token (F6-02).
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => onSelect(p)}
         >
           <div className="mention-avatar">

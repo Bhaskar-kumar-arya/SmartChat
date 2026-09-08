@@ -1,6 +1,11 @@
 import emojiRegex from 'emoji-regex'
 import { emojiToUnified } from './emojiUtils'
 
+// Hoisted to module scope — `emojiRegex()` builds a large RegExp and was being
+// recompiled on every keystroke (once per call of each helper below) (F6-13).
+// It carries the global flag, so reset `lastIndex` before each stateful use.
+const EMOJI_REGEX = emojiRegex()
+
 /**
  * Serializes the HTML structure of a contenteditable element into plain text.
  * Replaces image tags with their data-emoji attribute value, and BR tags with newlines.
@@ -41,8 +46,8 @@ export function convertTextToHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 
-  const regex = emojiRegex()
-  const replacedEmojis = escaped.replace(regex, (match) => {
+  EMOJI_REGEX.lastIndex = 0
+  const replacedEmojis = escaped.replace(EMOJI_REGEX, (match) => {
     const unified = emojiToUnified(match)
     return `<img src="https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/apple/64/${unified}.png" alt="${match}" data-emoji="${match}" class="inline-emoji" style="width: 20px; height: 20px; vertical-align: middle; display: inline-block; margin: 0 1px;" />`
   })
@@ -54,11 +59,11 @@ export function convertTextToHtml(text: string): string {
  * Recursively scans text nodes inside a contenteditable node to check if any raw emojis are present.
  */
 export function hasRawEmojis(node: Node): boolean {
-  const regex = emojiRegex()
   for (let i = 0; i < node.childNodes.length; i++) {
     const child = node.childNodes[i]
     if (child.nodeType === Node.TEXT_NODE) {
-      if (regex.test(child.nodeValue || '')) {
+      EMOJI_REGEX.lastIndex = 0
+      if (EMOJI_REGEX.test(child.nodeValue || '')) {
         return true
       }
     } else if (child.nodeType === Node.ELEMENT_NODE) {

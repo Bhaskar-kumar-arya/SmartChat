@@ -88,4 +88,29 @@ describe('useMentions', () => {
 
     expect(result.current.mentionedJids.size).toBe(0)
   })
+
+  it('drops a mention once its @token is edited out of the text (F6-03)', () => {
+    const { result } = renderHook(() => useMentions('group123@g.us'), {
+      wrapper: createWrapper(),
+    })
+
+    const participant = { jid: '12345@s.whatsapp.net', name: 'Alice', isAdmin: false, isMe: false }
+
+    act(() => {
+      result.current.addMention(participant)
+    })
+    expect(result.current.mentionedJids.has('12345@s.whatsapp.net')).toBe(true)
+
+    // Token still present -> mention kept
+    act(() => {
+      result.current.handleInputChange('hey @12345 there', 16)
+    })
+    expect(result.current.mentionedJids.has('12345@s.whatsapp.net')).toBe(true)
+
+    // Token backspaced away -> mention must be dropped
+    act(() => {
+      result.current.handleInputChange('hey there', 9)
+    })
+    expect(result.current.mentionedJids.has('12345@s.whatsapp.net')).toBe(false)
+  })
 })

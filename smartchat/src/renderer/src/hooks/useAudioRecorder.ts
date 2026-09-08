@@ -91,12 +91,17 @@ export function useAudioRecorder() {
         setDuration(prev => prev + 1)
       }, 1000)
 
+      let frameCount = 0
       const updateVisualizer = () => {
-        const dataArray = new Uint8Array(analyser.frequencyBinCount)
-        analyser.getByteFrequencyData(dataArray)
-        // Normalize and take a subset for visualizer
-        const normalized = Array.from(dataArray).map(v => v / 255)
-        setVisualizerData(normalized)
+        // Throttle the React state push to ~15fps — a 20-bar visualizer does not
+        // need 60 re-renders/sec of the whole composer subtree (F6-04).
+        if (frameCount++ % 4 === 0) {
+          const dataArray = new Uint8Array(analyser.frequencyBinCount)
+          analyser.getByteFrequencyData(dataArray)
+          // Normalize and take a subset for visualizer
+          const normalized = Array.from(dataArray).map(v => v / 255)
+          setVisualizerData(normalized)
+        }
         animationFrameRef.current = requestAnimationFrame(updateVisualizer)
       }
       updateVisualizer()

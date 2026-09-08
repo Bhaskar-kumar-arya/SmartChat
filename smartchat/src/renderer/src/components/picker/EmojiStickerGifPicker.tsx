@@ -6,6 +6,19 @@ import { useAPI } from '../../context/APIContext'
 import { useGiphy } from '../../hooks/useGiphy'
 import ConfirmModal from '../common/ConfirmModal'
 
+/**
+ * Convert a trailing `.gif` extension to `.webp` so the file is sent as a native
+ * WhatsApp sticker. Only a real trailing extension (optionally followed by a
+ * query/hash) is rewritten — URLs already `.webp`, extensionless CDN paths, or
+ * ones with `.gif` only inside a query param are left untouched (F6-08).
+ */
+export function toWebpStickerUrl(url: string): string {
+  const queryIdx = url.search(/[?#]/)
+  const path = queryIdx === -1 ? url : url.slice(0, queryIdx)
+  const suffix = queryIdx === -1 ? '' : url.slice(queryIdx)
+  return path.replace(/\.gif$/i, '.webp') + suffix
+}
+
 interface EmojiStickerGifPickerProps {
   onSelectEmoji?: (emoji: string) => void
   onSelectGif?: (filePath: string) => void | Promise<void>
@@ -66,12 +79,6 @@ export default function EmojiStickerGifPicker({
     return () => clearTimeout(timer)
   }, [searchQuery, activeTab, selectedPackIndex, fetchGiphy])
 
-  // Trigger search when user switches to Giphy sticker tab
-  useEffect(() => {
-    if (activeTab === 'sticker' && selectedPackIndex === -1) {
-      fetchGiphy(searchQuery, 'stickers')
-    }
-  }, [selectedPackIndex, activeTab])
 
   const handleEmojiClick = (emoji: string) => {
     onSelectEmoji?.(emoji)
@@ -100,8 +107,7 @@ export default function EmojiStickerGifPicker({
 
   const handleStickerClick = async (stickerUrl: string, name: string) => {
     if (!onSelectSticker) return
-    // Convert gif URL to WebP to ensure it's sent as a native WhatsApp sticker
-    const webpUrl = stickerUrl.replace('.gif', '.webp')
+    const webpUrl = toWebpStickerUrl(stickerUrl)
     setLocalLoading(true)
     try {
       const fileName = `sticker_${name.replace(/\s+/g, '_')}_${Date.now()}.webp`
@@ -134,9 +140,12 @@ export default function EmojiStickerGifPicker({
   }
 
   useEffect(() => {
-    if (activeTab === 'sticker') {
-      api.getFavoriteStickers().then(setFavoriteStickers).catch(console.error)
-    }
+    if (activeTab !== 'sticker') return
+    let alive = true
+    api.getFavoriteStickers()
+      .then(favs => { if (alive) setFavoriteStickers(favs) })
+      .catch(console.error)
+    return () => { alive = false }
   }, [activeTab])
 
   const handleRequestRemoveFavorite = (fav: any) => {

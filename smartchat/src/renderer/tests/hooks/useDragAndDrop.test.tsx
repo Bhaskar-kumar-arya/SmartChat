@@ -71,6 +71,27 @@ describe('useDragAndDrop', () => {
     expect(onFilesDropped).toHaveBeenCalledWith(['/path/file1.txt', '/path/file2.png'])
   })
 
+  it('clears a stuck overlay when a drag ends without a balancing dragleave (F6-06)', () => {
+    const onFilesDropped = vi.fn()
+    const { result } = renderHook(() => useDragAndDrop({ onFilesDropped }), {
+      wrapper: createWrapper(),
+    })
+
+    act(() => {
+      result.current.dragHandlers.onDragEnter({
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        dataTransfer: { items: [{ kind: 'file' }] },
+      } as any)
+    })
+    expect(result.current.isDraggingOver).toBe(true)
+
+    act(() => {
+      window.dispatchEvent(new Event('dragend'))
+    })
+    expect(result.current.isDraggingOver).toBe(false)
+  })
+
   it('should ignore events when disabled', () => {
     const onFilesDropped = vi.fn()
     const { result } = renderHook(() => useDragAndDrop({ onFilesDropped, disabled: true }), {

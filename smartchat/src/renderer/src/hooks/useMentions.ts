@@ -40,6 +40,24 @@ export const useMentions = (activeJid: string | null) => {
   }, [activeJid, fetchParticipants])
 
   const handleInputChange = useCallback((text: string, cursorPosition: number) => {
+    // Reconcile the mention set against the tokens still present in the text:
+    // if the user backspaced/edited an `@<number>` token away it must no longer
+    // be sent as a mention (F6-03).
+    setMentionedJids(prev => {
+      if (prev.size === 0) return prev
+      let changed = false
+      const next = new Set<string>()
+      for (const jid of prev) {
+        const number = jid.split('@')[0]
+        if (text.includes(`@${number}`)) {
+          next.add(jid)
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+
     const textBeforeCursor = text.slice(0, cursorPosition)
     const lastAtPos = textBeforeCursor.lastIndexOf('@')
 
@@ -56,15 +74,15 @@ export const useMentions = (activeJid: string | null) => {
     setQuery('')
   }, [])
 
-  const addMention = (participant: Participant) => {
+  const addMention = useCallback((participant: Participant) => {
     setMentionedJids(prev => new Set(prev).add(participant.jid))
     setShowMenu(false)
     setQuery('')
-  }
+  }, [])
 
-  const clearMentions = () => {
+  const clearMentions = useCallback(() => {
     setMentionedJids(new Set())
-  }
+  }, [])
 
   return {
     participants,

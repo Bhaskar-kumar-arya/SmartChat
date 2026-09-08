@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAPI } from '../context/APIContext'
 
 interface UseDragAndDropOptions {
@@ -38,7 +38,7 @@ export const useDragAndDrop = ({ onFilesDropped, disabled = false }: UseDragAndD
       if (disabled) return
       e.preventDefault()
       e.stopPropagation()
-      dragCounter.current--
+      dragCounter.current = Math.max(0, dragCounter.current - 1)
       if (dragCounter.current === 0) {
         setIsDraggingOver(false)
       }
@@ -76,6 +76,29 @@ export const useDragAndDrop = ({ onFilesDropped, disabled = false }: UseDragAndD
     },
     [disabled, onFilesDropped, api]
   )
+
+  // Safety net: a drag can end without a balancing `dragleave` on the tracked
+  // element (drag leaves the window, cancelled with Esc, dropped elsewhere),
+  // which would otherwise leave the full-screen overlay stuck (F6-06).
+  useEffect(() => {
+    const reset = () => {
+      dragCounter.current = 0
+      setIsDraggingOver(false)
+    }
+    const onWindowDragLeave = (e: DragEvent) => {
+      if (!e.relatedTarget && !((e as unknown as { fromElement?: unknown }).fromElement)) {
+        reset()
+      }
+    }
+    window.addEventListener('dragend', reset)
+    window.addEventListener('drop', reset)
+    window.addEventListener('dragleave', onWindowDragLeave)
+    return () => {
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('drop', reset)
+      window.removeEventListener('dragleave', onWindowDragLeave)
+    }
+  }, [])
 
   return {
     isDraggingOver,

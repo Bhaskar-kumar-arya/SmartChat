@@ -1,5 +1,5 @@
 import { X, Plus, Send, File } from 'lucide-react'
-import { StagedFile } from '../../hooks/useMultiFileQueue'
+import { StagedFile, MAX_STAGED_FILES } from '../../hooks/useMultiFileQueue'
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp']
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm']
@@ -110,7 +110,7 @@ export default function MultiFilePreview({
             })}
 
             {/* Add More Button */}
-            {files.length < 30 && (
+            {files.length < MAX_STAGED_FILES && (
               <button
                 className="mfp-add-more-btn"
                 onClick={onAddMore}

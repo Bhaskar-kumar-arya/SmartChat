@@ -76,6 +76,39 @@ describe('MentionMenu', () => {
     expect(handleClose).toHaveBeenCalledTimes(1)
   })
 
+  it('prevents default on row mousedown so the editor keeps focus/selection (F6-02)', () => {
+    render(
+      <MentionMenu
+        participants={participants}
+        query=""
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
+
+    const row = screen.getByText('Bob').closest('.mention-item') as HTMLElement
+    // fireEvent returns false when a cancelable event had preventDefault() called
+    const notPrevented = fireEvent.mouseDown(row)
+    expect(notPrevented).toBe(false)
+  })
+
+  it('does not throw on arrow keys when nothing matches the query (F6-11)', () => {
+    render(
+      <MentionMenu
+        participants={participants}
+        query="zzz-no-match"
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(() => {
+      fireEvent.keyDown(window, { key: 'ArrowDown' })
+      fireEvent.keyDown(window, { key: 'ArrowUp' })
+      fireEvent.keyDown(window, { key: 'Enter' })
+    }).not.toThrow()
+  })
+
   it('selects participant on click', () => {
     const handleSelect = vi.fn()
     render(

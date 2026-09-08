@@ -7,7 +7,9 @@ export interface StagedFile {
   caption: string
 }
 
-export const useMultiFileQueue = (maxFiles: number = 30) => {
+export const MAX_STAGED_FILES = 30
+
+export const useMultiFileQueue = (maxFiles: number = MAX_STAGED_FILES) => {
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [selectedIndex, setSelectedIndex] = useState<number>(0)
 
@@ -68,6 +70,7 @@ export const useMultiFileQueue = (maxFiles: number = 30) => {
   }, [])
 
   return {
+    maxFiles,
     stagedFiles,
     selectedIndex,
     setSelectedIndex,
