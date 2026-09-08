@@ -192,7 +192,55 @@ app.whenReady().then(async () => {
   })
 
   app.on('web-contents-created', (_, contents) => {
+    // Pin the security-relevant webPreferences of every <webview> guest before it
+    // attaches, regardless of what the renderer put on the tag. (F9-04)
+    contents.on('will-attach-webview', (_event, webPreferences, params) => {
+      webPreferences.nodeIntegration = false
+      webPreferences.nodeIntegrationInSubFrames = false
+      webPreferences.contextIsolation = true
+      webPreferences.sandbox = true
+      delete (webPreferences as Record<string, unknown>).preloadURL
+      // Only the app's own bundled preloads are allowed on a guest.
+      const allowedPreloads = [
+        join(__dirname, '../preload/panel-preload.js'),
+        join(__dirname, '../preload/overlay-preload.js')
+      ]
+      if (params.preload && !allowedPreloads.includes(params.preload)) {
+        console.warn('[Main] Stripped unexpected webview preload:', params.preload)
+        delete (params as Record<string, unknown>).preload
+      }
+    })
+
     if (contents.getType() === 'webview') {
+      // Lock plugin panel guests to their own plugin:// origin — block any
+      // attempt to navigate the guest to remote / file: content while the panel
+      // preload (IPC bridge) is still attached. (F9-04)
+      const isAllowedGuestUrl = (url: string): boolean => {
+        try {
+          const u = new URL(url)
+          if (u.protocol === 'plugin:') return true
+          if (u.protocol === 'about:' || url === 'about:blank') return true
+          if (is.dev && process.env['ELECTRON_RENDERER_URL'] && url.startsWith(process.env['ELECTRON_RENDERER_URL'])) {
+            return true
+          }
+          return false
+        } catch {
+          return false
+        }
+      }
+      contents.on('will-navigate', (event, url) => {
+        if (!isAllowedGuestUrl(url)) {
+          console.warn('[Main] Blocked webview navigation to', url)
+          event.preventDefault()
+        }
+      })
+      contents.on('will-redirect', (event, url) => {
+        if (!isAllowedGuestUrl(url)) {
+          console.warn('[Main] Blocked webview redirect to', url)
+          event.preventDefault()
+        }
+      })
+
       contents.setWindowOpenHandler((details) => {
         const url = details.url
         if (url.startsWith('http://') || url.startsWith('https://')) {
