@@ -72,7 +72,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | F6-01 | Voice note delivered to wrong chat after switch mid-record | DONE (a802146) |
 | F7-01 | ChatSearchSidebar out-of-order search responses | DONE (737b13d) |
 | F8-01 | No stream abort on AI session switch → streamed answer lost | DONE (f037405) |
-| F11-01 | PluginIcon injects raw plugin SVG via dangerouslySetInnerHTML | TODO |
+| F11-01 | PluginIcon injects raw plugin SVG via dangerouslySetInnerHTML | DONE (b25b6eb) — img data-URI (no DOMPurify dep); F11-08 folded in |
 | F12-02 | Navigation via unbuffered `smartchat:open-chat` window event drops intents | TODO |
 
 ### Batch C — med — batch per slice (48 total)
@@ -89,7 +89,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | F8 | 6 | DONE (2cb46c9) — F8-02..F8-07 med + F8-08/10/11/12/13 low; F8-09 fixed in 98827f0 (shared BaseModal via F10-05) |
 | F9 | 4 | DONE (b129aea renderer + bceb3b3 F9-04 webview hardening) — F9-01/03/04 med fixed; F9-02 wontfix-deferred (no theme toggle exists); + lows F9-07/08/09/10/11/12 fixed, F9-05/06 partial |
 | F10 | 6 | DONE (98827f0 shared BaseModal primitive + routing incl. F5-14/F8-09; 7a898b1 webview security/CSP + form validation) — all 13 F10 findings fixed (F10-01..13), 0 wontfix |
-| F11 | 2 | TODO |
+| F11 | 2 | DONE (e7b9031) — F11-02/03 med + F11-04/05/07 low; F11-03 scoped (PN↔LID retained → F12), F11-06 partial (Escape + keys; keyboard submenu nav → F12); F11-01/08 in b25b6eb |
 | F12 | 4 | TODO |
 
 ### Batch D — low — triage or WONTFIX wholesale

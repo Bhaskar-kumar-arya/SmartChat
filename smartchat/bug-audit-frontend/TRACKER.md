@@ -2091,7 +2091,13 @@ which via the F1-01 `window.electron` surface is effectively full IPC access.
 before injecting, or render plugin SVGs in a sandboxed `<img src="data:image/svg+xml,…">`
 (which does not execute script), or only accept a fixed Lucide-name / URL icon
 and drop the raw-SVG path.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in b25b6eb — DOMPurify is not a dep, so raw plugin SVG is
+now rendered as `<img src="data:image/svg+xml,${encodeURIComponent(svg)}">`
+(no `dangerouslySetInnerHTML`); an `<img>`-hosted SVG document runs no scripts
+and fires no event-handler attributes. New test `PluginIcon.test.tsx` asserts
+no `<svg>` reaches the DOM and a hostile `onerror` does not run. typecheck:web
+green.
 
 ### [F11-02] med — src/renderer/src/components/common/ProfilePicture.tsx:35-47
 **What:** the preview-fetch effect (`api.getProfilePicture(jid,'preview')` →
@@ -2106,7 +2112,10 @@ refreshes it. Same class as the F3 out-of-order bugs. Also setState-after-unmoun
 warnings on fast switching.
 **Fix idea:** capture `jid` at call time and bail in the `.then` if
 `jid !== <current jid ref>`; or add an `alive` flag cleared in cleanup.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in e7b9031 — preview-fetch effect now sets an `alive`
+flag cleared in cleanup and bails before `setUrl` if the component unmounted /
+switched contact mid-flight. Existing `ProfilePicture.test.tsx` still green.
 
 ### [F11-03] med — src/renderer/src/utils/jidUtils.ts:6-11
 **What:** `isSameJid` compares only the identifier part (`split('@')[0].split(':')[0]`)
@@ -2122,7 +2131,18 @@ to you or to the wrong member, highlight the wrong mention, etc.
 kind, or resolve LID↔PN via the mapping the backend already maintains before
 comparing; at minimum require `domain1 === domain2` unless one side is explicitly
 a known LID alias of the other.
-**Status:** open
+**Status:** fixed (scoped)
+**Fix status:** fixed in e7b9031 — `isSameJid` now returns `false` when the
+identifiers match but the domains are different *kinds* (e.g. `12345@g.us` vs
+`12345@s.whatsapp.net`, or `@newsletter` / `@broadcast` vs a person JID). New
+test in `jidUtils.test.ts`. **Deliberately retained:** `@lid` <->
+`@s.whatsapp.net`/`@c.us` cross-format matching still returns `true` — the
+presence layer (F3-07, `usePresence.test.tsx:157-170` asserts an `@lid` lookup
+finds an `@s.whatsapp.net` presence key) and `MessageItem` reaction ownership
+(F5-05) depend on it, and there is no renderer-side LID↔PN map to resolve them
+properly. Full LID/PN identifier disambiguation needs the backend LID mapping →
+carried to F12 as a cross-cutting item. F3 (`usePresence`, `useChatHierarchy`,
+`useMessages`, `useChats`) + F5 (`MessageItem`) test files re-run, all green.
 
 ### [F11-04] low — src/renderer/src/components/common/DefaultAvatars.tsx:15-22
 **What:** `getAvatarColor` does `Math.abs(hash) % DEFAULT_AVATAR_COLORS.length`
@@ -2134,7 +2154,10 @@ avatar).
 **Why it's a bug:** astronomically rare but a hard crash of the avatar subtree
 when it happens, with no recovery.
 **Fix idea:** `((hash % n) + n) % n`, or `(hash >>> 0) % n`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in e7b9031 — index is now `((hash % n) + n) % n`. New
+`DefaultAvatars.test.ts` asserts `getAvatarColor` always returns a defined
+scheme.
 
 ### [F11-05] low — src/renderer/src/components/common/ProfilePicOverlay.tsx:35-71
 **What:** (a) the "click outside to close" catcher is
@@ -2148,7 +2171,11 @@ keyboard users have only the X button and focus is left behind the overlay.
 **Fix idea:** move `onClick={onClose}` onto the visible backdrop element (and
 `stopPropagation` on the inner content), add an `Escape` listener + focus
 trap/restore (F10 owns the shared modal primitive), guard the fetch.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in e7b9031 — `ProfilePicOverlay` now renders through the
+shared `BaseModal` (F10-05): Escape closes, focus trap + restore, `role="dialog"`,
+and the real overlay element is the backdrop-click target (dead `-z-10` catcher
+removed). Fetch is `alive`-guarded. Existing `ProfilePicOverlay.test.tsx` green.
 
 ### [F11-06] low — src/renderer/src/components/common/ContextMenu.tsx:79-81,169-183,45-67
 **What:** (a) list rows use `key={idx}` (fine while items are static, fragile if a
@@ -2163,7 +2190,11 @@ the menu with `Escape`; minor churn for inline-array callers.
 **Fix idea:** stable keys from `item.label`; add an `Escape` handler to
 `onClose`; open submenu on focus/Enter too; memoize or accept that `items` should
 be stable.
-**Status:** open
+**Status:** partial
+**Fix status:** fixed in e7b9031 — added Escape-to-close (capture-phase keydown)
+and stable row keys (`${item.label}:${idx}`). **Deferred:** full keyboard submenu
+navigation (arrow keys / Enter to open a submenu) and the inline-`items` array
+reposition churn — larger keyboard-nav rework, carried to F12 keyboard-a11y.
 
 ### [F11-07] low — src/renderer/src/utils/formatters.ts:1-50
 **What:** all `format*` helpers do `Number(ts) * 1000`, assuming a **seconds**
@@ -2175,7 +2206,13 @@ a previous year shows an ambiguous "Monday, March 3".
 unit; no year on older separators.
 **Fix idea:** normalize the unit centrally (`ts > 1e12 ? ts : ts*1000`), and
 append the year in `formatDate` when `date.getFullYear() !== now.getFullYear()`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in e7b9031 — new `epochToMs()` helper
+(`Math.abs(n) > 1e12 ? n : n*1000`) applied in `formatTime`, `formatDate`,
+`formatChatTime`, `formatReceiptTime`, `formatReceiptDate`; `formatDate` appends
+the year when `date.getFullYear() !== now.getFullYear()`. New tests in
+`formatters.test.ts` (ms==sec equivalence, year appended for prior-year dates).
+`isMuted` left as-is (its `-1` permanent-mute sentinel predates the helper).
 
 ### [F11-08] low — src/renderer/src/components/common/PluginIcon.tsx:49-58
 **What:** the image-URL branch renders `<img src={trimmed}>` for any
@@ -2186,7 +2223,10 @@ user's IP) and `http://` is mixed content. Minor next to F11-01 but same
 untrusted-input source.
 **Fix idea:** restrict plugin icons to `data:` URIs (bundled) or a documented
 asset scheme; block bare `http:`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in b25b6eb (with F11-01) — the image branch now accepts
+only `data:image/` URIs; `http://` / `https://` plugin icons fall through and
+render nothing. Covered by `PluginIcon.test.tsx`.
 
 ## Slice F12 — Cross-cutting pass
 
