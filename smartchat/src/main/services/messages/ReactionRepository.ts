@@ -86,15 +86,12 @@ export class ReactionRepository implements IReactionRepository {
   /**
    * Deduplicate, validate, and bulk-upsert a set of pending reaction records.
    *
-   * Only inserts reactions whose target message IDs exist either in the
-   * current batch (`currentBatchIds`) or already in the database.
+   * Only inserts reactions whose target message IDs already exist in the database
+   * (the target message rows for a batch are persisted before this is called).
    *
    * Used exclusively by SyncMessagesHandler during history sync.
    */
-  async bulkSyncReactions(
-    pendingReactions: ReactionSyncData[],
-    _currentBatchIds: Set<string>
-  ): Promise<void> {
+  async bulkSyncReactions(pendingReactions: ReactionSyncData[]): Promise<void> {
     if (pendingReactions.length === 0) return
 
     // Keep only the latest reaction per (targetId, reactorId)

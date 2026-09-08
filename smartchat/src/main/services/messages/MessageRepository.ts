@@ -329,8 +329,8 @@ export class MessageRepository implements IMessageRepository {
    *
    * Used exclusively by SyncMessagesHandler during history sync.
    */
-  async bulkSyncMessages(rows: MessageUpsertData[]): Promise<void> {
-    if (rows.length === 0) return
+  async bulkSyncMessages(rows: MessageUpsertData[]): Promise<MessageUpsertData[]> {
+    if (rows.length === 0) return []
 
     const batchIds = rows.map(m => m.id)
     const existingMsgs = await this.prisma.message.findMany({
@@ -347,6 +347,8 @@ export class MessageRepository implements IMessageRepository {
 
     await this.insertNewMessages(newMessages)
     await this.updateExistingMessages(existingMessages, existingContentMap)
+
+    return newMessages
   }
 
   /**

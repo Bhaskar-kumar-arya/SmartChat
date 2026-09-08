@@ -1,9 +1,8 @@
-import { Message } from '@prisma/client'
 import * as fs from 'fs'
 import { join } from 'path'
 import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 import { unwrapMessage } from '../../../utils/messageUtils'
-import { IMediaService, IMediaSocket } from '../../../services/messages/IMediaService'
+import { IMediaService, IMediaSocket, SyncStickerCandidate } from '../../../services/messages/IMediaService'
 import { IMessageCompoundRepository } from '../../../services/messages/IMessageCompoundRepository'
 import { IMessageReadRepository } from '../../../services/messages/IMessageQueryRepository'
 import { IMessageEnricher } from '../../../services/messages/IMessageEnricher'
@@ -105,8 +104,8 @@ export class WorkerMediaService implements IMediaService {
     }
   }
 
-  private buildShaToMsgMap(messages: Message[]): Map<string, Message[]> {
-    const shaToMsgMap = new Map<string, Message[]>()
+  private buildShaToMsgMap(messages: SyncStickerCandidate[]): Map<string, SyncStickerCandidate[]> {
+    const shaToMsgMap = new Map<string, SyncStickerCandidate[]>()
     for (const msg of messages) {
       if (msg.messageType !== MSG_TYPE_STICKER) continue
       try {
@@ -128,7 +127,7 @@ export class WorkerMediaService implements IMediaService {
     return shaToMsgMap
   }
 
-  async downloadFavoriteStickersFromSync(messages: Message[], sock: IMediaSocket | null): Promise<void> {
+  async downloadFavoriteStickersFromSync(messages: SyncStickerCandidate[], sock: IMediaSocket | null): Promise<void> {
     if (!sock) return
 
     const shaToMsgMap = this.buildShaToMsgMap(messages)

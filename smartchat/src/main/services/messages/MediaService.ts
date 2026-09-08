@@ -11,8 +11,7 @@ import { IContactNameResolver } from '../contacts/IContactService'
 import { WAMessageContent, BaileysWebMessageInfo } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { unwrapMessage } from '../../utils/messageUtils'
-import { Message } from '@prisma/client'
-import { IMediaService, IMediaSocket } from './IMediaService'
+import { IMediaService, IMediaSocket, SyncStickerCandidate } from './IMediaService'
 import { canonicalShaHex } from './shaUtils'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -215,8 +214,8 @@ export class MediaService implements IMediaService {
     return canonicalShaHex(mediaObj.fileSha256)
   }
 
-  private buildShaToMsgMap(messages: Message[]): Map<string, Message[]> {
-    const shaToMsgMap = new Map<string, Message[]>()
+  private buildShaToMsgMap(messages: SyncStickerCandidate[]): Map<string, SyncStickerCandidate[]> {
+    const shaToMsgMap = new Map<string, SyncStickerCandidate[]>()
     for (const msg of messages) {
       if (msg.messageType !== MSG_TYPE_STICKER) continue
       try {
@@ -238,7 +237,7 @@ export class MediaService implements IMediaService {
     return shaToMsgMap
   }
 
-  async downloadFavoriteStickersFromSync(messages: Message[], sock: IMediaSocket | null): Promise<void> {
+  async downloadFavoriteStickersFromSync(messages: SyncStickerCandidate[], sock: IMediaSocket | null): Promise<void> {
     if (!sock) return
 
     const shaToMsgMap = this.buildShaToMsgMap(messages)

@@ -19,6 +19,34 @@ export function parseBaileysTimestamp(ts: unknown): bigint {
 }
 
 /**
+ * Normalize a WhatsApp mute-expiration value to **seconds**.
+ *
+ * WhatsApp/Baileys sometimes deliver the mute expiration in milliseconds
+ * (history/hydration payloads) and sometimes in seconds. `ChatService.isChatMuted`
+ * interprets the stored value as seconds, so every write path must funnel through
+ * this helper to avoid a group being treated as muted ~1000× further into the
+ * future than intended. The sentinel `-1` ("muted forever") is passed through
+ * untouched. (P2-S4-02)
+ */
+export function normalizeMuteExpirationSeconds(raw: unknown): bigint {
+  if (raw === null || raw === undefined) return 0n
+  let val: bigint
+  if (typeof raw === 'bigint') {
+    val = raw
+  } else if (typeof raw === 'number' || typeof raw === 'string') {
+    val = BigInt(Math.trunc(Number(raw)) || 0)
+  } else if (typeof raw === 'object' && raw !== null && 'low' in (raw as Record<string, unknown>)) {
+    // Baileys Long-like { low, high }
+    val = parseBaileysTimestamp(raw)
+  } else {
+    return 0n
+  }
+  if (val === -1n) return -1n
+  // Anything above ~Sat 2286 in seconds is really milliseconds.
+  return val > 10000000000n ? val / 1000n : val
+}
+
+/**
  * The priority-ordered list of recognised Baileys message type keys.
  * Shared between getMessageType() implementations to ensure consistent behaviour.
  */

@@ -64,7 +64,7 @@ describe('ReactionRepository', () => {
       { targetId: 'm2', reactorId: 999, emoji: '🎉', timestamp: 30n } // should be ignored (user missing)
     ]
 
-    await repository.bulkSyncReactions(pending, new Set())
+    await repository.bulkSyncReactions(pending)
 
     const reactions = await prisma.reaction.findMany()
     expect(reactions.length).toBe(1)
@@ -101,7 +101,7 @@ describe('ReactionRepository', () => {
 
     await repository.upsertReaction('m2', 2, '🔥', 500n)
 
-    await repository.bulkSyncReactions([{ targetId: 'm2', reactorId: 2, emoji: '😀', timestamp: 100n }], new Set())
+    await repository.bulkSyncReactions([{ targetId: 'm2', reactorId: 2, emoji: '😀', timestamp: 100n }])
 
     const reactions = await prisma.reaction.findMany({ where: { messageId: 'm2' } })
     expect(reactions).toHaveLength(1)

@@ -81,6 +81,7 @@ export class SyncContactsHandler {
     if (!contacts || contacts.length === 0) return 0
 
     let count = 0
+    let processed = 0
     for (const c of contacts) {
       if (!c.id) continue
       if (++count % 50 === 0) {
@@ -110,6 +111,7 @@ export class SyncContactsHandler {
       await this.contactService.upsertContact(contactToUpsert, { overwriteName: true }).catch((err: unknown) => {
         console.error('[SyncContactsHandler] upsertContact failed:', err)
       })
+      processed++
 
       // If the contact carries both a PN id and a separate lid, link them now
       if (!cleanedId.endsWith('@lid') && c.lid) {
@@ -121,6 +123,8 @@ export class SyncContactsHandler {
       }
     }
 
-    return contacts.length
+    // Only entries that were actually upserted are counted — id-less and
+    // bare-LID entries are skipped and must not inflate sync stats. (P2-S4-03)
+    return processed
   }
 }

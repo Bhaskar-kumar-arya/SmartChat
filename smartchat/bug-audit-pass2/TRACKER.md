@@ -324,7 +324,7 @@ entire alias re-point, member role, and phone-number backfill set, not just the 
 **Fix idea:** use `updateMany` where possible, or run the ops individually each with its own
 `.catch()` so one missing row can't roll back the rest; or re-filter ids against a fresh
 existence read immediately before the write.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S4-02] med — src/main/services/chats/sync/ChatSyncHandler.ts:63-66 vs src/main/services/sync/SyncChatsHandler.ts:107-113
 **What:** The two history/hydration chat-sync paths normalize `muteExpiration` differently.
@@ -337,7 +337,7 @@ expiration for a group, that group is treated as muted ~1000× further into the 
 intended (effectively muted forever), and the two code paths disagree on the same field.
 **Fix idea:** extract the ms→seconds normalization into one shared helper and use it in both
 handlers (and in `ChatService.upsertChat`).
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S4-03] low — src/main/services/sync/SyncChatsHandler.ts:131, src/main/services/sync/SyncContactsHandler.ts:124
 **What:** `processChats` returns `chats.length` and `processContacts` returns
@@ -347,7 +347,7 @@ with no `.id`; `processContacts` also skips bare-LID contacts.
 `contactCount`, which `HistorySyncManager` surfaces as sync stats — inflated whenever the
 payload carries id-less or bare-LID entries (common in `contacts`).
 **Fix idea:** return the local `count` (or a separate processed counter).
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S4-04] low — src/main/services/chats/ChatListEnricher.ts:24, 33, src/main/services/sync/SyncMessagesHandler.ts:337-342
 **What:** A chat that appears only in the history-sync `messages[]` array (not `chats[]`)
@@ -359,7 +359,7 @@ visible page, even though `enrichSingleChat` fetches `findLastMessage` separatel
 recent preview + time. Only self-corrects once a live message updates the timestamp.
 **Fix idea:** in `SyncMessagesHandler._parseBatch`, upsert the chat with the message
 timestamp (max seen) instead of `{}`.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S4-05] low — src/main/services/sync/SyncMessagesHandler.ts:366-388
 **What:** `_extractInlineReaction` for a `fromMe` inline `reactionMessage` sets
@@ -371,7 +371,7 @@ timestamp (max seen) instead of `{}`.
 dropped.
 **Fix idea:** resolve/create the self identity before processing, or skip-and-retry these
 rows rather than discarding.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S4-06] low — src/main/services/sync/SyncMessagesHandler.ts:96, 99-102; src/main/services/messages/ReactionRepository.ts:94-97
 **What:** `importedMessages.push(...(standardMessages as unknown as Message[]))` — the
@@ -386,7 +386,7 @@ sticker downloads for already-synced stickers on every overlapping history chunk
 Dead param + stale contract + wasted per-batch Set allocation.
 **Fix idea:** return only genuinely-inserted rows (have `bulkSyncMessages` report them), fix
 the type, and drop the unused `_currentBatchIds` param + its call-site Set.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ## Slice 5 — Contacts
 

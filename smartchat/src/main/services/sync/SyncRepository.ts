@@ -11,8 +11,32 @@ import {
  * SyncRepository — Encapsulates batch database operations used during high-throughput
  * sync and group hydration operations.
  */
+/**
+ * Prisma error code for "record to update not found".
+ */
+const P_RECORD_NOT_FOUND = 'P2025'
+
 export class SyncRepository implements ISyncRepository {
   constructor(private readonly prisma: PrismaClient) {}
+
+  /**
+   * Run a set of independent write operations without a wrapping `$transaction`,
+   * so that one missing/racing row (P2025) cannot roll back every other write in
+   * the batch. Genuinely unexpected errors are still logged. (P2-S4-01)
+   */
+  private async runIndependently(
+    ops: Array<{ label: string; run: () => Promise<unknown> }>
+  ): Promise<void> {
+    await Promise.all(
+      ops.map(op =>
+        op.run().catch((err: unknown) => {
+          const code = (err as { code?: string } | null)?.code
+          if (code === P_RECORD_NOT_FOUND) return
+          console.error(`[SyncRepository] ${op.label} failed:`, err)
+        })
+      )
+    )
+  }
 
   /**
    * Bulk-upsert community records. Inserts missing communities and returns all of them.
@@ -48,19 +72,16 @@ export class SyncRepository implements ISyncRepository {
   ): Promise<void> {
     if (updates.length === 0) return
 
-    const ops = updates.map(u =>
-      this.prisma.community.update({
-        where: { id: u.id },
-        data: { announceJid: u.announceJid }
-      })
+    await this.runIndependently(
+      updates.map(u => ({
+        label: `updateCommunityAnnounce(id=${u.id})`,
+        run: () =>
+          this.prisma.community.update({
+            where: { id: u.id },
+            data: { announceJid: u.announceJid }
+          })
+      }))
     )
-
-    try {
-      await this.prisma.$transaction(ops)
-    } catch (err: unknown) {
-      console.error('[SyncRepository] Failed to transaction-update community announce JIDs:', err)
-      throw err
-    }
   }
 
   /**
@@ -88,13 +109,12 @@ export class SyncRepository implements ISyncRepository {
    */
   async bulkUpdateChats(chats: SyncChatUpdateInput[]): Promise<void> {
     if (chats.length === 0) return
-    const ops = chats.map(c =>
-      this.prisma.chat.update({
-        where: { jid: c.jid },
-        data: c
-      })
+    await this.runIndependently(
+      chats.map(c => ({
+        label: `updateChat(jid=${c.jid})`,
+        run: () => this.prisma.chat.update({ where: { jid: c.jid }, data: c })
+      }))
     )
-    await this.prisma.$transaction(ops)
   }
 
   /**
@@ -176,13 +196,16 @@ export class SyncRepository implements ISyncRepository {
    */
   async bulkUpdateIdentities(updates: Array<{ id: number; phoneNumber: string }>): Promise<void> {
     if (updates.length === 0) return
-    const ops = updates.map(u =>
-      this.prisma.identity.update({
-        where: { id: u.id },
-        data: { phoneNumber: u.phoneNumber }
-      })
+    await this.runIndependently(
+      updates.map(u => ({
+        label: `updateIdentity(id=${u.id})`,
+        run: () =>
+          this.prisma.identity.update({
+            where: { id: u.id },
+            data: { phoneNumber: u.phoneNumber }
+          })
+      }))
     )
-    await this.prisma.$transaction(ops)
   }
 
   /**
@@ -204,13 +227,16 @@ export class SyncRepository implements ISyncRepository {
     aliases: Array<{ jid: string; identityId: number }>
   ): Promise<void> {
     if (aliases.length === 0) return
-    const ops = aliases.map(a =>
-      this.prisma.identityAlias.update({
-        where: { jid: a.jid },
-        data: { identityId: a.identityId }
-      })
+    await this.runIndependently(
+      aliases.map(a => ({
+        label: `updateIdentityAlias(jid=${a.jid})`,
+        run: () =>
+          this.prisma.identityAlias.update({
+            where: { jid: a.jid },
+            data: { identityId: a.identityId }
+          })
+      }))
     )
-    await this.prisma.$transaction(ops)
   }
 
   /**
@@ -284,15 +310,18 @@ export class SyncRepository implements ISyncRepository {
     }
 
     if (toUpdate.length > 0) {
-      const ops = toUpdate.map(m =>
-        this.prisma.chatMember.update({
-          where: {
-            chatJid_identityId: { chatJid: m.chatJid, identityId: m.identityId }
-          },
-          data: { role: m.role }
-        })
+      await this.runIndependently(
+        toUpdate.map(m => ({
+          label: `updateChatMemberRole(chatJid=${m.chatJid}, identityId=${m.identityId})`,
+          run: () =>
+            this.prisma.chatMember.update({
+              where: {
+                chatJid_identityId: { chatJid: m.chatJid, identityId: m.identityId }
+              },
+              data: { role: m.role }
+            })
+        }))
       )
-      await this.prisma.$transaction(ops)
     }
   }
 }

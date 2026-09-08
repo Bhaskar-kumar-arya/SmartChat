@@ -1,5 +1,5 @@
-import { Message } from '@prisma/client'
 import { IContactQueryService, IContactMutationService, IContactCacheManager } from './services/contacts/IContactService'
+import { SyncStickerCandidate } from './services/messages/IMediaService'
 import { SyncContactsHandler } from './services/sync/SyncContactsHandler'
 import { SyncChatsHandler } from './services/sync/SyncChatsHandler'
 import { SyncMessagesHandler } from './services/sync/SyncMessagesHandler'
@@ -26,7 +26,7 @@ export interface HistorySyncResult {
   contactCount: number
   chatCount: number
   messageCount: number
-  importedMessages: Message[]
+  importedMessages: SyncStickerCandidate[]
 }
 
 /**

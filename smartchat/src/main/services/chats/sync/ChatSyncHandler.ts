@@ -1,7 +1,7 @@
 import { ISyncRepository, SyncChatCreateInput, SyncChatUpdateInput } from '../../sync/ISyncRepository'
 import { BaileysGroupMetadata } from '../../whatsapp/types/group.types'
 import { cleanJid } from '../../../utils/jidUtils'
-import { parseBaileysTimestamp } from '../../../utils/messageUtils'
+import { parseBaileysTimestamp, normalizeMuteExpirationSeconds } from '../../../utils/messageUtils'
 import { parseCommunityMetadata } from '../../../utils/communityUtils'
 import { IChatSyncHandler } from './IChatSyncHandler'
 
@@ -61,8 +61,7 @@ export class ChatSyncHandler implements IChatSyncHandler {
         if (typeof raw.unreadCount === 'number') updateObj.unreadCount = raw.unreadCount
         if (typeof raw.pinned === 'number') updateObj.pinned = raw.pinned
         if (raw.muteExpiration !== undefined) {
-          const mute = raw.muteExpiration
-          updateObj.muteExpiration = typeof mute === 'bigint' ? mute : BigInt(typeof mute === 'number' ? mute : 0)
+          updateObj.muteExpiration = normalizeMuteExpirationSeconds(raw.muteExpiration)
         }
         if (raw.profilePictureUrl !== undefined) {
           updateObj.profilePictureUrl = raw.profilePictureUrl || null
@@ -77,9 +76,7 @@ export class ChatSyncHandler implements IChatSyncHandler {
           unreadCount: typeof raw.unreadCount === 'number' ? raw.unreadCount : 0,
           timestamp: timestamp ?? BigInt(0),
           pinned: typeof raw.pinned === 'number' ? raw.pinned : 0,
-          muteExpiration: typeof raw.muteExpiration === 'bigint' 
-            ? raw.muteExpiration 
-            : BigInt(typeof raw.muteExpiration === 'number' ? raw.muteExpiration : 0),
+          muteExpiration: normalizeMuteExpirationSeconds(raw.muteExpiration),
           isArchived,
           name: chatName,
           communityId: communityId ?? null,

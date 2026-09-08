@@ -1,4 +1,5 @@
 import { cleanJid } from '../../utils/jidUtils'
+import { normalizeMuteExpirationSeconds } from '../../utils/messageUtils'
 import { parseCommunityMetadata } from '../../utils/communityUtils'
 import { IContactNameResolver } from '../contacts/IContactService'
 import { ChatUpdatePayload } from '../../domain/whatsapp.types'
@@ -50,8 +51,7 @@ export class ChatService implements IChatService {
       data.pinned = update.pinned === null ? 0 : Number(update.pinned)
     }
     if (update.muteExpiration !== undefined) {
-      const mute = update.muteExpiration
-      data.muteExpiration = typeof mute === 'bigint' ? mute : BigInt(typeof mute === 'number' ? mute : 0)
+      data.muteExpiration = normalizeMuteExpirationSeconds(update.muteExpiration)
     }
     if (update.archived !== undefined) {
       data.isArchived = update.archived === true

@@ -4,10 +4,28 @@ import {
   extractContextInfoFromContent,
   preserveContextInfo,
   preserveLocalUri,
-  isIndexableMessageType
+  isIndexableMessageType,
+  normalizeMuteExpirationSeconds
 } from '../../utils/messageUtils'
 
 describe('messageUtils Unit Tests', () => {
+  describe('normalizeMuteExpirationSeconds (P2-S4-02)', () => {
+    it('passes through second-scale values unchanged', () => {
+      expect(normalizeMuteExpirationSeconds(1_700_000_000)).toBe(1_700_000_000n)
+      expect(normalizeMuteExpirationSeconds(1_700_000_000n)).toBe(1_700_000_000n)
+    })
+    it('converts millisecond-scale values to seconds', () => {
+      expect(normalizeMuteExpirationSeconds(1_700_000_000_000)).toBe(1_700_000_000n)
+      expect(normalizeMuteExpirationSeconds(1_700_000_000_000n)).toBe(1_700_000_000n)
+    })
+    it('preserves the -1 "muted forever" sentinel and handles null/undefined/0', () => {
+      expect(normalizeMuteExpirationSeconds(-1)).toBe(-1n)
+      expect(normalizeMuteExpirationSeconds(null)).toBe(0n)
+      expect(normalizeMuteExpirationSeconds(undefined)).toBe(0n)
+      expect(normalizeMuteExpirationSeconds(0)).toBe(0n)
+    })
+  })
+
   describe('isIndexableMessageType (P2-S2-01)', () => {
     it('excludes ciphertext / system / reaction / protocol / unknown', () => {
       expect(isIndexableMessageType('ciphertext')).toBe(false)

@@ -44,10 +44,7 @@ export interface IReactionWriteRepository {
 
   deleteReactions(messageId: string, senderId: number): Promise<void>
 
-  bulkSyncReactions(
-    pendingReactions: ReactionSyncData[],
-    currentBatchIds: Set<string>
-  ): Promise<void>
+  bulkSyncReactions(pendingReactions: ReactionSyncData[]): Promise<void>
 }
 
 export interface IReactionRepository extends IReactionQueryRepository, IReactionWriteRepository {}

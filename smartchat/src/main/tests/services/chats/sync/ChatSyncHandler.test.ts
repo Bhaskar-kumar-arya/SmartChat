@@ -77,4 +77,24 @@ describe('ChatSyncHandler', () => {
       })
     ])
   })
+
+  it('normalizes a millisecond muteExpiration to seconds on both insert and update (S4-02)', async () => {
+    const msValue = 1_700_000_000_000 // ms
+    const groups: Record<string, BaileysGroupMetadata> = {
+      'new-group@g.us': { subject: 'New', muteExpiration: msValue } as any,
+      'existing-group@g.us': { subject: 'Existing', muteExpiration: msValue } as any
+    }
+
+    vi.mocked(communityUtils.parseCommunityMetadata).mockReturnValue({ hasCommunityData: false } as any)
+    mockSyncRepo.findExistingChats.mockResolvedValue([{ jid: 'existing-group@g.us' } as any])
+
+    await handler.syncChats(groups, new Map())
+
+    expect(mockSyncRepo.bulkCreateChats).toHaveBeenCalledWith([
+      expect.objectContaining({ jid: 'new-group@g.us', muteExpiration: 1_700_000_000n })
+    ])
+    expect(mockSyncRepo.bulkUpdateChats).toHaveBeenCalledWith([
+      expect.objectContaining({ jid: 'existing-group@g.us', muteExpiration: 1_700_000_000n })
+    ])
+  })
 })

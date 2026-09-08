@@ -1,5 +1,5 @@
-import { Message } from '@prisma/client'
 import { WAMessageStubType } from '@whiskeysockets/baileys'
+import { SyncStickerCandidate } from '../messages/IMediaService'
 import { IContactMutationService, IContactQueryService } from '../contacts/IContactService'
 import { IMessageRepository, MessageUpsertData } from '../messages/IMessageRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'
@@ -56,9 +56,23 @@ export class SyncMessagesHandler {
     processedChats: Set<string>,
     meJid: string | null,
     meIdentityId: number | null
-  ): Promise<{ messageCount: number; importedMessages: Message[] }> {
+  ): Promise<{ messageCount: number; importedMessages: SyncStickerCandidate[] }> {
     if (!messages || messages.length === 0) {
       return { messageCount: 0, importedMessages: [] }
+    }
+
+    // Ensure the logged-in user has a resolvable identity id before parsing.
+    // `_extractInlineReaction` attributes `fromMe` history-synced reactions to
+    // `meIdentityId`; if it is still null (very early sync, self-contact not yet
+    // created) those reactions would be silently dropped. (P2-S4-05)
+    let resolvedMeIdentityId = meIdentityId
+    if (resolvedMeIdentityId === null && meJid) {
+      await this.contactService
+        .upsertContact({ id: meJid })
+        .catch((err: unknown) =>
+          console.error('[SyncMessagesHandler] Failed to upsert self contact:', err)
+        )
+      resolvedMeIdentityId = await this.contactService.getIdentityIdByJid(meJid)
     }
 
     // Build an in-memory JID -> identityId cache to avoid repeated DB round-trips
@@ -70,7 +84,7 @@ export class SyncMessagesHandler {
 
     const BATCH_SIZE = 200
     let messageCount = 0
-    const importedMessages: Message[] = []
+    const importedMessages: SyncStickerCandidate[] = []
 
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE)
@@ -84,22 +98,24 @@ export class SyncMessagesHandler {
       // Collect inline reactionMessage rows before splitting them out
       for (const msg of messageRows) {
         if (msg.messageType === 'reactionMessage') {
-          this._extractInlineReaction(msg, meIdentityId, pendingReactions)
+          this._extractInlineReaction(msg, resolvedMeIdentityId, pendingReactions)
         }
       }
 
       const standardMessages = messageRows.filter(m => m.messageType !== 'reactionMessage')
 
-      // Delegate all DB writes to the repository
+      // Delegate all DB writes to the repository. Only the rows that were
+      // genuinely inserted are surfaced to the caller — re-syncing an overlapping
+      // history chunk must not re-queue favorite-sticker downloads for messages
+      // already in the DB. (P2-S4-06)
       if (standardMessages.length > 0) {
-        await this.repository.bulkSyncMessages(standardMessages)
-        importedMessages.push(...(standardMessages as unknown as Message[]))
+        const inserted = await this.repository.bulkSyncMessages(standardMessages)
+        for (const row of inserted) {
+          importedMessages.push({ id: row.id, content: row.content, messageType: row.messageType })
+        }
       }
 
-      await this.reactionRepository.bulkSyncReactions(
-        pendingReactions,
-        new Set(messageRows.map(m => m.id))
-      )
+      await this.reactionRepository.bulkSyncReactions(pendingReactions)
 
       messageCount += messageRows.length
       await new Promise(resolve => setImmediate(resolve))
@@ -324,6 +340,12 @@ export class SyncMessagesHandler {
     await this._prefetchIdentityIds(Array.from(jidsToResolve), identityCache)
 
     // ── Pass 2: build rows (sender lookups now hit the warmed cache) ──
+    // Chats that appear only in `messages[]` (not `chats[]`) need a Chat row. Seed
+    // it with the newest message timestamp seen for that chat in this batch so it
+    // doesn't sort to the very bottom of the list with `timestamp = 0n` until a
+    // live message arrives. (P2-S4-04)
+    const newChatMaxTs = new Map<string, bigint>()
+
     for (const { mTyped, remoteJid, parsed } of parsedList) {
       const senderId = await this._resolveSenderId(parsed.participant, parsed.fromMe, identityCache)
 
@@ -333,12 +355,11 @@ export class SyncMessagesHandler {
         await this._collectNestedReactions(reactions, parsed.id, meJid, identityCache, pendingReactions)
       }
 
-      // Ensure Chat row exists for messages whose chat wasn't in the sync payload
+      const msgTs = parseBaileysTimestamp(mTyped.messageTimestamp ?? 0)
+
       if (!processedChats.has(remoteJid)) {
-        await this.chatRepository
-          .upsertChat(remoteJid, {})
-          .catch((err: unknown) => console.error('[SyncMessagesHandler] chat upsert failed:', err))
-        processedChats.add(remoteJid)
+        const prev = newChatMaxTs.get(remoteJid) ?? 0n
+        if (msgTs > prev) newChatMaxTs.set(remoteJid, msgTs)
       }
 
       messageRows.push({
@@ -347,7 +368,7 @@ export class SyncMessagesHandler {
         fromMe: parsed.fromMe,
         senderId,
         participant: parsed.participant,
-        timestamp: parseBaileysTimestamp(mTyped.messageTimestamp ?? 0),
+        timestamp: msgTs,
         messageType: parsed.messageType,
         content: parsed.content,
         textContent: parsed.textContent,
@@ -355,6 +376,15 @@ export class SyncMessagesHandler {
         isEdited: parsed.isEdited,
         isDeleted: parsed.isDeleted
       })
+    }
+
+    // Create any missing Chat rows before the caller persists the messages that
+    // reference them.
+    for (const [remoteJid, maxTs] of newChatMaxTs) {
+      await this.chatRepository
+        .upsertChat(remoteJid, maxTs > 0n ? { timestamp: maxTs } : {})
+        .catch((err: unknown) => console.error('[SyncMessagesHandler] chat upsert failed:', err))
+      processedChats.add(remoteJid)
     }
 
     return { messageRows, pendingReactions }

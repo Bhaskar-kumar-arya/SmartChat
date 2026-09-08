@@ -2,7 +2,7 @@ import { IContactMutationService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { ICommunityRepository } from '../chats/ICommunityRepository'
 import { cleanJid } from '../../utils/jidUtils'
-import { parseBaileysTimestamp } from '../../utils/messageUtils'
+import { parseBaileysTimestamp, normalizeMuteExpirationSeconds } from '../../utils/messageUtils'
 
 export interface RawChatParticipant {
   userJid?: string
@@ -106,8 +106,7 @@ export class SyncChatsHandler {
 
       const rawMute = c.muteExpiration !== undefined ? c.muteExpiration : c.muteEndTime
       if (rawMute !== undefined && rawMute !== null) {
-        const muteVal = parseBaileysTimestamp(rawMute)
-        const muteSec = muteVal > 10000000000n ? muteVal / 1000n : muteVal
+        const muteSec = normalizeMuteExpirationSeconds(parseBaileysTimestamp(rawMute))
         updateData.muteExpiration = muteSec
         console.log(`[SyncChatsHandler] Chat ${jid} mute: rawMute=${rawMute}, muteSec=${muteSec}`)
       }
@@ -128,7 +127,9 @@ export class SyncChatsHandler {
       await this.processParticipants(c)
     }
 
-    return chats.length
+    // `count` was only incremented for entries that had an `.id` and were actually
+    // upserted — id-less entries `continue` before the increment. (P2-S4-03)
+    return count
   }
 
   private async linkAccountLid(c: RawChat, jid: string): Promise<void> {
