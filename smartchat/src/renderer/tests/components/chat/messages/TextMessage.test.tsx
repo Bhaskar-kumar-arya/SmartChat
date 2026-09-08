@@ -46,6 +46,27 @@ describe('TextMessage', () => {
     expect(mention).toHaveClass('message-mention')
   })
 
+  it('neutralizes javascript: markdown links (no live href) [F5-01]', () => {
+    const { container } = render(<TextMessage text="[tap](javascript:alert(1))" />)
+    const a = container.querySelector('a')
+    expect((a?.getAttribute('href') ?? '')).not.toMatch(/^javascript:/i)
+    expect(container.textContent).toContain('tap')
+  })
+
+  it('neutralizes data: markdown links [F5-01]', () => {
+    const { container } = render(
+      <TextMessage text="[x](data:text/html;base64,PHNjcmlwdD4=)" />
+    )
+    const a = container.querySelector('a')
+    expect((a?.getAttribute('href') ?? '')).not.toMatch(/^data:/i)
+  })
+
+  it('keeps safe https markdown links [F5-01]', () => {
+    const { container } = render(<TextMessage text="[ok](https://example.com/path)" />)
+    const a = container.querySelector('a')
+    expect(a?.getAttribute('href')).toMatch(/^https:\/\/example\.com\/path/)
+  })
+
   it('converts emojis to Emoji components', () => {
     const { container } = render(<TextMessage text="Great job! 👍" />)
     expect(container.querySelector('.emoji-inline-wrapper')).toBeInTheDocument()

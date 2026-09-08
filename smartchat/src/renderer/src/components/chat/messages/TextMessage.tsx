@@ -1,4 +1,4 @@
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -96,6 +96,16 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
     }).join('')
   }
 
+  // Sanitize link URLs. The preprocessors above emit internal `mention:` links
+  // and `https://emoji.local/` links that must pass through untouched; every
+  // other URL is delegated to react-markdown's `defaultUrlTransform`, which
+  // strips dangerous schemes (`javascript:`, `data:`, `vbscript:`). Never use an
+  // identity transform here — message text is attacker-controlled.
+  const sanitizeUrl = (url: string) => {
+    if (url.startsWith('mention:') || url.startsWith('https://emoji.local/')) return url
+    return defaultUrlTransform(url)
+  }
+
   const formattedText = convertWhatsAppToMarkdown(text)
   const textWithMentions = preprocessMentionsToMarkdown(formattedText)
   const markdownText = preprocessEmojisToMarkdown(textWithMentions)
@@ -103,7 +113,7 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
   return (
     <div className="markdown-body">
       <ReactMarkdown
-        urlTransform={(url) => url}
+        urlTransform={sanitizeUrl}
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={{
@@ -122,6 +132,10 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
                   <Emoji unified={unified} size={18} emojiStyle={EmojiStyle.APPLE} />
                 </span>
               )
+            }
+            // `sanitizeUrl` blanks out disallowed schemes — render inert text.
+            if (!href) {
+              return <>{children}</>
             }
             return (
               <a href={href} target="_blank" rel="noopener noreferrer">
