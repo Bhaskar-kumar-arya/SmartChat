@@ -123,6 +123,9 @@ export const prisma = new PrismaClient({ adapter });
  * Initializes the vector database by creating the virtual table.
  * Should be called once at application startup.
  */
+/** S10-04: false until initVectorDb has completed without error this session. */
+export let vectorDbReady = false;
+
 export const initVectorDb = async (vectorSyncService?: IVectorSyncService) => {
   try {
     // 1. Create the virtual table with the correct 768 dimensions for Bhasha model
@@ -145,13 +148,25 @@ export const initVectorDb = async (vectorSyncService?: IVectorSyncService) => {
       if (errorVal.message.includes("Dimension mismatch")) {
         console.warn("[VectorDB] Dimension mismatch detected. Recreating table with 768 dims...");
         await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS vec_messages`);
+        // S10-04: use IF NOT EXISTS here too — if the CREATE races/fails after the
+        // DROP, the app would otherwise run with no vec_messages table at all and
+        // silently return nothing for every semantic search until a restart.
         await prisma.$executeRawUnsafe(`
-          CREATE VIRTUAL TABLE vec_messages USING vec0(
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_messages USING vec0(
             messageId TEXT PRIMARY KEY,
             vector FLOAT[768]
           );
         `);
       }
+    }
+
+    // S10-04: verify the table actually exists before proceeding — a swallowed
+    // failure above must surface as a fatal init error, not a degraded search.
+    const tableCheck = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='vec_messages'`
+    );
+    if (tableCheck.length === 0) {
+      throw new Error("[VectorDB] vec_messages table missing after initialization");
     }
 
     console.log("[VectorDB] sqlite-vec table initialized successfully (768 dims)");
@@ -170,8 +185,15 @@ export const initVectorDb = async (vectorSyncService?: IVectorSyncService) => {
       }
     }
   } catch (err: unknown) {
-    console.error("[VectorDB] Failed to initialize vector table:", err);
+    // S10-04: a missing/broken vec_messages table means deep search silently
+    // returns nothing for the rest of the session. Log it prominently and mark
+    // the store as not ready so callers can distinguish "no results" from
+    // "search unavailable" rather than proceeding blind.
+    console.error("[VectorDB] FATAL: vector table initialization failed — deep search is unavailable this session:", err);
+    vectorDbReady = false;
+    return;
   }
+  vectorDbReady = true;
 };
 
 export const usePrismaAuthState = async (): Promise<{
@@ -200,16 +222,38 @@ export const usePrismaAuthState = async (): Promise<{
   };
 
   const writeData = async (data: unknown, id: string) => {
-    try {
-      const serialized = JSON.stringify(data, BufferJSON.replacer);
-      await prisma.authState.upsert({
-        where: { id },
-        update: { data: serialized },
-        create: { id, data: serialized },
-      });
-    } catch (error: unknown) {
-      console.error("Error writing auth state:", error);
+    const serialized = JSON.stringify(data, BufferJSON.replacer);
+    // S10-03: match the `keys` `set` path — do NOT swallow a failed `creds`
+    // write. `saveCreds` runs right after pairing and every ratchet advance;
+    // a silently-lost write leaves a stale/absent identity that forces a
+    // re-link on next launch. Retry the transient case, then throw so the
+    // socket errors and reconnects instead of advancing on unsaved creds.
+    const MAX_ATTEMPTS = 3;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        await prisma.authState.upsert({
+          where: { id },
+          update: { data: serialized },
+          create: { id, data: serialized },
+        });
+        return;
+      } catch (error: unknown) {
+        lastErr = error;
+        console.error(
+          `[AuthState] Failed to write auth state '${id}' (attempt ${attempt}/${MAX_ATTEMPTS}):`,
+          error
+        );
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** (attempt - 1)));
+        }
+      }
     }
+    throw new Error(
+      `[AuthState] auth state '${id}' persist failed after ${MAX_ATTEMPTS} attempts: ${
+        (lastErr as Error)?.message || String(lastErr)
+      }`
+    );
   };
 
   const creds: AuthenticationCreds =

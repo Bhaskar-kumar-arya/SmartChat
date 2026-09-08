@@ -54,4 +54,15 @@ describe('isTrustedSender (S10-05/S10-06)', () => {
     expect(isTrustedSender({ senderFrame: null })).toBe(false)
     expect(isTrustedSender({})).toBe(false)
   })
+
+  it('accepts the prod renderer frame with a hash route / query string (S10-06)', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '')
+    expect(isTrustedSender({ senderFrame: { parent: null, url: 'file:///C:/app/renderer/index.html#/chats' } })).toBe(true)
+    expect(isTrustedSender({ senderFrame: { parent: null, url: 'file:///C:/app/renderer/index.html?foo=1' } })).toBe(true)
+  })
+
+  it('still rejects a file:// document that only ends with the renderer path in its query', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '')
+    expect(isTrustedSender({ senderFrame: { parent: null, url: 'file:///tmp/evil.html?x=/renderer/index.html' } })).toBe(false)
+  })
 })

@@ -38,7 +38,18 @@ export function isTrustedSender(event: {
     const url = frame.url || ''
     const devUrl = process.env['ELECTRON_RENDERER_URL']
     if (devUrl && url.startsWith(devUrl)) return true
-    if (url.startsWith('file://') && url.endsWith('/renderer/index.html')) return true
+    // S10-06: compare the parsed pathname (ignoring hash route / query string) so
+    // a legit `…/renderer/index.html#/chats` still passes, instead of a brittle
+    // `endsWith` on the raw URL string.
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol === 'file:') {
+        const path = decodeURIComponent(parsed.pathname).replace(/\\/g, '/')
+        if (path.endsWith('/renderer/index.html')) return true
+      }
+    } catch {
+      // not a parseable URL — fall through to reject
+    }
     return false
   } catch {
     return false

@@ -19,7 +19,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | 7 | Kernel API modules & router | DONE (8 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 6 low |
 | 8 | Kernel plugins, contributions, permissions | DONE (7 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 4 low |
 | 9 | Kernel storage, channels, ipc, ui | DONE (6 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 4 low |
-| 10 | App IPC & auth | DONE (7 findings) | 2026-09-07 | 0 crit, 0 high, 3 med, 4 low |
+| 10 | App IPC & auth | DONE (7 findings) | 2026-09-08 | 0 crit, 0 high, 3 med, 4 low — all 7 fixed 2026-09-08 (slice 10) |
 | 11 | apiServer, search, notification, calls, audio | DONE (10 findings) | 2026-09-07 | 0 crit, 1 high, 2 med, 7 low |
 | 12 | SDK, tools, data wipe, domain, db, protocol | DONE (11 findings) | 2026-09-07 | 0 crit, 0 high, 4 med, 7 low |
 | 13 | Cross-cutting pass | DONE (5 findings) | 2026-09-07 | 0 crit, 0 high, 2 med, 3 low |
@@ -988,7 +988,9 @@ fully bypassed because the grant itself is unauthenticated. `select-file` (line 
 only after a user dialog; this raw channel has no such gate.
 **Fix idea:** add `if (!isTrustedSender(event)) return` (channel already receives `event`; it is
 currently named `_event`). Consider also capping the registry size / TTL.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `grant-local-file-preview` now takes `event` and returns early (with a warn log) when
+`!isTrustedSender(event)`. Registry size/TTL cap not added (out of scope; separate finding).
 
 ### [P2-S10-02] med — src/main/ipcHandlers.ts:398-404 (`get-provider-keys` / `set-provider-key`)
 **What:** Neither handler has an `isTrustedSender` guard. `get-provider-keys` →
@@ -1003,7 +1005,9 @@ attacker-controlled key (MITM of prompts/responses, billing abuse). Privileged, 
 channels — but ungated.
 **Fix idea:** gate both with `isTrustedSender(event)` (they already receive `event` /
 `_event`).
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** both handlers now take `event` and throw for an untrusted sender, matching the other
+privileged channels in the file.
 
 ### [P2-S10-03] med — src/main/auth.ts:202-213 (`writeData` / `saveCreds`)
 **What:** `writeData` wraps its `authState.upsert` in `try { … } catch (error) { console.error(…) }`
@@ -1020,7 +1024,10 @@ server ratchet. Inconsistent hardening within the same file.
 **Fix idea:** give `writeData` the same retry-then-throw treatment as the `set` path (at least
 for `id === 'creds'`), so `saveCreds` rejects and the socket errors/reconnects instead of
 advancing on unsaved creds.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `writeData` in `src/main/auth.ts` now retries the upsert up to 3× with backoff and
+throws on final failure (applied to all ids, not just `creds` — same shape as the `keys.set`
+path). The worker-copy `useLocalPrismaAuthState` was already hardened and has regression tests.
 
 ### [P2-S10-04] low — src/main/auth.ts:126-175 (`initVectorDb`)
 **What:** The whole body is inside one `try { … } catch (err) { console.error(…) }`. The
@@ -1034,7 +1041,11 @@ silently returns nothing with no user-visible error and no retry until a full re
 to succeed.
 **Fix idea:** use `CREATE VIRTUAL TABLE IF NOT EXISTS` in the self-heal branch too; surface a
 fatal error (or a ret/'degraded search' flag) rather than logging and proceeding.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** self-heal branch now uses `CREATE VIRTUAL TABLE IF NOT EXISTS`; a post-init
+`sqlite_master` check throws if `vec_messages` is still missing; the outer catch now logs a
+prominent FATAL line and sets a new exported `vectorDbReady` flag to `false` (kept non-throwing
+because `initVectorDb` is invoked fire-and-forget at startup — see S13-04).
 
 ### [P2-S10-05] low — src/main/ipcHandlers.ts:172-184 (`download-url-to-temp`)
 **What:** After the `isTrustedSender` check, `fetch(url)` is called on a renderer-supplied URL
@@ -1048,7 +1059,11 @@ into a main-process Buffer → OOM / main-process crash. The trusted-frame gate 
 attacker to a compromised renderer, but message-content rendering is an XSS surface.
 **Fix idea:** restrict to `https:` (and known hosts), add an `AbortSignal` timeout, cap
 `Content-Length` / streamed bytes, and stream to disk instead of buffering.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `download-url-to-temp` now rejects non-`https:` URLs (kills SSRF to
+http://localhost / LAN / metadata), aborts after a 30s timeout, rejects a `content-length`
+over 100 MB, and streams the body to disk chunk-by-chunk with a running 100 MB cap (partial
+file removed on error). Per-host allow-list not added.
 
 ### [P2-S10-06] low — src/main/ipc/ipcGuards.ts:41 (`isTrustedSender`)
 **What:** The prod branch accepts the frame iff
@@ -1062,7 +1077,12 @@ to navigate the top frame.
 **Fix idea:** parse the URL and compare `pathname` (ignoring hash/search) against the known
 `renderer/index.html` absolute path, or compare against `mainWindow.webContents` identity
 directly.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `isTrustedSender` now parses the frame URL and checks `protocol === 'file:'` with a
+decoded `pathname` ending in `/renderer/index.html`, so a hash route / query string no longer
+breaks the legit app (brittleness) and a `?x=/renderer/index.html` decoy no longer passes.
+Regression tests added in `ipcGuards.test.ts`. Absolute-path pinning left as a follow-up
+(needs the resolved renderer path threaded into the guard).
 
 ### [P2-S10-07] low — src/main/ipcHandlers.ts:351-370 (`execute-tool`)
 **What:** For `tool.requiresPermission` the main process only checks `isTrustedSender` and
@@ -1074,7 +1094,10 @@ S12-03), `SendMessageTool`, `QueryDatabaseTool`, `MessageActionTool` with no mai
 confirmation. The permission flag is effectively advisory.
 **Fix idea:** perform the user-consent prompt in the main process (`dialog`) for
 `requiresPermission` tools, or sign/nonce the renderer's "user approved" assertion.
-**Status:** open
+**Status:** fixed 2026-09-08
+**Fix:** `execute-tool` now shows a main-process `dialog.showMessageBox` (Cancel / Allow,
+default Cancel) for any `requiresPermission` tool and throws unless the user picks Allow — the
+renderer's assertion is no longer trusted.
 
 ## Slice 11 — apiServer, search, notification, calls, audio
 

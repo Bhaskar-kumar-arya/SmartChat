@@ -17,6 +17,12 @@ import { ISecureFileRegistry } from './services/protocol/ISecureFileRegistry'
 const DIR_NAME_TEMP = 'temp'
 const PREFIX_VOICE = 'voice_'
 const EXT_OGG = '.ogg'
+// S10-05: bound `download-url-to-temp` — https only (no SSRF to http://localhost
+// / LAN / metadata endpoints), a hard timeout, and a streamed byte cap so a
+// multi-GB or hostile URL cannot OOM the main process.
+const ALLOWED_DOWNLOAD_PROTOCOLS = new Set(['https:'])
+const DOWNLOAD_TIMEOUT_MS = 30_000
+const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
 const EVENT_EMBEDDING_PROGRESS = 'embedding-progress'
 const EVENT_EMBEDDING_STATE = 'embedding-state'
 
@@ -171,19 +177,63 @@ function registerMediaAndFileHandlers(
 
   ipcMain.handle('download-url-to-temp', async (event, url: string, fileName: string) => {
     if (!isTrustedSender(event)) throw new Error('[IPC] download-url-to-temp cannot be invoked from this context')
+
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      throw new Error('[IPC] download-url-to-temp: invalid URL')
+    }
+    if (!ALLOWED_DOWNLOAD_PROTOCOLS.has(parsed.protocol)) {
+      throw new Error(`[IPC] download-url-to-temp: unsupported protocol '${parsed.protocol}'`)
+    }
+
     const tempDir = join(app.getPath('userData'), DIR_NAME_TEMP)
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
 
     const filePath = resolveInsideDir(tempDir, fileName)
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`[IPC] Failed to download file: ${response.statusText}`)
-    
-    const arrayBuffer = await response.arrayBuffer()
-    fs.writeFileSync(filePath, Buffer.from(arrayBuffer))
-    return filePath
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS)
+    const fileStream = fs.createWriteStream(filePath)
+    try {
+      const response = await fetch(url, { signal: controller.signal })
+      if (!response.ok) throw new Error(`[IPC] Failed to download file: ${response.statusText}`)
+
+      const declaredLength = Number(response.headers.get('content-length') || 0)
+      if (declaredLength > MAX_DOWNLOAD_BYTES) {
+        throw new Error('[IPC] download-url-to-temp: response exceeds size cap')
+      }
+      if (!response.body) throw new Error('[IPC] download-url-to-temp: empty response body')
+
+      let total = 0
+      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+        total += chunk.length
+        if (total > MAX_DOWNLOAD_BYTES) {
+          throw new Error('[IPC] download-url-to-temp: response exceeds size cap')
+        }
+        if (!fileStream.write(Buffer.from(chunk))) {
+          await new Promise<void>((res) => fileStream.once('drain', res))
+        }
+      }
+      await new Promise<void>((res, rej) => fileStream.end((err?: Error | null) => (err ? rej(err) : res())))
+      return filePath
+    } catch (err) {
+      fileStream.destroy()
+      fs.rmSync(filePath, { force: true })
+      throw err
+    } finally {
+      clearTimeout(timeout)
+    }
   })
 
-  ipcMain.on('grant-local-file-preview', (_event, filePath: unknown) => {
+  ipcMain.on('grant-local-file-preview', (event, filePath: unknown) => {
+    // S10-01: the grant itself is the LFI trust boundary (S12-01) — only the
+    // top-level app renderer may register a path for app://local resolution.
+    if (!isTrustedSender(event)) {
+      console.warn('[IPC] Blocked grant-local-file-preview from untrusted frame')
+      return
+    }
     if (typeof filePath === 'string' && filePath.length > 0) {
       secureRegistry.grantFile(filePath)
     }
@@ -359,7 +409,23 @@ function registerAIServiceHandlers(
       throw new Error(`[IPC] Tool ${toolName} requires permission and cannot be invoked from this context`);
     }
     if (tool.requiresPermission) {
+      // S10-07: don't trust the renderer's "user approved" assertion — a
+      // compromised (XSS'd) trusted renderer would still pass isTrustedSender.
+      // Confirm consent in the main process before running host-capable tools.
       console.log(`[IPC] execute-tool('${toolName}') (permission-gated) invoked`);
+      const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
+      const { response } = await dialog.showMessageBox(win!, {
+        type: 'warning',
+        buttons: ['Cancel', 'Allow'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Permission required',
+        message: `Allow the assistant to run "${tool.name}"?`,
+        detail: tool.description || 'This tool can act on your behalf or access local data.'
+      });
+      if (response !== 1) {
+        throw new Error(`[IPC] Tool ${toolName} was not approved by the user`);
+      }
     }
     const ctx = sessionId ? { citationEmitter: await services.citationSessionManager.createEmitter(sessionId) } : undefined;
     const result = await tool.execute(args || {}, ctx);
@@ -402,11 +468,22 @@ function registerAIServiceHandlers(
     return await services.aiService.getAvailableModels();
   })
 
-  ipcMain.handle('get-provider-keys', async () => {
+  ipcMain.handle('get-provider-keys', async (event) => {
+    // S10-02: returns plaintext provider API keys — trusted app renderer only.
+    if (!isTrustedSender(event)) {
+      console.warn('[IPC] Blocked get-provider-keys from untrusted frame')
+      throw new Error('[IPC] get-provider-keys cannot be invoked from this context')
+    }
     return services.aiService.getProviderKeys();
   })
 
-  ipcMain.handle('set-provider-key', async (_event, provider: string, key: string) => {
+  ipcMain.handle('set-provider-key', async (event, provider: string, key: string) => {
+    // S10-02: overwrites a stored key and hot-swaps the live provider — trusted
+    // app renderer only, else an untrusted frame can MITM all AI traffic.
+    if (!isTrustedSender(event)) {
+      console.warn('[IPC] Blocked set-provider-key from untrusted frame')
+      throw new Error('[IPC] set-provider-key cannot be invoked from this context')
+    }
     return services.aiService.setProviderKey(provider, key);
   })
 
