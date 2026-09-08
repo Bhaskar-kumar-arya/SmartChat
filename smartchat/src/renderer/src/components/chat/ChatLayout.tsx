@@ -318,6 +318,7 @@ export default function ChatLayout() {
             <MessageView
               messages={messages}
               loading={loadingMessages}
+              chatJid={activeJid}
               isJumping={isJumping}
               onLoadMore={loadMore}
               onReply={handleReply}

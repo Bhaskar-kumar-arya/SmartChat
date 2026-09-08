@@ -13,6 +13,21 @@ interface ParsedButton {
   payload?: string
 }
 
+/**
+ * Template buttons carry business- or spam-authored payloads. Only ever open an
+ * `http(s):` URL; any other scheme (`javascript:`, `file:`, `data:`, …) is
+ * rejected and the button renders inert.
+ */
+function getSafeHttpUrl(payload?: string): string | null {
+  if (!payload) return null
+  try {
+    const u = new URL(payload)
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null
+  } catch {
+    return null
+  }
+}
+
 export const TemplateMessage = ({
   msg,
   rawMsg,
@@ -149,10 +164,16 @@ export const TemplateMessage = ({
 
   // Button Click Handlers
   const handleButtonClick = async (button: ParsedButton) => {
-    if (button.type === 'url' && button.payload) {
-      window.open(button.payload, '_blank', 'noopener,noreferrer')
+    if (button.type === 'url') {
+      const safeUrl = getSafeHttpUrl(button.payload)
+      if (safeUrl) {
+        window.open(safeUrl, '_blank', 'noopener,noreferrer')
+      } else {
+        console.warn('[TemplateMessage] Blocked non-http(s) URL button:', button.payload)
+      }
     } else if (button.type === 'call' && button.payload) {
-      window.open(`tel:${button.payload}`)
+      const num = String(button.payload).replace(/[^\d+]/g, '')
+      if (num) window.open(`tel:${encodeURIComponent(num)}`)
     } else if (button.type === 'quick_reply') {
       if (isSendingReply) return
       setIsSendingReply(true)
@@ -238,12 +259,15 @@ export const TemplateMessage = ({
       {/* 4. Actionable Stacked Buttons */}
       {parsedButtons.length > 0 && (
         <div className="template-msg-buttons">
-          {parsedButtons.map((btn, index) => (
+          {parsedButtons.map((btn, index) => {
+            const isInertUrl = btn.type === 'url' && !getSafeHttpUrl(btn.payload)
+            return (
             <button
               key={index}
               className="template-msg-button"
-              onClick={() => handleButtonClick(btn)}
-              disabled={isSendingReply && btn.type === 'quick_reply'}
+              onClick={() => { if (!isInertUrl) handleButtonClick(btn) }}
+              disabled={(isSendingReply && btn.type === 'quick_reply') || isInertUrl}
+              title={isInertUrl ? 'This link cannot be opened' : undefined}
             >
               {/* Left column: Action / link icon */}
               <div className="template-msg-btn-icon">
@@ -305,7 +329,8 @@ export const TemplateMessage = ({
               {/* Right column: Empty cell to balance grid centering */}
               <div />
             </button>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

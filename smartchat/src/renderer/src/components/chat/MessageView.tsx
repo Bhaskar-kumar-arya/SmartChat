@@ -4,10 +4,12 @@ import { MessageItem as IMessageItem } from '../../types/chatTypes'
 import { formatDate } from '../../utils/formatters'
 import MessageItem from './MessageItem'
 import { emojiToUnified } from '../../utils/emojiUtils'
+import { MessageErrorBoundary } from '../common/MessageErrorBoundary'
 
 interface MessageViewProps {
   messages: IMessageItem[]
   loading: boolean
+  chatJid?: string
   isJumping?: boolean
   onLoadMore: () => Promise<number | undefined>
   onReply: (msg: IMessageItem) => void
@@ -23,6 +25,7 @@ interface MessageViewProps {
 export default function MessageView({
   messages,
   loading,
+  chatJid,
   isJumping = false,
   onLoadMore,
   onReply,
@@ -48,6 +51,19 @@ export default function MessageView({
   const lastTargetId = useRef<string | null>(null)
   const prevMessagesLength = useRef(messages.length)
   const prevLastMessageId = useRef<string | null>(messages.length > 0 ? messages[messages.length - 1].id : null)
+  const prevChatJid = useRef<string | undefined>(chatJid)
+
+  // Reset pagination state when the chat actually changes (keyed on jid, not a
+  // messages[0].id + length heuristic which misses >50-message jump windows).
+  useEffect(() => {
+    if (prevChatJid.current !== undefined && chatJid !== prevChatJid.current) {
+      setHasMore(true)
+      setLoadingMore(false)
+      isLoadingRef.current = false
+      isInitialRenderForChat.current = true
+    }
+    prevChatJid.current = chatJid
+  }, [chatJid])
 
   // Reset pagination state when switching chats
   useEffect(() => {
@@ -95,19 +111,24 @@ export default function MessageView({
   useEffect(() => {
     if (!targetMessageId || messages.length === 0) return
 
+    let clearHighlightTimer: ReturnType<typeof setTimeout> | undefined
+
     const timer = setTimeout(() => {
       const el = containerRef.current?.querySelector(`[data-msg-id="${targetMessageId}"]`)
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' })
         setHighlightedId(targetMessageId)
         onTargetScrolled?.()
-        setTimeout(() => setHighlightedId(null), 2500)
+        clearHighlightTimer = setTimeout(() => setHighlightedId(null), 2500)
       } else {
         console.warn(`[MessageView] Target ${targetMessageId} not in DOM after jump`)
       }
     }, 120)
 
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      if (clearHighlightTimer) clearTimeout(clearHighlightTimer)
+    }
   }, [targetMessageId, messages])
 
   // Restore scroll position after paginating older messages upward
@@ -134,11 +155,29 @@ export default function MessageView({
       isLoadingRef.current = true
       setLoadingMore(true)
       prevScrollHeight.current = el.scrollHeight
-      const count = await onLoadMore()
-      if (!count || count === 0) {
-        setHasMore(false)
+
+      // Safety net: normally the [messages] effect clears these flags once the
+      // prepend lands. If onLoadMore() rejects, or resolves with count > 0 but
+      // the prepend is a no-op (all fetched messages were duplicates already in
+      // state), that effect never runs and upward pagination would stay dead
+      // for this chat until remount. Always release the lock.
+      const release = () => {
         setLoadingMore(false)
         isLoadingRef.current = false
+      }
+      const safety = setTimeout(release, 3000)
+
+      try {
+        const count = await onLoadMore()
+        if (!count || count === 0) {
+          setHasMore(false)
+          clearTimeout(safety)
+          release()
+        }
+      } catch (err) {
+        console.error('[MessageView] Failed to load older messages:', err)
+        clearTimeout(safety)
+        release()
       }
     }
   }, [hasMore, onLoadMore])
@@ -215,16 +254,18 @@ export default function MessageView({
             {dateSeparators.has(idx) && (
               <div className="date-separator"><span>{dateSeparators.get(idx)}</span></div>
             )}
-            <MessageItem
-              msg={msg}
-              onReply={handleReply}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onDownloadMedia={handleDownloadMedia}
-              onViewReactions={handleViewReactions}
-              onScrollToMessage={onScrollToMessage}
-              onSelectChat={onSelectChat}
-            />
+            <MessageErrorBoundary>
+              <MessageItem
+                msg={msg}
+                onReply={handleReply}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onDownloadMedia={handleDownloadMedia}
+                onViewReactions={handleViewReactions}
+                onScrollToMessage={onScrollToMessage}
+                onSelectChat={onSelectChat}
+              />
+            </MessageErrorBoundary>
           </div>
         ))
       )}
@@ -251,7 +292,13 @@ export default function MessageView({
 
 function ReactionDetailsModal({ message, onClose }: { message: IMessageItem, onClose: () => void }) {
   const reactions = useMemo(() => {
-    return (message.reactions || []).sort((a, b) => parseInt(b.timestamp) - parseInt(a.timestamp))
+    const toMs = (t: string | undefined) => {
+      const n = parseInt(t ?? '', 10)
+      return Number.isFinite(n) ? n : 0
+    }
+    // Copy first — Array.prototype.sort mutates in place, and this array lives
+    // on the shared message object that ReactionsDisplay also renders.
+    return [...(message.reactions ?? [])].sort((a, b) => toMs(b.timestamp) - toMs(a.timestamp))
   }, [message.reactions])
 
   return (

@@ -1131,3 +1131,54 @@
 .jump-to-latest-btn:active {
   transform: translateX(-50%) scale(0.96);
 }
+
+/* ─── System message bubble (theme-token colors — F5-08) ───────────── */
+.system-message-container {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+  width: 100%;
+}
+
+.system-message-bubble {
+  background: var(--wa-bg-secondary);
+  color: var(--wa-text-secondary);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: center;
+  max-width: 85%;
+  box-shadow: 0 1px 2px var(--wa-shadow);
+  border: 1px solid var(--wa-border);
+}
+
+/* ─── Waveform player (theme-token colors — F5-08) ─────────────────── */
+.waveform-time {
+  color: var(--wa-text-time);
+}
+
+.waveform-speed-pill {
+  background: var(--wa-input-bg);
+  border: none;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--wa-text-secondary);
+  min-width: 36px;
+  text-align: center;
+}
+
+/* ─── Per-message render error fallback (F5-06) ────────────────────── */
+.message-render-error {
+  margin: 4px 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--wa-bg-secondary);
+  color: var(--wa-text-secondary);
+  font-size: 0.8rem;
+  font-style: italic;
+  text-align: center;
+}

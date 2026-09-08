@@ -53,6 +53,64 @@ describe('TemplateMessage', () => {
     expect(screen.getByText('SmartChat Support')).toBeInTheDocument()
   })
 
+  it('does not open a non-http(s) URL button payload [F5-02]', () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    renderWithProviders(
+      <TemplateMessage
+        msg={sampleMsg}
+        rawMsg={{
+          templateMessage: {
+            hydratedFourRowTemplate: {
+              hydratedContentText: 'Order update',
+              hydratedButtons: [
+                { urlButton: { displayText: 'View order', url: 'javascript:alert(1)' } }
+              ]
+            }
+          }
+        }}
+        onDownload={vi.fn()}
+        isDownloading={false}
+      />
+    )
+
+    const btn = screen.getByRole('button', { name: /view order/i })
+    expect(btn).toBeDisabled()
+    fireEvent.click(btn)
+    expect(openSpy).not.toHaveBeenCalled()
+    openSpy.mockRestore()
+  })
+
+  it('opens a valid https URL button payload [F5-02]', () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    renderWithProviders(
+      <TemplateMessage
+        msg={sampleMsg}
+        rawMsg={{
+          templateMessage: {
+            hydratedFourRowTemplate: {
+              hydratedContentText: 'Order update',
+              hydratedButtons: [
+                { urlButton: { displayText: 'View order', url: 'https://example.com/order/1' } }
+              ]
+            }
+          }
+        }}
+        onDownload={vi.fn()}
+        isDownloading={false}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /view order/i }))
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://example.com/order/1',
+      '_blank',
+      'noopener,noreferrer'
+    )
+    openSpy.mockRestore()
+  })
+
   it('sends chat message via API when Quick Reply button is clicked', async () => {
     const mockApi = createMockApiService()
     mockApi.sendMessage = vi.fn().mockResolvedValue({})

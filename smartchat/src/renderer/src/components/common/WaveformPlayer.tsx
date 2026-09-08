@@ -16,6 +16,7 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
   const wavesurferRef = useRef<WaveSurfer | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
+  const playbackSpeedRef = useRef(1)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(preDuration || 0)
 
@@ -24,8 +25,8 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
 
     const ws = WaveSurfer.create({
       container: containerRef.current,
-      waveColor: 'rgba(0, 0, 0, 0.2)',
-      progressColor: isPtt ? '#00a884' : '#333',
+      waveColor: 'rgba(233, 237, 239, 0.25)',
+      progressColor: isPtt ? '#00a884' : '#e9edef',
       cursorColor: 'transparent',
       barWidth: 2,
       barGap: 3,
@@ -48,13 +49,18 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
       onPause?.()
     })
     ws.on('timeupdate', (time) => setCurrentTime(time))
-    ws.on('ready', (dur) => setDuration(dur))
+    ws.on('ready', (dur) => {
+      setDuration(dur)
+      // A fresh WaveSurfer instance defaults to 1x — re-apply the chosen speed
+      // so the pill and playback stay in sync after a url/peaks change.
+      ws.setPlaybackRate(playbackSpeedRef.current)
+    })
     ws.on('finish', () => setIsPlaying(false))
 
     return () => {
       ws.destroy()
     }
-  }, [url, isPtt])
+  }, [url, isPtt, peaks, preDuration])
 
   const togglePlay = useCallback(() => {
     wavesurferRef.current?.playPause()
@@ -64,6 +70,7 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
     const speeds = [1, 1.5, 2]
     const nextSpeed = speeds[(speeds.indexOf(playbackSpeed) + 1) % speeds.length]
     setPlaybackSpeed(nextSpeed)
+    playbackSpeedRef.current = nextSpeed
     wavesurferRef.current?.setPlaybackRate(nextSpeed)
   }, [playbackSpeed])
 
@@ -88,7 +95,7 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          color: isPtt ? '#00a884' : '#54656f',
+          color: isPtt ? '#00a884' : 'var(--wa-icon)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -100,11 +107,10 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
 
       <div style={{ flex: 1, position: 'relative' }}>
         <div ref={containerRef} style={{ width: '100%' }} />
-        <div style={{
+        <div className="waveform-time" style={{
           display: 'flex',
           justifyContent: 'space-between',
           fontSize: '0.7rem',
-          color: '#888',
           marginTop: '2px'
         }}>
           <span>{formatTime(currentTime)}</span>
@@ -112,21 +118,7 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
         </div>
       </div>
 
-      <button
-        onClick={cycleSpeed}
-        style={{
-          background: '#f0f2f5',
-          border: 'none',
-          borderRadius: '12px',
-          padding: '2px 8px',
-          fontSize: '0.75rem',
-          fontWeight: 700,
-          cursor: 'pointer',
-          color: '#54656f',
-          minWidth: '36px',
-          textAlign: 'center'
-        }}
-      >
+      <button className="waveform-speed-pill" onClick={cycleSpeed}>
         {playbackSpeed}x
       </button>
     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, memo } from 'react'
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { Smile } from 'lucide-react'
 import { Emoji, EmojiStyle } from 'emoji-picker-react'
 import { MessageItem as IMessageItem, MessageReceiptInfo } from '../../types/chatTypes'
@@ -19,6 +19,7 @@ import { EmojiText } from '../common/EmojiText'
 import { useContributions } from '../../hooks/useContributions'
 import { evaluateWhen } from '../../utils/whenCondition'
 import { PluginIcon } from '../common/PluginIcon'
+import { isSameJid } from '../../utils/jidUtils'
 
 const MEDIA_TYPES = new Set([
   'imageMessage',
@@ -228,9 +229,16 @@ const MessageItem = memo(function MessageItem({
   const [showStarConfirm, setShowStarConfirm] = useState(false)
   const [isFavoriteSticker, setIsFavoriteSticker] = useState(false)
   const reactionTriggerRef = useRef<HTMLDivElement>(null)
+  const isMountedRef = useRef(true)
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => { isMountedRef.current = false }
+  }, [])
 
   useEffect(() => {
-    api.getMyJid().then(setMyJid).catch(console.error)
+    let mounted = true
+    api.getMyJid().then((jid) => { if (mounted) setMyJid(jid) }).catch(console.error)
+    return () => { mounted = false }
   }, [])
 
   useEffect(() => {
@@ -258,6 +266,7 @@ const MessageItem = memo(function MessageItem({
     setShowDropdown(false)
     try {
       const info = await api.getMessageReceipts(msg.id)
+      if (!isMountedRef.current) return
       setReceipts(info)
       setShowInfo(true)
     } catch (e) {
@@ -282,7 +291,9 @@ const MessageItem = memo(function MessageItem({
   const isMeReaction = (senderId: string, senderName?: string | null) => {
     if (senderName === 'Me' || senderId === 'Me') return true
     if (!myJid) return false
-    return senderId.split('@')[0] === myJid.split('@')[0]
+    // Normalize both sides (strip @domain + :device suffix). F11-03 owns the
+    // LID/PN cross-format matching inside isSameJid.
+    return isSameJid(senderId, myJid)
   }
 
   const handleReactClick = async (emoji: string) => {
@@ -300,13 +311,13 @@ const MessageItem = memo(function MessageItem({
     }
   }
 
-  const handleDownload = async () => {
+  const handleDownload = useCallback(async () => {
     if (onDownloadMedia) {
       setDownloading(true)
       try { await onDownloadMedia(msg.id) }
-      finally { setDownloading(false) }
+      finally { if (isMountedRef.current) setDownloading(false) }
     }
-  }
+  }, [onDownloadMedia, msg.id])
 
   const handleDropdownToggle = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useAPI } from '../../../context/APIContext'
 import { JPEGThumbnail, isJPEGThumbnailBuffer } from '../../../types/mediaTypes'
 import { ImageMessageProps, StickerMessageProps, VideoMessageProps, DocumentMessageProps } from '../../../types/componentProps'
@@ -201,8 +201,11 @@ export const StickerMessage = ({ localURI, rawMsg, onDownload, isDownloading }: 
         }
     }
 
+    const autoDownloadTriedRef = useRef(false)
     useEffect(() => {
+        if (autoDownloadTriedRef.current) return
         if (!localURI && !isDownloading && onDownload && !downloadFailed) {
+            autoDownloadTriedRef.current = true
             handleDownload()
         }
     }, [localURI, isDownloading, onDownload, downloadFailed])

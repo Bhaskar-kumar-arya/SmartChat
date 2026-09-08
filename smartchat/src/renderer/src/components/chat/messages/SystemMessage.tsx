@@ -34,30 +34,8 @@ export function SystemMessageBubble({
       })()
 
   return (
-    <div
-      className="system-message-container"
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        margin: '12px 0',
-        width: '100%'
-      }}
-    >
-      <div
-        className="system-message-bubble"
-        style={{
-          background: 'rgba(0, 0, 0, 0.05)',
-          color: '#666',
-          padding: '6px 14px',
-          borderRadius: '8px',
-          fontSize: '0.8rem',
-          fontWeight: 500,
-          textAlign: 'center',
-          maxWidth: '85%',
-          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-          border: '1px solid rgba(0, 0, 0, 0.03)'
-        }}
-      >
+    <div className="system-message-container">
+      <div className="system-message-bubble">
         {renderedElement}
       </div>
     </div>

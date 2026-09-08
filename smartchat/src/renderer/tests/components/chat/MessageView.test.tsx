@@ -84,6 +84,40 @@ describe('MessageView', () => {
     expect(screen.getByText('Loading message…')).toBeInTheDocument()
   })
 
+  it('recovers pagination lock after onLoadMore rejects [F5-03]', async () => {
+    const rejecting = vi.fn().mockRejectedValue(new Error('backend down'))
+    const { container } = renderWithProviders(
+      <MessageView {...defaultProps} onLoadMore={rejecting} />
+    )
+    const view = container.querySelector('.message-view') as HTMLElement
+    Object.defineProperty(view, 'scrollHeight', { value: 2000, configurable: true })
+    Object.defineProperty(view, 'clientHeight', { value: 500, configurable: true })
+    view.scrollTop = 0
+
+    fireEvent.scroll(view)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(rejecting).toHaveBeenCalledTimes(1)
+
+    // A second scroll near the top must still trigger another load attempt —
+    // the lock was released despite the rejection.
+    fireEvent.scroll(view)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(rejecting).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not mutate the shared message.reactions array when opening the modal [F5-07]', () => {
+    const msg = dummyMessages[1]
+    msg.reactions = [
+      { text: '👍', senderId: 'a@s.whatsapp.net', senderName: 'A', timestamp: '100' },
+      { text: '❤️', senderId: 'b@s.whatsapp.net', senderName: 'B', timestamp: '200' }
+    ]
+    const before = msg.reactions.map((r) => r.text)
+    renderWithProviders(<MessageView {...defaultProps} messages={[dummyMessages[0], msg]} />)
+    const badge = document.querySelector('.reactions-display') || document.querySelector('.reaction-chip')
+    if (badge) fireEvent.click(badge)
+    expect(msg.reactions.map((r) => r.text)).toEqual(before)
+  })
+
   it('renders reaction details modal when clicking reactions view handler', async () => {
     renderWithProviders(<MessageView {...defaultProps} />)
 
