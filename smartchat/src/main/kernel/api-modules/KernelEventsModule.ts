@@ -5,11 +5,25 @@ import { WAEventMap } from '../../services/whatsapp/WAEventTypes'
 import { IPluginChannel } from '../channels/IPluginChannel'
 import { KernelPermissionError, KernelNotFoundError } from './KernelErrors'
 
+/**
+ * Events that carry message/chat content for *many* chats in a single payload
+ * (the jid lives under `messages[].key.remoteJid`, not at the top level). For a
+ * chat-scoped subscription these must be filtered element-by-element or the
+ * plugin receives the full cross-chat backlog. (S7-01)
+ */
+const MULTI_CHAT_ARRAY_EVENTS = new Set<string>(['messages:append'])
+
+interface PluginSubscription {
+  handler: AsyncHandler<any>
+  /** The capability key the subscription was authorised under — scope is checked against this key only. (S7-02) */
+  authKey: string
+}
+
 export class KernelEventsModule extends BaseKernelModule {
   readonly namespace = 'kernel:events'
-  private pluginSubscriptions = new Map<string, Map<string, AsyncHandler<any>>>()
+  private pluginSubscriptions = new Map<string, Map<string, PluginSubscription>>()
   /** Subscriptions requested while the bus was null — replayed on the next onBusConnected() call */
-  private pendingSubscriptions: Array<{ pluginId: string; event: keyof WAEventMap }> = []
+  private pendingSubscriptions: Array<{ pluginId: string; event: keyof WAEventMap; authKey: string }> = []
 
   constructor(
     permissions: IPermissionStore,
@@ -36,13 +50,13 @@ export class KernelEventsModule extends BaseKernelModule {
   public onBusConnected(bus: IWAEventBus): void {
     // Re-attach existing live subscriptions.
     for (const [pluginId, pluginMap] of this.pluginSubscriptions) {
-      for (const event of pluginMap.keys()) {
-        this.registerOnBus(bus, pluginId, event as keyof WAEventMap)
+      for (const [event, sub] of pluginMap) {
+        this.registerOnBus(bus, pluginId, event as keyof WAEventMap, sub.authKey)
       }
     }
     // Drain subscriptions requested while the bus was null.
-    for (const { pluginId, event } of this.pendingSubscriptions) {
-      this.registerOnBus(bus, pluginId, event)
+    for (const { pluginId, event, authKey } of this.pendingSubscriptions) {
+      this.registerOnBus(bus, pluginId, event, authKey)
     }
     this.pendingSubscriptions = []
   }
@@ -58,8 +72,8 @@ export class KernelEventsModule extends BaseKernelModule {
     const pluginMap = this.pluginSubscriptions.get(pluginId)
     if (pluginMap) {
       if (bus) {
-        for (const [event, handler] of pluginMap) {
-          bus.off(event as keyof WAEventMap, handler)
+        for (const [event, sub] of pluginMap) {
+          bus.off(event as keyof WAEventMap, sub.handler)
         }
       }
       this.pluginSubscriptions.delete(pluginId)
@@ -67,24 +81,34 @@ export class KernelEventsModule extends BaseKernelModule {
     this.pendingSubscriptions = this.pendingSubscriptions.filter((s) => s.pluginId !== pluginId)
   }
 
-  private registerOnBus(bus: IWAEventBus, pluginId: string, event: keyof WAEventMap): void {
+  private registerOnBus(bus: IWAEventBus, pluginId: string, event: keyof WAEventMap, authKey: string): void {
+    const eventName = String(event)
     const handler: AsyncHandler<any> = async (_data: any) => {
       const channel = this.getChannel?.(pluginId)
       if (channel) {
-        // Best-effort per-chat scope filter: if the payload names a single chat
-        // and the plugin's events scope denies it, drop the event. Payloads with
-        // no single resolvable chat jid (bulk contact/group updates, connection
-        // state) are not filtered — `events:<event>` / `events:*` are
-        // all-or-nothing for those. (S7-01)
-        const chatJid = extractChatJid(_data)
-        if (
-          chatJid &&
-          (!this.permissions.isResourceAllowed(pluginId, `events:${String(event)}`, chatJid) ||
-            !this.permissions.isResourceAllowed(pluginId, 'events:*', chatJid))
-        ) {
-          return
+        const allowed = (jid: string): boolean =>
+          this.permissions.isResourceAllowed(pluginId, authKey, jid)
+
+        let payload: any = _data
+
+        if (MULTI_CHAT_ARRAY_EVENTS.has(eventName)) {
+          // The payload carries content for many chats; scope it down to the
+          // plugin's allow-list per array element. `isResourceAllowed` is
+          // default-allow, so an unscoped plugin keeps the whole payload. (S7-01)
+          const filtered = filterMultiChatArrayPayload(eventName, _data, allowed)
+          if (!filtered) return
+          payload = filtered
+        } else {
+          // Best-effort per-chat scope filter: if the payload names a single
+          // chat and the plugin's events scope denies it, drop the event.
+          // Checked against the capability key the subscription was authorised
+          // under only — not an AND across both keys. (S7-01, S7-02)
+          const chatJid = extractChatJid(_data)
+          if (chatJid && !allowed(chatJid)) {
+            return
+          }
         }
-        const sanitizedData = sanitizeForPlugin(_data)
+        const sanitizedData = sanitizeForPlugin(payload)
         channel.sendToPlugin({
           id: `evt:${String(event)}:${Date.now()}:${Math.random().toString(36).substring(2, 7)}`,
           type: 'kernel:events:emit',
@@ -100,11 +124,11 @@ export class KernelEventsModule extends BaseKernelModule {
       this.pluginSubscriptions.set(pluginId, new Map())
     }
     const pluginMap = this.pluginSubscriptions.get(pluginId)!
-    const existingHandler = pluginMap.get(String(event))
-    if (existingHandler) {
-      bus.off(event, existingHandler)
+    const existing = pluginMap.get(eventName)
+    if (existing) {
+      bus.off(event, existing.handler)
     }
-    pluginMap.set(String(event), handler)
+    pluginMap.set(eventName, { handler, authKey })
     bus.on(event, handler)
   }
 
@@ -122,12 +146,16 @@ export class KernelEventsModule extends BaseKernelModule {
           )
         }
 
+        // Remember which capability key authorised this subscription so the
+        // delivery-time scope filter checks that key only. (S7-02)
+        const authKey = this.permissions.hasCapability(pluginId, perm) ? perm : 'events:*'
+
         const bus = this.resolveBus()
         if (bus) {
-          this.registerOnBus(bus, pluginId, event)
+          this.registerOnBus(bus, pluginId, event, authKey)
         } else {
           // Bus not yet available — queue for replay when WhatsApp connects
-          this.pendingSubscriptions.push({ pluginId, event })
+          this.pendingSubscriptions.push({ pluginId, event, authKey })
         }
 
         return { success: true, event: String(event) }
@@ -143,9 +171,9 @@ export class KernelEventsModule extends BaseKernelModule {
         )
         const pluginMap = this.pluginSubscriptions.get(pluginId)
         if (bus && pluginMap) {
-          const handler = pluginMap.get(String(event))
-          if (handler) {
-            bus.off(event, handler)
+          const sub = pluginMap.get(String(event))
+          if (sub) {
+            bus.off(event, sub.handler)
             pluginMap.delete(String(event))
           }
         }
@@ -156,6 +184,30 @@ export class KernelEventsModule extends BaseKernelModule {
         throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
+}
+
+/**
+ * Filter a multi-chat array event payload down to the array elements whose
+ * owning chat the plugin is allowed to see. Returns the narrowed payload, or
+ * `undefined` if nothing remains (the event should not be delivered). (S7-01)
+ */
+function filterMultiChatArrayPayload(
+  eventName: string,
+  data: unknown,
+  allowed: (jid: string) => boolean
+): unknown | undefined {
+  if (!data || typeof data !== 'object') return data
+  if (eventName === 'messages:append') {
+    const o = data as { messages?: unknown[] }
+    if (!Array.isArray(o.messages)) return data
+    const kept = o.messages.filter((m) => {
+      const jid = (m as { key?: { remoteJid?: unknown } })?.key?.remoteJid
+      return typeof jid === 'string' ? allowed(jid) : true
+    })
+    if (kept.length === 0) return undefined
+    return { ...o, messages: kept }
+  }
+  return data
 }
 
 /** Extract a single owning chat jid from a WA event payload, if it has one. */

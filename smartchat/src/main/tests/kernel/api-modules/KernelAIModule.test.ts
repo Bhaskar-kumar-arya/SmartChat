@@ -34,6 +34,7 @@ describe('KernelAIModule', () => {
 
     mockToolRegistry = {
       registerTool: vi.fn(),
+      unregisterTool: vi.fn(),
       getTool: vi.fn(),
       getAllTools: vi.fn(),
       getToolDefinitions: vi.fn()
@@ -66,6 +67,18 @@ describe('KernelAIModule', () => {
 
     expect(mockAIService.generateResponse).toHaveBeenCalledWith('Hello AI', undefined, undefined, undefined, undefined)
     expect(result).toBe('AI reply text')
+  })
+
+  it('S7-08: chat result is passed through serialize (bigint -> string)', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockAIService.generateResponse).mockResolvedValue({
+      text: 'hi',
+      tokens: 123n
+    } as any)
+
+    const result = (await module.handle('plugin-a', 'kernel:ai:chat', { prompt: 'p' })) as any
+
+    expect(result).toEqual({ text: 'hi', tokens: '123' })
   })
 
   it('denies callTool when resource (tool name) is not allowed', async () => {

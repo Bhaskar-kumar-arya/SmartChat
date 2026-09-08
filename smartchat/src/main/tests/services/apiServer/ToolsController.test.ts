@@ -29,6 +29,7 @@ function makeRes(): { res: any; status: () => number; body: () => unknown } {
 function registry(tools: AITool[]): IToolRegistry {
   return {
     registerTool: vi.fn(),
+    unregisterTool: vi.fn(),
     getTool: (n: string) => tools.find(t => t.name === n),
     getAllTools: () => tools,
     getToolDefinitions: () => []

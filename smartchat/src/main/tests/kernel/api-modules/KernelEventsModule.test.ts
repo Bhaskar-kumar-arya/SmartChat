@@ -238,6 +238,94 @@ describe('KernelEventsModule', () => {
     expect(mockChannel.sendToPlugin).toHaveBeenCalledTimes(1)
   })
 
+  it('S7-01: messages:append is filtered per-message down to the plugin allow-list', async () => {
+    const mockChannel = {
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    }
+    const eventsModule = new KernelEventsModule(mockPermissions, mockBus, vi.fn().mockReturnValue(mockChannel))
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+      (_p, _c, resource) => resource === 'allowed@s.whatsapp.net'
+    )
+
+    let busHandler: ((data: any) => Promise<void>) | null = null
+    vi.mocked(mockBus.on).mockImplementation((evt, fn) => {
+      if (evt === 'messages:append') busHandler = fn as any
+      return mockBus
+    })
+
+    await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'messages:append' as any })
+
+    await busHandler!({
+      messages: [
+        { key: { remoteJid: 'allowed@s.whatsapp.net' }, text: 'keep' },
+        { key: { remoteJid: 'secret@s.whatsapp.net' }, text: 'drop' }
+      ]
+    })
+
+    expect(mockChannel.sendToPlugin).toHaveBeenCalledTimes(1)
+    const sent = mockChannel.sendToPlugin.mock.calls[0][0]
+    expect(sent.payload.payload.messages).toHaveLength(1)
+    expect(sent.payload.payload.messages[0].key.remoteJid).toBe('allowed@s.whatsapp.net')
+  })
+
+  it('S7-01: messages:append is dropped entirely when no message is in scope', async () => {
+    const mockChannel = {
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    }
+    const eventsModule = new KernelEventsModule(mockPermissions, mockBus, vi.fn().mockReturnValue(mockChannel))
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(false)
+
+    let busHandler: ((data: any) => Promise<void>) | null = null
+    vi.mocked(mockBus.on).mockImplementation((evt, fn) => {
+      if (evt === 'messages:append') busHandler = fn as any
+      return mockBus
+    })
+
+    await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'messages:append' as any })
+    await busHandler!({ messages: [{ key: { remoteJid: 'secret@s.whatsapp.net' } }] })
+
+    expect(mockChannel.sendToPlugin).not.toHaveBeenCalled()
+  })
+
+  it('S7-02: delivery-time scope is checked only against the authorising capability key', async () => {
+    const mockChannel = {
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    }
+    const eventsModule = new KernelEventsModule(mockPermissions, mockBus, vi.fn().mockReturnValue(mockChannel))
+    // Plugin holds the specific key, not the wildcard.
+    vi.mocked(mockPermissions.hasCapability).mockImplementation(
+      (_p, cap) => cap === 'events:message:incoming'
+    )
+    const seenKeys: string[] = []
+    vi.mocked(mockPermissions.isResourceAllowed).mockImplementation((_p, cap) => {
+      seenKeys.push(cap)
+      return true
+    })
+
+    let busHandler: ((data: any) => Promise<void>) | null = null
+    vi.mocked(mockBus.on).mockImplementation((evt, fn) => {
+      if (evt === 'message:incoming') busHandler = fn as any
+      return mockBus
+    })
+
+    await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+    await busHandler!({ chatJid: 'a@s.whatsapp.net' })
+
+    expect(seenKeys).toEqual(['events:message:incoming'])
+    expect(seenKeys).not.toContain('events:*')
+  })
+
   it('sanitizes event payloads containing sock objects, functions, and bigints', async () => {
     const mockChannel = {
       sendToPlugin: vi.fn(),

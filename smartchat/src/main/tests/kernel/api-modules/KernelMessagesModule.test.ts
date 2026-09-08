@@ -155,6 +155,40 @@ describe('KernelMessagesModule', () => {
     expect(result.filePath).toContain('user')
   })
 
+  it('S7-06: downloadMedia contains a traversal-laden localURI under the media cache', async () => {
+    const mockMediaService = {
+      downloadAndCacheMedia: vi.fn().mockResolvedValue({
+        id: 'msg-eviltrav',
+        content: JSON.stringify({
+          documentMessage: { localURI: 'app://media/../../../../etc/passwd' }
+        })
+      })
+    }
+
+    const customModule = new KernelMessagesModule(
+      mockPermissions,
+      mockMessageQueryService,
+      mockMessageActionService,
+      () => ({ sendMessage: vi.fn() } as any),
+      mockMediaService as any,
+      () => '/mock/user/data'
+    )
+
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+
+    const result = (await customModule.handle('plugin-a', 'kernel:messages:downloadMedia', {
+      messageId: 'msg-eviltrav'
+    })) as any
+
+    expect(result.filePath).not.toContain('..')
+    expect(result.filePath).not.toContain('etc')
+    // Either contained under <userData>/media, or rejected to null — never an escaped path.
+    if (result.filePath) {
+      expect(result.filePath).toContain('media')
+      expect(result.filePath.endsWith('passwd')).toBe(true)
+    }
+  })
+
   it('returns null filePath when getUserDataPath is omitted in downloadMedia', async () => {
     const mockMediaService = {
       downloadAndCacheMedia: vi.fn().mockResolvedValue({

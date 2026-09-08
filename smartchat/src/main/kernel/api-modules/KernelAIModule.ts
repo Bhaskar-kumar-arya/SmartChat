@@ -31,7 +31,9 @@ export class KernelAIModule extends BaseKernelModule {
     const names = this.pluginTools.get(pluginId)
     if (!names) return
     for (const name of names) {
-      this.toolRegistry.unregisterTool?.(name)
+      // Required method — a no-op optional call would silently re-introduce the
+      // tool-leak-on-unload this method exists to prevent. (S7-08)
+      this.toolRegistry.unregisterTool(name)
     }
     this.pluginTools.delete(pluginId)
   }
@@ -49,7 +51,11 @@ export class KernelAIModule extends BaseKernelModule {
           options?: { useThinkMode?: boolean; model?: string; isSystem?: boolean; requestId?: string }
         }
         this.requireCapability(pluginId, 'ai:chat')
-        return await this.aiService.generateResponse(prompt, contextFiles, history, mentions, options)
+        // Normalise like every other action — a bigint / Date / class instance in
+        // the response shape must not reach the plugin channel unserialised. (S7-08)
+        return this.serialize(
+          await this.aiService.generateResponse(prompt, contextFiles, history, mentions, options)
+        )
       }
 
       case 'getAvailableModels': {

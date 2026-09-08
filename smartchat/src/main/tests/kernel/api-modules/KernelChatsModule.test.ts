@@ -148,6 +148,26 @@ describe('KernelChatsModule', () => {
     expect(result).toEqual([{ jid: '123@s.whatsapp.net', name: 'Alice', isAdmin: true, isMe: false }])
   })
 
+  it('S7-05: getList walks source pages so a scoped plugin sees a stable filtered page', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    // Only chats on later DB pages are allowed.
+    vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+      (_p, _c, resource) => String(resource).startsWith('ok')
+    )
+    vi.mocked(mockChatService.getChatList).mockImplementation(async (page = 1, size = 50) => {
+      // 3 source pages of `size` rows; allowed chats only on page 3.
+      if (page === 1) return Array.from({ length: size }, (_, i) => ({ jid: `no1-${i}@s.whatsapp.net`, name: 'x' })) as any
+      if (page === 2) return Array.from({ length: size }, (_, i) => ({ jid: `no2-${i}@s.whatsapp.net`, name: 'x' })) as any
+      if (page === 3) return [{ jid: 'ok-a@s.whatsapp.net', name: 'A' }, { jid: 'ok-b@s.whatsapp.net', name: 'B' }] as any
+      return []
+    })
+
+    const result = (await module.handle('plugin-a', 'kernel:chats:getList', { page: 1, limit: 50 })) as any[]
+
+    // The empty page-1 DB slice must NOT be reported as the end of the list.
+    expect(result.map((c) => c.jid)).toEqual(['ok-a@s.whatsapp.net', 'ok-b@s.whatsapp.net'])
+  })
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:chats:unknownAction', {})

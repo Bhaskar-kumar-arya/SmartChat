@@ -69,8 +69,19 @@ export class KernelContactsModule extends BaseKernelModule {
           }
         }
         this.requireCapability(pluginId, 'contacts:write')
-        if (contact?.id) {
-          this.requireResourceScope(pluginId, 'contacts:write', contact.id)
+        // An id-less upsert would skip the scope check entirely; reject it. And
+        // scope-check every identity alias the payload attaches, not just `id` —
+        // an allowed `id` with an arbitrary `phoneNumber` / `lid` can still
+        // hijack name resolution / LID mapping for another contact. (S7-07)
+        if (!contact?.id || typeof contact.id !== 'string') {
+          throw new KernelError('BAD_REQUEST', 'upsertContact requires a non-empty contact.id')
+        }
+        this.requireResourceScope(pluginId, 'contacts:write', contact.id)
+        if (contact.lid) {
+          this.requireResourceScope(pluginId, 'contacts:write', contact.lid)
+        }
+        if (contact.phoneNumber) {
+          this.requireResourceScope(pluginId, 'contacts:write', contact.phoneNumber)
         }
         await this.contactService.upsertContact(contact)
         return { success: true }

@@ -1,4 +1,4 @@
-import { join, resolve, sep } from 'path'
+import { basename, join, resolve, sep } from 'path'
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IMessageQueryService } from '../../services/messages/IMessageQueryService'
@@ -221,10 +221,20 @@ export class KernelMessagesModule extends BaseKernelModule {
 
         let filePath: string | null = null
         if (localURI && typeof localURI === 'string') {
-          const fileName = localURI.replace(/^app:\/\/media\//, '').replace(/^app:\/\//, '')
+          // `localURI` comes back from persisted message content — strip the
+          // scheme, then `basename` to drop any `..` / separator trickery, and
+          // assert containment under <userData>/media before handing the path
+          // to the plugin as authoritative. (S7-06, reuses resolveSendableMediaPath)
+          const fileName = basename(
+            localURI.replace(/^app:\/\/media\//, '').replace(/^app:\/\//, '')
+          )
           const userDataPath = this.getUserDataPath?.()
-          if (userDataPath) {
-            filePath = join(userDataPath, 'media', fileName)
+          if (userDataPath && fileName) {
+            try {
+              filePath = this.resolveSendableMediaPath(pluginId, join(userDataPath, 'media', fileName))
+            } catch {
+              filePath = null
+            }
           }
         }
 

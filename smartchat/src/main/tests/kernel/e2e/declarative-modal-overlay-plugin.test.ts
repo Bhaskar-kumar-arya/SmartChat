@@ -15,7 +15,7 @@ import { isBidirectionalPluginChannel } from '../../../kernel/channels/IPluginCh
 
 
 const PLUGIN_ID = 'com.smartchat.declarative-modal-test'
-const PLUGIN_PERMISSIONS = ['ui:notification', 'ui:toast', 'ui:overlay', 'chats:read', 'chats:write', 'messages:write']
+const PLUGIN_PERMISSIONS = ['ui:notification', 'ui:modal', 'ui:toast', 'ui:overlay', 'chats:read', 'chats:write', 'messages:write']
 
 describe('Declarative Modal Test Plugin - Webview Overlay Integration', () => {
   let tmpDir: string

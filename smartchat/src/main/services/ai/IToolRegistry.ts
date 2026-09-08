@@ -25,7 +25,7 @@ export interface AITool {
 export interface IToolRegistry {
   registerTool(tool: AITool): void
   /** Remove a previously registered tool. Returns true if a tool was removed. */
-  unregisterTool?(name: string): boolean
+  unregisterTool(name: string): boolean
   getTool(name: string): AITool | undefined
   getAllTools(): AITool[]
   getToolDefinitions(): Record<string, unknown>[]

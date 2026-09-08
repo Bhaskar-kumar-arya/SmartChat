@@ -637,7 +637,7 @@ allow-listed chats; for these events it is not. The in-code comment frames
 holds the unscoped capability, or filter the `messages[]` array down to allowed
 jids before sending. At minimum document that `events:messages:append` cannot be
 chat-scoped so users don't grant it expecting confinement.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S7-02] low — src/main/kernel/api-modules/KernelEventsModule.ts:80-86
 **What:** The filter drops the event when **either** `events:<event>` **or**
@@ -653,7 +653,7 @@ AND. Hard to reason about and easy to misconfigure.
 **Fix idea:** check scope only against the capability key the subscription was
 authorised under (track it at subscribe time), or document the intersection
 semantics explicitly.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S7-03] med — src/main/kernel/api-modules/KernelUIModule.ts:76-93
 **What:** `showForm`, `showConfirm` and `showAlert` — modal dialogs that block the
@@ -668,7 +668,7 @@ notification. Mirrors the S7-03 reasoning already applied to `ai:sessions` vs
 `ai:chat` elsewhere in this codebase.
 **Fix idea:** introduce a dedicated `ui:modal` (or reuse `ui:overlay`) capability
 for the `show*` modal actions; keep `ui:notification` for `notify` only.
-**Status:** open
+**Status:** fixed 2026-09-08 — new `ui:modal` capability gates showForm/showConfirm/showAlert; builtin/bundled plugin manifests that use modals (declarative-modal-test, codetantra-otp-relay) updated
 
 ### [P2-S7-04] low — src/main/kernel/api-modules/KernelLogModule.ts:11-30
 **What:** `KernelLogModule.handle` performs no `requireCapability` check at all
@@ -682,7 +682,7 @@ large synchronous serialisations on the main thread (a slow-loris style stall if
 capability, and the payload should be size-capped.
 **Fix idea:** require a `log` / `kernel:log` capability (or at least rate-limit and
 truncate `data`), and guard the `JSON.stringify` with a length cap.
-**Status:** open
+**Status:** fixed 2026-09-08 — per-plugin rate limit (100 lines/s) + `data` capped to 20 items and 4000 chars + message capped. Capability requirement deliberately NOT added: `log` is a foundational primitive every existing plugin uses unconditionally and gating it silently breaks them (the finding sanctions the rate-limit/truncate alternative).
 
 ### [P2-S7-05] low — src/main/kernel/api-modules/KernelChatsModule.ts:23-34
 **What:** `getList` calls `chatService.getChatList(page, limit)` — which paginates
@@ -696,7 +696,9 @@ plugins effectively can't enumerate their own allowed chats reliably.
 **Fix idea:** push the jid allow-list into the repository query (WHERE jid IN
 (...)) for scoped plugins, or return a cursor/hasMore that reflects pre-filter
 state.
-**Status:** open
+**Status:** fixed 2026-09-08 — scoped plugins now get a stable page over the
+*filtered* set (module walks source pages 200 at a time); unscoped plugins keep
+the verbatim single-DB-page fast path.
 
 ### [P2-S7-06] low — src/main/kernel/api-modules/KernelMessagesModule.ts:222-231
 **What:** `downloadMedia` derives `filePath` as
@@ -714,7 +716,8 @@ authoritative.
 separators/`..`, and assert `resolved.startsWith(mediaDir + sep)` before
 returning — reuse the `resolveSendableMediaPath` containment helper already in
 this file.
-**Status:** open
+**Status:** fixed 2026-09-08 — `path.basename` after scheme-strip + routed
+through `resolveSendableMediaPath`; escaped paths resolve to null.
 
 ### [P2-S7-07] low — src/main/kernel/api-modules/KernelContactsModule.ts:60-77
 **What:** `upsertContact` only calls `requireResourceScope(pluginId,
@@ -729,7 +732,8 @@ different resource than the one it was scoped to and can hijack name resolution 
 LID mapping for another contact.
 **Fix idea:** reject the request when `contact.id` is absent; additionally
 scope-check `contact.lid` / `contact.phoneNumber` when present.
-**Status:** open
+**Status:** fixed 2026-09-08 — id-less upsert now rejected (BAD_REQUEST); `lid`
+and `phoneNumber` scope-checked when present.
 
 ### [P2-S7-08] low — src/main/kernel/api-modules/KernelAIModule.ts:43-53, 33-36
 **What:** `case 'chat'` returns `await this.aiService.generateResponse(...)`
@@ -747,7 +751,9 @@ prevent (S7-04).
 **Fix idea:** wrap the `chat` result in `this.serialize(...)`; make
 `unregisterTool` a required method on `IToolRegistry` (or assert its presence at
 construction).
-**Status:** open
+**Status:** fixed 2026-09-08 — `chat` result wrapped in `this.serialize(...)`;
+`unregisterTool` made required on `IToolRegistry` and the optional-chained call
+in `removePlugin` hard-wired.
 
 ## Slice 8 — Kernel plugins, contributions, permissions
 

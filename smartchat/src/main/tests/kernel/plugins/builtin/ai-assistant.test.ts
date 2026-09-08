@@ -46,6 +46,7 @@ describe('AIAssistantPlugin', () => {
 
     const mockRegistry: IToolRegistry = {
       registerTool: vi.fn(),
+      unregisterTool: vi.fn(),
       getTool: vi.fn().mockImplementation((name: string) => name === 'sendMessage' ? mockTool : undefined),
       getAllTools: vi.fn().mockReturnValue([mockTool]),
       getToolDefinitions: vi.fn().mockReturnValue([])

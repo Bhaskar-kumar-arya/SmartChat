@@ -124,6 +124,32 @@ describe('KernelContactsModule', () => {
     expect(result).toEqual({ success: true })
   })
 
+  it('S7-07: rejects an id-less upsertContact instead of skipping the scope check', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+
+    await expect(
+      module.handle('plugin-a', 'kernel:contacts:upsertContact', {
+        contact: { name: 'Ghost', phoneNumber: '999@s.whatsapp.net' }
+      })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    expect(mockContactService.upsertContact).not.toHaveBeenCalled()
+  })
+
+  it('S7-07: scope-checks contact.lid / contact.phoneNumber aliases too', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+      (_p, _c, resource) => resource === '123@s.whatsapp.net'
+    )
+
+    await expect(
+      module.handle('plugin-a', 'kernel:contacts:upsertContact', {
+        contact: { id: '123@s.whatsapp.net', lid: '77@lid', name: 'Alice' }
+      })
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED', permission: 'contacts:write' })
+    expect(mockContactService.upsertContact).not.toHaveBeenCalled()
+  })
+
   it('allows resolveLid when contacts:read is granted', async () => {
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
     vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)

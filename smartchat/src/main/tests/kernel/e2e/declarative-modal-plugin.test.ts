@@ -71,7 +71,7 @@ describe('Declarative Modal Plugin E2E Test', () => {
     const manifest = await loader.install(scextPath)
     expect(manifest.id).toBe('com.smartchat.declarative-modal-test')
 
-    permissions.registerPluginManifest(manifest.id, ['ui:notification', 'ui:toast'])
+    permissions.registerPluginManifest(manifest.id, ['ui:notification', 'ui:modal', 'ui:toast'])
     await host.load(manifest.id)
 
     expect(host.listLoaded()).toContain(manifest.id)

@@ -1,6 +1,7 @@
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IChatService } from '../../services/chats/IChatService'
+import { ChatListEntry } from '../../domain/chatList.types'
 import { IChatActionService, IChatActionSocket } from '../../services/chats/IChatActionService'
 import { KernelError, KernelNotFoundError } from './KernelErrors'
 
@@ -23,14 +24,31 @@ export class KernelChatsModule extends BaseKernelModule {
       case 'getList': {
         this.requireCapability(pluginId, 'chats:read')
         const { page = 1, limit = 50 } = (payload as { page?: number; limit?: number }) || {}
-        const list = await this.chatService.getChatList(page, limit)
-        // Filter to the plugin's allowed chats — a scoped plugin must not see
-        // names / last-message previews for chats outside its allow-list.
-        // isResourceAllowed() is default-allow, so unscoped plugins are unaffected. (S7-01)
-        const scoped = list.filter(
-          (chat) => !chat?.jid || this.permissions.isResourceAllowed(pluginId, 'chats:read', chat.jid)
-        )
-        return this.serialize(scoped)
+        const allow = (chat: ChatListEntry): boolean =>
+          !chat?.jid || this.permissions.isResourceAllowed(pluginId, 'chats:read', chat.jid)
+
+        // Fast path — the plugin is not chat-scoped for this page: return the DB
+        // page verbatim, unchanged semantics.
+        const firstPage = await this.chatService.getChatList(page, limit)
+        if (firstPage.every(allow)) {
+          return this.serialize(firstPage)
+        }
+
+        // Scoped plugin: the DB pagination window and the count of visible
+        // (allowed) rows diverge, so an empty filtered page looks like the end
+        // of the list even when more allowed chats sit on a later DB page. Walk
+        // the source and return a stable page over the *filtered* set instead. (S7-05)
+        const SRC_PAGE_SIZE = 200
+        const need = page * limit
+        const collected: ChatListEntry[] = []
+        for (let srcPage = 1; srcPage <= 1000 && collected.length < need; srcPage++) {
+          const batch = await this.chatService.getChatList(srcPage, SRC_PAGE_SIZE)
+          for (const chat of batch) {
+            if (allow(chat)) collected.push(chat)
+          }
+          if (batch.length < SRC_PAGE_SIZE) break
+        }
+        return this.serialize(collected.slice((page - 1) * limit, page * limit))
       }
 
       case 'getById': {

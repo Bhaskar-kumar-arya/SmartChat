@@ -12,6 +12,7 @@
     "storage:read",
     "storage:write",
     "ui:notification",
+    "ui:modal",
     "ui:toast",
     "ui:overlay",
     "ui:panel",

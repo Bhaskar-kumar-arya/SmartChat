@@ -74,19 +74,22 @@ export class KernelUIModule extends BaseKernelModule {
       }
 
       case 'showForm': {
-        this.requireCapability(pluginId, 'ui:notification')
+        // Blocking modals that render plugin-supplied text/inputs in first-party
+        // chrome are a materially higher-intrusion surface than a passive toast,
+        // so they need their own capability rather than riding `ui:notification`. (S7-03)
+        this.requireCapability(pluginId, 'ui:modal')
         const modalId = randomUUID()
         return await this.getOverlayHost().showModal({ type: 'form', modalId, payload })
       }
 
       case 'showConfirm': {
-        this.requireCapability(pluginId, 'ui:notification')
+        this.requireCapability(pluginId, 'ui:modal')
         const modalId = randomUUID()
         return await this.getOverlayHost().showModal({ type: 'confirm', modalId, payload })
       }
 
       case 'showAlert': {
-        this.requireCapability(pluginId, 'ui:notification')
+        this.requireCapability(pluginId, 'ui:modal')
         const modalId = randomUUID()
         await this.getOverlayHost().showModal({ type: 'alert', modalId, payload })
         return undefined

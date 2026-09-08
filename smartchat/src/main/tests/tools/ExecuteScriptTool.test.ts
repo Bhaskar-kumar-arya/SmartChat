@@ -5,6 +5,7 @@ import type { AITool, IToolRegistry, ToolResult } from '../../services/ai/IToolR
 function makeRegistry(tools: AITool[]): IToolRegistry {
   return {
     registerTool: vi.fn(),
+    unregisterTool: vi.fn(),
     getTool: (name: string) => tools.find(t => t.name === name),
     getAllTools: () => tools,
     getToolDefinitions: () => []

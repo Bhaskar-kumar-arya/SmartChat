@@ -6,6 +6,7 @@
   "main": "index.js",
   "permissions": [
     "ui:notification",
+    "ui:modal",
     "ui:toast",
     "ui:overlay",
     "chats:read",

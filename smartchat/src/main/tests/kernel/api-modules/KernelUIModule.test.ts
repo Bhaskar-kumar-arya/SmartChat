@@ -116,15 +116,28 @@ describe('KernelUIModule', () => {
     expect(result).toEqual({ success: true })
   })
 
-  it('denies showForm when ui:notification capability is lacking', async () => {
+  it('S7-03: denies showForm when ui:modal capability is lacking', async () => {
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(false)
 
     await expect(
       module.handle('plugin-a', 'kernel:ui:showForm', { title: 'Test Form', fields: [] })
     ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
-      message: "Plugin 'plugin-a' lacks capability 'ui:notification'"
+      message: "Plugin 'plugin-a' lacks capability 'ui:modal'",
+      permission: 'ui:modal'
     })
+  })
+
+  it('S7-03: ui:notification alone does not authorise blocking modals', async () => {
+    // Granted ui:notification, but NOT ui:modal.
+    vi.mocked(mockPermissions.hasCapability).mockImplementation((_p, cap) => cap === 'ui:notification')
+
+    for (const action of ['showForm', 'showConfirm', 'showAlert']) {
+      await expect(
+        module.handle('plugin-a', `kernel:ui:${action}`, { title: 't', body: 'b' })
+      ).rejects.toMatchObject({ code: 'PERMISSION_DENIED', permission: 'ui:modal' })
+    }
+    expect(mockOverlayHost.showModal).not.toHaveBeenCalled()
   })
 
   it('delegates showForm to overlayHost when capability is granted', async () => {
