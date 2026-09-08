@@ -63,6 +63,15 @@ const api = {
   skipSync: () => {
     ipcRenderer.send('wa-skip-sync')
   },
+  fetchMessageHistory: (jid: string): Promise<{ status: 'requested' | 'no-anchor' | 'error' }> => {
+    return ipcRenderer.invoke('wa:fetch-message-history', jid)
+  },
+  onWaHistoryAppended: (callback: (data: { messageCount: number }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: unknown) =>
+      callback((data as { messageCount: number }) ?? { messageCount: 0 })
+    ipcRenderer.on('wa-history-appended', listener)
+    return () => { ipcRenderer.removeListener('wa-history-appended', listener) }
+  },
   getSyncFullHistory: () => {
     return ipcRenderer.invoke('get-sync-full-history')
   },

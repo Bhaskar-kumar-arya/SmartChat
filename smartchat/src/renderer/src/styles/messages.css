@@ -34,8 +34,15 @@
 
 .message-loading-more {
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 0.5rem;
   padding: 0.75rem;
+}
+
+.message-loading-more-label {
+  font-size: 0.75rem;
+  color: var(--wa-text-tertiary);
 }
 
 .date-separator {

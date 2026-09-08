@@ -17,20 +17,15 @@ describe('AuthSettingsService', () => {
     service = new AuthSettingsService(repo)
   })
 
-  it('getSyncFullHistory returns true if value is "true"', async () => {
+  it('getSyncFullHistory is hard-wired to false (full-history sync removed)', async () => {
     repo.getValue.mockResolvedValue('true')
-    expect(await service.getSyncFullHistory()).toBe(true)
-    
-    repo.getValue.mockResolvedValue('false')
     expect(await service.getSyncFullHistory()).toBe(false)
   })
 
-  it('setSyncFullHistory sets correct string value', async () => {
+  it('setSyncFullHistory is a no-op (full-history sync removed)', async () => {
     await service.setSyncFullHistory(true)
-    expect(repo.setValue).toHaveBeenCalledWith('sync_full_history', 'true')
-    
     await service.setSyncFullHistory(false)
-    expect(repo.setValue).toHaveBeenCalledWith('sync_full_history', 'false')
+    expect(repo.setValue).not.toHaveBeenCalled()
   })
 
   it('getHistorySyncCompleted returns true if value is "true"', async () => {

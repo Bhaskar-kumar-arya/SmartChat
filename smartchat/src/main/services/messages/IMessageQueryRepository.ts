@@ -14,6 +14,10 @@ export interface IMessageReadRepository {
   ): Promise<Array<Message & { sender: Identity | null }>>
   findMessageTypeAndContent(id: string): Promise<{ messageType: string; textContent: string | null } | null>
   findMessagesByChat(chatJid: string, limit: number): Promise<Message[]>
+  /** Key of the oldest stored message for a chat (or null if none). */
+  findOldestMessageKey(
+    chatJid: string
+  ): Promise<{ id: string; fromMe: boolean; timestamp: bigint } | null>
   /**
    * Fetches messages anchored at `fromTimestamp`:
    *  - Up to `forwardLimit` messages with timestamp >= `fromTimestamp` (target → newer).

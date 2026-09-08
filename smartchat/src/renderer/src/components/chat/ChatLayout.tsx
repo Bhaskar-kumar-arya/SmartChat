@@ -52,6 +52,8 @@ export default function ChatLayout() {
     messages,
     loading: loadingMessages,
     isJumping,
+    hasMore: hasMoreMessages,
+    syncingOlder,
     loadMore,
     jumpToMessage,
     handleDownloadMedia,
@@ -334,6 +336,8 @@ export default function ChatLayout() {
               loading={loadingMessages}
               chatJid={activeJid}
               isJumping={isJumping}
+              canLoadMore={hasMoreMessages}
+              syncingOlder={syncingOlder}
               onLoadMore={loadMore}
               onReply={handleReply}
               onEdit={editMessage}

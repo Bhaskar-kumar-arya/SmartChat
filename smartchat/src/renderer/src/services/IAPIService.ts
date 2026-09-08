@@ -66,6 +66,8 @@ export interface IAPIService {
   skipSync(): void
   getSyncFullHistory(): Promise<boolean>
   setSyncFullHistory(full: boolean): Promise<boolean>
+  fetchMessageHistory(jid: string): Promise<{ status: 'requested' | 'no-anchor' | 'error' }>
+  onWaHistoryAppended(callback: (data: { messageCount: number }) => void): (() => void)
   getProfilePicture(
     jid: string,
     type: 'preview' | 'image',

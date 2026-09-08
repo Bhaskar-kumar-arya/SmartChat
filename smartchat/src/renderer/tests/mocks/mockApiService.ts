@@ -65,6 +65,8 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
     skipSync: vi.fn(),
     getSyncFullHistory: vi.fn().mockResolvedValue(false),
     setSyncFullHistory: vi.fn().mockResolvedValue(true),
+    fetchMessageHistory: vi.fn().mockResolvedValue({ status: 'no-anchor' }),
+    onWaHistoryAppended: vi.fn().mockReturnValue(() => {}),
     getProfilePicture: vi.fn().mockResolvedValue(null),
     selectFile: vi.fn().mockResolvedValue(null),
     searchAll: vi.fn().mockResolvedValue({ chats: [], messages: [], media: [] }),

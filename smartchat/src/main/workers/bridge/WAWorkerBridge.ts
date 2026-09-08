@@ -139,7 +139,8 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
             domainEvent === 'wa-connected' ||
             domainEvent === 'wa-sync-progress' ||
             domainEvent === 'wa-sync-status' ||
-            domainEvent === 'wa-sync-complete'
+            domainEvent === 'wa-sync-complete' ||
+            domainEvent === 'wa-history-appended'
           ) {
             this.windowEmitter.send(domainEvent, data);
           }
@@ -288,6 +289,22 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
 
   public async skipSync(): Promise<void> {
     await this.sendCommand<void>('skip_sync');
+  }
+
+  /**
+   * Ask WhatsApp for a page of older messages, anchored at the oldest message
+   * currently stored locally for `jid`. Resolves once the request has been sent
+   * (Baileys returns a request id); the messages themselves arrive later as
+   * history-sync chunks and trigger a `wa-history-appended` window event.
+   */
+  public async fetchMessageHistory(payload: {
+    count: number;
+    jid: string;
+    oldestMsgId: string;
+    oldestMsgFromMe: boolean;
+    oldestMsgTimestampMs: number;
+  }): Promise<{ requestId: string }> {
+    return this.sendCommand<{ requestId: string }>('fetch_message_history', payload);
   }
 
   public async updateMediaMessage(msg: unknown): Promise<unknown> {

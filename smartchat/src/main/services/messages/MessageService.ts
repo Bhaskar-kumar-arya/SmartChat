@@ -425,6 +425,19 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
   }
 
   /**
+   * Key of the oldest message stored locally for `jid`, used to anchor an
+   * on-demand history fetch from WhatsApp. Null when the chat has no messages.
+   */
+  async getOldestMessageKey(
+    jid: string
+  ): Promise<{ id: string; fromMe: boolean; timestampMs: number } | null> {
+    const key = await this.queryRepository.findOldestMessageKey(jid)
+    if (!key) return null
+    // Message.timestamp is stored in seconds; Baileys wants milliseconds.
+    return { id: key.id, fromMe: key.fromMe, timestampMs: Number(key.timestamp) * 1000 }
+  }
+
+  /**
    * Enrich a single message for UI display. Delegates to MessageEnricher.
    */
   async enrichMessage(

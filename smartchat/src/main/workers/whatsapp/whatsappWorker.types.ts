@@ -33,6 +33,18 @@ export interface WorkerUpdateMediaMessagePayload {
   msg: unknown;
 }
 
+export interface WorkerFetchMessageHistoryPayload {
+  /** How many older messages to request from WhatsApp. */
+  count: number;
+  /** Chat to page backwards in. */
+  jid: string;
+  /** Key of the oldest message currently stored locally for this chat. */
+  oldestMsgId: string;
+  oldestMsgFromMe: boolean;
+  /** Timestamp of that oldest message, in milliseconds. */
+  oldestMsgTimestampMs: number;
+}
+
 export type WorkerCommandMessage =
   | { type: 'init'; correlationId: string; payload: WorkerInitPayload }
   | { type: 'send_message'; correlationId: string; payload: WorkerSendMessagePayload }
@@ -44,7 +56,8 @@ export type WorkerCommandMessage =
   | { type: 'update_media_message'; correlationId: string; payload: WorkerUpdateMediaMessagePayload }
   | { type: 'group_metadata'; correlationId: string; payload: { jid: string } }
   | { type: 'logout'; correlationId: string; payload?: undefined }
-  | { type: 'skip_sync'; correlationId: string; payload?: undefined };
+  | { type: 'skip_sync'; correlationId: string; payload?: undefined }
+  | { type: 'fetch_message_history'; correlationId: string; payload: WorkerFetchMessageHistoryPayload };
 
 export type WorkerEventMessage =
   | { type: 'reply'; correlationId: string; payload: { result: unknown } }

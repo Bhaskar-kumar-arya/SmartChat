@@ -9,23 +9,23 @@ export class AuthSettingsService implements IAuthSettingsService {
   constructor(private readonly authStateRepository: IAuthStateRepository) {}
 
   /**
-   * Returns true if 'sync_full_history' setting is set to 'true'.
+   * Full-history ("deep") sync is no longer supported: pairing with
+   * `syncFullHistory: true` is rejected by WhatsApp's servers with a 428 and the
+   * QR never renders (see Baileys #2095). The app now always pairs in recent-only
+   * mode and pulls older messages on demand as the user scrolls back. This getter
+   * is kept only so existing call sites keep compiling — it is hard-wired to
+   * false.
    */
   async getSyncFullHistory(): Promise<boolean> {
-    try {
-      const data = await this.authStateRepository.getValue('sync_full_history')
-      return data === 'true'
-    } catch (err) {
-      console.error('[AuthSettingsService] getSyncFullHistory read failed, defaulting to false:', err)
-      return false
-    }
+    return false
   }
 
   /**
-   * Updates the 'sync_full_history' setting to 'true' or 'false'.
+   * No-op stub — see {@link getSyncFullHistory}. The full-history toggle was
+   * removed from the UI; any lingering caller is ignored.
    */
-  async setSyncFullHistory(full: boolean): Promise<void> {
-    await this.authStateRepository.setValue('sync_full_history', full ? 'true' : 'false')
+  async setSyncFullHistory(_full: boolean): Promise<void> {
+    console.warn('[AuthSettingsService] setSyncFullHistory is a no-op: full-history sync is no longer supported.')
   }
 
   /**

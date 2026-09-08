@@ -13,6 +13,10 @@ interface MessageViewProps {
   loading: boolean
   chatJid?: string
   isJumping?: boolean
+  /** Hook-level flag: more history exists (locally or on WhatsApp's servers). */
+  canLoadMore?: boolean
+  /** Hook-level flag: waiting on an on-demand history page from WhatsApp. */
+  syncingOlder?: boolean
   onLoadMore: () => Promise<number | undefined>
   onReply: (msg: IMessageItem) => void
   onEdit?: (messageId: string, newText: string) => Promise<any>
@@ -29,6 +33,8 @@ export default function MessageView({
   loading,
   chatJid,
   isJumping = false,
+  canLoadMore = true,
+  syncingOlder = false,
   onLoadMore,
   onReply,
   onEdit,
@@ -144,6 +150,17 @@ export default function MessageView({
     }
   }, [messages])
 
+  // Keep the hook's view of "more history exists" authoritative: when it says
+  // there's more (e.g. an on-demand page just landed), re-enable local paging
+  // even if a prior empty page had disabled it.
+  const syncingOlderRef = useRef(syncingOlder)
+  syncingOlderRef.current = syncingOlder
+  const canLoadMoreRef = useRef(canLoadMore)
+  canLoadMoreRef.current = canLoadMore
+  useEffect(() => {
+    if (canLoadMore) setHasMore(true)
+  }, [canLoadMore, messages.length])
+
   // Track scroll position to show/hide the "Jump to Latest" button
   const handleScroll = useCallback(async () => {
     const el = containerRef.current
@@ -173,7 +190,12 @@ export default function MessageView({
       try {
         const count = await onLoadMore()
         if (!count || count === 0) {
-          setHasMore(false)
+          // Only truly cap paging when the hook agrees there's nothing more and
+          // no on-demand fetch is pending. Otherwise keep paging enabled so the
+          // retry fires once WhatsApp's older page lands.
+          if (!syncingOlderRef.current && !canLoadMoreRef.current) {
+            setHasMore(false)
+          }
           clearTimeout(safety)
           release()
         }
@@ -240,9 +262,10 @@ export default function MessageView({
         </div>
       )}
 
-      {loadingMore && (
+      {(loadingMore || syncingOlder) && (
         <div className="message-loading-more">
           <div className="spinner-small" />
+          {syncingOlder && <span className="message-loading-more-label">Loading older messages from WhatsApp…</span>}
         </div>
       )}
 

@@ -182,6 +182,29 @@ export class WorkerCommandRouter {
           break
         }
 
+        case 'fetch_message_history': {
+          const sock = this.getSocketOrThrow()
+          const { count, jid, oldestMsgId, oldestMsgFromMe, oldestMsgTimestampMs } = command.payload
+          if (typeof sock.fetchMessageHistory !== 'function') {
+            throw new Error('[WhatsAppWorker] Socket does not support fetchMessageHistory')
+          }
+          // Baileys returns a request id immediately; the older messages arrive
+          // asynchronously as `messaging-history.set` chunks (syncType ON_DEMAND)
+          // and are persisted by WorkerHistorySyncManager, which then emits
+          // `wa-history-appended` for the renderer to re-query.
+          const requestId = await sock.fetchMessageHistory(
+            count,
+            { remoteJid: jid, id: oldestMsgId, fromMe: oldestMsgFromMe },
+            oldestMsgTimestampMs
+          )
+          parentPort?.postMessage({
+            type: 'reply',
+            correlationId: command.correlationId,
+            payload: { result: { requestId } }
+          })
+          break
+        }
+
         default: {
           const exhaustiveCheck: never = command
           console.warn(`[WhatsAppWorker] Unknown command: ${exhaustiveCheck}`)

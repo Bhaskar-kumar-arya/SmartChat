@@ -34,6 +34,8 @@ declare global {
       skipSync: () => void
       getSyncFullHistory: () => Promise<boolean>
       setSyncFullHistory: (full: boolean) => Promise<boolean>
+      fetchMessageHistory: (jid: string) => Promise<{ status: 'requested' | 'no-anchor' | 'error' }>
+      onWaHistoryAppended: (callback: (data: { messageCount: number }) => void) => () => void
       
       // Phase 3 & 4
       getChats: (page?: number, pageSize?: number) => Promise<ChatItem[]>

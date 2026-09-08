@@ -28,11 +28,24 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
   const [isJumping, setIsJumping] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
+  // True while we've asked WhatsApp for an older page (the local DB is exhausted)
+  // and are waiting for those messages to land. Surfaced to the UI as a spinner.
+  const [syncingOlder, setSyncingOlder] = useState(false)
+
+  // Guards a single in-flight on-demand history request. Holds the page number
+  // we're trying to fill and a timeout that gives up if WhatsApp never answers.
+  const onDemandRef = useRef<{ jid: string; page: number; timer: ReturnType<typeof setTimeout> } | null>(null)
 
   const loadInitialMessages = useCallback(async (jid: string) => {
     setLoading(true)
     setCurrentPage(1)
     setHasMore(true)
+    // Drop any pending on-demand history request from the previous chat.
+    if (onDemandRef.current) {
+      clearTimeout(onDemandRef.current.timer)
+      onDemandRef.current = null
+    }
+    setSyncingOlder(false)
 
     // Optimistic mark read
     api.markRead(jid).catch(err => console.error('Failed to mark read:', err))
@@ -58,6 +71,11 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
       setMessages(msgs)
       setCurrentPage(1)
       setHasMore(true)
+      if (onDemandRef.current) {
+        clearTimeout(onDemandRef.current.timer)
+        onDemandRef.current = null
+      }
+      setSyncingOlder(false)
     } catch (err) {
       if (jid !== activeJidRef.current) return
       console.error('[useMessages] performJump failed, falling back:', err)
@@ -85,28 +103,81 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     }
   }, [activeJid, initialTargetId, performJump, loadInitialMessages])
 
+  const clearOnDemand = useCallback(() => {
+    if (onDemandRef.current) {
+      clearTimeout(onDemandRef.current.timer)
+      onDemandRef.current = null
+    }
+    setSyncingOlder(false)
+  }, [])
+
+  /** Prepend a locally-stored page; returns how many rows landed. */
+  const loadDbPage = useCallback(async (jid: string, page: number): Promise<number> => {
+    const olderMsgs = await api.getMessages(jid, page, 50)
+    // Bail if the user switched chats while this page was in flight, otherwise
+    // chat A's older page gets prepended onto chat B's list (F3-02).
+    if (jid !== activeJidRef.current) return 0
+    if (olderMsgs.length > 0) {
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id))
+        const fresh = olderMsgs.filter((m) => !seen.has(m.id))
+        return fresh.length > 0 ? [...fresh, ...prev] : prev
+      })
+      setCurrentPage(page)
+    }
+    return olderMsgs.length
+  }, [api])
+
   const loadMore = useCallback(async () => {
     if (!activeJid || !hasMore || loading) return 0
+    // An on-demand fetch is already running for this chat — wait for it.
+    if (onDemandRef.current) return 0
 
     const nextPage = currentPage + 1
     const jid = activeJid
     try {
-      const olderMsgs = await api.getMessages(jid, nextPage, 50)
-      // Bail if the user switched chats while this page was in flight, otherwise
-      // chat A's older page gets prepended onto chat B's list (F3-02).
+      const landed = await loadDbPage(jid, nextPage)
       if (jid !== activeJidRef.current) return 0
-      if (olderMsgs.length > 0) {
-        setMessages((prev) => [...olderMsgs, ...prev])
-        setCurrentPage(nextPage)
-      } else {
+      if (landed > 0) return landed
+
+      // Local history exhausted — ask WhatsApp for an older page. The messages
+      // arrive asynchronously via onWaHistoryAppended, which retries this page.
+      const res = await api.fetchMessageHistory(jid)
+      if (jid !== activeJidRef.current) return 0
+      if (res.status !== 'requested') {
+        // no-anchor (empty chat) or error / not connected — nothing more to show.
         setHasMore(false)
+        return 0
       }
-      return olderMsgs.length
+      setSyncingOlder(true)
+      const timer = setTimeout(() => {
+        // WhatsApp never answered. Clear the guard so a later scroll can retry;
+        // keep hasMore true so the user isn't permanently capped.
+        clearOnDemand()
+      }, 25000)
+      onDemandRef.current = { jid, page: nextPage, timer }
+      return 0
     } catch (err) {
       console.error('Failed to load more messages:', err)
       return 0
     }
-  }, [activeJid, currentPage, hasMore, loading])
+  }, [activeJid, currentPage, hasMore, loading, api, loadDbPage, clearOnDemand])
+
+  // When an on-demand history page lands, retry the DB page we were trying to fill.
+  useEffect(() => {
+    const unSub = api.onWaHistoryAppended(() => {
+      const pending = onDemandRef.current
+      if (!pending || pending.jid !== activeJidRef.current) return
+      clearOnDemand()
+      loadDbPage(pending.jid, pending.page).then((landed) => {
+        if (pending.jid !== activeJidRef.current) return
+        // WhatsApp acknowledged but returned nothing older — we've truly reached
+        // the start of this conversation.
+        if (landed === 0) setHasMore(false)
+      })
+    })
+    return unSub
+  }, [api, loadDbPage, clearOnDemand])
 
   /**
    * Replace the message list with a slice anchored at a specific message.
@@ -302,6 +373,7 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     loading,
     isJumping,
     hasMore,
+    syncingOlder,
     loadMore,
     loadInitialMessages,
     jumpToMessage,

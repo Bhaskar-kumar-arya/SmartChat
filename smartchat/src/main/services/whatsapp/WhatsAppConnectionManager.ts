@@ -219,4 +219,23 @@ export class WhatsAppConnectionManager {
       })
     }
   }
+
+  /**
+   * Ask WhatsApp for a page of older messages for `payload.jid`, anchored at the
+   * oldest message currently stored locally. The messages arrive asynchronously
+   * and surface to the renderer via the `wa-history-appended` window event.
+   * Resolves once the request has been dispatched to the worker.
+   */
+  public async fetchOlderMessages(payload: {
+    count: number
+    jid: string
+    oldestMsgId: string
+    oldestMsgFromMe: boolean
+    oldestMsgTimestampMs: number
+  }): Promise<{ requestId: string }> {
+    if (!this.currentSock) {
+      throw new Error('[WhatsAppConnectionManager] Not connected — cannot fetch older messages')
+    }
+    return this.currentSock.fetchMessageHistory(payload)
+  }
 }

@@ -321,6 +321,33 @@ function registerAuthAndProfileHandlers(
     return services.authSettingsService.getSyncFullHistory()
   })
 
+  // On-demand history: when the renderer runs out of locally-stored messages for
+  // a chat, it asks WhatsApp for an older page anchored at the oldest stored
+  // message. The messages arrive asynchronously and are broadcast to the
+  // renderer via the `wa-history-appended` event.
+  ipcMain.handle('wa:fetch-message-history', async (event, jid: string) => {
+    if (!isTrustedSender(event)) {
+      console.warn('[IPC] Blocked wa:fetch-message-history from untrusted frame')
+      throw new Error('[IPC] wa:fetch-message-history cannot be invoked from this context')
+    }
+    if (typeof jid !== 'string' || !jid) return { status: 'error' as const }
+    const key = await services.messageQueryService.getOldestMessageKey(jid)
+    if (!key) return { status: 'no-anchor' as const }
+    try {
+      await waConnectionManager.fetchOlderMessages({
+        count: 50,
+        jid,
+        oldestMsgId: key.id,
+        oldestMsgFromMe: key.fromMe,
+        oldestMsgTimestampMs: key.timestampMs
+      })
+      return { status: 'requested' as const }
+    } catch (err) {
+      console.error('[IPC] wa:fetch-message-history failed:', err)
+      return { status: 'error' as const }
+    }
+  })
+
   ipcMain.handle('set-sync-full-history', async (event, full: boolean) => {
     if (!isTrustedSender(event)) {
       console.warn('[IPC] Blocked set-sync-full-history from untrusted frame')

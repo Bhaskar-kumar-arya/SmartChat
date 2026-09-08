@@ -117,6 +117,12 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       })
 
       if (this.syncComplete) {
+        // Initial sync is done, so this is an on-demand history page (the user
+        // scrolled past the locally-stored history). The messages were already
+        // persisted by handleHistorySync above — tell the renderer to re-query.
+        this.eventPublisher.publish('wa-history-appended', {
+          messageCount: syncResult.messageCount
+        })
         return // Do not broadcast progress updates if the initial sync phase is already complete
       }
 

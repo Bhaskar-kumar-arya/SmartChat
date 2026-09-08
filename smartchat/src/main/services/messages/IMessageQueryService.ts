@@ -23,6 +23,15 @@ export interface IMessageQueryService {
     sock?: unknown | null
   ): Promise<EnrichedMessage[]>
 
+  /**
+   * Returns the key of the oldest message stored locally for `jid`, used to
+   * anchor an on-demand history fetch from WhatsApp. Null if the chat has no
+   * stored messages.
+   */
+  getOldestMessageKey(
+    jid: string
+  ): Promise<{ id: string; fromMe: boolean; timestampMs: number } | null>
+
   enrichMessage(
     msg: DBMessageWithSender,
     sock: unknown | null,

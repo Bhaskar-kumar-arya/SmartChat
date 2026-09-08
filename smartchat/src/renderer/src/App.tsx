@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useAPI } from './context/APIContext'
-import { useToast } from './context/ToastContext'
 import { ChatLayout } from './components/chat'
 import { ModalPortal } from './components/overlays/ModalPortal'
 import { CheckCircle2, Loader2, Circle } from 'lucide-react'
@@ -10,12 +9,10 @@ type AppState = 'initializing' | 'qr' | 'connected' | 'syncing' | 'ready'
 
 export function App() {
   const api = useAPI()
-  const { showError } = useToast()
   const [qr, setQr] = useState<string | null>(null)
   const [appState, setAppState] = useState<AppState>('initializing')
   const [syncProgress, setSyncProgress] = useState<number>(0)
   const [syncStatus, setSyncStatus] = useState<string>('Initializing connection...')
-  const [syncFullHistory, setSyncFullHistory] = useState<boolean>(false)
   const [syncType, setSyncType] = useState<number>(0)
   const [isRegeneratingQr, setIsRegeneratingQr] = useState<boolean>(false)
   const [sessionReplaced, setSessionReplaced] = useState<boolean>(false)
@@ -26,20 +23,7 @@ export function App() {
     appStateRef.current = appState
   }, [appState])
 
-  // 1. Initial configuration load
-  useEffect(() => {
-    let alive = true
-    api.getSyncFullHistory().then((full: boolean) => {
-      if (alive) setSyncFullHistory(full)
-    }).catch(err => {
-      console.error('Failed to get sync full history preference:', err)
-    })
-    return () => {
-      alive = false
-    }
-  }, [])
-
-  // 2. Auth & Sync listeners
+  // Auth & Sync listeners
   useEffect(() => {
     const unSubQr = api.onWaQr((newQr: string) => {
       setQr(newQr)
@@ -77,7 +61,6 @@ export function App() {
     const unSubSyncPrg = api.onWaSyncProgress((data) => {
       setSyncProgress(data.progress)
       setSyncType(data.syncType)
-      setSyncFullHistory(data.syncFullHistory)
       if (appStateRef.current !== 'syncing') {
         setAppState('syncing')
       }
@@ -103,23 +86,6 @@ export function App() {
     }
   }, [])
 
-  const handleSetSyncFullHistory = async (full: boolean) => {
-    if (syncFullHistory === full) return
-    setIsRegeneratingQr(true)
-    setQr(null)
-    setSyncFullHistory(full)
-    try {
-      await api.setSyncFullHistory(full)
-      // isRegeneratingQr stays true until the backend re-emits a QR (onWaQr resets it)
-    } catch (err) {
-      console.error('Failed to set sync full history preference:', err)
-      // Un-stick the QR pane so the user isn't left on the spinner forever
-      setIsRegeneratingQr(false)
-      setSyncFullHistory(!full) // revert the optimistic toggle
-      showError(err, 'Could not change the sync mode. Please try again.')
-    }
-  }
-
   // Define steps (placed before any early returns to satisfy React Hook rules)
   const steps = useMemo(() => [
     {
@@ -137,12 +103,10 @@ export function App() {
     {
       id: 3,
       title: 'Message History Sync',
-      description: syncFullHistory
-        ? (syncType === 2 ? 'Downloading deep historical message history' : 'Downloading recent messages')
-        : 'Downloading recent message backlog',
+      description: 'Downloading recent message backlog',
       status: appState !== 'syncing' || syncType === 0
         ? 'pending'
-        : (syncType === 3 || syncType === 2 ? 'active' : 'completed')
+        : (syncType === 3 ? 'active' : 'completed')
     },
     {
       id: 4,
@@ -152,7 +116,7 @@ export function App() {
         ? 'pending'
         : (syncType === 6 && syncProgress < 100 ? 'active' : 'completed')
     }
-  ], [appState, syncType, syncFullHistory, syncProgress])
+  ], [appState, syncType, syncProgress])
 
   // ── Full-screen chat layout when ready ────────────────────────────
   if (appState === 'ready') {
@@ -300,34 +264,15 @@ export function App() {
 
             <div className="qr-right">
               <div className="sync-mode-selector">
-                <h3 className="selector-section-title">Select Sync Preference</h3>
+                <h3 className="selector-section-title">What gets synced</h3>
                 <p className="selector-section-desc">
-                  Choose how much historical data you want to retrieve before starting the app.
+                  SmartChat loads your recent chat history (about the last month) so
+                  setup stays fast.
                 </p>
-
-                <div className={`sync-mode-options ${isRegeneratingQr ? 'disabled' : ''}`}>
-                  <div
-                    className={`sync-mode-option ${!syncFullHistory ? 'active' : ''}`}
-                    onClick={() => !isRegeneratingQr && handleSetSyncFullHistory(false)}
-                  >
-                    <div className="option-radio-indicator" />
-                    <div className="option-text-group">
-                      <span className="option-title">Recent Messages Only</span>
-                      <span className="option-desc">Loads recent chat history (~1 month). Recommended for faster setup.</span>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`sync-mode-option ${syncFullHistory ? 'active' : ''}`}
-                    onClick={() => !isRegeneratingQr && handleSetSyncFullHistory(true)}
-                  >
-                    <div className="option-radio-indicator" />
-                    <div className="option-text-group">
-                      <span className="option-title">Full Message History</span>
-                      <span className="option-desc">Deep sync, downloads complete chat history. Takes longer to complete.</span>
-                    </div>
-                  </div>
-                </div>
+                <p className="selector-section-desc">
+                  Older messages load automatically as you scroll up in a conversation —
+                  nothing extra to configure.
+                </p>
               </div>
             </div>
           </div>

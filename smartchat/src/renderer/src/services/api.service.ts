@@ -114,6 +114,12 @@ export const api: IAPIService = {
   setSyncFullHistory: (full: boolean): Promise<boolean> =>
     window.api.setSyncFullHistory(full),
 
+  fetchMessageHistory: (jid: string): Promise<{ status: 'requested' | 'no-anchor' | 'error' }> =>
+    window.api.fetchMessageHistory(jid),
+
+  onWaHistoryAppended: (callback: (data: { messageCount: number }) => void): (() => void) =>
+    window.api.onWaHistoryAppended(callback),
+
   getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean): Promise<string | null> =>
     window.api.getProfilePicture(jid, type, forceRefresh),
 

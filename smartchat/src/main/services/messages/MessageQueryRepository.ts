@@ -293,6 +293,28 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
   }
 
   /**
+   * Key of the oldest stored message for a chat, used to anchor an on-demand
+   * history fetch from WhatsApp. Ordered by (timestamp, rowid) to match the
+   * pagination order used by findChatMessagesWithSender.
+   */
+  async findOldestMessageKey(
+    chatJid: string
+  ): Promise<{ id: string; fromMe: boolean; timestamp: bigint } | null> {
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM Message
+      WHERE chatJid = ${chatJid}
+      ORDER BY timestamp ASC, rowid ASC
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    const msg = await this.prisma.message.findUnique({
+      where: { id: rows[0].id },
+      select: { id: true, fromMe: true, timestamp: true }
+    })
+    return msg ?? null
+  }
+
+  /**
    * Fetch only { messageType, textContent } for a message — used by reaction processing.
    */
   async findMessageTypeAndContent(id: string): Promise<{ messageType: string; textContent: string | null } | null> {
