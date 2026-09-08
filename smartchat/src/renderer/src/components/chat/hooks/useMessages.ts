@@ -156,7 +156,10 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
         clearOnDemand()
       }, 40000)
       onDemandRef.current = { jid, page: nextPage, timer }
-      return 0
+      // Sentinel: an on-demand fetch is now in flight and a prepend will follow
+      // asynchronously. The caller keeps its scroll-anchor state alive instead of
+      // treating this as "no more messages".
+      return -1
     } catch (err) {
       console.error('Failed to load more messages:', err)
       return 0

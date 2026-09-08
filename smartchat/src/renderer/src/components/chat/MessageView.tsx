@@ -55,6 +55,10 @@ export default function MessageView({
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const prevScrollHeight = useRef(0)
   const isLoadingRef = useRef(false)
+  // Set when an on-demand WhatsApp history fetch is in flight: the prepend lands
+  // asynchronously (not through the loadingMore path), so the [messages] effect
+  // must still restore the scroll anchor when it arrives.
+  const pendingHistoryPrepend = useRef(false)
   const prevMessageId = useRef<string | null>(null)
   const isInitialRenderForChat = useRef(true)
   const lastTargetId = useRef<string | null>(null)
@@ -69,6 +73,7 @@ export default function MessageView({
       setHasMore(true)
       setLoadingMore(false)
       isLoadingRef.current = false
+      pendingHistoryPrepend.current = false
       isInitialRenderForChat.current = true
     }
     prevChatJid.current = chatJid
@@ -147,6 +152,16 @@ export default function MessageView({
       containerRef.current.scrollTop = newScrollHeight - prevScrollHeight.current
       setLoadingMore(false)
       isLoadingRef.current = false
+    } else if (
+      pendingHistoryPrepend.current &&
+      containerRef.current &&
+      containerRef.current.scrollHeight > prevScrollHeight.current
+    ) {
+      // An on-demand WhatsApp history page just prepended — keep the message the
+      // user was looking at in place instead of jumping them to the new top.
+      const newScrollHeight = containerRef.current.scrollHeight
+      containerRef.current.scrollTop = newScrollHeight - prevScrollHeight.current
+      pendingHistoryPrepend.current = false
     }
   }, [messages])
 
@@ -189,7 +204,14 @@ export default function MessageView({
 
       try {
         const count = await onLoadMore()
-        if (!count || count === 0) {
+        if (count === -1) {
+          // On-demand WhatsApp fetch started — the prepend arrives later. Hold
+          // prevScrollHeight (captured above) so the [messages] effect can
+          // restore the anchor, and release the immediate loading lock.
+          pendingHistoryPrepend.current = true
+          clearTimeout(safety)
+          release()
+        } else if (!count || count === 0) {
           // Only truly cap paging when the hook agrees there's nothing more and
           // no on-demand fetch is pending. Otherwise keep paging enabled so the
           // retry fires once WhatsApp's older page lands.
