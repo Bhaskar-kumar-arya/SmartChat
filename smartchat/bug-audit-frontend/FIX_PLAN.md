@@ -87,7 +87,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | F6 | 6 | DONE (ecfc4d7) — F6-02..F6-07 med + F6-08/09/10/11/13/14 low; F6-05 in a802146; F6-12 already resolved; F6-13 partial (regex hoisted; caret-offset rework deferred) |
 | F7 | 3 | DONE (96e8b6a) — F7-02/03/04 med + F7-05/06/07 low + F7-08 (partial); F7-06 select-all cap deferred |
 | F8 | 6 | DONE (2cb46c9) — F8-02..F8-07 med + F8-08/10/11/12/13 low; F8-09 deferred to F10-05 |
-| F9 | 4 | TODO |
+| F9 | 4 | DONE (b129aea renderer + bceb3b3 F9-04 webview hardening) — F9-01/03/04 med fixed; F9-02 wontfix-deferred (no theme toggle exists); + lows F9-07/08/09/10/11/12 fixed, F9-05/06 partial |
 | F10 | 6 | TODO |
 | F11 | 2 | TODO |
 | F12 | 4 | TODO |
