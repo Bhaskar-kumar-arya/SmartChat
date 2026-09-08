@@ -154,7 +154,7 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
         // WhatsApp never answered. Clear the guard so a later scroll can retry;
         // keep hasMore true so the user isn't permanently capped.
         clearOnDemand()
-      }, 25000)
+      }, 40000)
       onDemandRef.current = { jid, page: nextPage, timer }
       return 0
     } catch (err) {

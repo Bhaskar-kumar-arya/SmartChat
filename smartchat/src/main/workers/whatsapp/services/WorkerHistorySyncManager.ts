@@ -36,6 +36,9 @@ export interface HistorySyncDependencies {
 }
 
 export class WorkerHistorySyncManager implements IHistorySyncManager {
+  /** proto.HistorySync.HistorySyncType.ON_DEMAND */
+  private static readonly ON_DEMAND_SYNC_TYPE = 6
+
   private syncChunkCount = 0
   private maxProgress = 0
   private syncComplete = false
@@ -80,8 +83,35 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
   }
 
   async handleSyncChunk(data: unknown, syncFullHistory: boolean, sock: WASocket): Promise<void> {
+    const rawSyncType = (data as Record<string, unknown>)?.syncType
+    // Baileys proto.HistorySync.HistorySyncType.ON_DEMAND === 6. This chunk is the
+    // response to sock.fetchMessageHistory() (user scrolled past the local
+    // backlog). It must be persisted and announced regardless of whether THIS
+    // worker session has run an initial sync — `syncComplete` is per-session and
+    // is false on a fresh reconnect — and it must not drive the initial-sync
+    // progress UI / embedding pause / finish timer.
+    const isOnDemand = rawSyncType === WorkerHistorySyncManager.ON_DEMAND_SYNC_TYPE
+
     this.activeChunks++
     try {
+      if (isOnDemand) {
+        const syncResult = await handleHistorySync(
+          data as HistorySyncData,
+          this.deps.contactService,
+          this.deps.aliasRepository,
+          this.deps.chatRepository,
+          this.deps.communityRepository,
+          this.deps.messageRepository,
+          this.deps.reactionRepository
+        )
+        this.deps.mediaService.downloadFavoriteStickersFromSync(syncResult.importedMessages, sock).catch((err) => {
+          console.error('[WorkerHistorySync] Failed to process favorite stickers from on-demand page:', err)
+        })
+        console.log(`[WorkerHistorySync] on-demand history page persisted: ${syncResult.messageCount} messages`)
+        this.eventPublisher.publish('wa-history-appended', { messageCount: syncResult.messageCount })
+        return
+      }
+
       this.syncChunkCount++
       const rawData = data as Record<string, unknown>
       const reportedProgress = typeof rawData.progress === 'number' ? rawData.progress : undefined
@@ -117,16 +147,6 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       })
 
       if (this.syncComplete) {
-        // Initial sync is done, so this is an on-demand history page (the user
-        // scrolled past the locally-stored history). The messages were already
-        // persisted by handleHistorySync above — tell the renderer to re-query.
-        console.log(
-          `[WorkerHistorySync] on-demand history page persisted: ${syncResult.messageCount} messages ` +
-          `(syncType=${syncType})`
-        )
-        this.eventPublisher.publish('wa-history-appended', {
-          messageCount: syncResult.messageCount
-        })
         return // Do not broadcast progress updates if the initial sync phase is already complete
       }
 
@@ -163,7 +183,7 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       console.error('[WorkerHistorySync] Error processing sync payload:', err)
     } finally {
       this.activeChunks--
-      if (this.activeChunks === 0 && !this.syncComplete) {
+      if (!isOnDemand && this.activeChunks === 0 && !this.syncComplete) {
         if (this.pendingFinish) {
           this.pendingFinish = false
           await this.finishSync(sock, syncFullHistory).catch((err) => {
