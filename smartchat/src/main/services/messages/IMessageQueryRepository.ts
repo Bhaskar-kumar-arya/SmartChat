@@ -15,13 +15,18 @@ export interface IMessageReadRepository {
   findMessageTypeAndContent(id: string): Promise<{ messageType: string; textContent: string | null } | null>
   findMessagesByChat(chatJid: string, limit: number): Promise<Message[]>
   /**
-   * Fetches all messages from `fromTimestamp` (inclusive) to newest, plus
-   * `lookBehind` messages before it for context. Returns list in chronological order.
+   * Fetches messages anchored at `fromTimestamp`:
+   *  - Up to `forwardLimit` messages with timestamp >= `fromTimestamp` (target → newer).
+   *  - Up to `lookBehind` messages before it for context.
+   * Returns the combined list in chronological order. The forward side is capped
+   * so a "jump to old message" in a busy chat cannot load tens of thousands of
+   * rows into one IPC call. (P2-S2-02)
    */
   findMessagesFromTimestamp(
     chatJid: string,
     fromTimestamp: bigint,
-    lookBehind: number
+    lookBehind: number,
+    forwardLimit?: number
   ): Promise<Array<Message & { sender: Identity | null }>>
 }
 

@@ -1,3 +1,5 @@
+import { canonicalShaHex } from '../../../services/messages/shaUtils'
+
 export type MediaType = 'image' | 'sticker' | 'video' | 'document' | 'audio'
 
 export interface HydratedTemplate {
@@ -85,27 +87,9 @@ export function extractStickerSha(mediaMsg: unknown): string | null {
   if (!mediaMsg || typeof mediaMsg !== 'object') return null
   const mediaObj = mediaMsg as Record<string, unknown>
   if (!mediaObj.fileSha256) return null
-  const sha = mediaObj.fileSha256
-  if (typeof sha === 'string') {
-    return sha
-  }
-  if (Buffer.isBuffer(sha)) {
-    return sha.toString('base64')
-  }
-  if (
-    sha &&
-    typeof sha === 'object' &&
-    'type' in sha &&
-    sha.type === 'Buffer' &&
-    'data' in sha &&
-    Array.isArray((sha as { data: unknown }).data)
-  ) {
-    return Buffer.from((sha as { data: number[] }).data).toString('base64')
-  }
-  if (sha instanceof Uint8Array || Array.isArray(sha)) {
-    return Buffer.from(sha as Uint8Array).toString('base64')
-  }
-  return null
+  // Canonical lowercase-hex — must match getSafeMediaFileName and the main-process
+  // FavoriteStickerService DB key. (P2-S2-06)
+  return canonicalShaHex(mediaObj.fileSha256)
 }
 
 export function restoreBuffers(obj: unknown): unknown {

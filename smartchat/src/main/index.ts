@@ -27,6 +27,7 @@ import { PrismaPluginStorageRepository } from './kernel/storage/PrismaPluginStor
 import { KernelBootstrapper } from './kernel/KernelBootstrapper'
 import { registerContributionIpcHandlers } from './kernel/ipc/contributionIpc'
 import { registerPluginProtocol } from './protocol/pluginProtocol'
+import { StickerMetadataService } from './services/messages/StickerMetadataService'
 import type { IWAEventBus } from './services/whatsapp/IWAEventBus'
 
 function getLogFile(): string {
@@ -205,6 +206,9 @@ app.whenReady().then(() => {
   })
 
   ipcMain.on('ping', () => console.log('pong'))
+
+  // Reclaim temp sticker files leaked by sends that threw mid-processing. (P2-S2-08)
+  StickerMetadataService.sweepTempDir()
 
   services = createServices(prisma, () => mainWindow, () => waConnectionManager?.getBus() ?? null, getSock)
 

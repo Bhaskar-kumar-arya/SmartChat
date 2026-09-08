@@ -6,6 +6,7 @@ import { unwrapMessage } from '../../utils/messageUtils'
 import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 
 import { IFavoriteStickerService, FavoriteStickerDTO } from './IFavoriteStickerService'
+import { canonicalShaHex } from './shaUtils'
 
 async function streamToBuffer(stream: AsyncIterable<Buffer>): Promise<Buffer> {
   const chunks: Buffer[] = []
@@ -40,47 +41,14 @@ export class FavoriteStickerService implements IFavoriteStickerService {
     if (stickerMsg.localURI && stickerMsg.localURI.startsWith('app://media/')) {
       return stickerMsg.localURI.replace('app://media/', '')
     }
-    let fileHash = 'unknown'
-    if (stickerMsg.fileSha256) {
-      const sha = stickerMsg.fileSha256
-      if (typeof sha === 'string') {
-        fileHash = sha.replace(/[/\\?%*:|"<>+]/g, '-').substring(0, 64)
-      } else if (Buffer.isBuffer(sha)) {
-        fileHash = sha.toString('hex')
-      } else if (sha && typeof sha === 'object') {
-        const shaObj = sha as Record<string, unknown>
-        if (shaObj.type === 'Buffer' && Array.isArray(shaObj.data)) {
-          fileHash = Buffer.from(shaObj.data as number[]).toString('hex')
-        } else if (sha instanceof Uint8Array) {
-          fileHash = Buffer.from(sha).toString('hex')
-        }
-      } else if (Array.isArray(sha)) {
-        fileHash = Buffer.from(sha).toString('hex')
-      }
-    } else if (msgId) {
-      fileHash = msgId
-    }
+    const fileHash = canonicalShaHex(stickerMsg.fileSha256) ?? (msgId || 'unknown')
     return `hash_${fileHash}.webp`
   }
 
   private getShaString(stickerMsg: StickerMessageLike): string {
-    if (stickerMsg.fileSha256) {
-      const sha = stickerMsg.fileSha256
-      if (typeof sha === 'string') return sha
-      if (Buffer.isBuffer(sha)) return sha.toString('base64')
-      if (sha && typeof sha === 'object') {
-        const shaObj = sha as Record<string, unknown>
-        if (shaObj.type === 'Buffer' && Array.isArray(shaObj.data)) {
-          return Buffer.from(shaObj.data as number[]).toString('base64')
-        } else if (sha instanceof Uint8Array) {
-          return Buffer.from(sha).toString('base64')
-        }
-      }
-      if (Array.isArray(sha)) {
-        return Buffer.from(sha).toString('base64')
-      }
-    }
-    return ''
+    // Canonical lowercase-hex encoding — must match the key used everywhere else
+    // (filename, DB key, lookup). (P2-S2-06)
+    return canonicalShaHex(stickerMsg.fileSha256) ?? ''
   }
 
   async addStickerToFavorites(msgId: string): Promise<boolean> {

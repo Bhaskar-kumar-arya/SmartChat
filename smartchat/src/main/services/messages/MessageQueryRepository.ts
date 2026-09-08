@@ -153,9 +153,51 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
 
   /**
    * Executes a read-only query and returns the matching message ID rows.
+   *
+   * The read-only guarantee is enforced here, not only in callers: the statement
+   * must be a single SELECT/WITH…SELECT with no data-mutating or schema-altering
+   * keyword. (P2-S2-07)
    */
   async queryMessageIdsBySql(sql: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
+    MessageQueryRepository.assertReadOnlySql(sql)
     return this.prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql, ...params)
+  }
+
+  private static readonly FORBIDDEN_SQL_KEYWORDS = [
+    'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'ATTACH', 'DETACH',
+    'PRAGMA', 'VACUUM', 'REPLACE', 'TRUNCATE', 'GRANT', 'REVOKE', 'REINDEX'
+  ]
+
+  /**
+   * Rejects any statement that is not a read-only SELECT / WITH…SELECT.
+   * String literals and comments are stripped first so user data inside a
+   * `LIKE '%delete me%'` clause does not trip the keyword scan.
+   */
+  static assertReadOnlySql(sql: string): void {
+    const trimmed = (sql ?? '').trim()
+    const normalized = trimmed
+      .replace(/'(?:[^']|'')*'/g, "''")
+      .replace(/"(?:[^"]|"")*"/g, '""')
+      .replace(/--[^\n]*/g, ' ')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
+      throw new Error('[MessageQueryRepository] Query rejected: only SELECT / WITH…SELECT statements are permitted')
+    }
+
+    // Disallow statement batching (a trailing `;` on the sole statement is fine).
+    if (normalized.slice(0, -1).includes(';')) {
+      throw new Error('[MessageQueryRepository] Query rejected: multiple statements are not permitted')
+    }
+
+    for (const kw of MessageQueryRepository.FORBIDDEN_SQL_KEYWORDS) {
+      if (new RegExp(`\\b${kw}\\b`).test(normalized)) {
+        throw new Error(`[MessageQueryRepository] Query rejected: forbidden keyword "${kw}"`)
+      }
+    }
   }
 
   /**
@@ -233,20 +275,22 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
 
   /**
    * Fetches messages anchored at `fromTimestamp`:
-   *  - All messages with timestamp >= fromTimestamp (target → newest), ordered asc.
+   *  - Up to `forwardLimit` messages with timestamp >= fromTimestamp (target → newer), ordered asc.
    *  - Up to `lookBehind` messages with timestamp < fromTimestamp (context before target), ordered desc.
    * Returns the combined list sorted chronologically (oldest → newest).
    */
   async findMessagesFromTimestamp(
     chatJid: string,
     fromTimestamp: bigint,
-    lookBehind: number
+    lookBehind: number,
+    forwardLimit: number = 200
   ): Promise<Array<Message & { sender: import('@prisma/client').Identity | null }>> {
     const [fromTargetRows, beforeRows] = await Promise.all([
       this.prisma.$queryRaw<{ id: string }[]>`
         SELECT id FROM Message
         WHERE chatJid = ${chatJid} AND timestamp >= ${fromTimestamp}
         ORDER BY timestamp ASC, rowid ASC
+        LIMIT ${forwardLimit}
       `,
       this.prisma.$queryRaw<{ id: string }[]>`
         SELECT id FROM Message

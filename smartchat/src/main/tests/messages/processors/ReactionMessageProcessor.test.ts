@@ -64,6 +64,55 @@ describe('ReactionMessageProcessor', () => {
     })
   })
 
+  it('P2-S2-04: fromMe reaction falls back to sock identity when me-identity not persisted, and sets senderId', async () => {
+    const upsertReactionMock = vi.fn().mockResolvedValue(undefined)
+    const getIdentityIdByJidMock = vi.fn().mockResolvedValue(77)
+
+    const dependencies = {
+      reactionRepository: { upsertReaction: upsertReactionMock },
+      identityRepository: { findMeIdentity: vi.fn().mockResolvedValue(null) },
+      contactService: { getIdentityIdByJid: getIdentityIdByJidMock }
+    } as unknown as IMessageServiceDependencyAccessor
+
+    const context = {
+      messageType: 'reactionMessage',
+      remoteJid: 'user@s.whatsapp.net',
+      senderId: null,
+      timestamp: 1600000000n,
+      sock: { user: { id: 'me:12@s.whatsapp.net', lid: 'melid:3@lid' } },
+      msg: { key: { id: 'msg-x', fromMe: true }, status: 2 },
+      rawMessage: { reactionMessage: { key: { id: 'target-x' }, text: '🔥' } }
+    } as unknown as IMessageProcessingContext
+
+    const result = await processor.process(context, dependencies)
+
+    expect(getIdentityIdByJidMock).toHaveBeenCalledWith('me')
+    expect(upsertReactionMock).toHaveBeenCalledWith('target-x', 77, '🔥', 1600000000n)
+    expect(result).toMatchObject({ senderId: 77 })
+  })
+
+  it('P2-S2-04: fromMe reaction is dropped (not persisted) when identity cannot be resolved at all', async () => {
+    const upsertReactionMock = vi.fn().mockResolvedValue(undefined)
+    const dependencies = {
+      reactionRepository: { upsertReaction: upsertReactionMock },
+      identityRepository: { findMeIdentity: vi.fn().mockResolvedValue(null) },
+      contactService: { getIdentityIdByJid: vi.fn().mockResolvedValue(null) }
+    } as unknown as IMessageServiceDependencyAccessor
+
+    const context = {
+      messageType: 'reactionMessage',
+      remoteJid: 'user@s.whatsapp.net',
+      senderId: null,
+      timestamp: 1600000000n,
+      sock: { user: { id: 'me:12@s.whatsapp.net' } },
+      msg: { key: { id: 'msg-y', fromMe: true }, status: 2 },
+      rawMessage: { reactionMessage: { key: { id: 'target-y' }, text: '🔥' } }
+    } as unknown as IMessageProcessingContext
+
+    await processor.process(context, dependencies)
+    expect(upsertReactionMock).not.toHaveBeenCalled()
+  })
+
   it('should correctly resolve reactorId when fromMe is true', async () => {
     const upsertReactionMock = vi.fn().mockResolvedValue(undefined)
     const findMeIdentityMock = vi.fn().mockResolvedValue({ id: 99 })

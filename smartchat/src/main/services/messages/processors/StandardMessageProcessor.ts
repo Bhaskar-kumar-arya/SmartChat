@@ -4,6 +4,7 @@ import { ProtocolResult } from '../../whatsapp/types'
 import { mapBaileysStatus } from '../../whatsapp/ReceiptService'
 import { IMessageProcessingContext, IMessageProcessorStrategy, IMessageServiceDependencyAccessor } from './IMessageProcessorStrategy'
 import { cleanJid } from '../../../utils/jidUtils'
+import { isIndexableMessageType } from '../../../utils/messageUtils'
 
 export class StandardMessageProcessor implements IMessageProcessorStrategy {
   readonly requiresChat = true
@@ -38,8 +39,10 @@ export class StandardMessageProcessor implements IMessageProcessorStrategy {
       isDeleted: isDeleted ?? false
     })
 
-    // Fire-and-forget semantic search indexing
-    if (context.textContent && context.messageType !== 'reactionMessage') {
+    // Fire-and-forget semantic search indexing. Skip ciphertext placeholders,
+    // system stubs and reactions — indexing those pollutes the vector store and
+    // a decrypt/edit re-indexes with the real text later. (P2-S2-01)
+    if (context.textContent && isIndexableMessageType(context.messageType)) {
       dependencies.embeddingService.indexMessage(context.msg.key.id!, context.textContent).catch((err: unknown) => {
         console.error('[StandardMessageProcessor] real-time indexing failed:', err)
       })

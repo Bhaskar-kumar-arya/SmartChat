@@ -41,12 +41,66 @@ export interface RawSqliteDb {
   close(): void
 }
 
+import { canonicalShaHex } from '../services/messages/shaUtils'
+
 /** A single schema migration entry. */
 interface Migration {
   /** Unique, human-readable ID — used as the primary key in _schema_migrations. */
   id: string
   /** One or more DDL statements to execute, separated by semicolons. */
-  sql: string
+  sql?: string
+  /**
+   * Optional imperative step for data migrations that cannot be expressed as
+   * plain SQLite DDL (e.g. re-encoding a column value in JS). Runs inside the
+   * same per-migration transaction as `sql`, after it. Must be idempotent.
+   */
+  run?: (db: RawSqliteDb) => void
+}
+
+/** True when the given table exists in the connected database. */
+function tableExists(db: RawSqliteDb, name: string): boolean {
+  return (
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").all(name) as unknown[]
+  ).length > 0
+}
+
+/**
+ * P2-S2-06 data migration: `FavoriteSticker.fileSha256` is the lookup key for a
+ * favorited sticker. It was historically stored base64-encoded; the canonical
+ * encoding is now lowercase hex (matching the cache filename and every call
+ * site). Rewrite any legacy base64 key to hex so existing favorites keep
+ * matching. `fileName` is left untouched — the on-disk favourites file keeps its
+ * original name and is still located via that column.
+ */
+function migrateFavoriteStickerShaToHex(db: RawSqliteDb): void {
+  if (!tableExists(db, 'FavoriteSticker')) return
+
+  const rows = db
+    .prepare('SELECT id, fileSha256 FROM "FavoriteSticker"')
+    .all() as Array<{ id: string; fileSha256: string }>
+
+  for (const row of rows) {
+    const current = row.fileSha256
+    // Already canonical hex (64 lowercase hex chars) — nothing to do. This makes
+    // the migration safe to re-run and a no-op for fresh installs.
+    if (/^[0-9a-f]{64}$/.test(current)) continue
+
+    const hex = canonicalShaHex(current)
+    if (!hex || hex === current) continue
+
+    // A hex-keyed row for the same sticker may already exist (e.g. re-favorited
+    // after the encoding change). Drop the stale base64 duplicate rather than
+    // hit the UNIQUE constraint.
+    const clash =
+      (db.prepare('SELECT 1 FROM "FavoriteSticker" WHERE fileSha256 = ?').all(hex) as unknown[])
+        .length > 0
+    if (clash) {
+      db.prepare('DELETE FROM "FavoriteSticker" WHERE id = ?').run(row.id)
+      continue
+    }
+
+    db.prepare('UPDATE "FavoriteSticker" SET fileSha256 = ? WHERE id = ?').run(hex, row.id)
+  }
 }
 
 // ── MIGRATION REGISTRY ────────────────────────────────────────────────────────
@@ -87,6 +141,10 @@ const MIGRATIONS: Migration[] = [
         PRIMARY KEY ("sessionId", "index")
       );
     `
+  },
+  {
+    id: '0002_favorite_sticker_sha_hex',
+    run: migrateFavoriteStickerShaToHex
   }
   // ↑ Add future migrations above this comment.
 ]
@@ -150,7 +208,10 @@ export function runMigrations(db: RawSqliteDb): void {
       // Execute the DDL (may contain multiple statements separated by semicolons).
       // All statements use `CREATE TABLE IF NOT EXISTS`, so a partial apply by
       // the racer is harmless.
-      db.exec(migration.sql)
+      if (migration.sql) db.exec(migration.sql)
+
+      // Imperative data step (must be idempotent — a racer may run it too).
+      if (migration.run) migration.run(db)
 
       // Record the migration as applied. `OR IGNORE` so a concurrent winner's
       // row doesn't turn this into a UNIQUE-violation abort.

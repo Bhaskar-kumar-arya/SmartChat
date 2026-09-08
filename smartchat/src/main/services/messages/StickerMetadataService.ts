@@ -28,13 +28,34 @@ export class StickerMetadataService {
     author: string = 'SmartChat',
     emojis: string[] = ['✨']
   ): Promise<string> {
-    const tempDir = join(app.getPath('userData'), 'temp_stickers')
+    const tempDir = StickerMetadataService.getTempDir()
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true })
     }
 
     const outPath = join(tempDir, `processed_${Date.now()}_${Math.random().toString(36).substring(7)}.webp`)
+    const finalPath = join(tempDir, `final_${Date.now()}_${Math.random().toString(36).substring(7)}.webp`)
+    let success = false
 
+    try {
+      return await this.processInternal(inputPath, packName, author, emojis, outPath, finalPath, () => { success = true })
+    } finally {
+      // Always remove the ffmpeg intermediate. Remove the final file too if we
+      // are exiting via a throw (the caller only cleans it up on success). (P2-S2-08)
+      StickerMetadataService.safeUnlink(outPath)
+      if (!success) StickerMetadataService.safeUnlink(finalPath)
+    }
+  }
+
+  private async processInternal(
+    inputPath: string,
+    packName: string,
+    author: string,
+    emojis: string[],
+    outPath: string,
+    finalPath: string,
+    markSuccess: () => void
+  ): Promise<string> {
     // Load webp info to check dimensions, size, and existing EXIF
     const img = new WebP.Image()
     await img.load(inputPath)
@@ -107,17 +128,7 @@ export class StickerMetadataService {
     finalImg.exif = exifBuffer
 
     // Save to final file path
-    const finalPath = join(tempDir, `final_${Date.now()}_${Math.random().toString(36).substring(7)}.webp`)
     await finalImg.save(finalPath)
-
-    // Cleanup the intermediate ffmpeg processed file if it was created
-    if (processedPath !== inputPath && fs.existsSync(processedPath)) {
-      try {
-        fs.unlinkSync(processedPath)
-      } catch (e: unknown) {
-        console.warn('[StickerMetadataService] Failed to clean up processed temp file:', e)
-      }
-    }
 
     // Check size limit on the final file
     const finalSize = fs.statSync(finalPath).size
@@ -125,7 +136,45 @@ export class StickerMetadataService {
       console.warn(`[StickerMetadataService] Final sticker size (${finalSize} bytes) exceeds limit (${sizeLimit} bytes)`)
     }
 
+    markSuccess()
     return finalPath
+  }
+
+  private static getTempDir(): string {
+    return join(app.getPath('userData'), 'temp_stickers')
+  }
+
+  private static safeUnlink(filePath: string): void {
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    } catch (e: unknown) {
+      console.warn('[StickerMetadataService] Failed to remove temp file:', filePath, e)
+    }
+  }
+
+  /**
+   * Delete every leftover file in <userData>/temp_stickers. Called once on app
+   * start to reclaim files leaked by sticker sends that threw mid-processing. (P2-S2-08)
+   */
+  static sweepTempDir(): void {
+    try {
+      const tempDir = StickerMetadataService.getTempDir()
+      if (!fs.existsSync(tempDir)) return
+      let removed = 0
+      for (const entry of fs.readdirSync(tempDir)) {
+        try {
+          fs.rmSync(join(tempDir, entry), { recursive: true, force: true })
+          removed++
+        } catch (e: unknown) {
+          console.warn('[StickerMetadataService] sweep: failed to remove', entry, e)
+        }
+      }
+      if (removed > 0) {
+        console.log(`[StickerMetadataService] Swept ${removed} leftover temp sticker file(s).`)
+      }
+    } catch (e: unknown) {
+      console.warn('[StickerMetadataService] Failed to sweep temp_stickers dir:', e)
+    }
   }
 }
 

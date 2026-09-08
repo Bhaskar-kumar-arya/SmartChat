@@ -74,6 +74,28 @@ describe('StandardMessageProcessor', () => {
     })
   })
 
+  it('P2-S2-01: does NOT index ciphertext placeholder / system messages', async () => {
+    const indexMessageMock = vi.fn().mockResolvedValue(undefined)
+    const dependencies = {
+      repository: { upsertMessage: vi.fn().mockResolvedValue({ messageType: 'ciphertext', textContent: 'Waiting for this message. This may take a while.', content: '{}' }) },
+      embeddingService: { indexMessage: indexMessageMock }
+    } as unknown as IMessageServiceDependencyAccessor
+
+    const context = {
+      messageType: 'ciphertext',
+      remoteJid: 'user@s.whatsapp.net',
+      senderId: 10,
+      timestamp: 1600000000n,
+      msg: { key: { id: 'msg-ct', fromMe: false }, status: 2 },
+      rawMessage: {},
+      textContent: 'Waiting for this message. This may take a while.',
+      participantString: 'user@s.whatsapp.net'
+    } as unknown as IMessageProcessingContext
+
+    await processor.process(context, dependencies)
+    expect(indexMessageMock).not.toHaveBeenCalled()
+  })
+
   it('should mark status as READ for self chat (note to self)', async () => {
     const upsertMessageMock = vi.fn().mockResolvedValue({
       messageType: 'conversation'

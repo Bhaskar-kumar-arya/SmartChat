@@ -3,10 +3,29 @@ import {
   unwrapMessage,
   extractContextInfoFromContent,
   preserveContextInfo,
-  preserveLocalUri
+  preserveLocalUri,
+  isIndexableMessageType
 } from '../../utils/messageUtils'
 
 describe('messageUtils Unit Tests', () => {
+  describe('isIndexableMessageType (P2-S2-01)', () => {
+    it('excludes ciphertext / system / reaction / protocol / unknown', () => {
+      expect(isIndexableMessageType('ciphertext')).toBe(false)
+      expect(isIndexableMessageType('system')).toBe(false)
+      expect(isIndexableMessageType('reactionMessage')).toBe(false)
+      expect(isIndexableMessageType('protocolMessage')).toBe(false)
+      expect(isIndexableMessageType('unknown')).toBe(false)
+      expect(isIndexableMessageType(null)).toBe(false)
+      expect(isIndexableMessageType(undefined)).toBe(false)
+    })
+
+    it('includes real text message types', () => {
+      expect(isIndexableMessageType('conversation')).toBe(true)
+      expect(isIndexableMessageType('extendedTextMessage')).toBe(true)
+      expect(isIndexableMessageType('imageMessage')).toBe(true)
+    })
+  })
+
   describe('unwrapMessage', () => {
     it('should return empty object when null or undefined', () => {
       expect(unwrapMessage(null)).toEqual({})

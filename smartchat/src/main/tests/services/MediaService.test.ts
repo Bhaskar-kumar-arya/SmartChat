@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { join } from 'path'
+import fs from 'fs'
+import { app, shell } from 'electron'
 import { MediaService } from '../../services/messages/MediaService'
 
 vi.mock('@whiskeysockets/baileys', async (importOriginal) => {
@@ -68,6 +71,36 @@ describe('MediaService', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect((service as any).activeDownloadsCount).toBe(0)
+  })
+
+  describe('openFile (P2-S2-03 path traversal)', () => {
+    const mediaDir = join(app.getPath('userData'), 'media')
+
+    beforeEach(() => {
+      fs.mkdirSync(mediaDir, { recursive: true })
+      fs.writeFileSync(join(mediaDir, 'real.jpg'), 'x')
+    })
+
+    it('opens a legitimate file inside the media dir', async () => {
+      const openSpy = vi.spyOn(shell, 'openPath').mockResolvedValue('')
+      await expect(service.openFile('app://media/real.jpg')).resolves.toBe(true)
+      expect(openSpy).toHaveBeenCalledWith(join(mediaDir, 'real.jpg'))
+      openSpy.mockRestore()
+    })
+
+    it('rejects backslash / dot-dot traversal without calling shell.openPath', async () => {
+      const openSpy = vi.spyOn(shell, 'openPath').mockResolvedValue('')
+      for (const uri of [
+        'app://media/..\\..\\..\\Desktop\\evil.lnk',
+        'app://media/' + encodeURIComponent('..\\..\\evil.exe'),
+        'app://media/' + encodeURIComponent('../../../etc/passwd'),
+        'app://media/' + encodeURIComponent('sub/nested.jpg')
+      ]) {
+        await expect(service.openFile(uri)).resolves.toBe(false)
+      }
+      expect(openSpy).not.toHaveBeenCalled()
+      openSpy.mockRestore()
+    })
   })
 
   it('downloadAndCacheMedia invokes sock.updateMediaMessage on 404 primary failure', async () => {

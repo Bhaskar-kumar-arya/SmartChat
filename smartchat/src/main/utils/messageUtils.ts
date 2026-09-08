@@ -246,3 +246,23 @@ export function getMessagePreviewLabel(messageType: string | null, textContent: 
   if (textContent) return textContent
   return MESSAGE_TYPE_LABELS[messageType] ?? messageType
 }
+
+/**
+ * Message types whose `textContent` must NOT be pushed into the semantic-search
+ * vector index. `ciphertext` carries only the "Waiting for this message"
+ * placeholder, `system` carries stub metadata, and `reactionMessage` is not a
+ * standalone searchable message. (P2-S2-01)
+ */
+const NON_INDEXABLE_MESSAGE_TYPES = new Set<string>([
+  'ciphertext',
+  'system',
+  'reactionMessage',
+  'protocolMessage',
+  'senderKeyDistributionMessage',
+  'unknown'
+])
+
+export function isIndexableMessageType(messageType: string | null | undefined): boolean {
+  if (!messageType) return false
+  return !NON_INDEXABLE_MESSAGE_TYPES.has(messageType)
+}

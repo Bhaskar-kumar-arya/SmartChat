@@ -96,6 +96,32 @@ describe('MessageQueryRepository', () => {
     expect(messages.map(m => m.id)).toEqual(['m2', 'm3', 'm4', 'm5'])
   })
 
+  it('P2-S2-02: caps the forward (target → newer) fetch at forwardLimit', async () => {
+    await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
+    for (let i = 1; i <= 10; i++) {
+      await prisma.message.create({
+        data: { id: `f${i}`, chatJid: dummyChat, fromMe: true, timestamp: BigInt(i), messageType: 'conversation', content: '{}' }
+      })
+    }
+
+    // From timestamp 1, no look-behind, forward capped at 3 → f1,f2,f3 only.
+    const capped = await repository.findMessagesFromTimestamp(dummyChat, 1n, 0, 3)
+    expect(capped.map(m => m.id)).toEqual(['f1', 'f2', 'f3'])
+
+    // Default cap (200) still returns everything for a small chat.
+    const all = await repository.findMessagesFromTimestamp(dummyChat, 1n, 0)
+    expect(all.length).toBe(10)
+  })
+
+  it('P2-S2-07: queryMessageIdsBySql rejects non-read-only SQL', async () => {
+    await expect(repository.queryMessageIdsBySql('DELETE FROM Message')).rejects.toThrow(/rejected/i)
+    await expect(repository.queryMessageIdsBySql('UPDATE Message SET textContent = 1')).rejects.toThrow(/rejected/i)
+    await expect(repository.queryMessageIdsBySql('SELECT id FROM Message; DROP TABLE Message')).rejects.toThrow(/rejected/i)
+    await expect(
+      repository.queryMessageIdsBySql("SELECT id FROM Message WHERE textContent LIKE '%delete me%'")
+    ).resolves.toBeInstanceOf(Array)
+  })
+
   it('should paginate chat messages with sender correctly', async () => {
     await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
     await prisma.identity.create({ data: { id: 20, phoneNumber: 's2@s.whatsapp.net', displayName: 'S2' } })

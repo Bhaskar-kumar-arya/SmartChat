@@ -122,7 +122,7 @@ their real content; (b) the vector index is polluted with dozens of identical
 **Fix idea:** on decrypt/edit, call `embeddingService.indexMessage` again
 (upsertVector already replaces), or delete the stale vector so `indexAll` re-does
 it. Skip indexing `ciphertext` / `system` message types entirely.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S2-02] med — src/main/services/messages/MessageQueryRepository.ts:240-257
 **What:** `findMessagesFromTimestamp` runs `SELECT id FROM Message WHERE chatJid = ?
@@ -137,7 +137,7 @@ reaction grouping). For a busy chat that is tens of thousands of rows in one IPC
 call — main-thread stall and a huge payload, where the UI only needs a screenful.
 **Fix idea:** cap the forward fetch (e.g. `LIMIT 200`) and page forward from the
 renderer, or fetch a window around the timestamp instead of an open range.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S2-03] med — src/main/services/messages/MediaService.ts:492-506
 **What:** `openFile(localURI)` derives the on-disk name with
@@ -153,7 +153,7 @@ executable/`.lnk` the attacker dropped elsewhere.
 **Fix idea:** `path.basename(fileName)` after decode, reject names containing
 separators / `..`, and verify the resolved path stays under the media dir
 (`resolved.startsWith(mediaDir + sep)`).
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S2-04] low — src/main/services/messages/processors/ReactionMessageProcessor.ts:22-30
 **What:** For a `fromMe` reaction that arrives via `messages.upsert`, `reactorId`
@@ -168,7 +168,7 @@ completes) the user's own reactions are lost and never reconciled. The returned
 because only the local `reactorId` var is updated.
 **Fix idea:** fall back to `resolveMeSenderId(sock)` (as
 MessageService.resolveReactorIdForReaction does) and set `senderId` on the result.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S2-05] low — src/main/services/messages/MessageService.ts:557-587
 **What:** `processReaction` only persists the reaction `if (reactorId)`, but the
@@ -178,7 +178,7 @@ told a reaction happened and renders it, but nothing is stored — it vanishes o
 the next chat reload / re-enrich, and reaction counts diverge between sessions.
 **Fix idea:** skip the emit (or emit a distinct "unresolved" shape) when no row
 was written.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S2-06] low — src/main/services/messages/MediaHelper.ts:74-109 / FavoriteStickerService.ts:39-64
 **What:** `getSafeMediaFileName` builds the cache filename from `fileSha256` as
@@ -194,7 +194,11 @@ filename for the same sticker → duplicate downloads and missed favorite auto-c
 / dedup.
 **Fix idea:** normalise every sha to one canonical encoding (hex) in a single
 helper and use it everywhere (filename, DB key, lookup).
-**Status:** open
+**Fix:** `services/messages/shaUtils.ts#canonicalShaHex` used in MediaHelper,
+FavoriteStickerService, MediaService.extractStickerSha, workerUtils.extractStickerSha.
+Startup data migration `0002_favorite_sticker_sha_hex` rewrites existing
+`FavoriteSticker.fileSha256` rows base64→hex (idempotent; `fileName` untouched).
+**Status:** fixed 2026-09-08
 
 ### [P2-S2-07] low — src/main/services/messages/MessageQueryRepository.ts:157-159
 **What:** `queryMessageIdsBySql` executes caller-supplied SQL via
@@ -207,7 +211,7 @@ tool, a plugin-facing endpoint) that trusts the method name gets an unguarded
 arbitrary-SQL sink against the message DB.
 **Fix idea:** enforce the read-only check inside the repository method too
 (reject non-SELECT/WITH, or run under a read-only DB connection).
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S2-08] low — src/main/services/messages/StickerMetadataService.ts:25-129
 **What:** `processAndAddMetadata` writes `processed_*` and `final_*` webp files
@@ -220,7 +224,7 @@ output), nothing cleans it up, and the directory is never swept at startup.
 `temp_stickers` grows unbounded.
 **Fix idea:** wrap in try/finally that removes intermediates on any exit, and
 sweep the temp dir on app start.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ## Slice 3 — WhatsApp service & subscribers
 

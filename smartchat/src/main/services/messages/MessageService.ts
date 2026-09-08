@@ -4,7 +4,7 @@ import { IChatRepository } from '../chats/IChatRepository'
 import { IMessageIndexer } from '../search/IEmbeddingService'
 import { SecretMessageService } from '../whatsapp/secret/SecretMessageService'
 import { cleanJid } from '../../utils/jidUtils'
-import { parseBaileysTimestamp, unwrapMessage, getMessageType } from '../../utils/messageUtils'
+import { parseBaileysTimestamp, unwrapMessage, getMessageType, isIndexableMessageType } from '../../utils/messageUtils'
 import {
   BaileysMessage,
   ProtocolResult,
@@ -214,6 +214,13 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     editedContent: Record<string, unknown> | null
   ): Promise<void> {
     await this.repository.editMessage(messageId, textContent, editedContent)
+    // Re-index so semantic search reflects the edited text, not the pre-edit
+    // text that was indexed at first upsert. (P2-S2-01)
+    if (textContent?.trim()) {
+      this.embeddingService.indexMessage(messageId, textContent).catch((err: unknown) => {
+        console.error('[MessageService] re-index after edit failed:', err)
+      })
+    }
   }
 
   /**
@@ -226,6 +233,14 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     content: Record<string, unknown>
   ): Promise<void> {
     await this.repository.decryptMessage(messageId, messageType, textContent, content)
+    // The message was previously indexed (if at all) with the ciphertext
+    // placeholder. Re-index with the real decrypted text now — upsertVector
+    // replaces the stale vector. Skip non-indexable types. (P2-S2-01)
+    if (textContent?.trim() && isIndexableMessageType(messageType)) {
+      this.embeddingService.indexMessage(messageId, textContent).catch((err: unknown) => {
+        console.error('[MessageService] re-index after decrypt failed:', err)
+      })
+    }
   }
 
   /**
@@ -553,10 +568,18 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     const reactorJid = await this.identityResolver.resolveReactorJid(reactionKey, sock as ISocketUserContext | null)
     const reactorId = await this.resolveReactorIdForReaction(reactionKey, reactorJid, sock as ISocketUserContext | null)
 
-    // Persist via repository
-    if (reactorId) {
-      await this.reactionRepository.upsertReaction(targetId, reactorId, text ?? null, timestamp)
+    // If the reactor identity can't be resolved we can neither persist the
+    // reaction nor emit a coherent event — emitting anyway makes the renderer
+    // show a reaction that vanishes on the next reload. Skip both. (P2-S2-05)
+    if (!reactorId) {
+      console.warn(
+        `[MessageService] processReaction: unresolved reactor for target ${targetId}; reaction dropped (not persisted, not emitted)`
+      )
+      return
     }
+
+    // Persist via repository
+    await this.reactionRepository.upsertReaction(targetId, reactorId, text ?? null, timestamp)
 
     // Fetch target message for enriched event payload
     const targetMsg = await this.queryRepository.findMessageTypeAndContent(targetId)

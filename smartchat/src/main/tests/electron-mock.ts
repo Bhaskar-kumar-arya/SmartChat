@@ -15,6 +15,12 @@ export const app = {
   getAppPath: () => join(__dirname, '../../../..')
 }
 
+export const shell = {
+  openPath: async (_path: string) => '',
+  openExternal: async (_url: string) => {},
+  showItemInFolder: (_path: string) => {}
+}
+
 export class BrowserWindow {
   isDestroyed() { return false }
   isFocused() { return false }
@@ -45,6 +51,7 @@ export const ipcRenderer = {
 
 export default {
   app,
+  shell,
   BrowserWindow,
   Notification,
   ipcMain,

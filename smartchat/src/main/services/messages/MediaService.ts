@@ -1,6 +1,6 @@
 import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 import { app, shell } from 'electron'
-import { join } from 'path'
+import { join, basename, resolve, sep } from 'path'
 import fs from 'fs'
 import { IMessageQueryService } from './IMessageQueryService'
 import { IMessageParserService } from './IMessageParserService'
@@ -13,6 +13,7 @@ import { EnrichedMessage } from '../../ipc/message.types'
 import { unwrapMessage } from '../../utils/messageUtils'
 import { Message } from '@prisma/client'
 import { IMediaService, IMediaSocket } from './IMediaService'
+import { canonicalShaHex } from './shaUtils'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -210,27 +211,8 @@ export class MediaService implements IMediaService {
     if (!mediaMsg || typeof mediaMsg !== 'object') return null
     const mediaObj = mediaMsg as Record<string, unknown>
     if (!mediaObj.fileSha256) return null
-    const sha = mediaObj.fileSha256
-    if (typeof sha === 'string') {
-      return sha
-    }
-    if (Buffer.isBuffer(sha)) {
-      return sha.toString('base64')
-    }
-    if (
-      sha &&
-      typeof sha === 'object' &&
-      'type' in sha &&
-      sha.type === 'Buffer' &&
-      'data' in sha &&
-      Array.isArray((sha as { data: unknown }).data)
-    ) {
-      return Buffer.from((sha as { data: number[] }).data).toString('base64')
-    }
-    if (sha instanceof Uint8Array || Array.isArray(sha)) {
-      return Buffer.from(sha as Uint8Array).toString('base64')
-    }
-    return null
+    // Canonical lowercase-hex — matches FavoriteSticker DB key and cache filename. (P2-S2-06)
+    return canonicalShaHex(mediaObj.fileSha256)
   }
 
   private buildShaToMsgMap(messages: Message[]): Map<string, Message[]> {
@@ -491,10 +473,34 @@ export class MediaService implements IMediaService {
 
   async openFile(localURI: string): Promise<boolean> {
     try {
-      const fileName = decodeURIComponent(localURI.split('/').pop() || '')
-      if (!fileName) return false
+      // Take only the last path segment, decode it, then reduce to a bare
+      // basename. Reject anything that still contains a path separator or a
+      // `..` traversal segment after decoding, and assert the resolved path
+      // stays inside the media directory. (P2-S2-03)
+      const rawName = decodeURIComponent(localURI.split('/').pop() || '')
+      if (!rawName) return false
 
-      const filePath = join(app.getPath('userData'), DIR_NAME_MEDIA, fileName)
+      const fileName = basename(rawName)
+      if (
+        !fileName ||
+        fileName !== rawName ||
+        fileName === '.' ||
+        fileName === '..' ||
+        fileName.includes('/') ||
+        fileName.includes('\\') ||
+        fileName.includes('\0')
+      ) {
+        console.warn(`[MediaService] openFile rejected suspicious name: ${rawName}`)
+        return false
+      }
+
+      const mediaDir = resolve(join(app.getPath('userData'), DIR_NAME_MEDIA))
+      const filePath = resolve(join(mediaDir, fileName))
+      if (filePath !== join(mediaDir, fileName) || !filePath.startsWith(mediaDir + sep)) {
+        console.warn(`[MediaService] openFile rejected out-of-dir path: ${filePath}`)
+        return false
+      }
+
       if (fs.existsSync(filePath)) {
         await shell.openPath(filePath)
         return true
