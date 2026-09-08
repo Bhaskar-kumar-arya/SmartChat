@@ -204,10 +204,16 @@ export default function ChatLayout() {
     setReplyingTo(null)
   }, [sendMessage, replyingTo])
 
-  const handleSendMediaMessage = useCallback(async (filePath: string, text: string, mentions?: string[]) => {
+  const handleSendMediaMessage = useCallback(async (filePath: string, text: string, mentions?: string[], expectedJid?: string) => {
+    // Refuse a media/voice send whose originating chat no longer matches the
+    // active chat (e.g. voice note recorded in chat A, user switched to B) — F6-01.
+    if (expectedJid && expectedJid !== activeJid) {
+      console.warn('[ChatLayout] Dropping media send for stale chat', expectedJid, '!=', activeJid)
+      return
+    }
     await sendMediaMessage(filePath, text, replyingTo?.id, mentions)
     setReplyingTo(null)
-  }, [sendMediaMessage, replyingTo])
+  }, [sendMediaMessage, replyingTo, activeJid])
 
   const activePresenceText = getActivePresence(activeJid)
 

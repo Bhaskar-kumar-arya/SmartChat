@@ -3,6 +3,23 @@ import { renderWithProviders, screen, fireEvent, userEvent } from '../../testUti
 import MessageInput from '@renderer/components/chat/MessageInput'
 import { MessageItem } from '@renderer/types/chatTypes'
 
+const mockRecorder = {
+  isRecording: false,
+  duration: 0,
+  audioBlob: null as Blob | null,
+  visualizerData: [] as number[],
+  isPlayingPreview: false,
+  startRecording: vi.fn().mockResolvedValue(undefined),
+  stopRecording: vi.fn(),
+  cancelRecording: vi.fn(),
+  togglePreviewPlayback: vi.fn(),
+  stopPreview: vi.fn(),
+}
+
+vi.mock('@renderer/hooks/useAudioRecorder', () => ({
+  useAudioRecorder: () => mockRecorder,
+}))
+
 describe('MessageInput', () => {
   const defaultProps = {
     activeJid: '123456789@s.whatsapp.net',
@@ -15,6 +32,48 @@ describe('MessageInput', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockRecorder.isRecording = false
+    mockRecorder.audioBlob = null
+    mockRecorder.startRecording.mockResolvedValue(undefined)
+  })
+
+  describe('voice note chat-switch safety (F6-01)', () => {
+    it('cancels an in-progress recording when the active chat changes', () => {
+      mockRecorder.isRecording = true
+      const { rerender } = renderWithProviders(
+        <MessageInput {...defaultProps} activeJid="A@s.whatsapp.net" />
+      )
+      mockRecorder.cancelRecording.mockClear()
+
+      rerender(<MessageInput {...defaultProps} activeJid="B@s.whatsapp.net" />)
+
+      expect(mockRecorder.cancelRecording).toHaveBeenCalled()
+    })
+
+    it('does not deliver a staged voice note to a chat switched to mid-recording', async () => {
+      const user = userEvent.setup()
+      const onSendMedia = vi.fn()
+      const { rerender } = renderWithProviders(
+        <MessageInput {...defaultProps} activeJid="A@s.whatsapp.net" onSendMedia={onSendMedia} />
+      )
+
+      // Start recording in chat A
+      await user.click(screen.getByTitle('Record voice message'))
+      expect(mockRecorder.startRecording).toHaveBeenCalled()
+
+      // A blob gets staged (waiting for the send / trash choice)
+      mockRecorder.audioBlob = new Blob(['audio'])
+      rerender(<MessageInput {...defaultProps} activeJid="A@s.whatsapp.net" onSendMedia={onSendMedia} />)
+
+      // User switches to chat B while the blob is staged
+      rerender(<MessageInput {...defaultProps} activeJid="B@s.whatsapp.net" onSendMedia={onSendMedia} />)
+
+      // Pressing send must NOT deliver the note to chat B
+      const sendVoiceBtn = document.querySelector('.recording-action-btn.success') as HTMLElement
+      if (sendVoiceBtn) await user.click(sendVoiceBtn)
+
+      expect(onSendMedia).not.toHaveBeenCalled()
+    })
   })
 
   it('renders contenteditable input area and action buttons', () => {

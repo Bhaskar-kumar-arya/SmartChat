@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Smile, X, Mic, Send, Trash2, StopCircle, Play, Pause, Plus } from 'lucide-react'
 import { useMentions } from '../../hooks/useMentions'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
@@ -21,7 +21,7 @@ import { useContributions } from '../../hooks/useContributions'
 interface MessageInputProps {
   activeJid: string
   onSend: (text: string, mentions?: string[]) => void | Promise<void>
-  onSendMedia: (filePath: string, text: string, mentions?: string[]) => void | Promise<void>
+  onSendMedia: (filePath: string, text: string, mentions?: string[], expectedJid?: string) => void | Promise<void>
   replyingTo: MessageItem | null
   onCancelReply: () => void
   onAttachFiles?: (paths: string[]) => void
@@ -36,6 +36,10 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
   const pickerContainerRef = useRef<HTMLDivElement>(null)
   const smileButtonRef = useRef<HTMLButtonElement>(null)
   const lastCaretOffsetRef = useRef<number>(0)
+  // Snapshot of the chat that a voice recording was started against, so a send
+  // (or a stale staged blob) can never be delivered to a different chat (F6-01).
+  const recordingJidRef = useRef<string | null>(null)
+  const [micError, setMicError] = useState<string | null>(null)
 
   useEffect(() => {
     setShowPicker(false)
@@ -88,6 +92,16 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     }
     setText('')
     lastCaretOffsetRef.current = 0
+    // Discard any in-progress recording / staged voice blob when the user
+    // switches chats — otherwise the recorder UI overlays the new chat's
+    // composer and a send would mis-deliver the note (F6-01).
+    cancelRecording()
+    stopPreview()
+    // Deliberately keep recordingJidRef as the snapshot of the chat the take
+    // was started in, so handleSendVoice's guard still fires if a staged blob
+    // somehow survives the switch (F6-01, defence in depth).
+    setMicError(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeJid])
 
   useEffect(() => {
@@ -171,14 +185,16 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
   }
 
   const handleSelectGif = async (filePath: string) => {
-    await onSendMedia(filePath, '')
+    await onSendMedia(filePath, '', [], activeJid)
   }
 
   const handleSelectSticker = async (filePath: string) => {
-    await onSendMedia(filePath, '')
+    await onSendMedia(filePath, '', [], activeJid)
   }
 
-  const handleSelectParticipant = (participant: { jid: string, name: string, isAdmin: boolean, isMe: boolean }) => {
+  const closeMentionMenu = useCallback(() => handleInputChange('', 0), [handleInputChange])
+
+  const handleSelectParticipant = useCallback((participant: { jid: string, name: string, isAdmin: boolean, isMe: boolean }) => {
     const editor = editorRef.current
     if (!editor) return
 
@@ -202,7 +218,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         lastCaretOffsetRef.current = newPos
       }, 0)
     }
-  }
+  }, [addMention])
 
   const slashCommands = useContributions('slash-command')
 
@@ -261,18 +277,45 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
     cancelRecording()
   }
 
+  const handleStartRecording = async () => {
+    setMicError(null)
+    recordingJidRef.current = activeJid
+    try {
+      await startRecording()
+    } catch (err) {
+      const name = (err as { name?: string })?.name
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        setMicError('Microphone access is blocked — enable it in your system settings.')
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        setMicError('No microphone was found.')
+      } else {
+        setMicError('Could not start recording.')
+      }
+      recordingJidRef.current = null
+    }
+  }
+
   const handleSendVoice = async () => {
     if (!audioBlob || sending) return
-    
+
+    // Guard against a chat switch that raced the send: never deliver the note
+    // to a chat other than the one it was recorded in (F6-01).
+    if (recordingJidRef.current && recordingJidRef.current !== activeJid) {
+      cancelRecording()
+      recordingJidRef.current = null
+      return
+    }
+
     stopPreview()
     setSending(true)
     try {
       const arrayBuffer = await audioBlob.arrayBuffer()
       const fileName = `voice_${Date.now()}.ogg`
       const filePath = await api.saveTempFile(arrayBuffer, fileName)
-      
-      await onSendMedia(filePath, '', [])
+
+      await onSendMedia(filePath, '', [], recordingJidRef.current ?? undefined)
       cancelRecording() // Reset state
+      recordingJidRef.current = null
     } catch (err) {
       console.error('Failed to send voice message:', err)
     } finally {
@@ -366,8 +409,8 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
         <MentionMenu 
           participants={participants} 
           query={query} 
-          onSelect={handleSelectParticipant} 
-          onClose={() => handleInputChange(text, 0)} 
+          onSelect={handleSelectParticipant}
+          onClose={closeMentionMenu}
         />
       )}
 
@@ -396,6 +439,12 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
             onSelectSticker={handleSelectSticker}
             onClose={() => setShowPicker(false)}
           />
+        </div>
+      )}
+
+      {micError && (
+        <div className="composer-inline-error" role="alert">
+          {micError}
         </div>
       )}
 
@@ -480,7 +529,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
       {!isRecording && !audioBlob && (
         <button
             className="send-button"
-            onClick={text.trim() ? handleSend : startRecording}
+            onClick={text.trim() ? handleSend : handleStartRecording}
             disabled={sending}
             title={text.trim() ? "Send message" : "Record voice message"}
         >
