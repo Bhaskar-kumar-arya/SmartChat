@@ -655,7 +655,11 @@ strip `javascript:`/`data:`/`vbscript:`. Raw HTML is still escaped (no
 `react-markdown`) and only additionally allow the `mention:` scheme (and the
 `https://emoji.local/` host) that the preprocessors rely on; keep its
 `javascript:`/`data:` stripping for everything else.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in e0cac7a — wrapped `defaultUrlTransform` (only
+`mention:` / `https://emoji.local/` pass through); blanked hrefs render as inert
+text. New tests: javascript:/data: links produce no live href, https survives.
+typecheck:web green.
 
 ### [F5-02] med — src/renderer/src/components/chat/messages/TemplateMessage.tsx:152-155
 **What:** URL / call template buttons do `window.open(button.payload, '_blank', …)`
@@ -668,7 +672,11 @@ normal-looking button and the renderer opens it. `tel:` interpolation is also
 unescaped.
 **Fix idea:** only open `payload` if `/^https?:$/` (parse with `new URL`);
 render other schemes as inert text. Encode the phone number for `tel:`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — `getSafeHttpUrl` parses payload with `new
+URL`, only `window.open`s `http:`/`https:`; non-http(s) URL buttons render
+disabled/inert. `tel:` number stripped to digits/`+` and encoded. Tests: js:
+button disabled + no `window.open`; valid https opens.
 
 ### [F5-03] med — src/renderer/src/components/chat/MessageView.tsx:124-144
 **What:** `handleScroll` sets `isLoadingRef.current = true` / `setLoadingMore(true)`
@@ -683,7 +691,12 @@ no-op (all fetched messages were duplicates already in state) — `messages`
 reference doesn't change, the :114 effect never runs, `loadingMore` stays true.
 **Fix idea:** wrap in `try/finally` that always clears both flags; reconcile
 against an actual length delta rather than the returned count.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — `onLoadMore()` wrapped in try/catch that
+releases `isLoadingRef`/`loadingMore` on rejection; added a 3s safety timeout
+that releases the lock if the `[messages]` effect never fires (no-op prepend).
+Test: after a rejecting `onLoadMore`, a second near-top scroll still triggers a
+load attempt.
 
 ### [F5-04] med — src/renderer/src/components/chat/MessageView.tsx:52-62
 **What:** the "reset pagination on chat switch" effect only does
@@ -697,7 +710,13 @@ the user cannot load older messages in B — and `isInitialRenderForChat` isn't
 re-armed so the initial scroll-to-bottom/position is also skipped.
 **Fix idea:** key the reset on the chat jid actually changing (pass it as a
 prop) rather than on `messages[0].id` + a length heuristic.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — `MessageView` takes a `chatJid` prop
+(`ChatLayout` passes `activeJid`); a dedicated effect resets `hasMore`,
+`loadingMore`, `isLoadingRef` and re-arms `isInitialRenderForChat` whenever the
+jid changes. Old messages-heuristic effect left as a secondary guard. Manual
+verification (chat A scrolled to hasMore=false → jump into chat B >50 window)
+still pending in `npm run dev`.
 
 ### [F5-05] med — src/renderer/src/components/chat/MessageItem.tsx:282-286
 **What:** `isMeReaction` returns `senderId.split('@')[0] === myJid.split('@')[0]`
@@ -711,7 +730,11 @@ with `''` — your own reaction can't be toggled off from the quick bar, and the
 "active" highlight on your emoji is wrong.
 **Fix idea:** normalize both sides with the shared `isSameJid` / strip `:device`
 before comparing (same helper F3-07 recommends).
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — `isMeReaction` now delegates to
+`utils/jidUtils#isSameJid` (strips `@domain` + `:device`). F11-03 still owns the
+LID/PN cross-format bug inside that helper. Test (MessageItem.test.tsx): a
+device-suffixed self reaction toggles off (`reactMessage(jid,id,'')`).
 
 ### [F5-06] med — src/renderer/src/components/chat/MessageView.tsx:209-229
 **What:** `messages.map` renders `<MessageItem>` directly with no error boundary
@@ -724,7 +747,12 @@ the conversation pane blank with no recovery but an app reload. One bad message
 takes out the entire chat.
 **Fix idea:** wrap each row (or the list) in an error boundary that renders a
 "couldn't display this message" placeholder and keeps the rest of the list.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — added reusable
+`components/common/MessageErrorBoundary.tsx`; `MessageView` wraps each
+`<MessageItem>` in it (`.message-render-error` placeholder). App-wide + nested
+boundary policy still owned by **F12-01** — F12 should decide whether this local
+boundary stays or folds into the shared hierarchy.
 
 ### [F5-07] low — src/renderer/src/components/chat/MessageView.tsx:253-255
 **What:** `ReactionDetailsModal` does
@@ -737,7 +765,10 @@ check that assumed a stable array is affected. Also `parseInt` on an undefined/
 non-numeric `timestamp` yields `NaN` and an unstable sort.
 **Fix idea:** copy first (`[...(message.reactions ?? [])].sort(…)`); guard the
 timestamp parse.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — `[...(message.reactions ?? [])].sort(...)`
+with a `NaN`-guarded `toMs()` parse. Test asserts `message.reactions` order is
+unchanged after opening the modal.
 
 ### [F5-08] low — src/renderer/src/components/common/WaveformPlayer.tsx:27,77-131 & src/renderer/src/components/chat/messages/SystemMessage.tsx:48-60
 **What:** both components hardcode light-theme colors inline — WaveformPlayer:
@@ -748,7 +779,12 @@ bubble: `background:'rgba(0,0,0,0.05)'`, `color:'#666'`, dark borders.
 surface) and the waveform/speed-pill are very low contrast / near-invisible.
 **Fix idea:** move these to CSS classes driven by the theme tokens the rest of
 the app uses (`--wa-*`), or `currentColor`.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — `.system-message-bubble`,
+`.system-message-container`, `.waveform-time`, `.waveform-speed-pill` added to
+`messages.css` using `--wa-*` tokens; inline light literals removed. WaveSurfer
+JS colors (`waveColor`/`progressColor`/play button) switched to dark-appropriate
+values / `--wa-icon` (app is a single dark theme — `variables.css`).
 
 ### [F5-09] low — src/renderer/src/components/common/WaveformPlayer.tsx:22-68
 **What:** (a) no coordination between players — starting one voice note doesn't
@@ -759,7 +795,13 @@ instance defaults to 1× while the pill still shows the old "1.5×"/"2×".
 (c) effect deps are `[url, isPtt]` — `peaks` / `preDuration` changes are ignored.
 **Fix idea:** lift a "currently playing player" ref/context; re-apply
 `setPlaybackRate(playbackSpeed)` on `ready`; include the render inputs in deps.
-**Status:** open
+**Status:** partial
+**Fix status:** (b) + (c) fixed in 3eee44c — `setPlaybackRate` re-applied on
+`ready` via a `playbackSpeedRef`; effect deps now include `peaks` +
+`preDuration`. (a) player-to-player pause coordination: **wontfix (deferred)** —
+needs a shared "currently playing" context/ref and `AudioMessage` to thread
+`onPlay`/`onPause`; that's a feature change, out of scope for a low bug-fix.
+Candidate for a future audio-UX task.
 
 ### [F5-10] low — src/renderer/src/components/chat/MessageView.tsx:95-111
 **What:** the target-highlight effect returns a cleanup for the outer 120ms
@@ -770,7 +812,10 @@ of a jump, `setHighlightedId` fires after unmount (React warning). If a second
 jump happens within 2.5s, the first run's timer clears the *new* highlight
 early.
 **Fix idea:** store both timer ids and clear them in the cleanup.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — inner 2.5s `setHighlightedId(null)` timeout
+captured in `clearHighlightTimer` and cleared in the effect cleanup alongside
+the outer 120ms timer.
 
 ### [F5-11] low — src/renderer/src/components/chat/messages/MediaMessages.tsx:204-208 (with MessageItem.tsx:303)
 **What:** `StickerMessage`'s auto-download `useEffect` has
@@ -783,7 +828,10 @@ but it's a fragile pattern — any change that makes the guard momentarily true
 during a render storm re-triggers a download.
 **Fix idea:** `useCallback` the media handlers in `MessageItem`; gate the
 auto-download with a `useRef` "already tried" flag.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — `handleDownload` in `MessageItem` wrapped in
+`useCallback([onDownloadMedia, msg.id])`; `StickerMessage` auto-download effect
+gated by an `autoDownloadTriedRef` so it fires at most once.
 
 ### [F5-12] low — src/renderer/src/components/chat/messages/TemplateMessage.tsx:160
 **What:** the quick-reply handler sends `button.text` (the display label) as the
@@ -794,7 +842,12 @@ is discarded.
 buttons). The bot may not recognize the response.
 **Fix idea:** send the payload/id when present (API permitting), or send text
 plus the id.
-**Status:** open
+**Status:** wontfix
+**Fix status:** wontfix (3eee44c) — `api.sendMessage(jid, text)` only sends a
+plain visible message body; posting the opaque quick-reply id as the user's
+message would be a worse UX regression, and no interactive-response API
+(`sendInteractiveResponse` / poll-style) is exposed to the renderer. Revisit if
+such an API is added.
 
 ### [F5-13] low — src/renderer/src/components/chat/MessageItem.tsx:232-234, 257-266
 **What:** `useEffect(() => { api.getMyJid().then(setMyJid)… }, [])` and
@@ -804,7 +857,12 @@ have no is-mounted guard.
 flight → setState-after-unmount warnings (same class as F2-03). `myJid` also
 refetched per message row instead of shared.
 **Fix idea:** mounted flag / AbortController; lift `myJid` to a context.
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in 3eee44c — `getMyJid` effect uses a local `mounted`
+flag; `handleShowInfo` guards `setReceipts`/`setShowInfo` with an
+`isMountedRef`; `handleDownload` finally-block guarded too. Lifting `myJid` to a
+shared context is deferred (per-row refetch remains) — candidate for F13/perf
+or F12 context work.
 
 ### [F5-14] low — src/renderer/src/components/chat/MessageInfoModal.tsx:11 & MessageView.tsx:257 (ReactionDetailsModal)
 **What:** both modals close on backdrop click only — no `Escape` handler, no
@@ -814,7 +872,11 @@ modal from the dropdown but cannot dismiss it with `Escape`, and focus is left
 behind the overlay. (F10 owns overlay policy; noted here as these live in F5.)
 **Fix idea:** shared modal primitive with focus-trap + `Escape`, as F10 will
 define.
-**Status:** open
+**Status:** deferred
+**Fix status:** deferred to **F10-05** — `MessageInfoModal` and
+`ReactionDetailsModal` should adopt the shared modal primitive (Escape + focus
+trap + focus restore + `role="dialog"`/`aria-modal`) rather than each growing a
+one-off handler.
 
 ## Slice F6 — Message input & composition
 
