@@ -87,6 +87,69 @@ describe('useAIStream', () => {
     expect(result.current.activeChannelId).toBeNull()
   })
 
+  it('F8-01: a stream that ends after a session switch does not write into / auto-save the new session', async () => {
+    const saveCurrentMessages = vi.fn().mockResolvedValue(undefined)
+    const props = {
+      aiOptions: { ...defaultAiOptions, autoSaveChats: true },
+      availableTools: [],
+      activeSessionId: 'session-1' as string | null,
+      saveCurrentMessages,
+    }
+
+    const { result, rerender } = renderHook((p) => useAIStream(p), {
+      wrapper: createWrapper(),
+      initialProps: props,
+    })
+
+    act(() => {
+      result.current.startStream('long answer', [], 'msg-ai-1')
+    })
+    act(() => {
+      if (onChunkCallback) onChunkCallback('partial ')
+    })
+
+    // User switches to a different session while the stream is still running.
+    rerender({ ...props, activeSessionId: 'session-2' })
+
+    vi.useFakeTimers()
+    try {
+      act(() => {
+        if (onDoneCallback) onDoneCallback()
+        vi.advanceTimersByTime(200)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+
+    // The streamed answer must not be auto-saved against session-2.
+    expect(saveCurrentMessages).not.toHaveBeenCalledWith('session-2', expect.anything())
+    expect(saveCurrentMessages).not.toHaveBeenCalled()
+  })
+
+  it('F8-03: abort still clears loading/channel when abortAiChat rejects', async () => {
+    mockApi.abortAiChat = vi.fn().mockRejectedValue(new Error('already gone'))
+    const { result } = renderHook(
+      () =>
+        useAIStream({
+          aiOptions: defaultAiOptions,
+          availableTools: [],
+          activeSessionId: 'session-1',
+          saveCurrentMessages: vi.fn(),
+        }),
+      { wrapper: createWrapper() }
+    )
+
+    act(() => {
+      result.current.startStream('hi', [], 'msg-ai-3')
+    })
+    await act(async () => {
+      await result.current.abort()
+    })
+
+    expect(result.current.loading).toBe(false)
+    expect(result.current.activeChannelId).toBeNull()
+  })
+
   it('should handle abort request', async () => {
     const { result } = renderHook(
       () =>

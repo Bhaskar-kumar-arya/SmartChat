@@ -25,6 +25,12 @@ export function useAIStream({
 
   const streamingBuffers = useRef<Record<string, string>>({})
   const typingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const isMountedRef = useRef(true)
+  const activeChannelIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    activeChannelIdRef.current = activeChannelId
+  }, [activeChannelId])
 
   // Keep references to latest options and tools to avoid stale closures in callbacks
   const activeSessionIdRef = useRef<string | null>(activeSessionId)
@@ -44,11 +50,22 @@ export function useAIStream({
   }, [availableTools])
 
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
+      // F8-01 / F8-02: abort the in-flight stream on unmount so the backend
+      // stops generating and the per-stream IPC listeners are disposed
+      // (api.abortAiChat tears down the preload listener map entry).
+      isMountedRef.current = false
       if (typingInterval.current) {
         clearInterval(typingInterval.current)
+        typingInterval.current = null
+      }
+      const ch = activeChannelIdRef.current
+      if (ch) {
+        Promise.resolve(api.abortAiChat(ch)).catch(() => {})
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const startStream = useCallback((
@@ -62,9 +79,23 @@ export function useAIStream({
     streamingBuffers.current[aiMsgId] = ''
     setLoading(true)
 
+    // F8-01: snapshot the session that owns this stream. If the user switches
+    // sessions / starts a new chat / deletes this session before the stream
+    // ends, the terminal handlers below must not write into or auto-save the
+    // now-active (different) session.
+    const streamSessionId = activeSessionIdRef.current
+
     const drip = () => {
       if (!typingInterval.current) {
         typingInterval.current = setInterval(() => {
+          // F8-02: a late chunk must not re-arm the interval after unmount.
+          if (!isMountedRef.current) {
+            if (typingInterval.current) {
+              clearInterval(typingInterval.current)
+              typingInterval.current = null
+            }
+            return
+          }
           let hasWork = false
           const updates: Record<string, string> = {}
           for (const key in streamingBuffers.current) {
@@ -114,6 +145,13 @@ export function useAIStream({
         const remainder = streamingBuffers.current[aiMsgId]
         delete streamingBuffers.current[aiMsgId]
 
+        // F8-01: the session changed under us — the streamed answer belongs to
+        // `streamSessionId`, which is no longer loaded. Don't map over / auto-save
+        // the currently-active session with it.
+        if (streamSessionId && activeSessionIdRef.current !== streamSessionId) {
+          return
+        }
+
         let finalContent = ''
         setMessages((p) => {
           const next = p.map((m) => {
@@ -155,6 +193,9 @@ export function useAIStream({
         setLoading(false)
         setActiveChannelId(null)
         delete streamingBuffers.current[aiMsgId]
+        if (streamSessionId && activeSessionIdRef.current !== streamSessionId) {
+          return
+        }
         setMessages((p) => {
           const next = p.map((m) =>
             m.id === aiMsgId
@@ -273,12 +314,18 @@ export function useAIStream({
   }, [startStream])
 
   const abort = useCallback(async () => {
-    if (activeChannelId) {
+    if (!activeChannelId) return
+    try {
       await api.abortAiChat(activeChannelId)
+    } catch (e) {
+      // F8-03: backend may have already torn the stream down / IPC error.
+      // The input must not stay stuck disabled behind a Stop button.
+      console.error('Failed to abort AI chat:', e)
+    } finally {
       setActiveChannelId(null)
       setLoading(false)
     }
-  }, [activeChannelId])
+  }, [activeChannelId, api])
 
   return {
     messages,

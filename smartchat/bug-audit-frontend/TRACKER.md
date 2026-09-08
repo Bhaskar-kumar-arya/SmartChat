@@ -1337,7 +1337,19 @@ lost and never saved to the session that requested it.
 and in a `useAIStream` unmount cleanup; have `-end`/auto-save bail if
 `activeSessionIdRef.current` differs from the session captured at
 `startStream` time (snapshot the sid per stream).
-**Status:** open
+**Status:** fixed
+**Fix status:** fixed in <SHA-F8-01> — `useAIStream` now: (a) snapshots
+`streamSessionId = activeSessionIdRef.current` in `startStream`; the `-end` and
+`-error` handlers bail (no `setMessages`, no auto-save) when
+`streamSessionId && activeSessionIdRef.current !== streamSessionId` (null snapshot
+= brand-new chat, still allowed to save the freshly-created session). (b) unmount
+cleanup sets `isMountedRef=false`, clears the drip interval and calls
+`api.abortAiChat(activeChannelIdRef.current)`. `AIChatSidebar` calls `handleAbort()`
+at the top of History `onSelectSession`, New Chat, active-session delete, and
+`AIChatExportButton` `onSessionCloned`. New test `useAIStream.test.tsx`
+"F8-01: a stream that ends after a session switch does not write into / auto-save
+the new session" (fake timers, advances past the 100 ms auto-save). typecheck:web
+green; useAIStream.test.tsx 5/5.
 
 ### [F8-02] med — src/renderer/src/components/ai/hooks/useAIStream.ts:46-52,65-93,101-110
 **What:** The unmount cleanup only `clearInterval(typingInterval.current)`. The

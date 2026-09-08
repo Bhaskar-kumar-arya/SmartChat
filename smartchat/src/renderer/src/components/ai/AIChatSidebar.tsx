@@ -189,6 +189,9 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
         sessions={sessions}
         activeSessionId={activeSessionId}
         onSelectSession={(id) => {
+          // F8-01: stop the in-flight stream before swapping the loaded session
+          // so its terminal handler can't write into / auto-save the new one.
+          handleAbort()
           selectSession(id).then((msgs) => {
             setMessages(msgs)
             messagesRef.current = msgs
@@ -196,6 +199,7 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
         }}
         onRenameSession={renameSession}
         onDeleteSession={(id) => {
+          if (activeSessionId === id) handleAbort()
           deleteSession(id)
           if (activeSessionId === id) {
             setMessages([])
@@ -254,6 +258,7 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
             messages={messages}
             sessions={sessions}
             onSessionCloned={(id) => {
+              handleAbort()
               return selectSession(id).then((msgs) => {
                 setMessages(msgs)
                 messagesRef.current = msgs
@@ -276,6 +281,7 @@ export default function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
           <button
             className="ai-close-btn"
             onClick={async () => {
+              handleAbort()
               setMessages([])
               messagesRef.current = []
               startNewChat()
