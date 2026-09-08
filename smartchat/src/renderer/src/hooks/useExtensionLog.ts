@@ -33,12 +33,36 @@ export function useExtensionLog(extensionId: string | null): string {
       }
     }
 
+    let intervalId: ReturnType<typeof setInterval> | null = null
+    const startPolling = () => {
+      if (intervalId == null && document.visibilityState === 'visible') {
+        intervalId = setInterval(poll, 2000)
+      }
+    }
+    const stopPolling = () => {
+      if (intervalId != null) {
+        clearInterval(intervalId)
+        intervalId = null
+      }
+    }
+    // Don't poll a backgrounded window (F12-08).
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void poll()
+        startPolling()
+      } else {
+        stopPolling()
+      }
+    }
+
     void poll()
-    const intervalId = setInterval(poll, 2000)
+    startPolling()
+    document.addEventListener('visibilitychange', onVisibility)
 
     return () => {
       alive = false
-      clearInterval(intervalId)
+      stopPolling()
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [extensionId, api])
 

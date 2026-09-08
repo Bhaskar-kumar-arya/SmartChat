@@ -60,7 +60,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 
 | ID | Summary | Status |
 |---|---|---|
-| F12-01 | No error boundary anywhere → any render throw blanks the app | TODO |
+| F12-01 | No error boundary anywhere → any render throw blanks the app | DONE (9fc47fb) — root + nested compact ErrorBoundary; MessageErrorBoundary retained as leaf |
 
 ### Batch B — high — fix individually
 
@@ -73,7 +73,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | F7-01 | ChatSearchSidebar out-of-order search responses | DONE (737b13d) |
 | F8-01 | No stream abort on AI session switch → streamed answer lost | DONE (f037405) |
 | F11-01 | PluginIcon injects raw plugin SVG via dangerouslySetInnerHTML | DONE (b25b6eb) — img data-URI (no DOMPurify dep); F11-08 folded in |
-| F12-02 | Navigation via unbuffered `smartchat:open-chat` window event drops intents | TODO |
+| F12-02 | Navigation via unbuffered `smartchat:open-chat` window event drops intents | DONE (dd1fcd2) — utils/navigationBus with last-intent replay + dedupe; supersedes F4-04 |
 
 ### Batch C — med — batch per slice (48 total)
 
@@ -90,10 +90,23 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE` · `WONTFIX`
 | F9 | 4 | DONE (b129aea renderer + bceb3b3 F9-04 webview hardening) — F9-01/03/04 med fixed; F9-02 wontfix-deferred (no theme toggle exists); + lows F9-07/08/09/10/11/12 fixed, F9-05/06 partial |
 | F10 | 6 | DONE (98827f0 shared BaseModal primitive + routing incl. F5-14/F8-09; 7a898b1 webview security/CSP + form validation) — all 13 F10 findings fixed (F10-01..13), 0 wontfix |
 | F11 | 2 | DONE (e7b9031) — F11-02/03 med + F11-04/05/07 low; F11-03 scoped (PN↔LID retained → F12), F11-06 partial (Escape + keys; keyboard submenu nav → F12); F11-01/08 in b25b6eb |
-| F12 | 4 | TODO |
+| F12 | 4 | DONE — F12-05 PresenceContext (3db83bb), F12-06 ToastContext (39f7a93), F12-03/04 all instances fixed in F1–F11 + useIsMounted primitive, F12-08 visibility-gated polling |
 
-### Batch D — low — triage or WONTFIX wholesale
-_decision pending_
+### Batch D — low
+
+Triaged and fixed per-slice alongside that slice's med batch (not deferred
+wholesale). A handful of lows are partial/deferred with reasons recorded in the
+TRACKER (F5-09a cross-player pause, F6-13 caret-offset, F7-06 select-all cap,
+F9-05/06 backend push). No open low-severity renderer bug remains.
+
+---
+
+## Fix phase COMPLETE — 2026-09-08
+
+All 12 slices fixed, per-slice commits on `main`. `npm run typecheck:web` PASS.
+Deferred items are feature- or backend-scope (see TRACKER "Fix phase status").
+F12 commits: 9fc47fb (F12-01), dd1fcd2 (F12-02), 3db83bb (F12-05), 39f7a93
+(F12-06), + F12-03/04/07/08 with the tracker reconciliation.
 
 ---
 

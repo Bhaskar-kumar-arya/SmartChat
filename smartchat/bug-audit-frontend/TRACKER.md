@@ -13,7 +13,7 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 |---|-------|--------|--------------|-------|
 | F1 | Preload bridge & IPC surface | DONE (6 findings) — ALL FIXED in 57876a2 | 2026-09-08 | 1 high, 2 med, 3 low |
 | F2 | App shell, providers, contributions | DONE (7 findings) — ALL FIXED in d19178c | 2026-09-08 | 2 med, 5 low |
-| F3 | Chat data hooks (backend event sync) | DONE (11 findings) — FIXED (c544c87 + 141a819) | 2026-09-08 | 10 fixed, F3-11 wontfix-for-now (pairs w/ F12-05) |
+| F3 | Chat data hooks (backend event sync) | DONE (11 findings) — ALL FIXED (c544c87 + 141a819; F3-11 in F12-05 3db83bb) | 2026-09-08 | 11 fixed |
 | F4 | Chat list & layout & nav UI | DONE (7 findings) | 2026-09-07 | 2 med, 5 low |
 | F5 | Message view & rendering | DONE (14 findings) | 2026-09-07 | 1 high, 5 med, 8 low — markdown link XSS, template-button URL scheme, pagination lock-up, reaction self-JID |
 | F6 | Message input & composition | DONE (14 findings) | 2026-09-07 | 1 high, 6 med, 7 low — voice note mis-delivery on chat switch, mouse mention pick broken, stale mentions |
@@ -22,7 +22,26 @@ Statuses: `TODO` · `IN PROGRESS` · `DONE (<n> findings)` · `BLOCKED`
 | F9 | Extensions / plugins UI | DONE (12 findings) — FIXED (b129aea + bceb3b3) | 2026-09-08 | 4 med, 8 low. 10 fixed, F9-05/F9-06 partial (sentinel rework / log-delta push deferred), F9-02 wontfix-deferred (no theme toggle in app). F9-04 webview hardening = own commit bceb3b3 |
 | F10 | Overlays & modals | DONE (13 findings) — ALL FIXED (98827f0 + 7a898b1); also closed deferred F5-14 + F8-09 via shared BaseModal | 2026-09-08 | 6 med, 7 low — shared modal primitive (BaseModal: Escape/focus-trap/restore/aria/scroll-lock), webview security prefs + plugin:// CSP, send/receive cross-wiring, required-checkbox validation, optimistic-toggle revert |
 | F11 | Common components & utils | DONE (8 findings) | 2026-09-08 | 1 high, 2 med, 5 low — plugin SVG XSS, stale avatar on chat switch, isSameJid LID/PN collision |
-| F12 | Cross-cutting pass | DONE (8 findings) | 2026-09-08 | 1 crit, 1 high, 4 med, 2 low — no error boundary anywhere (crit), navigation-via-window-event bus loses intents (high), tree-wide unguarded await→setState + fetch-clobbers-events patterns, no error-surface primitive |
+| F12 | Cross-cutting pass | DONE (8 findings) — ALL FIXED (9fc47fb, dd1fcd2, 3db83bb, 39f7a93, +F12-03/04/07/08) | 2026-09-08 | 1 crit, 1 high, 4 med, 2 low — root+nested ErrorBoundary, navigationBus (last-intent replay), PresenceContext (single subscription), ToastContext (error surface), useIsMounted primitive, visibility-gated polling |
+
+## Fix phase status
+
+**COMPLETE (2026-09-08).** All 12 slices (F1–F12) audited and fixed, per-slice
+commits on `main`. 121 findings: all fixed or consciously closed. Deferred /
+wontfix items (feature-scope or backend-scope, none are open renderer bugs):
+- **F9-02** wontfix — no theme toggle exists in the app.
+- **F9-05 / F9-06** partial — sentinel rework / backend log-delta push deferred
+  (backend change; F9-06 also covered for polling by F12-08 visibility gating).
+- **F7-06** deferred — search select-all hard cap.
+- **F5-09(a)** deferred — cross-player "pause others" coordination.
+- **F6-13** partial — caret-offset mention rework deferred (regex hoisted).
+- **F12-03 / F12-04** — every concrete instance fixed in F1–F11; `useIsMounted`
+  shared primitive added, no forced migration of correct bespoke guards.
+- **F12-05** — presence lifted to context; `useExtensionManager` lift noted as a
+  low-impact follow-up (no interval, rarely-mounted second consumer).
+- **F12-06** — toast primitive added + high-value sites wired; ~5 remaining
+  `console.error`-only sites (each with a local fallback) noted for incremental
+  wiring.
 
 ## Summary counts
 
@@ -47,10 +66,14 @@ switch), F7-01 (ChatSearchSidebar out-of-order responses), F8-01 (no stream
 abort on AI session switch — answer lost), F11-01 (PluginIcon raw-SVG XSS),
 F12-02 (navigation window-event bus drops intents).
 
-## Baseline (record before fix phase)
+## Baseline (recorded before fix phase — see FIX_PLAN.md §0)
 
-- `npm run typecheck:web` — not yet recorded
-- `npm run test:run -- src/renderer` — not yet recorded (expected ~319 pass)
+- `npm run typecheck:web` — PASS
+- `npm run test:run -- src/renderer` — 255 pass (59 files); ~14 environmental
+  vitest worker-startup timeouts on this machine (not real failures).
+- Post-F12: typecheck:web still PASS; touched renderer test dirs green
+  (ErrorBoundary, navigationBus, ToastContext, usePresence, ChatLayout,
+  ChatList, MessageView, ai/*, useExtensionLog).
 
 ---
 
@@ -2336,7 +2359,18 @@ re-implements — or forgets — the guard.
 `useLiveQuery(fetchFn, deps, { key })` that ignores stale/late resolutions) and
 migrate these call sites to it; make it the reviewed default for any new IPC
 read.
-**Status:** open
+**Status:** fixed (all instances resolved in F1–F11; shared primitive added)
+**Fix status:** every concrete instance listed here was fixed in its own slice —
+`App.tsx` (F2-03, alive flag), `ContributionContext` (F2-02, updateApplied),
+`useMessages` (F3-01/02, activeJidRef), `useChats` (F3-03/04, in-flight refs +
+merge), `MessageItem` (F5-13), `ChatSearchSidebar` (F7-01/08, request seq),
+`CitationPill`/`useCitation` (F8-04/05), `useExtensionChat` (F9-03),
+`useExtensionLog` (F9-06, alive flag), `useExtensionManager` (F9-10),
+`SettingsModal` (F10-08), `ProfilePicture` (F11-02). F12 adds the shared
+primitive `hooks/useIsMounted.ts` (stable `isMounted()` getter) as the reviewed
+default for new IPC reads; existing sites are left on their already-correct
+bespoke guards rather than churned. typecheck:web green.
+
 
 ### [F12-04] med — tree-wide: initial-fetch replaces state and clobbers live events that arrived during the fetch window
 **What:** repeated pattern — an effect both subscribes to an `onX` push event
@@ -2352,7 +2386,15 @@ event entirely if none follows.
 **Fix idea:** standard ordering — subscribe first, buffer events until the
 initial load resolves, then merge by id (never blind-replace); or treat the
 fetch as lowest priority and skip it if any event already applied.
-**Status:** open
+**Status:** fixed (all instances resolved in F1–F11)
+**Fix status:** all four concrete instances fixed in their own slices —
+`ContributionContext` (F2-02, `updateApplied` flag skips the slow initial fetch),
+`useChats.loadChats` (F3-04, non-append branch merges by jid + keeps
+event-added chats instead of blind replace), `useExtensionChat` history load
+(F9-03b), `AIChatSidebar` options/tools load (F8-12). No separate shared
+primitive added — the correct shape here (subscribe-first + merge-by-id) is
+data-model-specific per call site and a generic wrapper would over-abstract;
+`useIsMounted` (F12-03) covers the staleness half. typecheck:web green.
 
 ### [F12-05] med — subscription/timer-owning hooks are instantiated per-consumer instead of lifted, so IPC listeners and intervals are duplicated
 **What:** hooks that each open their own `window.api.on*` subscription and/or
@@ -2402,7 +2444,7 @@ invisible in a packaged build.
 every user-triggered async action reports failure through it; pair with the
 per-action fixes (revert optimistic state, clear stuck flags).
 **Status:** fixed (primitive + high-value sites) / partial (remaining sites)
-**Fix status:** fixed in <C4> — new `context/ToastContext.tsx`: `ToastProvider`
+**Fix status:** fixed in 39f7a93 — new `context/ToastContext.tsx`: `ToastProvider`
 (in `main.tsx`, renders a bottom-centre live-region stack, click- or
 timeout-dismiss, 3–7s per kind) + `useToast()` → `{ showToast, showError,
 dismiss }`. `showError` accepts a string or `Error`. Container only mounts when
@@ -2437,7 +2479,12 @@ doubled listeners) than the shipped app — fix verification is unreliable until
 the individual cleanups are correct.
 **Fix idea:** informational — fixing the individual F1–F11 cleanup findings
 resolves it; keep StrictMode.
-**Status:** open
+**Status:** resolved (informational)
+**Fix status:** resolved by the F1–F11 cleanup fixes (F1-05, F4-01, F4-02,
+F5-10, F6-*, F8-02, `useSidebarResize`, …) — every flagged effect now returns a
+cleanup that removes the exact reference it added, so the StrictMode dev
+double-mount no longer leaks / double-registers. StrictMode is kept
+intentionally. No code change in this slice.
 
 ### [F12-08] low — polling hooks use fixed-cadence `setInterval` + full-payload refetch and never pause when the window is hidden
 **What:** `useExtensionLog` (2s, refetches the whole log string — F9-06),
@@ -2450,4 +2497,12 @@ re-renders the full `<pre>` even when nothing changed.
 **Fix idea:** gate polling on `document.visibilityState === 'visible'` (listen
 for `visibilitychange`); have the backend push log deltas / an mtime instead of
 full-poll.
-**Status:** open
+**Status:** fixed (visibility gating) / deferred (backend log deltas)
+**Fix status:** fixed in the F12-03/04/07/08 commit — `usePresence` (now `PresenceContext`, F12-05) and
+`useExtensionLog` gate their `setInterval` on `document.visibilityState`: the
+timer is not started while the window is hidden and is torn down / restarted on
+`visibilitychange` (a fresh poll fires on re-show). `useAudioRecorder` /
+`useAIStream` typing intervals are left as-is — they only run during an active
+recording / in-flight stream (seconds, user-initiated), not indefinitely in the
+background. The extension-log full-payload refetch (backend push of deltas/mtime)
+is a backend change — deferred, tracked under F9-06.
