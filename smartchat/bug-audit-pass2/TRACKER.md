@@ -409,7 +409,7 @@ single-candidate pushName match; otherwise permanent.
 full merge path (`IdentityReconciliationService` step 2-6 logic) instead of a bare alias
 re-point; or at minimum `message.updateMany`/`reaction.updateMany`/`chatMember` migrate +
 delete the empty stub.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S5-02] med — src/main/services/contacts/IdentityReconciliationService.ts:50-88
 **What:** `deduplicateIdentities` merges a LID-only stub into a PN identity whenever the
@@ -426,7 +426,7 @@ side to be unambiguous, not that the two identities are actually the same person
 **Fix idea:** require a corroborating signal before merging (shared LID↔PN `LidMap`
 entry, matching verifiedName, or an overlapping group membership), or demote the merge to
 a "suggested" state a human confirms; at least skip when pushName is a short/common token.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S5-03] low — src/main/services/contacts/ContactNameResolver.ts:78-121
 **What:** `batchResolveNames` loops over `uniqueJids` (up to hundreds — group member
@@ -438,7 +438,7 @@ for a 500-member group this is ~250k string comparisons per call, plus a fire-an
 `getDisplayName` implementation from `utils/contactUtils.ts` (drift risk).
 **Fix idea:** build `new Map(aliases.map(a => [a.jid, a]))` once; dedupe the
 `linkLidAndPn` calls; share the single `getDisplayName`.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S5-04] low — src/main/services/contacts/ProfileSyncService.ts:7,38-58,86-91
 **What:** `imageCache` is a plain unbounded `Map`, never cleared (`ProfileSyncService`
@@ -452,7 +452,7 @@ image; contacts with no profile picture cause a network round-trip on every sing
 chat-list / header render forever (no negative cache); redundant identity lookups.
 **Fix idea:** bound the cache (LRU) and clear it on logout; negatively cache
 `item-not-found`/`null` with a short TTL; reuse the resolved `identityId` within the call.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ### [P2-S5-05] low — src/main/services/contacts/ProfileSyncService.ts:60-94
 **What:** Profile-picture URLs returned by Baileys are time-limited CDN URLs, but they
@@ -465,7 +465,7 @@ is a broken image until something explicitly passes `forceRefresh=true` — ther
 TTL, no periodic refresh, and no expiry detection.
 **Fix idea:** store a `profilePictureFetchedAt` and treat the cached URL as stale after N
 hours, or store the image bytes / a stable local path instead of the ephemeral URL.
-**Status:** open
+**Status:** fixed 2026-09-08 — schema-free approach: detect expiry from the CDN URL's `oe` param (`isProfilePictureUrlExpired`) and refetch stale URLs on the cached read path.
 
 ### [P2-S5-06] low — src/main/services/contacts/LidPnLinker.ts:32-81
 **What:** `linkLidAndPn` writes the `LidMap` ledger row first (step 1), then does the
@@ -480,7 +480,7 @@ future attempts via the cache/ledger), but the identities were never actually me
 aliased — name resolution keeps treating them as two contacts permanently.
 **Fix idea:** wrap steps 1-2 in one `$transaction`, or write the ledger row **last**
 (after the relational sync succeeds) so a failure leaves it retryable.
-**Status:** open
+**Status:** fixed 2026-09-08
 
 ## Slice 6 — AI
 

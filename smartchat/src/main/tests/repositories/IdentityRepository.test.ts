@@ -109,6 +109,33 @@ describe('IdentityRepository', () => {
     })
   })
 
+  it('P2-S5-01: mergeIdentityInto re-points messages/members/reactions/aliases and deletes the stub', async () => {
+    await prisma.chat.create({ data: { jid: 'g@g.us', type: 'GROUP' } })
+    const keep = await repository.createIdentity({ phoneNumber: 'p@s.whatsapp.net', displayName: 'Alex' })
+    const stub = await repository.createIdentity({ pushName: 'Alex', profilePictureUrl: 'http://x/pp.jpg' })
+
+    await prisma.identityAlias.create({ data: { jid: 'x@lid', type: 'LID', identityId: stub.id } })
+    await prisma.message.create({ data: { id: 'sm1', chatJid: 'g@g.us', senderId: stub.id, fromMe: false, timestamp: 1n, messageType: 'conversation', content: '{}' } })
+    await prisma.chatMember.create({ data: { chatJid: 'g@g.us', identityId: stub.id } })
+    await prisma.reaction.create({ data: { messageId: 'sm1', senderId: stub.id, text: '👍', timestamp: 2n } })
+
+    await repository.mergeIdentityInto(stub.id, keep.id)
+
+    expect(await repository.findIdentityById(stub.id)).toBeNull()
+    const counts = await repository.countIdentityReferences(keep.id)
+    expect(counts).toEqual({ aliases: 1, messages: 1, members: 1, reactions: 1 })
+    const survivor = await repository.findIdentityById(keep.id)
+    expect(survivor?.profilePictureUrl).toBe('http://x/pp.jpg')
+    const movedAlias = await prisma.identityAlias.findUnique({ where: { jid: 'x@lid' } })
+    expect(movedAlias?.identityId).toBe(keep.id)
+  })
+
+  it('P2-S5-01: mergeIdentityInto is a no-op when fromId === toId', async () => {
+    const ident = await repository.createIdentity({ phoneNumber: 'n@s.whatsapp.net' })
+    await repository.mergeIdentityInto(ident.id, ident.id)
+    expect(await repository.findIdentityById(ident.id)).not.toBeNull()
+  })
+
   it('should search identities based on query', async () => {
     await repository.createIdentity({ displayName: 'Charlie Brown', phoneNumber: '123' })
     await repository.createIdentity({ pushName: 'Charlotte', phoneNumber: '456' })

@@ -46,6 +46,21 @@ export class IdentityReconciliationService implements IIdentityReconciliationSer
       return { merged, skipped }
     }
 
+    // P2-S5-02: pushName is arbitrary user-set text — "Mom", "John", "Papa"
+    // collide across unrelated people. Before merging a stub into a PN identity
+    // on a bare pushName match, require a corroborating signal: either a LidMap
+    // ledger row already links one of the stub's LID aliases to that PN, or the
+    // pushName is distinctive (multi-word). Otherwise skip — an automatic,
+    // irreversible cross-contact merge on a common first name is data loss.
+    const stubLidJids = Array.from(
+      new Set(stubs.flatMap((s) => s.aliases.filter((a) => a.type === 'LID').map((a) => a.jid)))
+    )
+    const lidMapRows = stubLidJids.length
+      ? await this.prisma.lidMap.findMany({ where: { lid: { in: stubLidJids } } })
+      : []
+    const lidToPn = new Map(lidMapRows.map((r) => [r.lid, r.pn]))
+    const isDistinctivePushName = (name: string): boolean => /\s/.test(name) && name.trim().length >= 4
+
     // Find all candidate PN identities with matching pushNames in bulk
     const allCandidates = await this.prisma.identity.findMany({
       where: {
@@ -86,6 +101,18 @@ export class IdentityReconciliationService implements IIdentityReconciliationSer
       const keep = matchCandidates[0]
       const keepId = keep.id
       const stubId = stub.id
+
+      // P2-S5-02: gate the merge on a corroborating signal (see above).
+      const corroborated = stub.aliases.some(
+        (a) => a.type === 'LID' && keep.phoneNumber && lidToPn.get(a.jid) === keep.phoneNumber
+      )
+      if (!corroborated && !isDistinctivePushName(pushName)) {
+        console.log(
+          `[deduplicateIdentities] Skipped stub id=${stubId} ("${pushName}") — pushName match not corroborated (common/short name)`
+        )
+        skipped++
+        continue
+      }
 
       try {
         // Steps 1-6 run in a single interactive transaction so a mid-merge

@@ -9,4 +9,5 @@ export interface IProfileSyncService {
     sock?: IProfileSyncSocket | null,
     forceRefresh?: boolean
   ): Promise<string | null>
+  clearCache(): void
 }

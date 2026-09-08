@@ -56,6 +56,19 @@ describe('ContactNameResolver', () => {
       expect(res.get('b@s.whatsapp.net')).toBe('b') // fallback
     })
 
+    it('P2-S5-03: resolves the PN identity name via the alias index when a LID maps to a known PN', async () => {
+      aliasRepo.findIdentityAliases.mockResolvedValue([
+        { jid: 'c@s.whatsapp.net', identityId: 2, identity: { displayName: 'Carol' } }
+      ] as any)
+      const getPNForLID = vi.fn().mockResolvedValue('c@s.whatsapp.net')
+      const sock = { signalRepository: { lidMapping: { getPNForLID } } } as any
+
+      const res = await resolver.batchResolveNames(['123@lid', 'c@s.whatsapp.net'], sock)
+      expect(res.get('123@lid')).toBe('Carol')
+      expect(res.get('c@s.whatsapp.net')).toBe('Carol')
+      expect(linkLidAndPn).toHaveBeenCalledTimes(1)
+    })
+
     it('uses runtime cache if lid is unknown but lid mapping is provided', async () => {
       aliasRepo.findIdentityAliases.mockResolvedValue([])
       const getPNForLID = vi.fn().mockResolvedValue('c@s.whatsapp.net')

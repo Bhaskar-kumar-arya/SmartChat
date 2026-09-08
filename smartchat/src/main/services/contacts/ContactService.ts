@@ -255,7 +255,17 @@ export class ContactService implements IContactService {
     }
 
     if (lid) {
-      await ensureAlias(lid, 'LID')
+      // P2-S5-01: if the LID currently belongs to a *different* identity — a
+      // LID-only stub created earlier from group messages — a bare alias
+      // re-point would strand that stub's Message/Reaction/ChatMember rows.
+      // Migrate them onto the resolved identity and drop the empty stub.
+      const currentLidAlias = await this.aliasRepository.findIdentityAlias(lid)
+      if (currentLidAlias && currentLidAlias.identityId !== identityId) {
+        await this.identityRepository.mergeIdentityInto(currentLidAlias.identityId, identityId)
+        this.cache.setIdentityId(lid, identityId)
+      } else {
+        await ensureAlias(lid, 'LID')
+      }
     }
   }
 

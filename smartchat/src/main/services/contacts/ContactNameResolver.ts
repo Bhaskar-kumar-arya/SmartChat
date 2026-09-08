@@ -73,6 +73,12 @@ export class ContactNameResolver implements IContactNameResolver {
       }
     }
 
+    // P2-S5-03: index aliases once — the per-jid `aliases.find(...)` below is on
+    // the chat-list / group-open hot path and was O(n·m) over the alias array
+    // (~250k comparisons for a 500-member group).
+    const aliasByJid = new Map(aliases.map(a => [a.jid, a]))
+    const linkedPairs = new Set<string>()
+
     const nameMap = new Map<string, string>()
 
     for (const jid of uniqueJids) {
@@ -83,8 +89,8 @@ export class ContactNameResolver implements IContactNameResolver {
       }
 
       // 2. Find matching alias
-      const alias = aliases.find(a => a.jid === jid)
-      
+      const alias = aliasByJid.get(jid)
+
       if (alias && alias.identity) {
         const ident = alias.identity
         const finalName = ContactNameResolver.getDisplayName(ident, jid.split('@')[0])
@@ -97,13 +103,17 @@ export class ContactNameResolver implements IContactNameResolver {
           const pn = cleanJid(pnRaw);
           if (pn) {
             resolvedFromCache = true;
-            // Async fire-and-forget to link them
-            this.linkLidAndPn(jid, pn, 'runtime.cache').catch((err: unknown) => {
-              console.error('[ContactNameResolver] Failed to link LID and PN in runtime cache:', err)
-            });
-            
+            // Async fire-and-forget to link them — deduped within this call.
+            const pairKey = `${jid}->${pn}`
+            if (!linkedPairs.has(pairKey)) {
+              linkedPairs.add(pairKey)
+              this.linkLidAndPn(jid, pn, 'runtime.cache').catch((err: unknown) => {
+                console.error('[ContactNameResolver] Failed to link LID and PN in runtime cache:', err)
+              });
+            }
+
             // Re-check aliases just in case PN is known
-            const pnAlias = aliases.find(a => a.jid === pn);
+            const pnAlias = aliasByJid.get(pn);
             if (pnAlias && pnAlias.identity) {
               const ident = pnAlias.identity;
               const finalName = ContactNameResolver.getDisplayName(ident, pn.split('@')[0])

@@ -25,6 +25,7 @@ describe('ContactService', () => {
       updateIdentity: vi.fn(),
       findIdentityByPhoneNumber: vi.fn(),
       findIdentityById: vi.fn(),
+      mergeIdentityInto: vi.fn().mockResolvedValue(undefined),
     } as any
 
     aliasRepo = {
@@ -156,5 +157,36 @@ describe('ContactService', () => {
     })
     expect(aliasRepo.upsertIdentityAlias).toHaveBeenCalledWith('555@s.whatsapp.net', 'PN', 5)
     expect(aliasRepo.upsertIdentityAlias).toHaveBeenCalledWith('555@lid', 'LID', 5)
+  })
+
+  it('P2-S5-01: upsertContact migrates a LID stub instead of orphaning its rows on re-point', async () => {
+    cache.hasIdentityId.mockReturnValue(false)
+    // phoneNumber resolves to existing identity 7
+    identityRepo.findIdentityByPhoneNumber.mockResolvedValue({ id: 7 } as any)
+    // the LID currently belongs to a *different* stub identity 99
+    aliasRepo.findIdentityAlias.mockImplementation(async (jid: string) =>
+      jid === '555@lid' ? ({ jid, type: 'LID', identityId: 99 } as any) : null
+    )
+    lidMapRepo.findLidMap.mockResolvedValue(null)
+
+    await service.upsertContact({ id: 'P@s.whatsapp.net', phoneNumber: 'P@s.whatsapp.net', lid: '555@lid' })
+
+    expect(identityRepo.mergeIdentityInto).toHaveBeenCalledWith(99, 7)
+    expect(aliasRepo.upsertIdentityAlias).not.toHaveBeenCalledWith('555@lid', 'LID', 7)
+    expect(cache.setIdentityId).toHaveBeenCalledWith('555@lid', 7)
+  })
+
+  it('P2-S5-01: upsertContact leaves the LID alias alone when it already points at the resolved identity', async () => {
+    cache.hasIdentityId.mockReturnValue(false)
+    identityRepo.findIdentityByPhoneNumber.mockResolvedValue({ id: 7 } as any)
+    aliasRepo.findIdentityAlias.mockImplementation(async (jid: string) =>
+      jid === '555@lid' ? ({ jid, type: 'LID', identityId: 7 } as any) : null
+    )
+    lidMapRepo.findLidMap.mockResolvedValue(null)
+
+    await service.upsertContact({ id: 'P@s.whatsapp.net', phoneNumber: 'P@s.whatsapp.net', lid: '555@lid' })
+
+    expect(identityRepo.mergeIdentityInto).not.toHaveBeenCalled()
+    expect(aliasRepo.upsertIdentityAlias).toHaveBeenCalledWith('555@lid', 'LID', 7)
   })
 })

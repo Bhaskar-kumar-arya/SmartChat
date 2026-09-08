@@ -41,6 +41,13 @@ export interface IIdentityWriteRepository {
   createIdentity(data: IdentityCreateInput): Promise<Identity>
   updateIdentity(id: number, data: IdentityUpdateInput): Promise<Identity>
   deleteIdentity(id: number): Promise<Identity>
+  /**
+   * Re-points every child row (aliases, messages, chat memberships, reactions)
+   * from `fromId` onto `toId`, enriches `toId` with any unique data the source
+   * held, then deletes the now-empty source identity. Runs in a single
+   * transaction. No-op when `fromId === toId`.
+   */
+  mergeIdentityInto(fromId: number, toId: number): Promise<void>
 }
 
 export interface IIdentityRepository extends IIdentityQueryRepository, IIdentityWriteRepository {}

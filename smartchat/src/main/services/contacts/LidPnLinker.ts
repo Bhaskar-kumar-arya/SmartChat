@@ -29,12 +29,14 @@ export class LidPnLinker implements ILidPnLinker {
       return
     }
 
-    // 1. High-Performance Mapping Ledger
-    await this.lidMapRepository.upsertLidMap(cleanLid, cleanPn, source).catch((err: unknown) => {
-      console.error('[LidPnLinker] Failed to upsert lidMap entry:', err)
-    })
+    // P2-S5-06: do the relational identity sync FIRST, then write the mapping
+    // ledger row. Writing the ledger first meant a failure in the relational
+    // sync left `LidMap` claiming lid↔pn are linked (so `isAlreadyLinked`
+    // short-circuits every future attempt) while the identities were never
+    // actually merged — a permanent split contact. Ledger-last keeps a failure
+    // retryable.
 
-    // 2. Relational Identity Sync
+    // 1. Relational Identity Sync
     // Find identities for both
     const lidAlias = await this.aliasRepository.findIdentityAlias(cleanLid)
     let pnIdentity = await this.identityRepository.findIdentityByPhoneNumber(cleanPn)
@@ -79,6 +81,12 @@ export class LidPnLinker implements ILidPnLinker {
       await this.aliasRepository.upsertIdentityAlias(cleanPn, 'PN', identityId)
       await this.aliasRepository.upsertIdentityAlias(cleanLid, 'LID', identityId)
     }
+
+    // 2. High-Performance Mapping Ledger — written last so a relational-sync
+    // failure above leaves this retryable (P2-S5-06).
+    await this.lidMapRepository.upsertLidMap(cleanLid, cleanPn, source).catch((err: unknown) => {
+      console.error('[LidPnLinker] Failed to upsert lidMap entry:', err)
+    })
 
     if (onLinked) {
       onLinked(cleanLid, cleanPn, identityId)

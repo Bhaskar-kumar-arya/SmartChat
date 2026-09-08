@@ -82,6 +82,27 @@ describe('LidPnLinker', () => {
     expect(identityRepo.deleteIdentity).not.toHaveBeenCalled()
   })
 
+  it('P2-S5-06: writes the LidMap ledger row only after the relational sync succeeds', async () => {
+    const order: string[] = []
+    aliasRepo.findIdentityAlias.mockResolvedValue(null)
+    identityRepo.findIdentityByPhoneNumber.mockResolvedValue({ id: 30 } as any)
+    aliasRepo.upsertIdentityAlias.mockImplementation(async () => { order.push('alias'); return {} as any })
+    lidMapRepo.upsertLidMap.mockImplementation(async () => { order.push('ledger'); return {} as any })
+
+    await linker.linkLidAndPn('123@lid', '456@s.whatsapp.net', 'test')
+
+    expect(order).toEqual(['alias', 'ledger'])
+  })
+
+  it('P2-S5-06: does NOT write the ledger row if the relational sync throws (stays retryable)', async () => {
+    aliasRepo.findIdentityAlias.mockResolvedValue(null)
+    identityRepo.findIdentityByPhoneNumber.mockResolvedValue({ id: 30 } as any)
+    aliasRepo.upsertIdentityAlias.mockRejectedValue(new Error('P2002 race'))
+
+    await expect(linker.linkLidAndPn('123@lid', '456@s.whatsapp.net', 'test')).rejects.toThrow()
+    expect(lidMapRepo.upsertLidMap).not.toHaveBeenCalled()
+  })
+
   it('should delete orphan lid identity if it has no references', async () => {
     aliasRepo.findIdentityAlias.mockImplementation(async (jid) => {
       if (jid === '123@lid') return { jid, type: 'LID', identityId: 40 } as any // old identity
