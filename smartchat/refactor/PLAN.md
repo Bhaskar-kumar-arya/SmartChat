@@ -125,6 +125,20 @@ Data loss / broken features:
 
 ---
 
+### 2.6 SOLID assessment (dedicated pass: audit/SOLID-MAIN.md, audit/SOLID-RENDERER.md)
+
+| Principle | Main process | Renderer | Headline |
+|---|---|---|---|
+| **SRP** | high | high | 27 main files > 300 LOC and 94 functions > 60 lines; 17 renderer modules > 250 LOC and 67 functions > 60 lines. `MessageItem` has 13 `useState`s; `ChatLayout` holds 5 IPC subscriptions. |
+| **OCP** | med | med-high | Adding a WA event, AI provider, kernel action or message kind means editing several central switch/if-chains (6 files for one new message kind). Good registries exist (processors, formatters, tools, stubs) but get bypassed. 6 of 15 contribution slots are never rendered. |
+| **LSP** | med | med | Providers are picked by duck-typing. Some implementations throw "not implemented" or ignore a required `sock`. Repositories report success on failed writes. The renderer mock returns shapes the real service never returns. The `MessageType` union is incomplete, so "exhaustive" checks lie. |
+| **ISP** | med | med-high | `ServiceContainer` (47) and `SubscriberServices` are passed whole. `ISyncRepository` has 17 methods across 3 disjoint consumers. `IAPIService` has 102 methods, and 22 of its 34 consumers use ≤ 3. Fat contexts re-render every consumer. |
+| **DIP** | high | low-med | About 15 services import electron `app`/`BrowserWindow` (some at module load). Six services take a raw Prisma client. `AIService` creates its providers with `new`. Baileys wire types leak into the domain. |
+
+The SOLID pass also found one **latent data-loss bug**: SOLID-M-08. If `ai_preferences.json` fails to parse, the AI
+session service falls back to defaults and then saves them, overwriting the external API token and port. `set-ai-options`
+also accepts arbitrary keys from the renderer. It is fixed early as F-AI-5.
+
 ## 3. Refactor strategy — how we avoid introducing new bugs
 
 Guardrails. Every unit, no exceptions:
@@ -241,10 +255,10 @@ Hotfixes are **minimal diffs**: a failing test, then the smallest fix. Structura
 
 | Lane | Order | Units |
 |---|---|---|
-| **MSG** | F-MSG-1 → F-MSG-2 → F-MSG-3; F-MSG-4 ∥; F-MSG-5 ∥ | **F-MSG-1** single pure `applyEdit/mergeContextInfo`, used by all 5 call sites (B-MSG-03/04/06, R-MSG-02) 🔎 · **F-MSG-2** stop double-processing edits (R-MSG-03) · **F-MSG-3** batch-safe `bulkSyncMessages`, monotonic flags, in-batch dedupe (B-MSG-02/05/08/09, R-MSG-04) · **F-MSG-4** deferred reactions for sync (B-MSG-01, R-MSG-05; needs WASYNC after F-WA-2) · **F-MSG-5** single reaction pipeline (R-MSG-06) |
+| **MSG** | F-MSG-1 → F-MSG-2 → F-MSG-3; F-MSG-4 ∥; F-MSG-5 ∥ | **F-MSG-1** single pure `applyEdit/mergeContextInfo`, used by all 5 call sites (B-MSG-03/04/06, R-MSG-02) 🔎 · **F-MSG-2** stop double-processing edits (R-MSG-03) · **F-MSG-3** batch-safe `bulkSyncMessages`, monotonic flags, in-batch dedupe (B-MSG-02/05/08/09, R-MSG-04) · **F-MSG-4** deferred reactions for sync (B-MSG-01, R-MSG-05; needs WASYNC after F-WA-2) · **F-MSG-5** single reaction pipeline (R-MSG-06) · **R-SOLID-M-13** honest write contracts: repositories stop reporting success on failed writes; last in the lane, after F-MSG-3/4 and H-02 |
 | **WA** | F-WA-2 → F-WA-3; F-WA-4 ∥; F-WA-5 ∥ | **F-WA-1** self identity + init supervision (B-WA-01/04, R-WA-04; its `wa-disconnected` preload part moves to C-04) · **F-WA-2** history-sync state machine (B-WA-06/11/13/16, R-WA-06) 🔎 · **F-WA-3** graceful worker shutdown (B-WA-09, R-WA-05) · **F-WA-4** group-metadata cache (B-WA-08, R-WA-10) · **F-WA-5** encrypted-reaction attribution + embedding-worker races (B-WA-07/10, R-WA-11) |
 | **DATA** | F-DATA-1 ∥ F-DATA-2 → F-DATA-3 | **F-DATA-1** one identity-merge implementation, fixes the split (B-DATA-01, R-DATA-03) · **F-DATA-2** MembershipSync: carry derived PN, prune departed members (B-DATA-02/03, R-DATA-05) 🔎 · **F-DATA-3** live participant sync through the batched path (R-DATA-06) · plus the small ones B-DATA-04/05/06 folded into these |
-| **AI** | all ∥ | **F-AI-1** `BaseOpenAICompatibleProvider` + Gemini role mapping (B-AI-04, R-AI-03) · **F-AI-2** citation FK/cascade `CONTRACT`(schema) (B-AI-05, R-AI-05) · **F-AI-3** abort-id leak + anchored name regex (B-AI-06/07) · **F-AI-4** tool loop: move the turn cap into the live renderer loop, or move the loop to main (design note in audit/AI.md §2) |
+| **AI** | all ∥ | **F-AI-1** `BaseOpenAICompatibleProvider` + Gemini role mapping (B-AI-04, R-AI-03) · **F-AI-2** citation FK/cascade `CONTRACT`(schema) (B-AI-05, R-AI-05) · **F-AI-3** abort-id leak + anchored name regex (B-AI-06/07) · **F-AI-4** tool loop: move the turn cap into the live renderer loop, or move the loop to main (design note in audit/AI.md §2) · **F-AI-5** preferences clobber: merge-on-write, never save defaults after a parse failure, whitelist `set-ai-options` keys (SOLID-M-08; full port later in R-SOLID-M-04) |
 | **KRN** | F-KRN-1 → F-KRN-2 → F-KRN-3; F-KRN-4 ∥ | **F-KRN-1** worker crash handling + SDK rejection hygiene (B-KRN-05/13, R-KRN-04) · **F-KRN-2** resilient install/uninstall/load races (B-KRN-09/14/15/16, R-KRN-05) · **F-KRN-3** overlay lifecycle per plugin (B-KRN-08, R-KRN-08) · **F-KRN-4** JID normalisation in the permission scope (B-KRN-11, R-KRN-07) |
 | **APP** | ∥ | **F-APP-1** APIServer `error` listener + real-http auth tests (B-APP-07, R-APP-10) · **F-APP-2** surface `index-embeddings` failures (B-APP-04, R-APP-11; IPC lock, must land before C-02) |
 | **UC** | F-UC-1 → F-UC-2; F-UC-3 ∥ | **F-UC-1** cursor pagination + `loadNewer` + chat-guarded sends `CONTRACT`(`messages:get`) (B-UICHAT-01/02/07, R-UICHAT-02) 🔎 · **F-UC-2** chat-switch hygiene (B-UICHAT-03/05/12, R-UICHAT-05) · **F-UC-3** composer/markdown/error toasts (B-UICHAT-04/08–11/13/14, R-UICHAT-09) |
@@ -286,6 +300,28 @@ Hotfixes are **minimal diffs**: a failing test, then the smallest fix. Structura
 - **Z-07** dead-code sweep (`ts-prune`/knip) + stale comments
 - **Z-08** docs: update `docs/architecture/*`, ADRs for the IPC contract, DI and worker contract; refresh `CLAUDE.md`
 
+### 5.1 SOLID units (from the dedicated SOLID pass; full specs in audit/SOLID-*.md §"New refactor units")
+
+These are slotted into the waves and lanes above. Deps and locks are in the reports and in TRACKER.
+
+| Wave · lane | Units |
+|---|---|
+| W2 · MSG | R-SOLID-M-13 honest write contracts *(listed in the MSG lane above)* |
+| W3 · APP/UA | R-SOLID-R-10 `RendererApi` domain facets + per-facet mocks (after C-03/C-04; PRELOAD) |
+| W4 · AI | R-SOLID-M-04 `JsonPreferencesStore` port (after R-APP-06, R-AI-05) · R-SOLID-M-01 provider registry + single provider contract (after R-AI-03/06, F-AI-3) · R-SOLID-M-08 split `ReadMessagesTool` (after R-AI-04, F-MSG-1) |
+| W4 · KRN | R-SOLID-M-02 declarative kernel-module actions · R-SOLID-M-09 SDK channel decomposition (after R-KRN-04/11) |
+| W4 · WA | R-SOLID-M-03 WA event dispatch table + split `WAEventHandler` (after R-WA-08, R-MSG-03/08/10) · R-SOLID-M-11 worker-bootstrap role interfaces (after R-WA-09, R-MSG-07, M-03) · R-SOLID-M-10 honest socket ports (after R-MSG-09, C-02) |
+| W4 · MSG | R-SOLID-M-07 message-type enrichment strategies (after R-MSG-07) · R-SOLID-M-14 drop `MessageActionService` send passthroughs (after F-MSG-1, R-MSG-06, R-KRN-07, C-02) |
+| W4 · DATA | R-SOLID-M-06 segregate `ISyncRepository` (after R-DATA-05/07) · R-SOLID-M-12 repositories for the remaining raw-Prisma services (after R-AI-05, R-WA-11, M-04) |
+| W4 · APP | R-SOLID-M-05 `IRendererNotifier` port. Scheduled **last in W4** (touches IPC, DI, KHOST) |
+| W4 · UC (USEMSG chain) | R-UICHAT-03 → **R-SOLID-R-01** `ChatActionsContext` → R-UICHAT-06 → **R-SOLID-R-02** message-kind descriptor table → (**R-SOLID-R-07** `useMessages` reducer, if the chain has slack) → R-UICHAT-04. **R-SOLID-R-06** ChatLayout container split after R-UICHAT-05 + R-SOLID-R-01 |
+| W4 · UC ∥ | R-SOLID-R-03 complete the SystemStub registry (after H-01) · R-SOLID-R-12 picker + media-download split (its MediaMessages part before R-SOLID-R-02) · `MessageInput` order: R-UICHAT-09 → R-SOLID-R-11 → **R-SOLID-R-05** composer split → R-SOLID-R-04 contribution-menu host |
+| W4 · UA | R-SOLID-R-08 context slicing (presence/toast/contributions) · R-SOLID-R-09 AI sidebar container + stream contract (after R-UIAPP-05, F-UA-2) · R-SOLID-R-11 dismissable primitives + `GiphyClient` seam |
+| W5 | R-SOLID-M-15 typed stored-message content (domain model; after R-MSG-08, M-07, M-08) |
+
+`ChatList.tsx` is touched by R-UICHAT-08, R-SOLID-R-02, R-SOLID-R-04 and R-SOLID-R-08; the orchestrator serializes them.
+SOLID-R-19 (quote-click bypasses `onScrollToMessage`) is folded into R-UICHAT-06.
+
 ### Schedule at a glance
 ```
 Wave 0  G-01 ─► G-02 ∥ G-04 ─► G-03 (freeze window)
@@ -295,8 +331,8 @@ Wave 3  IPC chain C-01..C-06  ∥  DI chain D-01..D-05  ∥ rest of wave 2
 Wave 4  lanes again                                               (≈6-8 parallel)
 Wave 5  Z-01..Z-08                                                (≈6 parallel)
 ```
-Total ≈ **95 units** (4 + 20 + 29 + 11 + 23 + 8) before the SOLID additions in §5.1. At ~6 concurrent subagents, that's roughly 15–18 dispatch rounds. The longest
-serial chain is G-01 → G-03 → N-07 → N-08 → F-UC-1 → R-UICHAT-03 → R-UICHAT-06 → R-UICHAT-04.
+Total ≈ **123 units**: 95 in the waves (4 + 20 + 29 + 11 + 23 + 8), plus 27 SOLID units (§5.1) and F-AI-5. At ~6 concurrent subagents, that's roughly 15–18 dispatch rounds. The longest
+serial chain is G-01 → G-03 → N-07 → N-08 → F-UC-1 → R-UICHAT-03 → R-SOLID-R-01 → R-UICHAT-06 → R-SOLID-R-02 → R-UICHAT-04.
 
 ---
 
@@ -313,6 +349,8 @@ serial chain is G-01 → G-03 → N-07 → N-08 → F-UC-1 → R-UICHAT-03 → R
 | D7 | Public repo disclosure | Owner: the app has no users yet, so **commit everything, security details included** |
 | D8 | Message-list virtualization | Add `react-virtuoso` (or an equivalent) in R-UICHAT-04 |
 | D9 | Worker plugins run with full Node access by design | Out of scope. Document it in the SDK docs (R-KRN-11) |
+| D10 | 6 contribution slots have no renderer consumer | **Reject them at manifest validation** with a clear error (R-KRN-10 + R-SOLID-R-04). `message-renderer` is deferred until R-SOLID-R-02 exists. *(Defaulted by the orchestrator per "take the recommendations"; the owner may override.)* |
+| D11 | `muteChat`/`unmuteChat`/`pinChat`/`unpinChat` exist but no built-in menu uses them | **Add built-in ChatList context-menu items** (the backend already works) in R-SOLID-R-10. *(Defaulted by the orchestrator; the owner may override.)* |
 
 ---
 
