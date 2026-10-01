@@ -19,25 +19,29 @@ export const useMentions = (activeJid: string | null) => {
   const [query, setQuery] = useState('')
   const [mentionedJids, setMentionedJids] = useState<Set<string>>(new Set())
 
-  const fetchParticipants = useCallback(async () => {
-    if (!activeJid || !activeJid.endsWith('@g.us')) {
-      setParticipants([])
-      return
-    }
-    try {
-      const parts = await api.getGroupParticipants(activeJid)
-      setParticipants(parts)
-    } catch (err) {
-      console.error('Failed to fetch participants:', err)
-      setParticipants([])
-    }
-  }, [activeJid])
-
   useEffect(() => {
+    // Ignore responses for a group that is no longer active (B-UIAPP-05).
+    let alive = true
+    const fetchParticipants = async (): Promise<void> => {
+      if (!activeJid || !activeJid.endsWith('@g.us')) {
+        setParticipants([])
+        return
+      }
+      try {
+        const parts = await api.getGroupParticipants(activeJid)
+        if (alive) setParticipants(parts)
+      } catch (err) {
+        console.error('Failed to fetch participants:', err)
+        if (alive) setParticipants([])
+      }
+    }
     fetchParticipants()
     setShowMenu(false)
     setMentionedJids(new Set())
-  }, [activeJid, fetchParticipants])
+    return () => {
+      alive = false
+    }
+  }, [activeJid, api])
 
   const handleInputChange = useCallback((text: string, cursorPosition: number) => {
     // Reconcile the mention set against the tokens still present in the text:

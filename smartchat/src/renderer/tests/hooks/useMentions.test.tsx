@@ -91,7 +91,7 @@ describe('useMentions', () => {
 
   // B-UIAPP-05: a slower response for the previous group must not overwrite the
   // participants of the group that is now active.
-  it.fails('ignores a stale getGroupParticipants response after switching groups', async () => {
+  it('ignores a stale getGroupParticipants response after switching groups', async () => {
     const partsA = [{ jid: 'a1@s.whatsapp.net', name: 'A1', isAdmin: false, isMe: false }]
     const partsB = [{ jid: 'b1@s.whatsapp.net', name: 'B1', isAdmin: false, isMe: false }]
     let resolveA: (v: typeof partsA) => void = () => {}
