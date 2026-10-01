@@ -8,7 +8,6 @@ import { ContributionSlot } from '../contributions/ContributionPoints'
 import { DirectPluginChannel } from '../channels/DirectPluginChannel'
 import { isBidirectionalPluginChannel, KernelResponse } from '../channels/IPluginChannel'
 import { PluginContext } from './PluginContext'
-// eslint-disable-next-line no-restricted-imports -- specific file (logger.ts), not the utils barrel; the pattern over-matches
 import { createLogger } from '../../utils/logger'
 import { ContributionsDeclaration } from './PluginManifest'
 import {

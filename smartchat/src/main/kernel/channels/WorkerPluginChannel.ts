@@ -1,6 +1,5 @@
 import { MessagePort, Worker } from 'node:worker_threads'
 import { IBidirectionalPluginChannel, KernelRequest, KernelResponse } from './IPluginChannel'
-// eslint-disable-next-line no-restricted-imports -- specific file (logger.ts), not the utils barrel; the pattern over-matches
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('kernel:worker-channel')

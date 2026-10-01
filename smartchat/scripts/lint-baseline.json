@@ -9,7 +9,7 @@
     "@typescript-eslint/ban-ts-comment": 2,
     "@typescript-eslint/explicit-function-return-type": 430,
     "@typescript-eslint/no-empty-function": 5,
-    "@typescript-eslint/no-explicit-any": 851,
+    "@typescript-eslint/no-explicit-any": 845,
     "@typescript-eslint/no-require-imports": 50,
     "@typescript-eslint/no-this-alias": 1,
     "@typescript-eslint/no-unsafe-function-type": 30,
