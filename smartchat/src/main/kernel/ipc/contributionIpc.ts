@@ -140,6 +140,12 @@ export function registerContributionIpcHandlers(
     opts: { slot: ContributionSlot; pluginId: string; id: string; name?: string; args?: string; context?: Record<string, unknown> }
   ) => {
     console.log('[contributionIpc] executeHandler received request:', opts)
+    // B-KRN-02: ai-tool handlers (incl. the builtin executeScript/queryDatabase) are
+    // reached only through the AI tool executor, which applies the consent gate;
+    // never from this renderer-facing IPC.
+    if (opts.slot === 'ai-tool') {
+      throw new Error("Contribution slot 'ai-tool' cannot be executed via kernel:contribution:execute")
+    }
     const plugin = host.getPlugin(opts.pluginId)
     if (!plugin) {
       console.error(`[contributionIpc] Plugin not loaded: ${opts.pluginId}`)

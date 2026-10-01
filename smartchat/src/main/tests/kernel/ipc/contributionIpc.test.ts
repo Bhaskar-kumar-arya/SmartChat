@@ -101,7 +101,7 @@ describe('contributionIpc', () => {
   })
 
   // B-KRN-02 (S-03): the renderer-facing execute IPC must not drive ai-tool handlers.
-  it.fails('B-KRN-02: rejects slot "ai-tool" on kernel:contribution:execute without dispatching', async () => {
+  it('B-KRN-02: rejects slot "ai-tool" on kernel:contribution:execute without dispatching', async () => {
     const mockChannel: IPluginChannel = {
       sendToPlugin: vi.fn(),
       sendResponseToPlugin: vi.fn(),
