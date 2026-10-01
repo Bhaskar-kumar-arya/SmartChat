@@ -376,9 +376,9 @@ describe('KernelEventsModule', () => {
     const eventsModule = new KernelEventsModule(mockPermissions, mockBus, vi.fn().mockReturnValue(mockChannel))
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
     vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
-    let busHandler: ((data: any) => Promise<void>) | null = null
+    let busHandler: ((data: unknown) => Promise<void>) | null = null
     vi.mocked(mockBus.on).mockImplementation((evt, fn) => {
-      if (evt === 'message:incoming') busHandler = fn as any
+      if (evt === 'message:incoming') busHandler = fn as unknown as (data: unknown) => Promise<void>
       return mockBus
     })
     await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })

@@ -285,15 +285,20 @@ describe('panelIpc', () => {
   })
 
   describe('panel event delivery policy', () => {
-    async function subscribeScoped(permissions: any) {
-      let capturedHandler: Function | undefined
-      vi.mocked(mockEventBus.on).mockImplementation((_evt: any, fn: any): any => {
+    type PanelPerms = Parameters<typeof registerPanelIpcHandlers>[3]
+    type Invoke = { _invokeHandle: (channel: string, event: unknown, opts: unknown) => Promise<unknown> }
+
+    async function subscribeScoped(
+      permissions: unknown
+    ): Promise<{ handler: (data: unknown) => void; send: ReturnType<typeof vi.fn> }> {
+      let capturedHandler: ((data: unknown) => void) | undefined
+      vi.mocked(mockEventBus.on).mockImplementation(((_evt: unknown, fn: (data: unknown) => void) => {
         capturedHandler = fn
         return mockEventBus
-      })
+      }) as unknown as typeof mockEventBus.on)
       const send = vi.fn()
-      registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus, permissions)
-      await (ipcMain as unknown as { _invokeHandle: Function })._invokeHandle(
+      registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus, permissions as PanelPerms)
+      await (ipcMain as unknown as Invoke)._invokeHandle(
         'kernel:panel:events:subscribe',
         { sender: { isDestroyed: () => false, send } },
         { panelId: 'panel-1', eventName: 'message:incoming' }
