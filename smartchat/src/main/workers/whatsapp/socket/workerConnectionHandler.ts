@@ -116,7 +116,11 @@ export class WorkerConnectionHandler {
       const lastDisconnectObj = lastDisconnect as Record<string, unknown> | null | undefined
       const statusCode = (lastDisconnectObj?.error as Boom | undefined)?.output?.statusCode
       const errorData = (lastDisconnectObj?.error as Record<string, unknown> | undefined)?.data as Record<string, unknown> | undefined
-      const isConflict = statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict'
+      const conflictType = (errorData?.attrs as Record<string, unknown> | undefined)?.type
+      // Unlinking the device from the phone arrives as 401 + <conflict type="device_removed"/>.
+      // That is a logout (wipe + fresh QR), not another session taking over.
+      const isDeviceRemoved = statusCode === DisconnectReason.loggedOut && conflictType === 'device_removed'
+      const isConflict = !isDeviceRemoved && (statusCode === 440 || statusCode === 409 || errorData?.tag === 'conflict')
       const isRestartRequired = statusCode === DisconnectReason.restartRequired
       const shouldReconnect = (statusCode !== DisconnectReason.loggedOut && !isConflict) || isRestartRequired
 

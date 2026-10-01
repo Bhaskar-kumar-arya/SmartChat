@@ -98,8 +98,8 @@ describe('WorkerConnectionHandler — H-02 unlink from phone (401 + conflict/dev
   })
 
   // Real-world log: statusCode=401, data.tag='conflict', type='device_removed'.
-  // Currently misclassified as "session replaced" so no wipe / fresh QR happens.
-  it.fails('treats 401 + conflict type=device_removed as logged out: wipes, no session-replaced', async () => {
+  // Was misclassified as "session replaced" so no wipe / fresh QR happened.
+  it('treats 401 + conflict type=device_removed as logged out: wipes, no session-replaced', async () => {
     await handler.handleConnectionUpdate(closeUpdate(401, conflictNode('device_removed')))
     expect(publish).toHaveBeenCalledWith('wa-logged-out')
     expect(publish).not.toHaveBeenCalledWith('wa-session-replaced')
