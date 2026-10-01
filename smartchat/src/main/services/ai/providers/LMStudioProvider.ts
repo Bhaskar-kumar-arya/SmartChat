@@ -5,11 +5,17 @@ import { IFullResponseProvider } from './IFullResponseProvider'
 import { IToolRegistry } from '../IToolRegistry'
 
 export class LMStudioProvider implements IStreamingProvider, IFullResponseProvider {
-  private client: LMStudioClient;
+  private _client: LMStudioClient | undefined;
   private loadedModels: Map<string, { model: Awaited<ReturnType<LMStudioClient['llm']['load']>>, contextLength: number }> = new Map();
 
-  constructor(private readonly toolRegistry: IToolRegistry) {
-    this.client = new LMStudioClient();
+  constructor(private readonly toolRegistry: IToolRegistry) {}
+
+  /**
+   * Lazily constructed: the LM Studio SDK opens a websocket on construction and rejects
+   * asynchronously when LM Studio is not running, so only connect once actually used.
+   */
+  private get client(): LMStudioClient {
+    return (this._client ??= new LMStudioClient());
   }
 
   canHandleModel(modelId: string): boolean {

@@ -114,13 +114,23 @@ describe('GeminiProvider history role mapping', () => {
     expect(g.generateContentStream.mock.calls[0][0].contents).toEqual([{ role: 'user', parts: [{ text: '[USER]: p' }] }])
   })
 
-  // B-AI-04 (F-AI-1 fixes): a history turn with a non-'user' role that is flagged
-  // isSystem (e.g. a persisted `[SYSTEM] Tool Result` turn labelled 'system')
-  // collapses into a Gemini `model` turn labelled [AI], mislabeling tool output
-  // as the assistant's own words. Expected: stays a user turn labelled [SYSTEM].
-  it.fails('B-AI-04: a system-flagged non-user turn is sent as a user [SYSTEM] turn, not model [AI]', async () => {
+  // B-AI-04: a history turn flagged isSystem (e.g. a persisted `[SYSTEM] Tool Result`
+  // turn) or carrying an unknown role must stay a user-side turn, not collapse into
+  // a Gemini `model` turn labelled [AI].
+  it('B-AI-04: a system-flagged non-user turn is sent as a user [SYSTEM] turn, not model [AI]', async () => {
     const contents = await contentsFor([{ role: 'system', content: 'tool out', isSystem: true }])
     expect(contents[0].role).toBe('user')
     expect(contents[0].parts[0].text).toBe('[SYSTEM]: tool out')
+  })
+
+  it('B-AI-04: an isSystem turn labelled with an assistant role is still user-side [SYSTEM]', async () => {
+    const contents = await contentsFor([{ role: 'ai', content: 'tool out', isSystem: true }])
+    expect(contents[0].role).toBe('user')
+    expect(contents[0].parts[0].text).toBe('[SYSTEM]: tool out')
+  })
+
+  it('B-AI-04: unknown roles map to user (matching the other providers)', async () => {
+    const contents = await contentsFor([{ role: 'weird', content: 'x' }])
+    expect(contents.map(c => c.role)).toEqual(['user', 'user'])
   })
 })
