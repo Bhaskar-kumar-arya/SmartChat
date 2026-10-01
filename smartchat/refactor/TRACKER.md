@@ -28,6 +28,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (S-03) Default consent dialog lives inside KernelAIModule → inject from KernelBootstrapper (fold into H-06/R-KRN-09, KHOST). ai-assistant builtin handlers still call tool.execute directly (now unreachable from renderer IPC; revisit R-SOLID-M-02). Gated tools without args.jid (executeScript, queryDatabase) get consent only, no chat scope. Chat-scope semantics = messages:read for readMessages, else messages:send on args.jid (owner may override). Plugin-registered ai-tools are requiresPermission:false (unchanged).
 - (S-04) Revocation = drop at delivery, handlers stay attached (regrant resumes without resubscribe); real teardown needs permission-store hook → F-KRN-3/R-SOLID-M-02. KernelEventsModule.unsubscribe while bus null leaves entry (KRN.md:148) → F-KRN-1. B-KRN-11 LID alias bypass → F-KRN-4 (or R-KRN-07). Possible rare flake: 'Errors 1' seen once in a full vitest run under load (unreproduced).
 - (H-06) extension:list has isLoaded:false but no failure reason → R-KRN-05/F-KRN-2 (add error field). Failed plugin keeps its registerPluginManifest registration; verify PluginHost cleans up partial activation (F-KRN-2). extensionInstallHandler has the same unguarded host.load (B-KRN-09, IPC lock) → F-KRN-2.
+- (N-01) 11 other repository tests still use hand-rolled deleteMany → migrate to resetDb in later units; helpers.ts has `any` in createMockSocket/createTestServiceContainer/injectEvent (ratchet debt); per-worker userData path outside repo not audited. (flake) 3rd sighting of an intermittent single unhandled error in a full vitest run (seen on S-04, H-01, H-06 post-merge; always clean on re-run; panel-plugin e2e worker-start race is a known cause) → fix in N-06; until then a lone 'Errors 1' that disappears on re-run is treated as this flake.
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -59,10 +60,10 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | WAITING | |
 | H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | MERGED | fae5b34 |
 | X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | WAITING | |
-| N-01 | W1 · DATA | Main test infra + factories | W0 | – | IN PROGRESS | refactor/N-01 |
+| N-01 | W1 · DATA | Main test infra + factories | W0 | – | MERGED | ae1a3c8 |
 | N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | IN PROGRESS | refactor/N-02 |
-| N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | IN PROGRESS | refactor/N-01 |
-| N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | IN PROGRESS | refactor/N-01 |
+| N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | MERGED | ae1a3c8 |
+| N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | MERGED | ae1a3c8 |
 | N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | IN PROGRESS | refactor/N-05 |
 | N-06 | W1 · KRN | Kernel test harness | W0 | – | WAITING | |
 | N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | WAITING | |
@@ -83,7 +84,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | WAITING | |
 | F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | WAITING | |
 | F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | WAITING | |
-| F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | IN PROGRESS | refactor/N-01 |
+| F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | MERGED | ae1a3c8 |
 | F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | WAITING | |
 | F-AI-4 | W2 · AI | Tool-loop turn cap in the live loop | N-08 | – | WAITING | |
 | F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | WAITING | |
@@ -124,7 +125,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | R-SOLID-M-07 | W4 · MSG | Message-type enrichment strategies | R-MSG-07 | – | WAITING | |
 | R-SOLID-M-14 | W4 · MSG | Drop send passthroughs | F-MSG-1, F-MSG-5, F-KRN-4, C-02 | – | WAITING | |
 | R-DATA-07 | W4 · DATA | Single chat-update normalizer | N-04 | – | WAITING | |
-| R-DATA-08 | W4 · DATA | Chat-list batching | N-01 | – | IN PROGRESS | refactor/N-01 |
+| R-DATA-08 | W4 · DATA | Chat-list batching | N-01 | – | MERGED | ae1a3c8 |
 | R-DATA-09 | W4 · DATA | Contact cache / MeJidProvider / one getDisplayName | F-DATA-1 | DI | WAITING | |
 | R-DATA-10 | W4 · DATA | Index migration `CONTRACT` | N-01, F-AI-2 | SCHEMA | WAITING | |
 | R-DATA-11 | W4 · DATA | Dead code + narrow catches | R-DATA-07 | – | WAITING | |
