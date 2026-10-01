@@ -62,7 +62,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | MERGED | fae5b34 |
 | X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | WAITING | |
 | N-01 | W1 · DATA | Main test infra + factories | W0 | – | MERGED | ae1a3c8 |
-| N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | IN PROGRESS | refactor/N-02 |
+| N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | IN PROGRESS | refactor/N-02 (relaunched; commit 9a2ed48, needs lint fixes) |
 | N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | MERGED | ae1a3c8 |
 | N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | MERGED | ae1a3c8 |
 | N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | MERGED | 17c3268 |
@@ -76,11 +76,11 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | WAITING | |
 | R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
-| F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | IN PROGRESS | refactor/N-02 |
+| F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | IN PROGRESS | refactor/N-02 (relaunched; commit 9a2ed48, needs lint fixes) |
 | F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | WAITING | |
 | F-WA-3 | W2 · WA | Graceful worker shutdown | F-WA-1, F-WA-2 | WABRIDGE | WAITING | |
 | F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | WAITING | |
-| F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | IN PROGRESS | refactor/N-02 |
+| F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | IN PROGRESS | refactor/N-02 (relaunched; commit 9a2ed48, needs lint fixes) |
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | WAITING | |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | WAITING | |
 | F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | WAITING | |
