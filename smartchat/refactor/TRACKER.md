@@ -11,6 +11,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint ratchet baseline committed (scripts/lint-baseline.json, 22 rules, Prettier excluded): no-explicit-any 897 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22
 
 ## Owner smoke queue (🔎)
+2. (S-01) In a real Electron build: a plugin panel/overlay still renders; from a plugin page devtools `fetch('plugin://../dev.db')` is denied (403).
 1. After pushing, check GitHub Actions: CI workflow green on ubuntu AND windows (windows untested); then mark both checks required on main (Settings > Branches).
 
 ## Follow-ups inbox (triaged at each wave boundary)
@@ -18,6 +19,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (G-01) codetantra plugin manifest fails SDK `validateManifest` (globalSetup zips it plainly) → fold into R-KRN-10. `packages/sdk` dist is gitignored; CI must build it (globalSetup does for tests; `plugin:package:*` assumes prior build). `AIService` eagerly constructs `LMStudioProvider` (lazy-connect later, AI lane). `src/main/index.ts:37` references `dev_only/logs` (BOOT, fold into D-05). ipcGuards win32 branch untested until Windows CI. milestone2 unreadCount expectation corrected 0→5 (ChatSyncHandler.ts:76 persists provided value). G-01 rewrote smartchat/.gitignore line endings (CRLF→LF), harmless.
 - (G-02) Flaky unhandled 'Cannot find module …/index.js' in kernel/e2e/panel-plugin.test.ts (worker starts after temp dir cleanup), seen under coverage; create a fix unit in KRN lane (candidate: N-06/F-KRN-1). CI uses `npm ci --legacy-peer-deps` (npm arborist crash on lockfile; same as build-mac.yml); Node 22. G-03 must add lint-ratchet step at TODO(G-03) in .github/workflows/ci.yml. 🔎 owner: after first CI run, require checks 'Typecheck + tests (ubuntu-latest)' and '(windows-latest)' on main; confirm windows job green.
 - (G-03) Ratchet lints `.` (~40s, --no-cache); a local `coverage/` dir could add counts → add `coverage` to eslint ignores (fold into Z-05). 3 null-ruleId results counted as `(no-rule)`. Ratchet untested on Windows until CI. **Triage (end of Wave 0):** flaky panel-plugin e2e → fold into N-06; codetantra manifest → R-KRN-10; `dev_only/logs` ref in index.ts → D-05; LMStudioProvider eager construct → F-AI-1; stale bug-audit paths/skill docs → Z-08; `plugin:package:*` needs prebuilt sdk dist → Z-08 docs; test:run dup scripts → Z-08.
+- (S-01) NOT done by S-01 (host regex+`..` rejection only): resolve host against installed ids (handler only gets extensionsPath) and restrict `plugin://<otherId>` to the requesting partition (`persist:plugin-<id>`) per R-KRN-03 → fold into F-KRN-4's lane as new unit F-KRN-5 (needs registerPluginProtocolForSession signature change); `Access-Control-Allow-Origin: *` still set on plugin responses (include in F-KRN-5).
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -38,9 +40,9 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | G-02 | W0 | CI workflow (ubuntu + windows) | G-01 | – | MERGED | 355e7ca |
 | G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | MERGED | eb206db |
 | G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | MERGED | 7f6c8c9 | |
-| S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | IN PROGRESS | refactor/S-01 |
+| S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | MERGED | 929e7a3 |
 | S-02 | W1 · AI | executeScript isolation (hotfix → child process) | W0 | – | IN PROGRESS | refactor/S-02 |
-| S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | WAITING | |
+| S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | IN PROGRESS | refactor/S-03 |
 | S-04 | W1 · KRN | EventDeliveryPolicy + scope enforcement | W0 | – | IN PROGRESS | refactor/S-04 |
 | H-01 | W1 · UC | MessageItem hooks-order crash | W0 | – | IN PROGRESS | refactor/H-01 |
 | H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | WAITING | |
