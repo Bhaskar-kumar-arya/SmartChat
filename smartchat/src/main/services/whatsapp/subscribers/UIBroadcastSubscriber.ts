@@ -26,7 +26,7 @@ import type { IContactNameResolver } from '../../contacts/IContactService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
 import type { IMessageReadRepository } from '../../messages/IMessageQueryRepository'
 import { cleanJid } from '../../../utils/jidUtils'
-import { unwrapMessage, extractContextInfoFromContent, applyEdit } from '../../../utils/messageUtils'
+import { preserveContextInfo, applyEdit, EDITABLE_MEDIA_KEYS } from '../../../utils/messageUtils'
 
 export class UIBroadcastSubscriber implements IWAEventSubscriber {
   constructor(
@@ -130,39 +130,14 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
       const dbMsg = await this.messageQueryRepository.findMessageById(event.messageId)
       if (!dbMsg) return
 
-      let existingParsedForDecrypt: Record<string, unknown> | null = null
-      if (dbMsg.content) {
-        try {
-          existingParsedForDecrypt = JSON.parse(dbMsg.content) as Record<string, unknown>
-        } catch {
-          // non-fatal
-        }
-      }
-      const existingCtxForDecrypt = extractContextInfoFromContent(existingParsedForDecrypt)
-      const decryptedContent = event.content as Record<string, unknown> | null | undefined
-      const decryptedCtx = extractContextInfoFromContent(decryptedContent)
-
-      let finalContent: string
+      // Same quote-restoring rule as the DB write (preserveContextInfo), so live UI and DB agree.
+      const rawContent = JSON.stringify(event.content)
+      const finalContent = preserveContextInfo(dbMsg.content, rawContent, event.textContent)
       let messageType = event.messageType
-
-      if (existingCtxForDecrypt && !decryptedCtx) {
-        const unwrapped = unwrapMessage(decryptedContent as any) as Record<string, unknown>
-        const text = (unwrapped?.extendedTextMessage as Record<string, unknown> | undefined)?.text as string | undefined
-          || (unwrapped?.conversation as string | undefined)
-          || event.textContent
-          || ''
-        const existingMessageContextInfoForDecrypt = (existingParsedForDecrypt?.messageContextInfo as Record<string, unknown>) ?? null
-        const rebuiltContent: Record<string, unknown> = {
-          extendedTextMessage: {
-            text,
-            contextInfo: existingCtxForDecrypt
-          },
-          ...(existingMessageContextInfoForDecrypt ? { messageContextInfo: existingMessageContextInfoForDecrypt } : {})
-        }
-        finalContent = JSON.stringify(rebuiltContent)
-        messageType = 'extendedTextMessage'
-      } else {
-        finalContent = JSON.stringify(event.content)
+      if (finalContent !== rawContent) {
+        const rebuilt = JSON.parse(finalContent) as Record<string, unknown>
+        const mediaKey = EDITABLE_MEDIA_KEYS.find((k) => rebuilt[k])
+        messageType = mediaKey ?? 'extendedTextMessage'
       }
 
       const merged = {

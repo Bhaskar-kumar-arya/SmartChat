@@ -147,14 +147,20 @@ export function unwrapMessage(msg: proto.IMessage | null | undefined): proto.IMe
   }
 
   if (outerContextInfo) {
-    const unwrappedRec = unwrapped as Record<string, unknown>
-    const innerCtx = unwrappedRec.contextInfo || (unwrappedRec.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo
+    const innerRec = unwrapped as Record<string, unknown>
+    const innerCtx = innerRec.contextInfo || (innerRec.extendedTextMessage as Record<string, unknown> | undefined)?.contextInfo
     if (!innerCtx) {
+      // Copy before patching so the caller's (possibly parsed-from-DB) object is never mutated.
+      const unwrappedRec: Record<string, unknown> = { ...innerRec }
       if (unwrappedRec.extendedTextMessage && typeof unwrappedRec.extendedTextMessage === 'object') {
-        (unwrappedRec.extendedTextMessage as Record<string, unknown>).contextInfo = outerContextInfo
-      } else if (!unwrappedRec.contextInfo) {
+        unwrappedRec.extendedTextMessage = {
+          ...(unwrappedRec.extendedTextMessage as Record<string, unknown>),
+          contextInfo: outerContextInfo
+        }
+      } else {
         unwrappedRec.contextInfo = outerContextInfo
       }
+      unwrapped = unwrappedRec as proto.IMessage
     }
   }
 
@@ -189,7 +195,11 @@ export function extractContextInfoFromContent(
 /**
  * Preserves existing contextInfo when overwriting or editing message JSON content.
  */
-export function preserveContextInfo(existingJson: string | null | undefined, newContent: string | null | undefined): string {
+export function preserveContextInfo(
+  existingJson: string | null | undefined,
+  newContent: string | null | undefined,
+  fallbackText?: string | null
+): string {
   if (!newContent) return newContent ?? ''
   if (!existingJson) return newContent
   try {
@@ -202,24 +212,30 @@ export function preserveContextInfo(existingJson: string | null | undefined, new
     const newContextInfo = extractContextInfoFromContent(newParsed)
 
     if (!newContextInfo || (!newContextInfo.quotedMessage && existingContextInfo.quotedMessage)) {
-      const mergedContextInfo = {
-        ...existingContextInfo,
-        ...(newContextInfo || {})
+      const mergedContextInfo = mergeContextInfo(existingContextInfo, newContextInfo)
+      // An `editedMessage` echo wraps the real payload: work on the inner message.
+      const wrapped = Boolean(newParsed.editedMessage)
+      const result: Record<string, unknown> = {
+        ...((wrapped ? unwrapMessage(newParsed as proto.IMessage) : newParsed) as Record<string, unknown>)
       }
-      if (newParsed.extendedTextMessage && typeof newParsed.extendedTextMessage === 'object') {
-        (newParsed.extendedTextMessage as Record<string, unknown>).contextInfo = mergedContextInfo
+      const ext = result.extendedTextMessage
+      const mediaKey = EDITABLE_MEDIA_KEYS.find((k) => result[k] && typeof result[k] === 'object')
+      if (mediaKey) {
+        // Caption edit of a media message: keep it a media message, just restore the quote.
+        result[mediaKey] = { ...(result[mediaKey] as Record<string, unknown>), contextInfo: mergedContextInfo }
+      } else if (ext && typeof ext === 'object') {
+        result.extendedTextMessage = { ...(ext as Record<string, unknown>), contextInfo: mergedContextInfo }
       } else {
-        const extText = (newParsed.extendedTextMessage as Record<string, unknown> | undefined) ?? {}
-        const text = (newParsed.conversation as string) || (extText.text as string) || ''
-        newParsed.extendedTextMessage = {
-          ...extText,
-          text,
-          contextInfo: mergedContextInfo
-        }
-        delete newParsed.conversation
-        delete newParsed.editedMessage
+        const text = (result.conversation as string) || fallbackText || ''
+        result.extendedTextMessage = { text, contextInfo: mergedContextInfo }
+        delete result.conversation
       }
-      return JSON.stringify(newParsed)
+      delete result.editedMessage
+      if (wrapped) {
+        const mci = newParsed.messageContextInfo ?? result.messageContextInfo ?? existingParsed.messageContextInfo
+        if (mci) result.messageContextInfo = mci
+      }
+      return JSON.stringify(result)
     }
   } catch (e: unknown) {
     console.error('[messageUtils] Failed to preserve contextInfo:', e)
@@ -296,6 +312,7 @@ export function isIndexableMessageType(messageType: string | null | undefined): 
 }
 
 type JsonRecord = Record<string, unknown>
+export const EDITABLE_MEDIA_KEYS =['imageMessage', 'videoMessage', 'documentMessage'] as const
 
 /**
  * Merges a stored contextInfo with the one carried by an edit. Incoming fields win.
@@ -321,14 +338,37 @@ export interface AppliedEdit {
  */
 export function applyEdit(
   existingContent: JsonRecord | null | undefined,
-  editedContent: JsonRecord | null | undefined,
+  rawEditedContent: JsonRecord | null | undefined,
   editedText: string | null
 ): AppliedEdit {
+  // The Baileys echo wraps the payload in `{editedMessage:{message:X}}`: work on X.
+  const editedContent =
+    rawEditedContent?.editedMessage ? (unwrapMessage(rawEditedContent as proto.IMessage) as JsonRecord) : rawEditedContent
   const existingMessageContextInfo = (existingContent?.messageContextInfo as JsonRecord | undefined) ?? null
   const mergedContextInfo = mergeContextInfo(
     extractContextInfoFromContent(existingContent),
     extractContextInfoFromContent(editedContent)
   )
+
+  // Caption edit: patch the caption on the existing media message instead of rebuilding it as text.
+  const mediaKey = EDITABLE_MEDIA_KEYS.find((k) => editedContent?.[k] && typeof editedContent[k] === 'object')
+  if (mediaKey) {
+    const editedMedia = editedContent?.[mediaKey] as JsonRecord
+    const existingMedia = existingContent?.[mediaKey] as JsonRecord | undefined
+    const caption = editedText ?? (editedMedia.caption as string | undefined) ?? (existingMedia?.caption as string | undefined) ?? null
+    const media: JsonRecord = {
+      ...(existingMedia ?? {}),
+      ...editedMedia,
+      ...(caption !== null ? { caption } : {}),
+      ...(mergedContextInfo ? { contextInfo: mergedContextInfo } : {})
+    }
+    const content: JsonRecord = {
+      ...(existingMedia ? existingContent : editedContent),
+      [mediaKey]: media,
+      ...(existingMessageContextInfo ? { messageContextInfo: existingMessageContextInfo } : {})
+    }
+    return { content, messageType: mediaKey, textContent: editedText ?? caption }
+  }
 
   if (mergedContextInfo) {
     const extText = (editedContent?.extendedTextMessage as JsonRecord | undefined) ?? {}
@@ -354,31 +394,4 @@ export function applyEdit(
     messageType: editedContent?.extendedTextMessage ? 'extendedTextMessage' : 'conversation',
     textContent: editedText
   }
-}
-
-/**
- * Pure: rewrites the text/caption of an outgoing message's stored content JSON.
- */
-export function patchEditedText(contentJson: string, newText: string): string {
-  const updatedContent = JSON.parse(contentJson || '{}')
-  const rootContextInfo = updatedContent.contextInfo as JsonRecord | undefined
-
-  if (updatedContent.extendedTextMessage) {
-    updatedContent.extendedTextMessage.text = newText
-  } else if (rootContextInfo) {
-    updatedContent.extendedTextMessage = { text: newText, contextInfo: rootContextInfo }
-    delete updatedContent.conversation
-    delete updatedContent.contextInfo
-  } else if (updatedContent.conversation !== undefined) {
-    updatedContent.conversation = newText
-  } else if (updatedContent.imageMessage) {
-    updatedContent.imageMessage.caption = newText
-  } else if (updatedContent.videoMessage) {
-    updatedContent.videoMessage.caption = newText
-  } else if (updatedContent.documentMessage) {
-    updatedContent.documentMessage.caption = newText
-  } else {
-    updatedContent.conversation = newText
-  }
-  return JSON.stringify(updatedContent)
 }

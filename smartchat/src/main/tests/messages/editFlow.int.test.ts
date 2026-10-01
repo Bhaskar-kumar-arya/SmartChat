@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest'
-import type { PrismaClient } from '@prisma/client'
+import type { Message, PrismaClient } from '@prisma/client'
 import type { BrowserWindow } from 'electron'
 import { MessageRepository } from '../../services/messages/MessageRepository'
 import { UIBroadcastSubscriber } from '../../services/whatsapp/subscribers/UIBroadcastSubscriber'
@@ -65,7 +65,7 @@ describe('edit flow (real DB)', () => {
     })
     return m.id
   }
-  async function read(id: string) {
+  async function read(id: string): Promise<{ row: Message; parsed: unknown }> {
     const row = await prisma.message.findUnique({ where: { id } })
     if (!row) throw new Error('missing row')
     return { row, parsed: JSON.parse(row.content ?? '{}') as unknown }
@@ -82,7 +82,7 @@ describe('edit flow (real DB)', () => {
     expect(dig(parsed, 'messageContextInfo')).toEqual(MCI)
   })
 
-  it.fails('B-MSG-04: the editedMessage echo (decryptMessage) keeps text, quote and messageContextInfo', async () => {
+  it('B-MSG-04: the editedMessage echo (decryptMessage) keeps text, quote and messageContextInfo', async () => {
     const id = await seedReply()
     await repo.editMessage(id, 'edited reply', { conversation: 'edited reply' })
     await repo.decryptMessage(id, 'extendedTextMessage', 'edited reply', {
@@ -95,7 +95,7 @@ describe('edit flow (real DB)', () => {
     expect(dig(parsed, 'editedMessage')).toBeUndefined()
   })
 
-  it.fails('B-MSG-06: a caption edit keeps the media message (type, mediaKey, localURI)', async () => {
+  it('B-MSG-06: a caption edit keeps the media message (type, mediaKey, localURI)', async () => {
     const m = await makeMessage(prisma, chatJid, {
       messageType: 'imageMessage',
       textContent: 'old caption',
@@ -165,7 +165,7 @@ describe('UIBroadcastSubscriber.onDecrypted edit echo', () => {
     expect(dig(out, 'extendedTextMessage', 'contextInfo', 'quotedMessage', 'conversation')).toBe('original question')
   })
 
-  it.fails('B-MSG-03: echo carrying partial contextInfo (no quotedMessage) keeps the quote', async () => {
+  it('B-MSG-03: echo carrying partial contextInfo (no quotedMessage) keeps the quote', async () => {
     const out = await run({
       editedMessage: { message: { extendedTextMessage: { text: 'edited reply', contextInfo: { expiration: 86400 } } } }
     })

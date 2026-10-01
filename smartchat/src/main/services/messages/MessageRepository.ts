@@ -208,7 +208,7 @@ export class MessageRepository implements IMessageRepository {
     })
     let contentToStore = JSON.stringify(content)
     if (existing?.content) {
-      contentToStore = preserveContextInfo(existing.content, contentToStore)
+      contentToStore = preserveContextInfo(existing.content, contentToStore, textContent)
     }
     await this.prisma.message
       .updateMany({
