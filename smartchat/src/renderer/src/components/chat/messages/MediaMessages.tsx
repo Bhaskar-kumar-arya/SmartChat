@@ -380,12 +380,23 @@ export const VideoMessage = ({ localURI, textContent, rawMsg, onDownload, isDown
 
 export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isDownloading }: DocumentMessageProps) => {
     const api = useAPI()
+    const [downloadFailed, setDownloadFailed] = useState(false)
     const doc = rawMsg?.documentMessage || {}
     const fileName = doc.fileName || 'Document'
     const fileSize = doc.fileLength ? (Number(doc.fileLength) / 1024 / 1024).toFixed(2) + ' MB' : ''
 
     const handleOpen = () => {
         if (localURI) api.openFile(localURI)
+    }
+
+    const handleDownload = async () => {
+        setDownloadFailed(false)
+        try {
+            await onDownload()
+        } catch (err) {
+            console.error('Failed to download document:', err)
+            setDownloadFailed(true)
+        }
     }
 
     return (
@@ -402,12 +413,13 @@ export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isD
                 </div>
                 <div className="document-meta">
                     {fileSize} • {doc.mimetype?.split('/')[1]?.toUpperCase() || 'FILE'}
+                    {downloadFailed && ' • Expired'}
                 </div>
             </div>
 
             <button
-                onClick={localURI ? handleOpen : onDownload}
-                disabled={isDownloading}
+                onClick={localURI ? handleOpen : handleDownload}
+                disabled={isDownloading || downloadFailed}
                 className="document-action-btn"
             >
                 {isDownloading ? (

@@ -1,9 +1,20 @@
+import { useState } from 'react'
 import WaveformPlayer from '../../common/WaveformPlayer'
 import { ProfilePicture } from '../../common/ProfilePicture'
 
 import { AudioMessageProps } from '../../../types/componentProps'
 
 export const AudioMessage = ({ localURI, senderJid, onDownload, isDownloading, rawMsg }: AudioMessageProps) => {
+  const [downloadFailed, setDownloadFailed] = useState(false)
+  const handleDownload = async () => {
+    setDownloadFailed(false)
+    try {
+      await onDownload()
+    } catch (err) {
+      console.error('Failed to download audio:', err)
+      setDownloadFailed(true)
+    }
+  }
   const audioMsg = rawMsg?.audioMessage
   const duration = audioMsg?.seconds
   const peaks = audioMsg?.waveform ? Array.from(audioMsg.waveform as Iterable<number>).map((v: number) => v / 255) : undefined
@@ -17,11 +28,11 @@ export const AudioMessage = ({ localURI, senderJid, onDownload, isDownloading, r
         <div className="audio-download-info">
           <div className="audio-download-text">Voice message {duration ? `(${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')})` : ''}</div>
           <button 
-            onClick={onDownload}
-            disabled={isDownloading}
+            onClick={handleDownload}
+            disabled={isDownloading || downloadFailed}
             className="audio-download-btn"
           >
-            {isDownloading ? 'Downloading...' : 'Click to Download'}
+            {isDownloading ? 'Downloading...' : downloadFailed ? 'Voice message expired' : 'Click to Download'}
           </button>
         </div>
       </div>
