@@ -89,6 +89,38 @@ describe('useMentions', () => {
     expect(result.current.mentionedJids.size).toBe(0)
   })
 
+  // B-UIAPP-05: a slower response for the previous group must not overwrite the
+  // participants of the group that is now active.
+  it.fails('ignores a stale getGroupParticipants response after switching groups', async () => {
+    const partsA = [{ jid: 'a1@s.whatsapp.net', name: 'A1', isAdmin: false, isMe: false }]
+    const partsB = [{ jid: 'b1@s.whatsapp.net', name: 'B1', isAdmin: false, isMe: false }]
+    let resolveA: (v: typeof partsA) => void = () => {}
+    const getGroupParticipants = vi.fn((jid: string) =>
+      jid === 'groupA@g.us'
+        ? new Promise<typeof partsA>((resolve) => {
+            resolveA = resolve
+          })
+        : Promise.resolve(partsB)
+    )
+    mockApi = createMockApiService({ getGroupParticipants })
+
+    const { result, rerender } = renderHook(({ jid }) => useMentions(jid), {
+      wrapper: createWrapper(),
+      initialProps: { jid: 'groupA@g.us' },
+    })
+    rerender({ jid: 'groupB@g.us' })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.participants).toEqual(partsB)
+
+    await act(async () => {
+      resolveA(partsA)
+      await Promise.resolve()
+    })
+    expect(result.current.participants).toEqual(partsB)
+  })
+
   it('drops a mention once its @token is edited out of the text (F6-03)', () => {
     const { result } = renderHook(() => useMentions('group123@g.us'), {
       wrapper: createWrapper(),
