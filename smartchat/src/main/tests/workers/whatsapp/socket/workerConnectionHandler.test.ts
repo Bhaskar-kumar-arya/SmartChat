@@ -30,7 +30,7 @@ function makeHandler(publish: any, onReconnect: any, onWipeAndConnect: any = () 
   )
 }
 
-function closeUpdate(statusCode: number, data?: unknown) {
+function closeUpdate(statusCode: number, data?: unknown): Record<string, unknown> {
   return {
     connection: 'close',
     lastDisconnect: { error: new Boom('closed', { statusCode, data }) }
@@ -39,7 +39,7 @@ function closeUpdate(statusCode: number, data?: unknown) {
 
 // Baileys builds the close error as `new Boom('Stream Errored (conflict)',
 // { statusCode, data: <the <conflict type=.../> child node> })`.
-const conflictNode = (type: string) => ({ tag: 'conflict', attrs: { type } })
+const conflictNode = (type: string): Record<string, unknown> => ({ tag: 'conflict', attrs: { type } })
 
 describe('WorkerConnectionHandler — P2-S1-02 conflict close', () => {
   let publish: ReturnType<typeof vi.fn>

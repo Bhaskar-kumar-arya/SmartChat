@@ -24,9 +24,12 @@ function makeRouter(skipSync: ReturnType<typeof vi.fn>) {
   return new WorkerCommandRouter(connectionManager, vi.fn() as any)
 }
 
-function makeRouterWithSock(sock: Record<string, unknown>) {
-  const connectionManager = { getSocket: () => sock, getRepos: () => ({}) } as any
-  return new WorkerCommandRouter(connectionManager, vi.fn() as any)
+type RouterArgs = ConstructorParameters<typeof WorkerCommandRouter>
+type RouterCommand = Parameters<WorkerCommandRouter['handleCommand']>[0]
+
+function makeRouterWithSock(sock: Record<string, unknown>): WorkerCommandRouter {
+  const connectionManager = { getSocket: () => sock, getRepos: () => ({}) } as unknown as RouterArgs[0]
+  return new WorkerCommandRouter(connectionManager, vi.fn() as unknown as RouterArgs[1])
 }
 
 /**
@@ -38,7 +41,7 @@ function makeRouterWithSock(sock: Record<string, unknown>) {
 describe('WorkerCommandRouter — profile_picture_url sends the iq without a tctoken', () => {
   beforeEach(() => postMessage.mockClear())
 
-  const pictureReply = (url?: string) => ({
+  const pictureReply = (url?: string): Record<string, unknown> => ({
     tag: 'iq',
     attrs: {},
     content: [{ tag: 'picture', attrs: url ? { url } : {} }]
@@ -53,7 +56,7 @@ describe('WorkerCommandRouter — profile_picture_url sends the iq without a tct
       type: 'profile_picture_url',
       correlationId: 'p1',
       payload: { jid: '917011514625@s.whatsapp.net', type: 'preview' }
-    } as any)
+    } as RouterCommand)
 
     expect(profilePictureUrl).not.toHaveBeenCalled()
     expect(query).toHaveBeenCalledTimes(1)
@@ -63,7 +66,7 @@ describe('WorkerCommandRouter — profile_picture_url sends the iq without a tct
       type: 'get',
       xmlns: 'w:profile:picture'
     })
-    expect(node.content.map((c: any) => c.tag)).toEqual(['picture'])
+    expect(node.content.map((c: { tag: string }) => c.tag)).toEqual(['picture'])
     expect(node.content[0].attrs).toEqual({ type: 'preview', query: 'url' })
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -82,7 +85,7 @@ describe('WorkerCommandRouter — profile_picture_url sends the iq without a tct
       type: 'profile_picture_url',
       correlationId: 'p2',
       payload: { jid: '917011514625@s.whatsapp.net', type: 'image' }
-    } as any)
+    } as RouterCommand)
 
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'reply', correlationId: 'p2', payload: { result: undefined } })
@@ -97,7 +100,7 @@ describe('WorkerCommandRouter — profile_picture_url sends the iq without a tct
       type: 'profile_picture_url',
       correlationId: 'p3',
       payload: { jid: '120363422066620600@g.us', type: 'preview' }
-    } as any)
+    } as RouterCommand)
 
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'reply_error', correlationId: 'p3', error: 'not-authorized' })
