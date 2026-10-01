@@ -180,4 +180,36 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
       expect(mockAuthSettings.setHistorySyncCompleted).not.toHaveBeenCalled()
     })
   })
+
+  describe('armInactivityTimer (B-WA-11)', () => {
+    it('finishes an incomplete sync after the inactivity window when no chunk ever arrives', async () => {
+      const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+      manager.armInactivityTimer(sock, true)
+      await vi.advanceTimersByTimeAsync(179_999)
+      expect(mockAuthSettings.setHistorySyncCompleted).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(mockAuthSettings.setHistorySyncCompleted).toHaveBeenCalled()
+    })
+
+    it('is a no-op once the sync is complete', async () => {
+      const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+      await manager.finishSync(sock, true)
+      mockAuthSettings.setHistorySyncCompleted.mockClear()
+      manager.armInactivityTimer(sock, true)
+      await vi.advanceTimersByTimeAsync(200_000)
+      expect(mockAuthSettings.setHistorySyncCompleted).not.toHaveBeenCalled()
+    })
+
+    it('does not run while a chunk is writing (the chunk re-arms in its finally)', async () => {
+      const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+      let resolveSync: (v: any) => void = () => {}
+      vi.mocked(handleHistorySync).mockReturnValue(new Promise((r) => { resolveSync = r }) as any)
+      const chunk = manager.handleSyncChunk({ progress: 10, syncType: 3 }, true, sock)
+      manager.armInactivityTimer(sock, true)
+      await vi.advanceTimersByTimeAsync(200_000)
+      expect(mockAuthSettings.setHistorySyncCompleted).not.toHaveBeenCalled()
+      resolveSync({ importedMessages: [] })
+      await chunk
+    })
+  })
 })

@@ -234,6 +234,21 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
     }
   }
 
+  /**
+   * B-WA-11: arm the inactivity safety timer without waiting for a chunk. Used on
+   * socket open when a previous sync was interrupted (restart/crash) and
+   * WhatsApp may not resend any chunks. No-op if complete, a chunk is writing
+   * (its finally re-arms), or a timer is already armed.
+   */
+  armInactivityTimer(sock: WASocket, syncFullHistory: boolean): void {
+    if (this.syncComplete || this.activeChunks > 0 || this.syncTimeout) return
+    this.syncTimeout = setTimeout(() => {
+      this.finishSync(sock, syncFullHistory).catch((err) => {
+        log.error('Inactivity-timer finishSync failed:', err)
+      })
+    }, HISTORY_SYNC_TIMEOUT_MS)
+  }
+
   async finishSync(sock: WASocket, syncFullHistory: boolean): Promise<'completed' | 'deferred'> {
     if (this.syncComplete) return 'completed'
     if (this.activeChunks > 0) {

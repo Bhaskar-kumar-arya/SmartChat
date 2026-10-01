@@ -54,7 +54,7 @@ describe('WorkerConnectionManager — B-WA-11 inactivity timer on open', () => {
 
   beforeEach(() => vi.clearAllMocks())
 
-  it.fails('arms the inactivity timer when the socket opens and history sync is incomplete', async () => {
+  it('arms the inactivity timer when the socket opens and history sync is incomplete', async () => {
     const { sock } = await connectWith({ hasCreds: true, historySyncCompleted: false, syncFullHistory: true })
     expect(historySyncManager.armInactivityTimer).not.toHaveBeenCalled()
     emitOpen()
