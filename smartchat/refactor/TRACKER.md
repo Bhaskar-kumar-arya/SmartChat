@@ -30,6 +30,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (H-06) extension:list has isLoaded:false but no failure reason → R-KRN-05/F-KRN-2 (add error field). Failed plugin keeps its registerPluginManifest registration; verify PluginHost cleans up partial activation (F-KRN-2). extensionInstallHandler has the same unguarded host.load (B-KRN-09, IPC lock) → F-KRN-2.
 - (N-01) 11 other repository tests still use hand-rolled deleteMany → migrate to resetDb in later units; helpers.ts has `any` in createMockSocket/createTestServiceContainer/injectEvent (ratchet debt); per-worker userData path outside repo not audited. (flake) 3rd sighting of an intermittent single unhandled error in a full vitest run (seen on S-04, H-01, H-06 post-merge; always clean on re-run; panel-plugin e2e worker-start race is a known cause) → fix in N-06; until then a lone 'Errors 1' that disappears on re-run is treated as this flake.
 - (N-05) Drift allow-lists (strict equality, can only shrink): C-04 removes extension:chat-*/get-docs/ping/extension:chat-push/focus/toast/wa-disconnected/aiChat etc.; C-03 removes IAPIService gaps (getPanelPreloadPath, notifyPanelClosed, onPanelClose/Open). Follow-ups: execute-tool dialog path untested (no `dialog` in electron mock); ai-chat-stream ipcMain.on has no isTrustedSender check (→ F-AI-3/C-02); contract test is regex-based (literal channels only).
+- (N-02) Pinned known WA bugs as it.fails: B-WA-04 (init failure not treated as worker death), B-WA-01 (user not set from wa-me event), B-WA-13 (skipSync ignores {status:'deferred'}), B-WA-15 (groupFetchAllParticipating type) → flipped by F-WA-1/F-WA-2/F-WA-4 (remove .fails when fixed). eslint `**/utils` no-restricted-imports also flags legitimate sibling imports (../utils/workerUtils) → narrow the pattern in Z-05. waFakes at src/main/tests/helpers/waFakes.ts.
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -62,7 +63,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | MERGED | fae5b34 |
 | X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | WAITING | |
 | N-01 | W1 · DATA | Main test infra + factories | W0 | – | MERGED | ae1a3c8 |
-| N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | IN PROGRESS | refactor/N-02 (relaunched; commit 9a2ed48, needs lint fixes) |
+| N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | MERGED | 21bbcf7 |
 | N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | MERGED | ae1a3c8 |
 | N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | MERGED | ae1a3c8 |
 | N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | MERGED | 17c3268 |
@@ -76,11 +77,11 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | WAITING | |
 | R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
-| F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | IN PROGRESS | refactor/N-02 (relaunched; commit 9a2ed48, needs lint fixes) |
+| F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | MERGED | 21bbcf7 |
 | F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | WAITING | |
 | F-WA-3 | W2 · WA | Graceful worker shutdown | F-WA-1, F-WA-2 | WABRIDGE | WAITING | |
 | F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | WAITING | |
-| F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | IN PROGRESS | refactor/N-02 (relaunched; commit 9a2ed48, needs lint fixes) |
+| F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | MERGED | 21bbcf7 |
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | WAITING | |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | WAITING | |
 | F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | WAITING | |
