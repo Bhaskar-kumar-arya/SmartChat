@@ -17,7 +17,7 @@ import { RECONNECT_DELAY_DEFAULT_MS, RECONNECT_DELAY_MAX_MS } from '../../../../
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function makeHandler(publish: any, onReconnect: any) {
+function makeHandler(publish: any, onReconnect: any, onWipeAndConnect: any = () => {}) {
   return new WorkerConnectionHandler(
     { publish } as any,
     () => null, // reposGetter
@@ -26,16 +26,20 @@ function makeHandler(publish: any, onReconnect: any) {
     () => false, // getIsFreshLogin
     () => {}, // setIsFreshLogin
     onReconnect,
-    () => {} // onWipeAndConnect
+    onWipeAndConnect
   )
 }
 
-function closeUpdate(statusCode: number) {
+function closeUpdate(statusCode: number, data?: unknown) {
   return {
     connection: 'close',
-    lastDisconnect: { error: new Boom('closed', { statusCode }) }
+    lastDisconnect: { error: new Boom('closed', { statusCode, data }) }
   }
 }
+
+// Baileys builds the close error as `new Boom('Stream Errored (conflict)',
+// { statusCode, data: <the <conflict type=.../> child node> })`.
+const conflictNode = (type: string) => ({ tag: 'conflict', attrs: { type } })
 
 describe('WorkerConnectionHandler — P2-S1-02 conflict close', () => {
   let publish: ReturnType<typeof vi.fn>
@@ -63,6 +67,44 @@ describe('WorkerConnectionHandler — P2-S1-02 conflict close', () => {
     await handler.handleConnectionUpdate(closeUpdate(500))
     expect(publish).not.toHaveBeenCalledWith('wa-session-replaced')
     expect(onReconnect).toHaveBeenCalled()
+  })
+})
+
+describe('WorkerConnectionHandler — H-02 unlink from phone (401 + conflict/device_removed)', () => {
+  let publish: ReturnType<typeof vi.fn>
+  let onReconnect: ReturnType<typeof vi.fn>
+  let onWipe: ReturnType<typeof vi.fn>
+  let handler: WorkerConnectionHandler
+
+  beforeEach(() => {
+    publish = vi.fn()
+    onReconnect = vi.fn()
+    onWipe = vi.fn()
+    handler = makeHandler(publish, onReconnect, onWipe)
+  })
+
+  it('plain 401 logged-out wipes and publishes wa-logged-out', async () => {
+    await handler.handleConnectionUpdate(closeUpdate(401))
+    expect(publish).toHaveBeenCalledWith('wa-logged-out')
+    expect(onWipe).toHaveBeenCalledTimes(1)
+    expect(onReconnect).not.toHaveBeenCalled()
+  })
+
+  it('440 conflict type=replaced still stands down without wiping', async () => {
+    await handler.handleConnectionUpdate(closeUpdate(440, conflictNode('replaced')))
+    expect(publish).toHaveBeenCalledWith('wa-session-replaced')
+    expect(publish).not.toHaveBeenCalledWith('wa-logged-out')
+    expect(onWipe).not.toHaveBeenCalled()
+  })
+
+  // Real-world log: statusCode=401, data.tag='conflict', type='device_removed'.
+  // Currently misclassified as "session replaced" so no wipe / fresh QR happens.
+  it.fails('treats 401 + conflict type=device_removed as logged out: wipes, no session-replaced', async () => {
+    await handler.handleConnectionUpdate(closeUpdate(401, conflictNode('device_removed')))
+    expect(publish).toHaveBeenCalledWith('wa-logged-out')
+    expect(publish).not.toHaveBeenCalledWith('wa-session-replaced')
+    expect(onWipe).toHaveBeenCalledTimes(1)
+    expect(onReconnect).not.toHaveBeenCalled()
   })
 })
 
