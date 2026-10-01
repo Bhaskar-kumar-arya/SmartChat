@@ -63,7 +63,7 @@ describe('WaveformPlayer', () => {
 
   // B-UIAPP-02: a re-render that passes an equal-content `peaks` array (as
   // AudioMessage does on every render) must not destroy the playing instance.
-  it.fails('does not recreate WaveSurfer when re-rendered with an equal-content peaks array', () => {
+  it('does not recreate WaveSurfer when re-rendered with an equal-content peaks array', () => {
     const { rerender } = render(<WaveformPlayer url="blob:a" peaks={[0.1, 0.5]} preDuration={5} />)
     rerender(<WaveformPlayer url="blob:a" peaks={[0.1, 0.5]} preDuration={5} />)
 
