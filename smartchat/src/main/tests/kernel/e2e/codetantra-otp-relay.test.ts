@@ -1,53 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import path from 'path'
-import os from 'os'
 import fs from 'fs'
-import { PluginLoader } from '../../../kernel/plugins/PluginLoader'
-import { PluginRegistry } from '../../../kernel/plugins/PluginRegistry'
-import { PluginHost } from '../../../kernel/plugins/PluginHost'
-import { ContributionRegistry } from '../../../kernel/contributions/ContributionRegistry'
-import { KernelAPIRouter } from '../../../kernel/KernelAPIRouter'
-import { PermissionStore } from '../../../kernel/permissions/PermissionStore'
 import { KernelEventsModule } from '../../../kernel/api-modules/KernelEventsModule'
+import { createTestKernel, type TestKernel } from '../helpers/createTestKernel'
 
 describe('CodeTantra OTP Relay Plugin E2E Test', () => {
-  let tmpDir: string
-  let loader: PluginLoader
-  let pluginRegistry: PluginRegistry
-  let contribRegistry: ContributionRegistry
-  let router: KernelAPIRouter
-  let permissions: PermissionStore
-  let host: PluginHost
+  let k: TestKernel
 
   const pluginsDir = path.join(__dirname, '../../../../../plugins')
   const scextPath = path.join(pluginsDir, 'codetantra-otp-relay.scext')
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codetantra-otp-relay-test-'))
-    loader = new PluginLoader(tmpDir)
-    pluginRegistry = new PluginRegistry()
-    contribRegistry = new ContributionRegistry()
-    router = new KernelAPIRouter()
-    permissions = new PermissionStore()
     // The plugin subscribes to WA events on activation; without a registered events module
     // the router rejects it asynchronously (unhandled). A null bus just queues the subscription.
-    router.registerModule(new KernelEventsModule(permissions, null))
-
-    host = new PluginHost(loader, pluginRegistry, router, contribRegistry)
+    k = createTestKernel({
+      tmpPrefix: 'codetantra-otp-relay-test-',
+      modules: ({ permissions }) => [new KernelEventsModule(permissions, null)]
+    })
   })
 
   afterEach(async () => {
-    try {
-      const loaded = host.listLoaded()
-      for (const id of loaded) {
-        await host.unload(id)
-      }
-    } catch {
-      // ignore
-    }
-    if (fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true, force: true })
-    }
+    await k.teardown()
   })
 
   it('installs .scext plugin, auto-registers sidebar panel, slash commands, and chat actions', async () => {
@@ -55,21 +28,21 @@ describe('CodeTantra OTP Relay Plugin E2E Test', () => {
     expect(fs.existsSync(scextPath)).toBe(true)
 
     // 2. Install .scext archive
-    const manifest = await loader.install(scextPath)
+    const manifest = await k.loader.install(scextPath)
     expect(manifest.id).toBe('com.smartchat.codetantra-otp-relay')
     expect(manifest.name).toBe('CodeTantra OTP Relay')
 
     // 3. Register permissions & Load plugin
-    permissions.registerPluginManifest(manifest.id, manifest.permissions || [])
-    await host.load(manifest.id)
+    k.permissions.registerPluginManifest(manifest.id, manifest.permissions || [])
+    await k.host.load(manifest.id)
 
-    expect(host.listLoaded()).toContain(manifest.id)
+    expect(k.host.listLoaded()).toContain(manifest.id)
 
     // 4. Check registered contributions
-    const sidebarPanels = contribRegistry.getAll('sidebar-panel')
-    const slashCommands = contribRegistry.getAll('slash-command')
-    const chatActions = contribRegistry.getAll('chat-action')
-    const aiTools = contribRegistry.getAll('ai-tool')
+    const sidebarPanels = k.contributions.getAll('sidebar-panel')
+    const slashCommands = k.contributions.getAll('slash-command')
+    const chatActions = k.contributions.getAll('chat-action')
+    const aiTools = k.contributions.getAll('ai-tool')
 
     expect(sidebarPanels.some(p => p.id === 'codetantra-dashboard')).toBe(true)
     expect(slashCommands.some(c => c.name === 'relay-otp')).toBe(true)
