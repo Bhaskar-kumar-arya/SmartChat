@@ -6,7 +6,7 @@ Statuses: `READY` (deps met) · `WAITING` (deps pending) · `IN PROGRESS` · `RE
 Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN §4.2.
 
 ## Current state
-- Wave: **0 complete (all 4 gates merged); awaiting owner approval to start Wave 1**
+- Wave: **1 (in progress; Wave 0 complete)**
 - Locks held: none
 - `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint ratchet baseline committed (scripts/lint-baseline.json, 22 rules, Prettier excluded): no-explicit-any 897 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22
 
@@ -38,11 +38,11 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | G-02 | W0 | CI workflow (ubuntu + windows) | G-01 | – | MERGED | 355e7ca |
 | G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | MERGED | eb206db |
 | G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | MERGED | 7f6c8c9 | |
-| S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | WAITING | |
-| S-02 | W1 · AI | executeScript isolation (hotfix → child process) | W0 | – | WAITING | |
+| S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | IN PROGRESS | refactor/S-01 |
+| S-02 | W1 · AI | executeScript isolation (hotfix → child process) | W0 | – | IN PROGRESS | refactor/S-02 |
 | S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | WAITING | |
-| S-04 | W1 · KRN | EventDeliveryPolicy + scope enforcement | W0 | – | WAITING | |
-| H-01 | W1 · UC | MessageItem hooks-order crash | W0 | – | WAITING | |
+| S-04 | W1 · KRN | EventDeliveryPolicy + scope enforcement | W0 | – | IN PROGRESS | refactor/S-04 |
+| H-01 | W1 · UC | MessageItem hooks-order crash | W0 | – | IN PROGRESS | refactor/H-01 |
 | H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | WAITING | |
 | H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | WAITING | |
 | H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | WAITING | |
@@ -80,7 +80,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | WAITING | |
 | F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | WAITING | |
 | F-KRN-3 | W2 · KRN | Overlay lifecycle per plugin | F-KRN-2 | KHOST | WAITING | |
-| F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | WAITING | |
+| F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | IN PROGRESS | refactor/S-04 |
 | F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | WAITING | |
 | F-APP-2 | W2 · APP | Surface index-embeddings failures | N-05, H-04 | IPC | WAITING | |
 | F-UC-1 | W2 · UC | Cursor pagination + loadNewer + guarded sends `CONTRACT` 🔎 | N-08 | USEMSG, IPC, PRELOAD | WAITING | |
@@ -138,7 +138,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | R-SOLID-R-07 | W4 · UC | useMessages event reducer (optional before R-UICHAT-04) | R-SOLID-R-02 | USEMSG | WAITING | |
 | R-UICHAT-04 | W4 · UC | Virtualize MessageView 🔎 | R-SOLID-R-02 | USEMSG | WAITING | |
 | R-SOLID-R-06 | W4 · UC | ChatLayout container split | F-UC-2, R-SOLID-R-01, C-04 | USEMSG | WAITING | |
-| R-SOLID-R-03 | W4 · UC | Complete SystemStub registry | H-01 | – | WAITING | |
+| R-SOLID-R-03 | W4 · UC | Complete SystemStub registry | H-01 | – | IN PROGRESS | refactor/H-01 |
 | R-SOLID-R-12 | W4 · UC | Picker + media-download split | N-07 | – | WAITING | |
 | R-UICHAT-07 | W4 · UC | useChats / hierarchy dedupe | N-08 | – | WAITING | |
 | R-UICHAT-08 | W4 · UC | Split ChatList | R-UICHAT-07 | – | WAITING | |
