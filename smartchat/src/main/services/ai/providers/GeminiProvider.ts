@@ -33,7 +33,10 @@ export class GeminiProvider implements IStreamingProvider, IFullResponseProvider
   private formatHistory(history: Array<{ role: string; content: string; isSystem?: boolean }>): Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> {
     return (history || []).map(msg => {
       const isMsgSystem = msg.isSystem === true;
-      const role: 'user' | 'model' = msg.role === 'user' ? 'user' : 'model';
+      // B-AI-04: only assistant-side roles map to 'model'. System/tool-result turns
+      // (isSystem or any other label) are user-side, per the [SYSTEM] prompt contract.
+      const isAssistantRole = msg.role === 'ai' || msg.role === 'model' || msg.role === 'assistant';
+      const role: 'user' | 'model' = isAssistantRole && !isMsgSystem ? 'model' : 'user';
       // Note: Full prompt building is still handled in AIService before calling provider
       return {
         role,

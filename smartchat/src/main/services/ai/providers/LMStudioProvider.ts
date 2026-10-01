@@ -3,13 +3,22 @@ import { ModelInfo } from './IBaseAIProvider'
 import { IStreamingProvider } from './IStreamingProvider'
 import { IFullResponseProvider } from './IFullResponseProvider'
 import { IToolRegistry } from '../IToolRegistry'
+import { createLogger } from '../../../utils/logger'
+
+const log = createLogger('ai:lmstudio')
 
 export class LMStudioProvider implements IStreamingProvider, IFullResponseProvider {
-  private client: LMStudioClient;
+  private _client: LMStudioClient | undefined;
   private loadedModels: Map<string, { model: Awaited<ReturnType<LMStudioClient['llm']['load']>>, contextLength: number }> = new Map();
 
-  constructor(private readonly toolRegistry: IToolRegistry) {
-    this.client = new LMStudioClient();
+  constructor(private readonly toolRegistry: IToolRegistry) {}
+
+  /**
+   * Lazily constructed: the LM Studio SDK opens a websocket on construction and rejects
+   * asynchronously when LM Studio is not running, so only connect once actually used.
+   */
+  private get client(): LMStudioClient {
+    return (this._client ??= new LMStudioClient());
   }
 
   canHandleModel(modelId: string): boolean {
@@ -26,11 +35,11 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
       }
       
       // Context length mismatch - unload existing and reload
-      console.log(`[LMStudioProvider] Context length mismatch for ${modelKey} (Existing: ${existing.contextLength}, Requested: ${requestedLength}). Reloading...`);
+      log.info(`Context length mismatch for ${modelKey} (Existing: ${existing.contextLength}, Requested: ${requestedLength}). Reloading...`);
       try {
         await this.client.llm.unload(modelKey);
       } catch (e) {
-        console.warn(`[LMStudioProvider] Failed to unload model during context switch:`, e);
+        log.warn(`Failed to unload model during context switch:`, e);
       }
       this.loadedModels.delete(modelKey);
     }
@@ -43,7 +52,7 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
       this.loadedModels.set(modelKey, { model, contextLength: requestedLength });
       return model;
     } catch (error) {
-      console.error(`[LMStudioProvider] Failed to load model ${modelKey}:`, error);
+      log.error(`Failed to load model ${modelKey}:`, error);
       throw error;
     }
   }
@@ -52,12 +61,12 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
 
 
   async cleanup(): Promise<void> {
-    console.log(`[LMStudioProvider] Cleaning up... Unloading ${this.loadedModels.size} models.`);
+    log.info(`Cleaning up... Unloading ${this.loadedModels.size} models.`);
     for (const modelKey of this.loadedModels.keys()) {
       try {
         await this.client.llm.unload(modelKey);
       } catch (e) {
-        console.warn(`[LMStudioProvider] Failed to unload ${modelKey} during cleanup:`, e);
+        log.warn(`Failed to unload ${modelKey} during cleanup:`, e);
       }
     }
     this.loadedModels.clear();
@@ -139,7 +148,7 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
         argsObj = JSON.parse(argsObj) as Record<string, unknown>;
       }
     } catch (e: unknown) {
-      console.warn(`[LMStudioProvider] Failed to parse tool arguments in ${callerName}:`, e);
+      log.warn(`Failed to parse tool arguments in ${callerName}:`, e);
     }
     return `\n<tool_call>\n{\n  "tool": "${req.name}",\n  "arguments": ${JSON.stringify(argsObj, null, 2)}\n}\n</tool_call>\n`;
   }
@@ -205,7 +214,7 @@ export class LMStudioProvider implements IStreamingProvider, IFullResponseProvid
           quota: 'Infinite (Local Execution)'
         }));
     } catch (error) {
-      console.warn('[LMStudioProvider] Could not fetch models from LM Studio:', error);
+      log.warn('Could not fetch models from LM Studio:', error);
       return [];
     }
   }
