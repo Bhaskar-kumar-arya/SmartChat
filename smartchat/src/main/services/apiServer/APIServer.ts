@@ -96,6 +96,14 @@ export class APIServer implements IAPIServer {
       this.router.handle(req, res).catch(err => this.handleUnhandledError(res, err))
     })
 
+    // B-APP-07: without an 'error' listener, EADDRINUSE etc. becomes an
+    // uncaughtException. Log it and drop the dead server so start() can retry.
+    const server = this.server
+    server.on('error', (err) => {
+      console.error(`[APIServer] Server error on port ${this.port}:`, err)
+      if (this.server === server) this.server = null
+    })
+
     this.server.listen(this.port, '127.0.0.1', () => {
       console.log(`[APIServer] Local HTTP API Server listening on http://127.0.0.1:${this.port}`)
     })

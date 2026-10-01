@@ -10,9 +10,11 @@ import http from 'http'
 vi.mock('http', () => {
   const listen = vi.fn()
   const close = vi.fn((cb) => cb())
+  const on = vi.fn()
   return {
     default: {
       createServer: vi.fn(() => ({
+        on,
         listen,
         close
       }))
