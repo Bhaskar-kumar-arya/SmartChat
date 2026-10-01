@@ -11,6 +11,9 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint ratchet baseline committed (scripts/lint-baseline.json, 22 rules, Prettier excluded): no-explicit-any 897 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22
 
 ## Owner smoke queue (🔎)
+3. (S-02) Dev/packaged Electron: an AI chat executeScript call (e.g. queryDatabase) returns results + logs; a  script leaves the app responsive and times out (~60s). Child is spawned via process.execPath -e with ELECTRON_RUN_AS_NODE=1: untested under real Electron.
+4. (S-03) , plugin with ai:tools:call calls ctx.ai.callTool('sendMessage',{jid,text}): dialog appears; Cancel→PERMISSION_DENIED, Allow→sends. In devtools window.api.executeContribution({slot:'ai-tool',...}) rejects. Main AI chat tools still work.
+5. (S-04, optional) Untick events:* for a plugin in Settings: its panel/worker stops receiving events without reload.
 2. (S-01) In a real Electron build: a plugin panel/overlay still renders; from a plugin page devtools `fetch('plugin://../dev.db')` is denied (403).
 1. After pushing, check GitHub Actions: CI workflow green on ubuntu AND windows (windows untested); then mark both checks required on main (Settings > Branches).
 
@@ -20,6 +23,10 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (G-02) Flaky unhandled 'Cannot find module …/index.js' in kernel/e2e/panel-plugin.test.ts (worker starts after temp dir cleanup), seen under coverage; create a fix unit in KRN lane (candidate: N-06/F-KRN-1). CI uses `npm ci --legacy-peer-deps` (npm arborist crash on lockfile; same as build-mac.yml); Node 22. G-03 must add lint-ratchet step at TODO(G-03) in .github/workflows/ci.yml. 🔎 owner: after first CI run, require checks 'Typecheck + tests (ubuntu-latest)' and '(windows-latest)' on main; confirm windows job green.
 - (G-03) Ratchet lints `.` (~40s, --no-cache); a local `coverage/` dir could add counts → add `coverage` to eslint ignores (fold into Z-05). 3 null-ruleId results counted as `(no-rule)`. Ratchet untested on Windows until CI. **Triage (end of Wave 0):** flaky panel-plugin e2e → fold into N-06; codetantra manifest → R-KRN-10; `dev_only/logs` ref in index.ts → D-05; LMStudioProvider eager construct → F-AI-1; stale bug-audit paths/skill docs → Z-08; `plugin:package:*` needs prebuilt sdk dist → Z-08 docs; test:run dup scripts → Z-08.
 - (S-01) NOT done by S-01 (host regex+`..` rejection only): resolve host against installed ids (handler only gets extensionsPath) and restrict `plugin://<otherId>` to the requesting partition (`persist:plugin-<id>`) per R-KRN-03 → fold into F-KRN-4's lane as new unit F-KRN-5 (needs registerPluginProtocolForSession signature change); `Access-Control-Allow-Origin: *` still set on plugin responses (include in F-KRN-5).
+- (H-01) PLAN B-UICHAT-00 wording is wrong: on React 19.2 a type flip does NOT throw 'fewer hooks'; it silently skips effect cleanups (leaked document mousedown listener, isMountedRef) and resets state. Fix still valid. rules-of-hooks baseline now 1 (remaining one elsewhere) → fix in a later UC/UA unit and flip to zero-tolerance.
+- (S-02) executeScript child is still plain Node with an inner vm soft boundary: a vm escape reaches fs/child_process in an empty-env child → consider Node --permission / OS sandbox (new unit S-05, AI lane, after N-09). ~50–100ms startup per call; non-serialisable results become script errors; stray console.log in ExecuteScriptTool.initialize (Z-01).
+- (S-03) Default consent dialog lives inside KernelAIModule → inject from KernelBootstrapper (fold into H-06/R-KRN-09, KHOST). ai-assistant builtin handlers still call tool.execute directly (now unreachable from renderer IPC; revisit R-SOLID-M-02). Gated tools without args.jid (executeScript, queryDatabase) get consent only, no chat scope. Chat-scope semantics = messages:read for readMessages, else messages:send on args.jid (owner may override). Plugin-registered ai-tools are requiresPermission:false (unchanged).
+- (S-04) Revocation = drop at delivery, handlers stay attached (regrant resumes without resubscribe); real teardown needs permission-store hook → F-KRN-3/R-SOLID-M-02. KernelEventsModule.unsubscribe while bus null leaves entry (KRN.md:148) → F-KRN-1. B-KRN-11 LID alias bypass → F-KRN-4 (or R-KRN-07). Possible rare flake: 'Errors 1' seen once in a full vitest run under load (unreproduced).
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -41,21 +48,21 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | MERGED | eb206db |
 | G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | MERGED | 7f6c8c9 | |
 | S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | MERGED | 929e7a3 |
-| S-02 | W1 · AI | executeScript isolation (hotfix → child process) | W0 | – | IN PROGRESS | refactor/S-02 |
-| S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | IN PROGRESS | refactor/S-03 |
-| S-04 | W1 · KRN | EventDeliveryPolicy + scope enforcement | W0 | – | IN PROGRESS | refactor/S-04 |
-| H-01 | W1 · UC | MessageItem hooks-order crash | W0 | – | IN PROGRESS | refactor/H-01 |
+| S-02 | W1 · AI | executeScript isolation (hotfix → child process) | W0 | – | MERGED | e5ca7d8 |
+| S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | MERGED | d42c4b8 |
+| S-04 | W1 · KRN | EventDeliveryPolicy + scope enforcement | W0 | – | MERGED | f3d493f |
+| H-01 | W1 · UC | MessageItem hooks-order crash | W0 | – | MERGED | 98ee4cc |
 | H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | WAITING | |
 | H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | WAITING | |
 | H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | WAITING | |
 | H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | WAITING | |
-| H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | WAITING | |
+| H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | IN PROGRESS | refactor/H-06 |
 | X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | WAITING | |
-| N-01 | W1 · DATA | Main test infra + factories | W0 | – | WAITING | |
-| N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | WAITING | |
-| N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | WAITING | |
-| N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | WAITING | |
-| N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | WAITING | |
+| N-01 | W1 · DATA | Main test infra + factories | W0 | – | IN PROGRESS | refactor/N-01 |
+| N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | IN PROGRESS | refactor/N-02 |
+| N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | IN PROGRESS | refactor/N-01 |
+| N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | IN PROGRESS | refactor/N-01 |
+| N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | IN PROGRESS | refactor/N-05 |
 | N-06 | W1 · KRN | Kernel test harness | W0 | – | WAITING | |
 | N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | WAITING | |
 | N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | WAITING | |
@@ -66,23 +73,23 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | WAITING | |
 | R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
-| F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | WAITING | |
+| F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | IN PROGRESS | refactor/N-02 |
 | F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | WAITING | |
 | F-WA-3 | W2 · WA | Graceful worker shutdown | F-WA-1, F-WA-2 | WABRIDGE | WAITING | |
 | F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | WAITING | |
-| F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | WAITING | |
+| F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | IN PROGRESS | refactor/N-02 |
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | WAITING | |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | WAITING | |
 | F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | WAITING | |
 | F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | WAITING | |
-| F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | WAITING | |
+| F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | IN PROGRESS | refactor/N-01 |
 | F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | WAITING | |
 | F-AI-4 | W2 · AI | Tool-loop turn cap in the live loop | N-08 | – | WAITING | |
 | F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | WAITING | |
 | F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | WAITING | |
 | F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | WAITING | |
 | F-KRN-3 | W2 · KRN | Overlay lifecycle per plugin | F-KRN-2 | KHOST | WAITING | |
-| F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | IN PROGRESS | refactor/S-04 |
+| F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | MERGED | f3d493f |
 | F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | WAITING | |
 | F-APP-2 | W2 · APP | Surface index-embeddings failures | N-05, H-04 | IPC | WAITING | |
 | F-UC-1 | W2 · UC | Cursor pagination + loadNewer + guarded sends `CONTRACT` 🔎 | N-08 | USEMSG, IPC, PRELOAD | WAITING | |
@@ -116,7 +123,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | R-SOLID-M-07 | W4 · MSG | Message-type enrichment strategies | R-MSG-07 | – | WAITING | |
 | R-SOLID-M-14 | W4 · MSG | Drop send passthroughs | F-MSG-1, F-MSG-5, F-KRN-4, C-02 | – | WAITING | |
 | R-DATA-07 | W4 · DATA | Single chat-update normalizer | N-04 | – | WAITING | |
-| R-DATA-08 | W4 · DATA | Chat-list batching | N-01 | – | WAITING | |
+| R-DATA-08 | W4 · DATA | Chat-list batching | N-01 | – | IN PROGRESS | refactor/N-01 |
 | R-DATA-09 | W4 · DATA | Contact cache / MeJidProvider / one getDisplayName | F-DATA-1 | DI | WAITING | |
 | R-DATA-10 | W4 · DATA | Index migration `CONTRACT` | N-01, F-AI-2 | SCHEMA | WAITING | |
 | R-DATA-11 | W4 · DATA | Dead code + narrow catches | R-DATA-07 | – | WAITING | |
@@ -140,7 +147,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | R-SOLID-R-07 | W4 · UC | useMessages event reducer (optional before R-UICHAT-04) | R-SOLID-R-02 | USEMSG | WAITING | |
 | R-UICHAT-04 | W4 · UC | Virtualize MessageView 🔎 | R-SOLID-R-02 | USEMSG | WAITING | |
 | R-SOLID-R-06 | W4 · UC | ChatLayout container split | F-UC-2, R-SOLID-R-01, C-04 | USEMSG | WAITING | |
-| R-SOLID-R-03 | W4 · UC | Complete SystemStub registry | H-01 | – | IN PROGRESS | refactor/H-01 |
+| R-SOLID-R-03 | W4 · UC | Complete SystemStub registry | H-01 | – | MERGED | 98ee4cc |
 | R-SOLID-R-12 | W4 · UC | Picker + media-download split | N-07 | – | WAITING | |
 | R-UICHAT-07 | W4 · UC | useChats / hierarchy dedupe | N-08 | – | WAITING | |
 | R-UICHAT-08 | W4 · UC | Split ChatList | R-UICHAT-07 | – | WAITING | |
