@@ -253,7 +253,7 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
     const existingMembers = await this.syncRepository.findExistingMemberRoles(allGroupJids)
     const existingMemberRoles = new Map(existingMembers.map(m => [`${m.chatJid}_${m.identityId}`, m.role]))
 
-    const membersToUpsert: SyncChatMemberUpsert[] = []
+    const membersToUpsert = new Map<string, SyncChatMemberUpsert>()
 
     for (const p of parsedParticipants) {
       const effectivePn = p.pn ?? p.derivedPn
@@ -266,11 +266,27 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
       }
 
       if (identityId) {
-        membersToUpsert.push({ chatJid: p.chatJid, identityId, role: p.role })
+        const key = `${p.chatJid}_${identityId}`
+        if (!membersToUpsert.has(key)) {
+          membersToUpsert.set(key, { chatJid: p.chatJid, identityId, role: p.role })
+        }
       }
     }
 
-    await this.syncRepository.bulkUpsertChatMembers(membersToUpsert, existingMemberRoles)
+    const resolvedMembers = Array.from(membersToUpsert.values())
+    await this.syncRepository.bulkUpsertChatMembers(resolvedMembers, existingMemberRoles)
+
+    // Hydration is authoritative: drop members no longer in a group's participant list.
+    // Only groups with a non-empty resolved set are pruned (never wipe a group on empty data).
+    const keepByGroup = new Map<string, number[]>()
+    for (const m of resolvedMembers) {
+      const ids = keepByGroup.get(m.chatJid) ?? []
+      ids.push(m.identityId)
+      keepByGroup.set(m.chatJid, ids)
+    }
+    for (const [chatJid, keepIds] of keepByGroup) {
+      await this.syncRepository.deleteMembersNotIn(chatJid, keepIds)
+    }
 
     this.contactService.populateIdentityIdCache(warmedCacheEntries)
   }

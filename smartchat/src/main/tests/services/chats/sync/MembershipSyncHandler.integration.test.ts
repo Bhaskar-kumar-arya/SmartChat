@@ -151,7 +151,7 @@ describe('MembershipSyncHandler (real DB)', () => {
   })
 
   // B-DATA-03: hydration is authoritative, departed members must go
-  it.fails('removes members absent from the hydrated participant list (B-DATA-03)', async () => {
+  it('removes members absent from the hydrated participant list (B-DATA-03)', async () => {
     const jid = groupJid()
     await makeChat(prisma, { jid, type: 'GROUP' })
     const stayer = await makeContact(prisma)
@@ -164,7 +164,7 @@ describe('MembershipSyncHandler (real DB)', () => {
   })
   // Two participant entries (LID entry + PN entry) resolving to one identity in the same group
   // currently produce a duplicate ChatMember insert.
-  it.fails('tolerates two participant entries that resolve to the same identity in one group', async () => {
+  it('tolerates two participant entries that resolve to the same identity in one group', async () => {
     const jid = groupJid()
     await makeChat(prisma, { jid, type: 'GROUP' })
     const { identity, pn } = await makeContact(prisma)
@@ -184,5 +184,13 @@ describe('MembershipSyncHandler (real DB)', () => {
     await sync(jid, [{ id: pnJid() }])
 
     expect(await memberIdentityIds(other)).toEqual([bystander.identity.id])
+  })
+  it('SyncRepository.deleteMembersNotIn never wipes a group when the keep list is empty', async () => {
+    const jid = groupJid()
+    await makeChat(prisma, { jid, type: 'GROUP' })
+    const { identity } = await makeContact(prisma)
+    await makeChatMember(prisma, jid, identity.id)
+    await new SyncRepository(prisma).deleteMembersNotIn(jid, [])
+    expect(await memberIdentityIds(jid)).toEqual([identity.id])
   })
 })
