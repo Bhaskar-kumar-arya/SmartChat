@@ -68,4 +68,17 @@ describe('pluginProtocol', () => {
     const response = (await handler(fakeRequest)) as Response
     expect(response.status).toBe(403)
   })
+
+  // S-01 (B-KRN-03): the URL host is the plugin id and must be validated.
+  it('rejects ".." / "." hosts with 403 and never fetches outside the extensions dir', async () => {
+    registerPluginProtocol(extensionsPath)
+    const handler = mockHandle.mock.calls[0][1]
+
+    for (const url of ['plugin://../dev.db', 'plugin://./index.html']) {
+      vi.mocked(net.fetch).mockClear()
+      const response = (await handler({ url } as unknown as Request)) as Response
+      expect(response.status).toBe(403)
+      expect(net.fetch).not.toHaveBeenCalled()
+    }
+  })
 })

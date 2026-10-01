@@ -10,6 +10,9 @@ type SessionLike = Partial<Electron.Session> & {
   }
 }
 
+// Same shape as PluginManifest's id rule.
+const PLUGIN_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+
 let registeredSessions = new WeakSet<object>()
 
 /**
@@ -46,6 +49,11 @@ export function registerPluginProtocolForSession(targetSession: SessionLike, ext
         if (!pluginId) {
           console.warn('[pluginProtocol] Invalid plugin ID (missing hostname)')
           return new Response('Invalid plugin ID', { status: 400 })
+        }
+        // S-01: the host becomes a path segment; reject '.', '..' and anything not a valid plugin id.
+        if (pluginId.includes('..') || !PLUGIN_ID_RE.test(pluginId)) {
+          console.warn(`[pluginProtocol] Access Denied for invalid plugin ID '${pluginId}'`)
+          return new Response('Access Denied', { status: 403 })
         }
 
         const relPath = decodeURIComponent(url.pathname)
