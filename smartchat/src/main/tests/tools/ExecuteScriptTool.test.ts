@@ -1,3 +1,4 @@
+import vm from 'vm';
 import { describe, it, expect, vi } from 'vitest';
 import { ExecuteScriptTool } from '../../tools/ExecuteScriptTool';
 import type { AITool, IToolRegistry, ToolResult } from '../../services/ai/IToolRegistry';
@@ -139,5 +140,43 @@ describe('ExecuteScriptTool sandbox hardening (S12-03)', () => {
     );
     expect(out.success).toBe(true);
     expect(out.result).toBe('caught:kaboom');
+  });
+});
+
+describe('ExecuteScriptTool isolation (S-02, B-AI-01 / B-AI-02)', () => {
+  // The sandbox global inherits from the host Object.prototype, so walking its
+  // prototype chain reaches the host Function and from there the host `process`.
+  // Each probe returns what the escaped code saw; it must never be a host object.
+  it.fails('does not expose the host realm via the prototype of the sandbox global', async () => {
+    const tool = new ExecuteScriptTool(makeRegistry([]));
+    const out = await run(
+      tool,
+      `
+      const probes = [
+        () => Object.getPrototypeOf(globalThis).constructor.constructor('return typeof process')(),
+        () => globalThis.__proto__.constructor.constructor('return typeof process')(),
+        () => Object.getPrototypeOf(Object.getPrototypeOf(globalThis)) === null ? 'null-proto' : 'has-proto',
+      ];
+      return probes.map((p) => { try { return String(p()); } catch (e) { return 'throw:' + e.name; } });
+      `
+    );
+    expect(out.success).toBe(true);
+    for (const a of out.result as string[]) {
+      expect(a === 'undefined' || a.startsWith('throw:') || a === 'null-proto').toBe(true);
+    }
+  });
+
+  it.fails('passes a V8 timeout to runInContext so a synchronous loop is interruptible', async () => {
+    const spy = vi.spyOn(vm.Script.prototype, 'runInContext');
+    try {
+      const tool = new ExecuteScriptTool(makeRegistry([]));
+      await run(tool, `return 1;`);
+      const callsWithTimeout = spy.mock.calls.filter(
+        (c) => typeof (c[1] as { timeout?: number } | undefined)?.timeout === 'number'
+      );
+      expect(callsWithTimeout.length).toBeGreaterThan(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
