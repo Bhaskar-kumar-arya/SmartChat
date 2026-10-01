@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import { LidMapRepository } from '../../services/contacts/LidMapRepository'
-import { getPrismaClient } from '../helpers'
+import { getPrismaClient, resetDb } from '../helpers'
 
 describe('LidMapRepository', () => {
   let prisma: PrismaClient
@@ -17,7 +17,7 @@ describe('LidMapRepository', () => {
   })
 
   beforeEach(async () => {
-    await prisma.lidMap.deleteMany()
+    await resetDb(prisma)
   })
 
   it('should upsert and find LidMap', async () => {

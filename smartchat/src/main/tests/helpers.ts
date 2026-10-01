@@ -38,6 +38,57 @@ export async function clearDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.lidMap.deleteMany({})
 }
 
+const deleteOrderCache = new WeakMap<PrismaClient, string[]>()
+
+/** Table names ordered children-first, derived from the live schema's foreign keys. */
+async function resolveDeleteOrder(prisma: PrismaClient): Promise<string[]> {
+  const cached = deleteOrderCache.get(prisma)
+  if (cached) return cached
+
+  const tables = (await prisma.$queryRawUnsafe<{ name: string }[]>(
+    `SELECT name FROM sqlite_master WHERE type = 'table'`
+  ))
+    .map(t => t.name)
+    .filter(n => !n.startsWith('sqlite_') && !n.startsWith('_prisma'))
+
+  // referencedBy[t] = tables holding an FK to t (they must be emptied before t)
+  const referencedBy = new Map<string, Set<string>>(tables.map(t => [t, new Set<string>()]))
+  for (const child of tables) {
+    const fks = await prisma.$queryRawUnsafe<{ table: string }[]>(`PRAGMA foreign_key_list("${child}")`)
+    for (const fk of fks) {
+      if (fk.table !== child) referencedBy.get(fk.table)?.add(child)
+    }
+  }
+
+  const ordered: string[] = []
+  const done = new Set<string>()
+  const visit = (t: string, stack: Set<string>): void => {
+    if (done.has(t)) return
+    if (stack.has(t)) throw new Error(`[resetDb] foreign-key cycle involving "${t}"`)
+    stack.add(t)
+    for (const child of referencedBy.get(t) ?? []) visit(child, stack)
+    stack.delete(t)
+    done.add(t)
+    ordered.push(t)
+  }
+  for (const t of tables) visit(t, new Set())
+
+  deleteOrderCache.set(prisma, ordered)
+  return ordered
+}
+
+/**
+ * Fast per-test DB reset: empties every table (FK-safe order, discovered from the live schema
+ * so new models are covered automatically) and restarts AUTOINCREMENT counters so ids are
+ * deterministic per test. Call from `beforeEach`.
+ */
+export async function resetDb(prisma: PrismaClient): Promise<void> {
+  for (const table of await resolveDeleteOrder(prisma)) {
+    await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`)
+  }
+  await prisma.$executeRawUnsafe(`DELETE FROM sqlite_sequence`)
+}
+
 // ── Socket Factory ───────────────────────────────────────────────────────────
 
 interface MockSocketOptions {
