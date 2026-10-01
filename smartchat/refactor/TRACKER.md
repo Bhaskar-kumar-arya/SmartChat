@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: none. **Owner scope: only H-02, H-03, H-04, X-01, N-06, N-07, N-09 (all MERGED) — no other unit started; awaiting owner direction.**
+- Locks held: WASYNC (F-WA-2), MSGREPO (F-MSG-1), KHOST (F-KRN-1), IPC (F-AI-3), DI (F-DATA-1). Owner scope (2026-10-02): N-08 + Wave-2 high-value bug fixes (F-MSG-1, F-WA-2, F-KRN-1, F-AI-1, F-AI-3, F-AI-5, F-DATA-1, F-DATA-2, F-APP-1, F-UC-3, F-UA-1); 6 agents at a time. Integration branch = claude/hopeful-johnson-ysujzy (not main).
 - `main` baseline (60eae18): typecheck ✅ · vitest 251 files / 1481 passed / 5 expected-fail / 0 failed / 0 errors (clean worktree, --maxWorkers=3) · lint ratchet baseline: no-explicit-any 852 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22 (rest unchanged)
 
 ## Owner smoke queue (🔎)
@@ -87,28 +87,28 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | MERGED | 17c3268 |
 | N-06 | W1 · KRN | Kernel test harness | W0 | – | MERGED | 841ad3c |
 | N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | MERGED | 270dbe2 |
-| N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | WAITING | |
+| N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | IN PROGRESS | refactor/N-08 |
 | N-09 | W1 · AI | Provider test util + role-mapping tests | W0 | – | MERGED | 305a3f9 |
-| F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | WAITING | |
+| F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | IN PROGRESS | refactor/F-MSG-1 |
 | F-MSG-2 | W2 · MSG | Stop double-processing edits | F-MSG-1 | – | WAITING | |
 | F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | WAITING | |
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | WAITING | |
 | R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
 | F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | MERGED | 21bbcf7 |
-| F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | WAITING | |
+| F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | IN PROGRESS | refactor/F-WA-2 |
 | F-WA-3 | W2 · WA | Graceful worker shutdown | F-WA-1, F-WA-2 | WABRIDGE | WAITING | |
 | F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | WAITING | |
 | F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | MERGED | 21bbcf7 |
-| F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | WAITING | |
+| F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | IN PROGRESS | refactor/F-DATA-1 |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | WAITING | |
 | F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | WAITING | |
 | F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | WAITING | |
 | F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | MERGED | ae1a3c8 |
-| F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | WAITING | |
+| F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | IN PROGRESS | refactor/F-AI-3 |
 | F-AI-4 | W2 · AI | Tool-loop turn cap in the live loop | N-08 | – | WAITING | |
 | F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | WAITING | |
-| F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | WAITING | |
+| F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | IN PROGRESS | refactor/F-KRN-1 |
 | F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | WAITING | |
 | F-KRN-3 | W2 · KRN | Overlay lifecycle per plugin | F-KRN-2 | KHOST | WAITING | |
 | F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | MERGED | f3d493f |
