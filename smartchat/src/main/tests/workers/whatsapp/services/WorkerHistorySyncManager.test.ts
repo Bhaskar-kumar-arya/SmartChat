@@ -147,7 +147,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     })
 
     // B-WA-16
-    it.fails('B-WA-16: a failing on-demand page still publishes wa-history-appended with an error', async () => {
+    it('B-WA-16: a failing on-demand page still publishes wa-history-appended with an error', async () => {
       vi.mocked(handleHistorySync).mockRejectedValue(new Error('db locked'))
       await manager.handleSyncChunk({ syncType: ON_DEMAND, chats: [{ id: 'a@s.whatsapp.net' }] }, true, makeSock())
       expect(mockPublisher.publish).toHaveBeenCalledWith(
@@ -157,7 +157,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     })
 
     // B-WA-16
-    it.fails('B-WA-16: the success payload carries jid and requestId', async () => {
+    it('B-WA-16: the success payload carries jid and requestId', async () => {
       vi.mocked(handleHistorySync).mockResolvedValue({ importedMessages: [], messageCount: 3 } as any)
       await manager.handleSyncChunk(
         { syncType: ON_DEMAND, chats: [{ id: 'a@s.whatsapp.net' }], peerDataRequestSessionId: 'req-1' },

@@ -21,6 +21,9 @@ import {
   SYNC_AUTO_FINISH_THRESHOLD,
   HISTORY_SYNC_TIMEOUT_MS
 } from '../../../constants'
+import { createLogger } from '../../../utils/logger'
+
+const log = createLogger('WorkerHistorySync')
 
 export interface HistorySyncDependencies {
   mediaService: IMediaService
@@ -191,21 +194,44 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
     }
   }
 
+  /**
+   * B-WA-16: always announce the outcome of an on-demand page, success or failure,
+   * so the renderer never has to wait out its timeout. `jid` is set only when the
+   * page unambiguously belongs to one chat; `requestId` is Baileys'
+   * peerDataRequestSessionId when present. Both are additive to the legacy payload.
+   */
   private async handleOnDemandChunk(data: unknown, sock: WASocket): Promise<void> {
-    const syncResult = await handleHistorySync(
-      data as HistorySyncData,
-      this.deps.contactService,
-      this.deps.aliasRepository,
-      this.deps.chatRepository,
-      this.deps.communityRepository,
-      this.deps.messageRepository,
-      this.deps.reactionRepository
-    )
-    this.deps.mediaService.downloadFavoriteStickersFromSync(syncResult.importedMessages, sock).catch((err) => {
-      console.error('[WorkerHistorySync] Failed to process favorite stickers from on-demand page:', err)
-    })
-    console.log(`[WorkerHistorySync] on-demand history page persisted: ${syncResult.messageCount} messages`)
-    this.eventPublisher.publish('wa-history-appended', { messageCount: syncResult.messageCount })
+    const raw = (data ?? {}) as { chats?: Array<{ id?: unknown }>; peerDataRequestSessionId?: unknown }
+    const chatIds = Array.isArray(raw.chats)
+      ? raw.chats.map((c) => c?.id).filter((id): id is string => typeof id === 'string')
+      : []
+    const jid = chatIds.length === 1 ? chatIds[0] : undefined
+    const requestId = typeof raw.peerDataRequestSessionId === 'string' ? raw.peerDataRequestSessionId : undefined
+    const identity = { ...(jid !== undefined && { jid }), ...(requestId !== undefined && { requestId }) }
+
+    try {
+      const syncResult = await handleHistorySync(
+        data as HistorySyncData,
+        this.deps.contactService,
+        this.deps.aliasRepository,
+        this.deps.chatRepository,
+        this.deps.communityRepository,
+        this.deps.messageRepository,
+        this.deps.reactionRepository
+      )
+      this.deps.mediaService.downloadFavoriteStickersFromSync(syncResult.importedMessages, sock).catch((err) => {
+        log.error('Failed to process favorite stickers from on-demand page:', err)
+      })
+      log.info(`on-demand history page persisted: ${syncResult.messageCount} messages`)
+      this.eventPublisher.publish('wa-history-appended', { ...identity, messageCount: syncResult.messageCount })
+    } catch (err) {
+      log.error('Error processing on-demand history page:', err)
+      this.eventPublisher.publish('wa-history-appended', {
+        ...identity,
+        messageCount: 0,
+        error: err instanceof Error ? err.message : String(err)
+      })
+    }
   }
 
   async finishSync(sock: WASocket, syncFullHistory: boolean): Promise<'completed' | 'deferred'> {
