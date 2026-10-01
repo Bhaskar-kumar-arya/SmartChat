@@ -5,6 +5,7 @@ import {
   ensureVecMessagesTable,
   type RawExec
 } from '../../services/search/embeddingDimensions'
+import { runMigrations } from '../../db/schema-migrations'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Database = require('better-sqlite3')
 
@@ -56,11 +57,29 @@ describe('vec_messages dimension contract (H-04 / B-AI-03)', () => {
     expect(db.prepare('SELECT count(*) AS c FROM vec_messages').all()).toEqual([{ c: 1 }])
   })
 
-  it.fails('the shared constant matches the embedding model output (384)', () => {
+  it('the shared constant matches the embedding model output (384)', () => {
     expect(EMBEDDING_DIMENSIONS).toBe(MODEL_OUTPUT_DIMENSIONS)
   })
 
-  it.fails('a real model-dimension vector can be inserted into the vec table', async () => {
+  it('upgrades a legacy 768-dim database: stale vectors dropped, vec table recreated, new vectors insert', async () => {
+    const { db, exec } = vecDb()
+    db.exec(`
+      CREATE TABLE "MessageVector" ("messageId" TEXT NOT NULL PRIMARY KEY, "vector" TEXT NOT NULL);
+      CREATE VIRTUAL TABLE vec_messages USING vec0(messageId TEXT PRIMARY KEY, vector FLOAT[768]);
+    `)
+    db.prepare('INSERT INTO "MessageVector" VALUES (?, ?)').run('old', vec(768))
+    db.prepare('INSERT INTO "MessageVector" VALUES (?, ?)').run('ok', vec(MODEL_OUTPUT_DIMENSIONS))
+    db.prepare('INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)').run('old', vec(768))
+
+    runMigrations(db as never)
+    await ensureVecMessagesTable(exec)
+
+    expect(db.prepare('SELECT messageId FROM "MessageVector"').all()).toEqual([{ messageId: 'ok' }])
+    expect(db.prepare('SELECT count(*) AS c FROM vec_messages').all()).toEqual([{ c: 0 }])
+    expect(() => insert(db, MODEL_OUTPUT_DIMENSIONS)).not.toThrow()
+  })
+
+  it('a real model-dimension vector can be inserted into the vec table', async () => {
     const { db, exec } = vecDb()
     await ensureVecMessagesTable(exec)
     expect(() => insert(db, MODEL_OUTPUT_DIMENSIONS)).not.toThrow()

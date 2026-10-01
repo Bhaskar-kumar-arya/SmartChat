@@ -6,7 +6,7 @@
  * which must equal the output size of the model in `embedding.worker.ts`
  * (`Xenova/all-MiniLM-L6-v2`).
  */
-export const EMBEDDING_DIMENSIONS = 768
+export const EMBEDDING_DIMENSIONS = 384
 
 export const vecMessagesDdl = (): string => `
   CREATE VIRTUAL TABLE IF NOT EXISTS vec_messages USING vec0(

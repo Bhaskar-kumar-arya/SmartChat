@@ -42,6 +42,7 @@ export interface RawSqliteDb {
 }
 
 import { canonicalShaHex } from '../services/messages/shaUtils'
+import { EMBEDDING_DIMENSIONS } from '../services/search/embeddingDimensions'
 
 /** A single schema migration entry. */
 interface Migration {
@@ -103,6 +104,14 @@ function migrateFavoriteStickerShaToHex(db: RawSqliteDb): void {
   }
 }
 
+/** H-04: delete MessageVector rows whose embedding is not EMBEDDING_DIMENSIONS long. */
+function dropWrongDimensionVectors(db: RawSqliteDb): void {
+  if (!tableExists(db, 'MessageVector')) return
+  db.prepare(
+    'DELETE FROM "MessageVector" WHERE NOT json_valid("vector") OR json_array_length("vector") != ?'
+  ).run(EMBEDDING_DIMENSIONS)
+}
+
 // ── MIGRATION REGISTRY ────────────────────────────────────────────────────────
 // Append new entries at the END. Never modify or delete existing entries.
 const MIGRATIONS: Migration[] = [
@@ -145,6 +154,16 @@ const MIGRATIONS: Migration[] = [
   {
     id: '0002_favorite_sticker_sha_hex',
     run: migrateFavoriteStickerShaToHex
+  },
+  {
+    // H-04 (B-AI-03): vectors were stored at 768 dims but the model emits 384.
+    // Drop every stored vector of the wrong size so `EmbeddingService.indexAll`
+    // (which skips already-indexed ids) re-embeds those messages. The vec0 table
+    // itself is recreated at the new size by `initVectorDb`
+    // (ensureVecMessagesTable) — it can't be dropped here because the sqlite-vec
+    // extension is loaded after migrations run.
+    id: '0003_reindex_wrong_dimension_vectors',
+    run: dropWrongDimensionVectors
   }
   // ↑ Add future migrations above this comment.
 ]
