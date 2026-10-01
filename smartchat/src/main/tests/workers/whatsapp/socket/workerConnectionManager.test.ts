@@ -115,14 +115,14 @@ describe('WorkerConnectionManager — S1-02 wipeAllData atomicity', () => {
  */
 describe('WorkerConnectionManager — B-WA-02 wipe with vec0 virtual table', () => {
   let dir: string
-  beforeEach(() => {
+  beforeEach((): void => {
     dir = fs.mkdtempSync(join(os.tmpdir(), 'wipe-vec-'))
   })
-  afterEach(() => {
+  afterEach((): void => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
-  it.fails('wipes real tables and leaves the vec0 table alone when the extension is not loaded', async () => {
+  it('wipes real tables and leaves the vec0 table alone when the extension is not loaded', async () => {
     const dbPath = join(dir, 'test.db')
     const setup = new Database(dbPath)
     sqliteVec.load(setup)
@@ -133,6 +133,9 @@ describe('WorkerConnectionManager — B-WA-02 wipe with vec0 virtual table', () 
       INSERT INTO AuthState VALUES ('creds', 'x');
       INSERT INTO Chat VALUES ('c1');
     `)
+    setup
+      .prepare('INSERT INTO vec_messages(messageId, vector) VALUES (?, ?)')
+      .run('m1', Buffer.from(new Float32Array([1, 2, 3, 4]).buffer))
     setup.close()
 
     // Worker-side connection: no sqlite-vec loaded.
@@ -174,6 +177,8 @@ describe('WorkerConnectionManager — B-WA-02 wipe with vec0 virtual table', () 
 
       expect(db.prepare('SELECT count(*) AS n FROM AuthState').get()).toEqual({ n: 0 })
       expect(db.prepare('SELECT count(*) AS n FROM Chat').get()).toEqual({ n: 0 })
+      // vec0 shadow tables must be untouched (wiping them behind vec0's back corrupts it).
+      expect(db.prepare('SELECT count(*) AS n FROM vec_messages_rowids').get()).toEqual({ n: 1 })
     } finally {
       db.close()
     }

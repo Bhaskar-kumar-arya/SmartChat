@@ -100,7 +100,11 @@ describe('useLocalPrismaAuthState creds bootstrap (S10-03)', () => {
  * a QR / stale creds. It must retry transient failures, then throw.
  */
 describe('useLocalPrismaAuthState saveCreds (B-WA-05)', () => {
-  function makeCredsPrisma(upsert: () => Promise<unknown>) {
+  function makeCredsPrisma(
+    upsert: () => Promise<unknown>
+  ): Parameters<typeof useLocalPrismaAuthState>[0] & {
+    authState: { upsert: ReturnType<typeof vi.fn> }
+  } {
     return {
       authState: {
         findUnique: vi.fn().mockResolvedValue(null),
@@ -112,7 +116,7 @@ describe('useLocalPrismaAuthState saveCreds (B-WA-05)', () => {
     } as any
   }
 
-  it.fails('retries a transient creds write failure and succeeds', async () => {
+  it('retries a transient creds write failure and succeeds', async () => {
     let calls = 0
     const prisma = makeCredsPrisma(() => {
       calls += 1
@@ -125,7 +129,7 @@ describe('useLocalPrismaAuthState saveCreds (B-WA-05)', () => {
     expect(prisma.authState.upsert).toHaveBeenCalledTimes(3)
   })
 
-  it.fails('throws (does not swallow) when every creds write attempt fails', async () => {
+  it('throws (does not swallow) when every creds write attempt fails', async () => {
     const prisma = makeCredsPrisma(() => Promise.reject(new Error('disk I/O error')))
     const { saveCreds } = await useLocalPrismaAuthState(prisma)
 
