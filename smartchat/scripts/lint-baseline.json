@@ -21,7 +21,7 @@
     "react-hooks/immutability": 2,
     "react-hooks/preserve-manual-memoization": 2,
     "react-hooks/refs": 5,
-    "react-hooks/rules-of-hooks": 22,
+    "react-hooks/rules-of-hooks": 1,
     "react-hooks/set-state-in-effect": 12,
     "react-refresh/only-export-components": 12,
     "react/display-name": 14,

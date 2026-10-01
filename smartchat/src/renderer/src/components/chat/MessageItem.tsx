@@ -186,22 +186,27 @@ interface MessageItemProps {
   onSelectChat?: (jid: string, name: string) => void
 }
 
-const MessageItem = memo(function MessageItem({
+// Wrapper: branches on system-type messages so the hooks in MessageItemBody
+// always run unconditionally (a type flip remounts the body instead of skipping hooks).
+const MessageItem = memo(function MessageItem(props: MessageItemProps) {
+  const { msg, onSelectChat } = props
+  if (msg.messageType === 'system' || msg.messageType === 'call' || msg.messageType === 'callLogMesssage' || msg.messageType === 'scheduledCallCreationMessage') {
+    return <SystemMessageBubble msg={msg} onSelectChat={onSelectChat} />
+  }
+  return <MessageItemBody {...props} />
+})
+
+const MessageItemBody = memo(function MessageItemBody({
   msg,
   onReply,
   onEdit,
   onDelete,
   onDownloadMedia,
   onViewReactions,
-  onScrollToMessage,
-  onSelectChat
+  onScrollToMessage
 }: MessageItemProps) {
   const api = useAPI()
   const messageActions = useContributions('message-action')
-
-  if (msg.messageType === 'system' || msg.messageType === 'call' || msg.messageType === 'callLogMesssage' || msg.messageType === 'scheduledCallCreationMessage') {
-    return <SystemMessageBubble msg={msg} onSelectChat={onSelectChat} />
-  }
 
   let rawMsg: RawMessageContent = {}
   try {
