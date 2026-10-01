@@ -140,7 +140,7 @@ describe('APIServer listen errors', () => {
     vi.restoreAllMocks()
   })
 
-  it.fails('attaches an error listener so listen failures are not unhandled (B-APP-07)', async () => {
+  it('attaches an error listener so listen failures are not unhandled (B-APP-07)', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
     const createSpy = vi.spyOn(http, 'createServer')
     const port = await getFreePort()
@@ -149,8 +149,33 @@ describe('APIServer listen errors', () => {
     try {
       const created = createSpy.mock.results[0].value as http.Server
       expect(created.listenerCount('error')).toBeGreaterThan(0)
+      await waitListening(port)
     } finally {
       await api.stop()
+    }
+  })
+
+  it('logs EADDRINUSE instead of crashing and can start again once the port frees up', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const blocker = net.createServer()
+    await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve))
+    const port = (blocker.address() as AddressInfo).port
+    const api = makeServer(port)
+    try {
+      api.start()
+      await vi.waitFor(() => expect(errSpy).toHaveBeenCalled())
+      const err = errSpy.mock.calls[0][1] as NodeJS.ErrnoException
+      expect(err.code).toBe('EADDRINUSE')
+
+      await new Promise<void>((resolve) => blocker.close(() => resolve()))
+      api.start()
+      await waitListening(port)
+      const res = await request(port, 'OPTIONS', '/api/status')
+      expect(res.status).toBe(204)
+    } finally {
+      await api.stop()
+      if (blocker.listening) await new Promise<void>((resolve) => blocker.close(() => resolve()))
     }
   })
 })
