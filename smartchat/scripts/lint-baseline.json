@@ -15,7 +15,6 @@
     "@typescript-eslint/no-unsafe-function-type": 30,
     "@typescript-eslint/no-unused-vars": 70,
     "no-empty": 18,
-    "no-restricted-imports": 107,
     "prefer-const": 8,
     "react-hooks/exhaustive-deps": 22,
     "react-hooks/immutability": 2,
