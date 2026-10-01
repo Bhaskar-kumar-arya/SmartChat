@@ -5,9 +5,6 @@ import { IStreamingProvider } from './IStreamingProvider'
 import { IFullResponseProvider } from './IFullResponseProvider'
 import { IToolRegistry } from '../IToolRegistry'
 import { IAIKeyService } from '../IAIKeyService'
-import { createLogger } from '../../../utils/logger'
-
-const log = createLogger('ai:openai-compat')
 
 type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string }
 
@@ -126,7 +123,7 @@ export abstract class BaseOpenAICompatibleProvider
     try {
       return JSON.parse(raw)
     } catch {
-      log.warn(`Failed to parse ${this.displayName} ${streamed ? 'streamed ' : ''}tool call arguments:`, raw)
+      console.warn(`Failed to parse ${this.displayName} ${streamed ? 'streamed ' : ''}tool call arguments:`, raw)
       return {}
     }
   }
@@ -285,7 +282,7 @@ export abstract class BaseOpenAICompatibleProvider
       })
       return models
     } catch (error: unknown) {
-      log.warn(`[${this.displayName}Provider] Could not fetch models from ${this.displayName}:`, error)
+      console.warn(`[${this.displayName}Provider] Could not fetch models from ${this.displayName}:`, error)
       return this.fallbackModels()
     }
   }
