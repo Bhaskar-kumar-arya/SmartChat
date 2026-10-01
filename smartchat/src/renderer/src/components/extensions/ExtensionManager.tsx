@@ -48,6 +48,18 @@ function ExtensionManagerBody({ onClose, onOpenExtensionChat }: Omit<ExtensionMa
     }
   }
 
+  // Reload/uninstall run from click handlers nobody awaits: surface a backend
+  // failure in the alert banner instead of an unhandled rejection (B-UIAPP-08).
+  const runGuarded = async (label: string, action: () => Promise<void>): Promise<void> => {
+    setInstallError(null)
+    try {
+      await action()
+    } catch (err) {
+      console.error(`Failed to ${label} extension:`, err)
+      setInstallError(`Failed to ${label} extension: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
   const handleToggle = async (id: string, isLoaded: boolean) => {
     try {
       if (isLoaded) {
@@ -120,10 +132,10 @@ function ExtensionManagerBody({ onClose, onOpenExtensionChat }: Omit<ExtensionMa
                     isLoaded={ext.isLoaded}
                     isSelected={selectedId === ext.id}
                     onToggle={() => handleToggle(ext.id, ext.isLoaded)}
-                    onReload={() => reload(ext.id)}
+                    onReload={() => void runGuarded('reload', () => reload(ext.id))}
                     onUninstall={() => {
                       if (window.confirm(`Are you sure you want to uninstall ${ext.manifest.name} and clear its data?`)) {
-                        uninstall(ext.id)
+                        void runGuarded('uninstall', () => uninstall(ext.id))
                         if (selectedId === ext.id) setSelectedId(null)
                       }
                     }}

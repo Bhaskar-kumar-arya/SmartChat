@@ -102,7 +102,7 @@ describe('ExtensionManager', () => {
 
   // B-UIAPP-08: a backend failure on reload/uninstall must surface as feedback,
   // not an unhandled rejection.
-  it.fails('reports reload and uninstall failures instead of leaking unhandled rejections', async () => {
+  it('reports reload and uninstall failures instead of leaking unhandled rejections', async () => {
     const user = userEvent.setup()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const apiService = createMockApiService({
