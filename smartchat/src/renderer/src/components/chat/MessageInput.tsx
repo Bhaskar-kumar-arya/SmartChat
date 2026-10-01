@@ -5,6 +5,7 @@ import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import MentionMenu from './MentionMenu'
 import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
 import { useAPI } from '../../context/APIContext'
+import { useToast } from '../../context/ToastContext'
 import { MessageItem } from '../../types/chatTypes'
 import { EmojiText } from '../common/EmojiText'
 import { emojiToUnified } from '../../utils/emojiUtils'
@@ -29,6 +30,7 @@ interface MessageInputProps {
 
 export default function MessageInput({ activeJid, onSend, onSendMedia, replyingTo, onCancelReply, onAttachFiles }: MessageInputProps) {
   const api = useAPI()
+  const { showError } = useToast()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
@@ -248,6 +250,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
           clearMentions()
         } catch (err) {
           console.error('[MessageInput] Failed to execute slash command:', err)
+          showError(err, 'Could not run the command.')
         } finally {
           setSending(false)
           editorRef.current?.focus()
@@ -264,6 +267,9 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
       }
       lastCaretOffsetRef.current = 0
       clearMentions()
+    } catch (err) {
+      // Keep the draft so the user can retry, and surface the failure (B-UICHAT-10).
+      showError(err, 'Could not send the message.')
     } finally {
       setSending(false)
       editorRef.current?.focus()

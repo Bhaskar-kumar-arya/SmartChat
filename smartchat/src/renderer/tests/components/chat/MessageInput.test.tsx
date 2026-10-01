@@ -184,15 +184,7 @@ describe('MessageInput', () => {
   })
 
   describe('send failure feedback (B-UICHAT-10)', () => {
-    // Pin-phase only: today the failure escapes as an unhandled rejection (the bug).
-    const swallowUnhandledRejections = () => {
-      const original = process.emit.bind(process) as (event: string, ...args: unknown[]) => boolean
-      vi.spyOn(process, 'emit').mockImplementation(((event: string, ...args: unknown[]) =>
-        event === 'unhandledRejection' ? true : original(event, ...args)) as typeof process.emit)
-    }
-
-    it.fails('shows a toast and keeps the draft when onSend rejects', async () => {
-      swallowUnhandledRejections()
+    it('shows a toast and keeps the draft when onSend rejects', async () => {
       const onSend = vi.fn().mockRejectedValue(new Error('send exploded'))
       renderWithProviders(<MessageInput {...defaultProps} onSend={onSend} />)
       const editor = document.querySelector('.message-input') as HTMLElement
@@ -202,7 +194,6 @@ describe('MessageInput', () => {
 
       expect(await screen.findByRole('alert')).toHaveTextContent('send exploded')
       expect(editor.textContent).toBe('keep me')
-      vi.restoreAllMocks()
     })
   })
 
