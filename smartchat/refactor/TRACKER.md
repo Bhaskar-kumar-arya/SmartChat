@@ -14,6 +14,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 _empty_
 
 ## Follow-ups inbox (triaged at each wave boundary)
+- (G-04) Gemini key `AIzaSy…YLRGd0` is in git history: OWNER must rotate it. Audit docs may have stale paths to moved `bug-audit*`; `.agents/skills/feature-and-bugfix/SKILL.md` mentions bug files; logger lives at `src/main/utils/logger.ts` (relocate if a shared dir appears); `test:run` and `test:run:all` scripts are identical. Fold into Z-08 (docs).
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -30,7 +31,7 @@ _empty_
 |---|---|---|---|---|---|---|
 | G-01 | W0 | Hermetic green suite | – | – | IN PROGRESS | refactor/G-01 |
 | G-02 | W0 | CI workflow (ubuntu + windows) | G-01 | – | WAITING | |
-| G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | IN PROGRESS | refactor/G-04 |
+| G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | MERGED | eb206db |
 | G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | WAITING | |
 | S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | WAITING | |
 | S-02 | W1 · AI | executeScript isolation (hotfix → child process) | W0 | – | WAITING | |
