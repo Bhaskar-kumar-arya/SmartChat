@@ -16,11 +16,23 @@ export const CitationPill: React.FC<CitationPillProps> = ({
   const { resolve, handleCitationClick, loadingIndices } = useCitation({ sessionId })
   const [entity, setEntity] = useState<CitationEntity | null>(null)
 
+  const [failed, setFailed] = useState(false)
+
   useEffect(() => {
     let alive = true
-    resolve(index).then((e) => {
-      if (alive) setEntity(e)
-    })
+    setFailed(false)
+    resolve(index)
+      .then((e) => {
+        if (alive) setEntity(e)
+      })
+      .catch((err) => {
+        // A rejected resolveCitation IPC (e.g. deleted session) shows the invalid state.
+        console.error('[CitationPill] Failed to resolve citation:', err)
+        if (alive) {
+          setEntity(null)
+          setFailed(true)
+        }
+      })
     return () => {
       alive = false
     }
@@ -32,7 +44,7 @@ export const CitationPill: React.FC<CitationPillProps> = ({
 
   // F8-10: human-readable tooltip instead of dumping the raw entity JSON
   // (which leaked absolute file paths / internal JIDs).
-  let title = 'Loading citation…'
+  let title = failed ? 'Citation unavailable' : 'Loading citation…'
   if (entity) {
     if (entity.type === 'file') {
       const name = entity.filePath.split(/[\\/]/).pop() || entity.filePath
@@ -47,7 +59,11 @@ export const CitationPill: React.FC<CitationPillProps> = ({
   return (
     <button
       className={`citation-pill citation-pill--${entity?.type ?? 'loading'}`}
-      onClick={() => handleCitationClick(index)}
+      onClick={() => {
+        handleCitationClick(index).catch((err) => {
+          console.error('[CitationPill] Failed to open citation:', err)
+        })
+      }}
       disabled={isLoading || !entity}
       title={title}
       aria-label={`Citation ${index}: ${label}`}

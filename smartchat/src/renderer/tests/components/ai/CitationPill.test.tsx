@@ -55,7 +55,7 @@ describe('CitationPill', () => {
 
   // B-UIAPP-10: a rejected resolveCitation IPC must render the invalid state
   // instead of an unhandled rejection plus a pill stuck on "Loading citation…".
-  it.fails('shows an unavailable state when resolveCitation rejects', async () => {
+  it('shows an unavailable state when resolveCitation rejects', async () => {
     // Plain function, not vi.fn(): a spy would mark the rejection as handled.
     const apiService = createMockApiService({
       resolveCitation: () => Promise.reject(new Error('session deleted'))
