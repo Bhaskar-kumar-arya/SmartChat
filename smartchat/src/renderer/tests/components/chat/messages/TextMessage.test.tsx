@@ -71,4 +71,21 @@ describe('TextMessage', () => {
     const { container } = render(<TextMessage text="Great job! 👍" />)
     expect(container.querySelector('.emoji-inline-wrapper')).toBeInTheDocument()
   })
+
+  it.fails('does not treat single $ as inline math (B-UICHAT-08)', () => {
+    const { container } = render(<TextMessage text="it's $5 now and $10 later" />)
+    expect(container.querySelector('.katex')).toBeNull()
+    expect(container.textContent).toContain("it's $5 now and $10 later")
+  })
+
+  it.fails('does not render an e-mail address as a mention (B-UICHAT-09)', () => {
+    const { container } = render(<TextMessage text="write to foo@bar.com today" />)
+    expect(container.querySelector('.message-mention')).toBeNull()
+    expect(container.textContent).toContain('foo@bar.com')
+  })
+
+  it.fails('does not resolve a short @1 token to a mention by key prefix (B-UICHAT-09)', () => {
+    render(<TextMessage text="see @1" mentions={{ '1234567890@s.whatsapp.net': 'Alice' }} />)
+    expect(screen.queryByText('@Alice')).toBeNull()
+  })
 })
