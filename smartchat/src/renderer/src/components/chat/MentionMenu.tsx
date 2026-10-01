@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { filterMentionParticipants } from '../../hooks/useMentions'
 
 interface Participant {
   jid: string
@@ -20,11 +21,7 @@ export default function MentionMenu({ participants, query, onSelect, onClose }: 
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const q = query.toLowerCase()
-    const result = participants.filter(p => 
-      !p.isMe && (p.name.toLowerCase().includes(q) || p.jid.split('@')[0].includes(q))
-    )
-    setFiltered(result.slice(0, 8))
+    setFiltered(filterMentionParticipants(participants, query))
     setSelectedIndex(0)
   }, [participants, query])
 

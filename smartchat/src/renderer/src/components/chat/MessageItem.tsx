@@ -12,6 +12,7 @@ import { TemplateMessage } from './messages/TemplateMessage'
 import { SystemMessageBubble } from './messages/SystemMessage'
 import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
 import { useAPI } from '../../context/APIContext'
+import { useToast } from '../../context/ToastContext'
 import ConfirmModal from '../common/ConfirmModal'
 import { MessageStatusTick } from '../common/MessageStatusTick'
 import { emojiToUnified } from '../../utils/emojiUtils'
@@ -206,6 +207,7 @@ const MessageItemBody = memo(function MessageItemBody({
   onScrollToMessage
 }: MessageItemProps) {
   const api = useAPI()
+  const { showError } = useToast()
   const messageActions = useContributions('message-action')
 
   let rawMsg: RawMessageContent = {}
@@ -359,7 +361,13 @@ const MessageItemBody = memo(function MessageItemBody({
 
   const handleSaveEdit = async () => {
     if (onEdit && editText.trim() !== msg.textContent && editText.trim()) {
-      await onEdit(msg.id, editText.trim())
+      try {
+        await onEdit(msg.id, editText.trim())
+      } catch (err) {
+        // Keep the editor open with the draft so the user can retry (B-UICHAT-10).
+        showError(err, 'Could not edit the message.')
+        return
+      }
     }
     setIsEditing(false)
     setShowDropdown(false)
@@ -373,7 +381,11 @@ const MessageItemBody = memo(function MessageItemBody({
   const handleConfirmDelete = async () => {
     setShowDeleteConfirm(false)
     if (onDelete) {
-      await onDelete(msg.id)
+      try {
+        await onDelete(msg.id)
+      } catch (err) {
+        showError(err, 'Could not delete the message.')
+      }
     }
   }
 
@@ -640,7 +652,7 @@ const MessageItemBody = memo(function MessageItemBody({
                 </button>
               )}
               {canEdit && (
-                <button className="dropdown-item" onClick={() => { setIsEditing(true); setShowDropdown(false); }}>
+                <button className="dropdown-item" onClick={() => { setEditText(msg.textContent ?? ''); setIsEditing(true); setShowDropdown(false); }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                   Edit
                 </button>

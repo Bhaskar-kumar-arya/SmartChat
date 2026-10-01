@@ -51,7 +51,7 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
   // Preprocess mentions into markdown links so ReactMarkdown handles them correctly.
   const preprocessMentionsToMarkdown = (rawText: string) => {
     if (!rawText) return ''
-    const parts = rawText.split(/(@\[[\w.@-]+\]|@[\w.@-]+)/g)
+    const parts = rawText.split(/((?<![\w.])@\[[\w.@-]+\]|(?<![\w.])@[\w.@-]+)/g)
     return parts.map(part => {
       if (part.startsWith('@')) {
         let rawContent = part.substring(1)
@@ -63,11 +63,6 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
 
         if (!name && /^\d+$/.test(rawContent)) {
           name = normalizedMentions[`${rawContent}@s.whatsapp.net`] || normalizedMentions[`${rawContent}@lid`]
-        }
-
-        if (!name) {
-          const foundKey = Object.keys(normalizedMentions).find(k => k.startsWith(rawContent))
-          if (foundKey) name = normalizedMentions[foundKey]
         }
 
         if (name) {
@@ -114,7 +109,7 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
     <div className="markdown-body">
       <ReactMarkdown
         urlTransform={sanitizeUrl}
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
         rehypePlugins={[rehypeKatex]}
         components={{
           a: ({ href, children }: any) => {
