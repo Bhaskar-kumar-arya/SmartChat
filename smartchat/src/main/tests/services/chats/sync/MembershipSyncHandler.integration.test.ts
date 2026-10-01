@@ -162,4 +162,27 @@ describe('MembershipSyncHandler (real DB)', () => {
 
     expect(await memberIdentityIds(jid)).toEqual([stayer.identity.id])
   })
+  // Two participant entries (LID entry + PN entry) resolving to one identity in the same group
+  // currently produce a duplicate ChatMember insert.
+  it.fails('tolerates two participant entries that resolve to the same identity in one group', async () => {
+    const jid = groupJid()
+    await makeChat(prisma, { jid, type: 'GROUP' })
+    const { identity, pn } = await makeContact(prisma)
+    const lid = lidJid()
+    await sync(jid, [{ id: lid, lid, phoneNumber: pn }, { id: pn }])
+
+    expect(await memberIdentityIds(jid)).toEqual([identity.id])
+  })
+
+  it('does not prune members of groups that are not part of the batch', async () => {
+    const other = groupJid()
+    const jid = groupJid()
+    await makeChat(prisma, { jid: other, type: 'GROUP' })
+    await makeChat(prisma, { jid, type: 'GROUP' })
+    const bystander = await makeContact(prisma)
+    await makeChatMember(prisma, other, bystander.identity.id)
+    await sync(jid, [{ id: pnJid() }])
+
+    expect(await memberIdentityIds(other)).toEqual([bystander.identity.id])
+  })
 })
