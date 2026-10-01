@@ -92,26 +92,20 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
     // progress UI / embedding pause / finish timer.
     const isOnDemand = rawSyncType === WorkerHistorySyncManager.ON_DEMAND_SYNC_TYPE
 
+    if (isOnDemand) {
+      // B-WA-06: on-demand pages are NOT counted in activeChunks. They never
+      // arm/flush the finish machinery, so counting them could leave a deferred
+      // finishSync (pendingFinish) un-flushed forever.
+      try {
+        await this.handleOnDemandChunk(data, sock)
+      } catch (err) {
+        console.error('[WorkerHistorySync] Error processing sync payload:', err)
+      }
+      return
+    }
+
     this.activeChunks++
     try {
-      if (isOnDemand) {
-        const syncResult = await handleHistorySync(
-          data as HistorySyncData,
-          this.deps.contactService,
-          this.deps.aliasRepository,
-          this.deps.chatRepository,
-          this.deps.communityRepository,
-          this.deps.messageRepository,
-          this.deps.reactionRepository
-        )
-        this.deps.mediaService.downloadFavoriteStickersFromSync(syncResult.importedMessages, sock).catch((err) => {
-          console.error('[WorkerHistorySync] Failed to process favorite stickers from on-demand page:', err)
-        })
-        console.log(`[WorkerHistorySync] on-demand history page persisted: ${syncResult.messageCount} messages`)
-        this.eventPublisher.publish('wa-history-appended', { messageCount: syncResult.messageCount })
-        return
-      }
-
       this.syncChunkCount++
       const rawData = data as Record<string, unknown>
       const reportedProgress = typeof rawData.progress === 'number' ? rawData.progress : undefined
@@ -183,7 +177,7 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       console.error('[WorkerHistorySync] Error processing sync payload:', err)
     } finally {
       this.activeChunks--
-      if (!isOnDemand && this.activeChunks === 0 && !this.syncComplete) {
+      if (this.activeChunks === 0 && !this.syncComplete) {
         if (this.pendingFinish) {
           this.pendingFinish = false
           await this.finishSync(sock, syncFullHistory).catch((err) => {
@@ -195,6 +189,23 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
         }
       }
     }
+  }
+
+  private async handleOnDemandChunk(data: unknown, sock: WASocket): Promise<void> {
+    const syncResult = await handleHistorySync(
+      data as HistorySyncData,
+      this.deps.contactService,
+      this.deps.aliasRepository,
+      this.deps.chatRepository,
+      this.deps.communityRepository,
+      this.deps.messageRepository,
+      this.deps.reactionRepository
+    )
+    this.deps.mediaService.downloadFavoriteStickersFromSync(syncResult.importedMessages, sock).catch((err) => {
+      console.error('[WorkerHistorySync] Failed to process favorite stickers from on-demand page:', err)
+    })
+    console.log(`[WorkerHistorySync] on-demand history page persisted: ${syncResult.messageCount} messages`)
+    this.eventPublisher.publish('wa-history-appended', { messageCount: syncResult.messageCount })
   }
 
   async finishSync(sock: WASocket, syncFullHistory: boolean): Promise<'completed' | 'deferred'> {

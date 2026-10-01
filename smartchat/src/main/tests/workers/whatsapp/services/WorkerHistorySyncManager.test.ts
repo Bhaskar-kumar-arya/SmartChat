@@ -117,7 +117,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     const makeSock = () => ({ groupFetchAllParticipating: vi.fn().mockResolvedValue([]) }) as any
 
     // B-WA-06
-    it.fails('B-WA-06: finishSync deferred by an in-flight initial chunk still completes when an on-demand chunk settles last', async () => {
+    it('B-WA-06: finishSync deferred by an in-flight initial chunk still completes when an on-demand chunk settles last', async () => {
       const sock = makeSock()
       let resolveInitial: (v: any) => void = () => {}
       let resolveOnDemand: (v: any) => void = () => {}
@@ -139,7 +139,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     })
 
     // B-WA-06
-    it.fails('B-WA-06: an in-flight on-demand page does not defer finishSync', async () => {
+    it('B-WA-06: an in-flight on-demand page does not defer finishSync', async () => {
       const sock = makeSock()
       vi.mocked(handleHistorySync).mockReturnValue(new Promise(() => {}) as any)
       void manager.handleSyncChunk({ syncType: ON_DEMAND, chats: [] }, true, sock)
