@@ -112,4 +112,72 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     resolveSync({ importedMessages: [] })
     await chunkPromise
   })
+  describe('ON_DEMAND chunks (B-WA-06 / B-WA-16)', () => {
+    const ON_DEMAND = 6
+    const makeSock = () => ({ groupFetchAllParticipating: vi.fn().mockResolvedValue([]) }) as any
+
+    // B-WA-06
+    it.fails('B-WA-06: finishSync deferred by an in-flight initial chunk still completes when an on-demand chunk settles last', async () => {
+      const sock = makeSock()
+      let resolveInitial: (v: any) => void = () => {}
+      let resolveOnDemand: (v: any) => void = () => {}
+      vi.mocked(handleHistorySync)
+        .mockReturnValueOnce(new Promise((r) => { resolveInitial = r }) as any)
+        .mockReturnValueOnce(new Promise((r) => { resolveOnDemand = r }) as any)
+
+      const initial = manager.handleSyncChunk({ progress: 10, syncType: 3 }, true, sock)
+      const onDemand = manager.handleSyncChunk({ syncType: ON_DEMAND, chats: [] }, true, sock)
+      await expect(manager.finishSync(sock, true)).resolves.toBe('deferred')
+
+      resolveInitial({ importedMessages: [] })
+      await initial
+      resolveOnDemand({ importedMessages: [], messageCount: 1 })
+      await onDemand
+
+      expect(mockAuthSettings.setHistorySyncCompleted).toHaveBeenCalled()
+      expect(manager.isComplete).toBe(true)
+    })
+
+    // B-WA-06
+    it.fails('B-WA-06: an in-flight on-demand page does not defer finishSync', async () => {
+      const sock = makeSock()
+      vi.mocked(handleHistorySync).mockReturnValue(new Promise(() => {}) as any)
+      void manager.handleSyncChunk({ syncType: ON_DEMAND, chats: [] }, true, sock)
+      await expect(manager.finishSync(sock, true)).resolves.toBe('completed')
+    })
+
+    // B-WA-16
+    it.fails('B-WA-16: a failing on-demand page still publishes wa-history-appended with an error', async () => {
+      vi.mocked(handleHistorySync).mockRejectedValue(new Error('db locked'))
+      await manager.handleSyncChunk({ syncType: ON_DEMAND, chats: [{ id: 'a@s.whatsapp.net' }] }, true, makeSock())
+      expect(mockPublisher.publish).toHaveBeenCalledWith(
+        'wa-history-appended',
+        expect.objectContaining({ jid: 'a@s.whatsapp.net', messageCount: 0, error: 'db locked' })
+      )
+    })
+
+    // B-WA-16
+    it.fails('B-WA-16: the success payload carries jid and requestId', async () => {
+      vi.mocked(handleHistorySync).mockResolvedValue({ importedMessages: [], messageCount: 3 } as any)
+      await manager.handleSyncChunk(
+        { syncType: ON_DEMAND, chats: [{ id: 'a@s.whatsapp.net' }], peerDataRequestSessionId: 'req-1' },
+        true,
+        makeSock()
+      )
+      expect(mockPublisher.publish).toHaveBeenCalledWith('wa-history-appended', {
+        jid: 'a@s.whatsapp.net',
+        requestId: 'req-1',
+        messageCount: 3
+      })
+    })
+
+    it('an on-demand page never touches initial-sync state (no pause, no progress, no timer)', async () => {
+      vi.mocked(handleHistorySync).mockResolvedValue({ importedMessages: [], messageCount: 2 } as any)
+      await manager.handleSyncChunk({ syncType: ON_DEMAND, chats: [] }, true, makeSock())
+      expect(mockDeps.embeddingService.setPaused).not.toHaveBeenCalled()
+      expect(mockPublisher.publish).not.toHaveBeenCalledWith('wa-sync-progress', expect.anything())
+      await vi.advanceTimersByTimeAsync(200_000)
+      expect(mockAuthSettings.setHistorySyncCompleted).not.toHaveBeenCalled()
+    })
+  })
 })
