@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderWithProviders, screen, userEvent } from '../../testUtils'
 import AISettingsModal from '@renderer/components/ai/AISettingsModal'
 import { createMockApiService } from '../../mocks/mockApiService'
-import { captureUnhandledRejections } from '../../utils/captureUnhandled'
+import { captureUnhandledRejections } from '../../helpers/captureUnhandled'
 
 describe('AISettingsModal', () => {
   const mockOptions = {

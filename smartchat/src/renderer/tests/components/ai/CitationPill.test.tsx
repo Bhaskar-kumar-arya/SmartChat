@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderWithProviders, screen, waitFor } from '../../testUtils'
 import { CitationPill } from '@renderer/components/ai/CitationPill'
 import { createMockApiService } from '../../mocks/mockApiService'
-import { captureUnhandledRejections } from '../../utils/captureUnhandled'
+import { captureUnhandledRejections } from '../../helpers/captureUnhandled'
 
 describe('CitationPill', () => {
   it('renders loading state initially and then displays resolved entity label', async () => {

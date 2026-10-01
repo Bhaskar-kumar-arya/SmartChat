@@ -16,11 +16,13 @@ export const CitationPill: React.FC<CitationPillProps> = ({
   const { resolve, handleCitationClick, loadingIndices } = useCitation({ sessionId })
   const [entity, setEntity] = useState<CitationEntity | null>(null)
 
-  const [failed, setFailed] = useState(false)
+  // Keyed by session+index so a stale failure never applies to another citation.
+  const citationKey = `${sessionId}:${index}`
+  const [failedKey, setFailedKey] = useState<string | null>(null)
+  const failed = failedKey === citationKey
 
   useEffect(() => {
     let alive = true
-    setFailed(false)
     resolve(index)
       .then((e) => {
         if (alive) setEntity(e)
@@ -30,13 +32,13 @@ export const CitationPill: React.FC<CitationPillProps> = ({
         console.error('[CitationPill] Failed to resolve citation:', err)
         if (alive) {
           setEntity(null)
-          setFailed(true)
+          setFailedKey(citationKey)
         }
       })
     return () => {
       alive = false
     }
-  }, [index, resolve])
+  }, [index, resolve, citationKey])
 
   const isLoading = loadingIndices.has(index)
   const icon = entity ? CITATION_ICONS[entity.type] : '…'

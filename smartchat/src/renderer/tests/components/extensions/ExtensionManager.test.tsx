@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderWithProviders, screen, userEvent, waitFor } from '../../testUtils'
 import ExtensionManager from '@renderer/components/extensions/ExtensionManager'
 import { createMockApiService } from '../../mocks/mockApiService'
-import { captureUnhandledRejections } from '../../utils/captureUnhandled'
+import { captureUnhandledRejections } from '../../helpers/captureUnhandled'
 
 describe('ExtensionManager', () => {
   const mockExtensions = [

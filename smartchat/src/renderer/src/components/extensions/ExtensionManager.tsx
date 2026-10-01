@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactElement } from 'react'
 import { useExtensionManager } from '../../hooks/useExtensionManager'
 import { useAPI } from '../../context/APIContext'
 import { ExtensionCard } from './ExtensionCard'
@@ -15,14 +15,14 @@ interface ExtensionManagerProps {
  * Modal overlay following SettingsModal pattern.
  * Uses useExtensionManager() — zero direct api calls.
  */
-export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat }: ExtensionManagerProps) {
+export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat }: ExtensionManagerProps): ReactElement | null {
   // The body owns the data hook and local state, so mounting it only while open
   // refetches the list on every open and drops selection/errors on close (B-UIAPP-07).
   if (!isOpen) return null
   return <ExtensionManagerBody onClose={onClose} onOpenExtensionChat={onOpenExtensionChat} />
 }
 
-function ExtensionManagerBody({ onClose, onOpenExtensionChat }: Omit<ExtensionManagerProps, 'isOpen'>) {
+function ExtensionManagerBody({ onClose, onOpenExtensionChat }: Omit<ExtensionManagerProps, 'isOpen'>): ReactElement {
   const api = useAPI()
   const { extensions, loading, error, install, unload, reload, uninstall } = useExtensionManager()
   const [selectedId, setSelectedId] = useState<string | null>(null)
