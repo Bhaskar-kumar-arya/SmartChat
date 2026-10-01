@@ -11,6 +11,8 @@ import { ContactGroupSubscriber } from '../services/whatsapp/subscribers/Contact
 import { ReceiptSubscriber } from '../services/whatsapp/subscribers/ReceiptSubscriber'
 import { FavoriteStickerSubscriber } from '../services/whatsapp/subscribers/FavoriteStickerSubscriber'
 import { CallEventSubscriber } from '../services/whatsapp/subscribers/CallEventSubscriber'
+import { WorkerHistorySyncManager } from '../workers/whatsapp/services/WorkerHistorySyncManager'
+import type { IWorkerEventPublisher } from '../workers/whatsapp/events/IWorkerEventPublisher'
 
 const workerId = process.env.VITEST_WORKER_ID || process.pid.toString()
 export const dbPath = join(__dirname, `../../../prisma/test-worker-${workerId}.db`)
@@ -187,8 +189,21 @@ type EventDispatcher = (
  * Registry of event name → dispatcher function.
  * To support a new Baileys event, add one entry here — no if/else chain to modify.
  */
+const historySyncManagers = new WeakMap<ServiceContainer, WorkerHistorySyncManager>()
+
+/** Real worker-side history sync manager, one per container so sync state persists across injected chunks. */
+function getHistorySyncManager(services: ServiceContainer): WorkerHistorySyncManager {
+  let manager = historySyncManagers.get(services)
+  if (!manager) {
+    const eventPublisher: IWorkerEventPublisher = { publish: vi.fn() }
+    manager = new WorkerHistorySyncManager(services, services.authSettingsService, eventPublisher)
+    historySyncManagers.set(services, manager)
+  }
+  return manager
+}
+
 const EVENT_REGISTRY: Record<string, EventDispatcher> = {
-  'messaging-history.set': (p, s, _, sock) => s.historySyncManager.handleSyncChunk(p, false, sock),
+  'messaging-history.set': (p, s, _, sock) => getHistorySyncManager(s).handleSyncChunk(p, false, sock),
   'messages.upsert':        (p, _, h, sock) => h.handleMessagesUpsert(p, sock),
   'messages.update':        (p, _, h, sock) => h.handleMessagesUpdate(p, sock),
   'messages.reaction':      (p, _, h, sock) => h.handleMessagesReaction(p, sock),
