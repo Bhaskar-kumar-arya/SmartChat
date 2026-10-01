@@ -960,9 +960,14 @@
           code: authCode,
           codeVerifier: verifier
         });
-        const textVal = (typeof rawRes === 'object' && rawRes !== null && rawRes.text)
-          ? rawRes.text
-          : (typeof rawRes === 'string' ? rawRes : '');
+        // callTool resolves with either the {text} object or its JSON-encoded string.
+        let parsed = rawRes;
+        if (typeof rawRes === 'string') {
+          try { parsed = JSON.parse(rawRes); } catch (e) { parsed = rawRes; }
+        }
+        const textVal = (typeof parsed === 'object' && parsed !== null && parsed.text)
+          ? parsed.text
+          : (typeof parsed === 'string' ? parsed : '');
         const ok = textVal.startsWith('Success:');
         const cleanMsg = textVal.replace(/^(Success|Failed):\s*/, '').trim();
 
