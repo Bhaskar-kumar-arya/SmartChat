@@ -324,4 +324,11 @@ export class SyncRepository implements ISyncRepository {
       )
     }
   }
+
+  async deleteMembersNotIn(chatJid: string, keepIdentityIds: number[]): Promise<void> {
+    if (keepIdentityIds.length === 0) return
+    await this.prisma.chatMember.deleteMany({
+      where: { chatJid, identityId: { notIn: keepIdentityIds } }
+    })
+  }
 }

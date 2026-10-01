@@ -42,6 +42,8 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
       id: string
       lid: string | null
       pn: string | null
+      /** PN known only indirectly (LidMap / group metadata), filled in during identity resolution. */
+      derivedPn: string | null
       role: 'SUPERADMIN' | 'ADMIN' | 'MEMBER'
     }[] = []
 
@@ -60,6 +62,7 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
             id: rawId,
             lid,
             pn,
+            derivedPn: null,
             role
           })
         }
@@ -139,6 +142,7 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
         }
 
         if (canonicalPn) {
+          if (!p.pn) p.derivedPn = canonicalPn
           pnsToCreate.add(canonicalPn)
         } else {
           const stubId = p.lid ?? p.id
@@ -158,16 +162,17 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
       }
     }
 
-    for (const lid of lidsToCreateIndividual) {
+    for (const stubJid of lidsToCreateIndividual) {
       const newIden = await this.syncRepository.createIdentity(null)
-      aliasMap.set(lid, newIden.id)
+      aliasMap.set(stubJid, newIden.id)
+      aliasesToCreate.push({ jid: stubJid, type: stubJid.endsWith('@s.whatsapp.net') ? 'PN' : (stubJid.endsWith('@lid') ? 'LID' : 'PN'), identityId: newIden.id })
     }
 
     const warmedCacheEntries = new Map<string, number>()
 
     for (const p of parsedParticipants) {
       const cleanLid = p.lid
-      const cleanPn = p.pn
+      const cleanPn = p.pn ?? p.derivedPn
 
       if (cleanLid && cleanPn) {
         const cacheKey = `${cleanLid}->${cleanPn}`
@@ -192,7 +197,8 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
         }
       }
 
-      let identityId = p.pn ? (aliasMap.get(p.pn) ?? pnToIdentityIdMap.get(p.pn)) : null
+      const effectivePn = p.pn ?? p.derivedPn
+      let identityId = effectivePn ? (aliasMap.get(effectivePn) ?? pnToIdentityIdMap.get(effectivePn)) : null
       if (!identityId && p.lid) {
         identityId = aliasMap.get(p.lid) ?? null
       }
@@ -202,7 +208,7 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
 
       if (identityId) {
         const jidsToCheck = [p.id]
-        if (p.pn) jidsToCheck.push(p.pn)
+        if (effectivePn) jidsToCheck.push(effectivePn)
         if (p.lid) jidsToCheck.push(p.lid)
 
         for (const jid of jidsToCheck) {
@@ -247,10 +253,11 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
     const existingMembers = await this.syncRepository.findExistingMemberRoles(allGroupJids)
     const existingMemberRoles = new Map(existingMembers.map(m => [`${m.chatJid}_${m.identityId}`, m.role]))
 
-    const membersToUpsert: SyncChatMemberUpsert[] = []
+    const membersToUpsert = new Map<string, SyncChatMemberUpsert>()
 
     for (const p of parsedParticipants) {
-      let identityId = p.pn ? (aliasMap.get(p.pn) ?? pnToIdentityIdMap.get(p.pn)) : null
+      const effectivePn = p.pn ?? p.derivedPn
+      let identityId = effectivePn ? (aliasMap.get(effectivePn) ?? pnToIdentityIdMap.get(effectivePn)) : null
       if (!identityId && p.lid) {
         identityId = aliasMap.get(p.lid) ?? null
       }
@@ -259,11 +266,27 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
       }
 
       if (identityId) {
-        membersToUpsert.push({ chatJid: p.chatJid, identityId, role: p.role })
+        const key = `${p.chatJid}_${identityId}`
+        if (!membersToUpsert.has(key)) {
+          membersToUpsert.set(key, { chatJid: p.chatJid, identityId, role: p.role })
+        }
       }
     }
 
-    await this.syncRepository.bulkUpsertChatMembers(membersToUpsert, existingMemberRoles)
+    const resolvedMembers = Array.from(membersToUpsert.values())
+    await this.syncRepository.bulkUpsertChatMembers(resolvedMembers, existingMemberRoles)
+
+    // Hydration is authoritative: drop members no longer in a group's participant list.
+    // Only groups with a non-empty resolved set are pruned (never wipe a group on empty data).
+    const keepByGroup = new Map<string, number[]>()
+    for (const m of resolvedMembers) {
+      const ids = keepByGroup.get(m.chatJid) ?? []
+      ids.push(m.identityId)
+      keepByGroup.set(m.chatJid, ids)
+    }
+    for (const [chatJid, keepIds] of keepByGroup) {
+      await this.syncRepository.deleteMembersNotIn(chatJid, keepIds)
+    }
 
     this.contactService.populateIdentityIdCache(warmedCacheEntries)
   }

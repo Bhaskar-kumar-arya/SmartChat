@@ -83,4 +83,10 @@ export interface ISyncRepository {
     members: SyncChatMemberUpsert[],
     existingMemberKeys: Map<string, string>
   ): Promise<void>
+
+  /**
+   * Delete members of `chatJid` whose identityId is not in `keepIdentityIds`.
+   * A no-op when `keepIdentityIds` is empty (never wipes a group).
+   */
+  deleteMembersNotIn(chatJid: string, keepIdentityIds: number[]): Promise<void>
 }

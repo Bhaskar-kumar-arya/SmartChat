@@ -22,7 +22,8 @@ describe('MembershipSyncHandler', () => {
       bulkUpdateIdentityAliases: vi.fn(),
       bulkUpsertLidMaps: vi.fn(),
       findExistingMemberRoles: vi.fn(),
-      bulkUpsertChatMembers: vi.fn()
+      bulkUpsertChatMembers: vi.fn(),
+      deleteMembersNotIn: vi.fn()
     } as any
 
     mockContactService = {
