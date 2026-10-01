@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAPI } from '../context/APIContext'
 
 interface Participant {
@@ -6,6 +6,20 @@ interface Participant {
   name: string
   isAdmin: boolean
   isMe: boolean
+}
+
+/** Max entries the mention menu shows. */
+export const MENTION_MENU_LIMIT = 8
+
+/** Participants the mention menu would list for `query` (shared with MentionMenu). */
+export const filterMentionParticipants = (
+  participants: Participant[],
+  query: string
+): Participant[] => {
+  const q = query.toLowerCase()
+  return participants
+    .filter((p) => !p.isMe && (p.name.toLowerCase().includes(q) || p.jid.split('@')[0].includes(q)))
+    .slice(0, MENTION_MENU_LIMIT)
 }
 
 /**
@@ -84,9 +98,16 @@ export const useMentions = (activeJid: string | null) => {
     setMentionedJids(new Set())
   }, [])
 
+  // The menu only renders when it has entries; Enter must be blocked only then (B-UICHAT-04).
+  const menuVisible = useMemo(
+    () => showMenu && filterMentionParticipants(participants, query).length > 0,
+    [showMenu, participants, query]
+  )
+
   return {
     participants,
     showMenu,
+    menuVisible,
     query,
     mentionedJids,
     handleInputChange,

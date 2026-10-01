@@ -65,7 +65,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
 
   const { 
     participants, 
-    showMenu, 
+    menuVisible,
     query, 
     mentionedJids, 
     handleInputChange, 
@@ -335,7 +335,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !showMenu) {
+    if (e.key === 'Enter' && !e.shiftKey && !menuVisible) {
       e.preventDefault()
       handleSend()
     }
@@ -405,7 +405,7 @@ export default function MessageInput({ activeJid, onSend, onSendMedia, replyingT
 
   return (
     <div className="message-input-wrapper">
-      {showMenu && (
+      {menuVisible && (
         <MentionMenu 
           participants={participants} 
           query={query} 

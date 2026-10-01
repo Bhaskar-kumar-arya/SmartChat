@@ -195,7 +195,7 @@ describe('MessageInput', () => {
       fireEvent.input(editor)
     }
 
-    it.fails('sends on Enter in a DM even though the text contains an @ token', () => {
+    it('sends on Enter in a DM even though the text contains an @ token', () => {
       const onSend = vi.fn()
       renderWithProviders(<MessageInput {...defaultProps} onSend={onSend} />)
       const editor = document.querySelector('.message-input') as HTMLElement
