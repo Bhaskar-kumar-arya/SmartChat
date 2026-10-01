@@ -54,8 +54,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # TODO(G-03): add the lint-ratchet step here (after typecheck, before
-      # tests). It does not exist yet; do not add until G-03 lands.
+      - name: Lint ratchet
+        run: npm run lint:ratchet
 
       - name: Unit tests
         run: npx vitest run
