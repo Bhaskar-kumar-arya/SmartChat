@@ -31,7 +31,7 @@ export default defineConfig(
         {
           patterns: [
             {
-              group: ['**/utils', '!@electron-toolkit/utils'],
+              regex: '^(?!@electron-toolkit/utils$)(.*/)?utils(\\.[cm]?[jt]s)?$',
               message:
                 'Do not import from the main utils barrel file. Import from specific utility files instead (e.g. jidUtils, messageUtils, communityUtils).'
             }
