@@ -114,7 +114,7 @@ export const TextMessage = ({ text, mentions = {} }: TextMessageProps) => {
     <div className="markdown-body">
       <ReactMarkdown
         urlTransform={sanitizeUrl}
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
         rehypePlugins={[rehypeKatex]}
         components={{
           a: ({ href, children }: any) => {

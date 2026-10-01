@@ -72,7 +72,7 @@ describe('TextMessage', () => {
     expect(container.querySelector('.emoji-inline-wrapper')).toBeInTheDocument()
   })
 
-  it.fails('does not treat single $ as inline math (B-UICHAT-08)', () => {
+  it('does not treat single $ as inline math (B-UICHAT-08)', () => {
     const { container } = render(<TextMessage text="it's $5 now and $10 later" />)
     expect(container.querySelector('.katex')).toBeNull()
     expect(container.textContent).toContain("it's $5 now and $10 later")
