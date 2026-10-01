@@ -93,3 +93,47 @@ describe('useLocalPrismaAuthState creds bootstrap (S10-03)', () => {
     expect(state.creds.registered).toBe(false)
   })
 })
+
+/**
+ * B-WA-05: saveCreds (backed by writeData) used to catch+log every write error,
+ * so a failed post-pairing creds write was invisible and the next launch showed
+ * a QR / stale creds. It must retry transient failures, then throw.
+ */
+describe('useLocalPrismaAuthState saveCreds (B-WA-05)', () => {
+  function makeCredsPrisma(
+    upsert: () => Promise<unknown>
+  ): Parameters<typeof useLocalPrismaAuthState>[0] & {
+    authState: { upsert: ReturnType<typeof vi.fn> }
+  } {
+    return {
+      authState: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn(upsert),
+        deleteMany: vi.fn()
+      },
+      $transaction: vi.fn()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+  }
+
+  it('retries a transient creds write failure and succeeds', async () => {
+    let calls = 0
+    const prisma = makeCredsPrisma(() => {
+      calls += 1
+      return calls < 3 ? Promise.reject(new Error('database is locked')) : Promise.resolve({})
+    })
+    const { saveCreds } = await useLocalPrismaAuthState(prisma)
+
+    await saveCreds()
+
+    expect(prisma.authState.upsert).toHaveBeenCalledTimes(3)
+  })
+
+  it('throws (does not swallow) when every creds write attempt fails', async () => {
+    const prisma = makeCredsPrisma(() => Promise.reject(new Error('disk I/O error')))
+    const { saveCreds } = await useLocalPrismaAuthState(prisma)
+
+    await expect(saveCreds()).rejects.toThrow(/creds persist failed after 3 attempts/)
+    expect(prisma.authState.upsert).toHaveBeenCalledTimes(3)
+  })
+})

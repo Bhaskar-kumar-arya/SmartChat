@@ -159,7 +159,13 @@ export class WorkerConnectionManager {
       prisma
     })
 
-    this.sock.ev.on('creds.update', saveCreds)
+    // saveCreds now throws after retries (B-WA-05); nothing awaits this handler,
+    // so catch here to avoid an unhandled rejection in the worker.
+    this.sock.ev.on('creds.update', (): void => {
+      saveCreds().catch((err): void => {
+        console.error('[WhatsAppWorker] saveCreds failed after retries:', err)
+      })
+    })
 
     // Register event dispatcher to route events
     this.eventDispatcher!.register(this.sock)
@@ -214,8 +220,17 @@ export class WorkerConnectionManager {
   }
 
   private async wipeAllData(prismaClient: PrismaClient, userPath: string): Promise<void> {
-    const tables = await prismaClient.$queryRawUnsafe<{ name: string }[]>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_prisma_migrations'"
+    const allTables = await prismaClient.$queryRawUnsafe<{ name: string; sql?: string | null }[]>(
+      "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_prisma_migrations'"
+    )
+    // B-WA-02: skip virtual tables (e.g. vec0's `vec_messages`) and their shadow
+    // tables (`<virtual>_*`). The worker never loads sqlite-vec, so deleting from
+    // a vec0 table throws `no such module: vec0` and rolls the whole wipe back.
+    const virtualNames = allTables
+      .filter((t) => /^\s*CREATE\s+VIRTUAL/i.test(t.sql ?? ''))
+      .map((t) => t.name)
+    const tables = allTables.filter(
+      (t) => !virtualNames.some((v) => t.name === v || t.name.startsWith(`${v}_`))
     )
 
     // FK enforcement can only be toggled outside a transaction (PRAGMA is a

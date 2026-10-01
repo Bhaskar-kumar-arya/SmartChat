@@ -45,16 +45,36 @@ export const useLocalPrismaAuthState = async (
   };
 
   const writeData = async (data: unknown, id: string): Promise<void> => {
-    try {
-      const serialized = JSON.stringify(data, BufferJSON.replacer);
-      await prisma.authState.upsert({
-        where: { id },
-        update: { data: serialized },
-        create: { id, data: serialized },
-      });
-    } catch (error: unknown) {
-      console.error("[LocalAuthState] Error writing auth state:", error);
+    // B-WA-05: retry transient failures (lock contention with main), then throw —
+    // a swallowed creds write leaves stale creds on disk and the next launch
+    // shows a QR / dead session.
+    const serialized = JSON.stringify(data, BufferJSON.replacer);
+    const MAX_ATTEMPTS = 3;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        await prisma.authState.upsert({
+          where: { id },
+          update: { data: serialized },
+          create: { id, data: serialized },
+        });
+        return;
+      } catch (error: unknown) {
+        lastErr = error;
+        console.error(
+          `[LocalAuthState] Error writing auth state '${id}' (attempt ${attempt}/${MAX_ATTEMPTS}):`,
+          error
+        );
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** (attempt - 1)));
+        }
+      }
     }
+    throw new Error(
+      `[LocalAuthState] ${id} persist failed after ${MAX_ATTEMPTS} attempts: ${
+        (lastErr as Error)?.message || String(lastErr)
+      }`
+    );
   };
 
   const creds: AuthenticationCreds =
