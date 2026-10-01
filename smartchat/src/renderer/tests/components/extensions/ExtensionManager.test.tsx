@@ -107,8 +107,9 @@ describe('ExtensionManager', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const apiService = createMockApiService({
       extensionList: vi.fn().mockResolvedValue(mockExtensions),
-      extensionReload: vi.fn().mockRejectedValue(new Error('reload boom')),
-      extensionUninstall: vi.fn().mockRejectedValue(new Error('uninstall boom'))
+      // Plain functions, not vi.fn(): a spy would mark the rejection as handled.
+      extensionReload: () => Promise.reject(new Error('reload boom')),
+      extensionUninstall: () => Promise.reject(new Error('uninstall boom'))
     })
     renderWithProviders(<ExtensionManager isOpen={true} onClose={vi.fn()} />, { apiService })
     await screen.findByText('Weather Bot')
