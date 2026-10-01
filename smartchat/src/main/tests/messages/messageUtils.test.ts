@@ -5,8 +5,11 @@ import {
   preserveContextInfo,
   preserveLocalUri,
   isIndexableMessageType,
-  normalizeMuteExpirationSeconds
+  normalizeMuteExpirationSeconds,
+  applyEdit,
+  mergeContextInfo
 } from '../../utils/messageUtils'
+import { patchEditedText } from '../../services/messages/patchEditedText'
 
 describe('messageUtils Unit Tests', () => {
   describe('normalizeMuteExpirationSeconds (P2-S4-02)', () => {
@@ -166,5 +169,71 @@ describe('messageUtils Unit Tests', () => {
 
       expect(result.imageMessage?.localURI).toBe('file:///local/cached.jpg')
     })
+  })
+})
+
+describe('edit helpers (F-MSG-1)', () => {
+  const quote = { stanzaId: 's1', quotedMessage: { conversation: 'q' } }
+  const mci = { deviceListMetadata: { senderKeyHash: 'h' } }
+
+  it('mergeContextInfo: null when both empty, incoming wins otherwise', () => {
+    expect(mergeContextInfo(null, undefined)).toBeNull()
+    expect(mergeContextInfo({ a: 1, b: 1 }, { b: 2 })).toEqual({ a: 1, b: 2 })
+  })
+
+  it('applyEdit: unwraps the editedMessage echo and keeps quote + messageContextInfo', () => {
+    const existing = { extendedTextMessage: { text: 'old', contextInfo: quote }, messageContextInfo: mci }
+    const r = applyEdit(existing, { editedMessage: { message: { conversation: 'new' } } }, 'new')
+    expect(r.messageType).toBe('extendedTextMessage')
+    expect(r.textContent).toBe('new')
+    expect(r.content).toEqual({ extendedTextMessage: { text: 'new', contextInfo: quote }, messageContextInfo: mci })
+  })
+
+  it('applyEdit: plain edit without any context stays a conversation', () => {
+    const r = applyEdit({ conversation: 'old' }, { conversation: 'new' }, 'new')
+    expect(r).toEqual({ content: { conversation: 'new' }, messageType: 'conversation', textContent: 'new' })
+  })
+
+  it('applyEdit: caption edit patches the existing media message and its quote', () => {
+    const existing = { imageMessage: { mediaKey: 'K', caption: 'old', contextInfo: quote } }
+    const r = applyEdit(existing, { imageMessage: { caption: 'new' } }, 'new')
+    expect(r.messageType).toBe('imageMessage')
+    expect(r.content).toEqual({ imageMessage: { mediaKey: 'K', caption: 'new', contextInfo: quote } })
+  })
+
+  it('applyEdit does not mutate its inputs', () => {
+    const existing = { extendedTextMessage: { text: 'old', contextInfo: quote } }
+    const edited = { editedMessage: { message: { conversation: 'new' } } }
+    const before = JSON.stringify([existing, edited])
+    applyEdit(existing, edited, 'new')
+    expect(JSON.stringify([existing, edited])).toBe(before)
+  })
+
+  it('preserveContextInfo: echo with partial contextInfo keeps the quote and text', () => {
+    const existing = JSON.stringify({ extendedTextMessage: { text: 'old', contextInfo: quote }, messageContextInfo: mci })
+    const echo = JSON.stringify({
+      editedMessage: { message: { extendedTextMessage: { text: 'new', contextInfo: { expiration: 5 } } } }
+    })
+    const out = JSON.parse(preserveContextInfo(existing, echo))
+    expect(out.extendedTextMessage.text).toBe('new')
+    expect(out.extendedTextMessage.contextInfo).toEqual({ ...quote, expiration: 5 })
+    expect(out.messageContextInfo).toEqual(mci)
+    expect(out.editedMessage).toBeUndefined()
+  })
+
+  it('unwrapMessage does not mutate the input when copying outer contextInfo', () => {
+    const msg = {
+      extendedTextMessage: { contextInfo: quote },
+      ephemeralMessage: { message: { extendedTextMessage: { text: 'x' } } }
+    }
+    const before = JSON.stringify(msg)
+    const out = unwrapMessage(msg)
+    expect(JSON.stringify(msg)).toBe(before)
+    expect(out.extendedTextMessage?.contextInfo).toEqual(quote)
+  })
+
+  it('patchEditedText rewrites text in place', () => {
+    expect(JSON.parse(patchEditedText('{"conversation":"a"}', 'b'))).toEqual({ conversation: 'b' })
+    expect(JSON.parse(patchEditedText('{"imageMessage":{"caption":"a"}}', 'b'))).toEqual({ imageMessage: { caption: 'b' } })
   })
 })
