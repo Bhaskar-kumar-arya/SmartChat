@@ -283,4 +283,59 @@ describe('panelIpc', () => {
     expect(ipcMain.removeListener).toHaveBeenCalledWith('kernel:panel:events:unsubscribe', expect.any(Function))
     expect(ipcMain.removeListener).toHaveBeenCalledWith('kernel:panel:closed', expect.any(Function))
   })
+
+  describe('panel event delivery policy', () => {
+    async function subscribeScoped(permissions: any) {
+      let capturedHandler: Function | undefined
+      vi.mocked(mockEventBus.on).mockImplementation((_evt: any, fn: any): any => {
+        capturedHandler = fn
+        return mockEventBus
+      })
+      const send = vi.fn()
+      registerPanelIpcHandlers(mockPanelHost, mockRouter, mockEventBus, permissions)
+      await (ipcMain as unknown as { _invokeHandle: Function })._invokeHandle(
+        'kernel:panel:events:subscribe',
+        { sender: { isDestroyed: () => false, send } },
+        { panelId: 'panel-1', eventName: 'message:incoming' }
+      )
+      return { handler: capturedHandler!, send }
+    }
+
+    it.fails('B-KRN-06: drops events for chats outside the plugin resource scope', async () => {
+      const permissions = {
+        hasCapability: vi.fn().mockReturnValue(true),
+        isResourceAllowed: vi.fn((_p: string, _c: string, jid: string) => jid === 'allowed@s.whatsapp.net')
+      }
+      const { handler, send } = await subscribeScoped(permissions)
+
+      handler({ chatJid: 'secret@s.whatsapp.net', textContent: 'x' })
+      expect(send).not.toHaveBeenCalled()
+
+      handler({ chatJid: 'allowed@s.whatsapp.net', textContent: 'x' })
+      expect(send).toHaveBeenCalledTimes(1)
+    })
+
+    it.fails('B-KRN-06: sanitizes the payload (no sock, functions; bigint to string)', async () => {
+      const permissions = { hasCapability: vi.fn().mockReturnValue(true), isResourceAllowed: vi.fn().mockReturnValue(true) }
+      const { handler, send } = await subscribeScoped(permissions)
+
+      handler({ id: 'm', sock: { secret: 1 }, fn: () => 1, n: BigInt(5) })
+      expect(send).toHaveBeenCalledWith('smartchat:event', {
+        event: 'message:incoming',
+        payload: { id: 'm', n: '5' }
+      })
+    })
+
+    it.fails('B-KRN-10: revoking the capability stops delivery to a live panel subscription', async () => {
+      const permissions = { hasCapability: vi.fn().mockReturnValue(true), isResourceAllowed: vi.fn().mockReturnValue(true) }
+      const { handler, send } = await subscribeScoped(permissions)
+
+      handler({ chatJid: 'a@s.whatsapp.net' })
+      expect(send).toHaveBeenCalledTimes(1)
+
+      permissions.hasCapability.mockReturnValue(false)
+      handler({ chatJid: 'a@s.whatsapp.net' })
+      expect(send).toHaveBeenCalledTimes(1)
+    })
+  })
 })

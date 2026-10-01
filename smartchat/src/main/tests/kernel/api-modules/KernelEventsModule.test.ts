@@ -371,4 +371,24 @@ describe('KernelEventsModule', () => {
       }
     })
   })
+  it.fails('B-KRN-10: revoking the capability stops delivery on a live subscription', async () => {
+    const mockChannel = { sendToPlugin: vi.fn(), sendResponseToPlugin: vi.fn(), onPluginRequest: vi.fn(), destroy: vi.fn() }
+    const eventsModule = new KernelEventsModule(mockPermissions, mockBus, vi.fn().mockReturnValue(mockChannel))
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    let busHandler: ((data: any) => Promise<void>) | null = null
+    vi.mocked(mockBus.on).mockImplementation((evt, fn) => {
+      if (evt === 'message:incoming') busHandler = fn as any
+      return mockBus
+    })
+    await eventsModule.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+
+    await busHandler!({ chatJid: 'a@s.whatsapp.net', textContent: 'hi' })
+    expect(mockChannel.sendToPlugin).toHaveBeenCalledTimes(1)
+
+    // User unticks the capability in Settings.
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(false)
+    await busHandler!({ chatJid: 'a@s.whatsapp.net', textContent: 'again' })
+    expect(mockChannel.sendToPlugin).toHaveBeenCalledTimes(1)
+  })
 })
