@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 import { IdentityReconciliationService } from '../../services/contacts/IdentityReconciliationService'
+import { IIdentityRepository } from '../../services/contacts/IIdentityRepository'
+import { ILidMapRepository } from '../../services/contacts/ILidMapRepository'
 import { IContactMutationService } from '../../services/contacts/IContactService'
 
 describe('IdentityReconciliationService', () => {
@@ -8,7 +10,7 @@ describe('IdentityReconciliationService', () => {
   let lidMapRepo: { findLidMaps: Mock }
   let contactService: import('vitest').Mocked<IContactMutationService>
 
-  const stub = (id: number, pushName: string, lid: string) => ({
+  const stub = (id: number, pushName: string, lid: string): Record<string, unknown> => ({
     id, pushName, displayName: null, verifiedName: null, profilePictureUrl: null, aliases: [{ jid: lid, type: 'LID' }]
   })
 
@@ -28,7 +30,11 @@ describe('IdentityReconciliationService', () => {
       registerMe: vi.fn(),
     } as any
 
-    service = new IdentityReconciliationService(identityRepo as any, lidMapRepo as any, contactService)
+    service = new IdentityReconciliationService(
+      identityRepo as unknown as IIdentityRepository,
+      lidMapRepo as unknown as ILidMapRepository,
+      contactService
+    )
   })
 
   it('deduplicateIdentities does nothing if no stubs are found', async () => {

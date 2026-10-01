@@ -103,7 +103,7 @@ describe('identity linking + merging (real DB)', () => {
      * B-DATA-01: the stub that held the LID alias is replaced by the PN identity but its
      * messages/reactions/memberships stay behind on an alias-less identity (permanent split).
      */
-    it.fails('B-DATA-01: migrates the stub rows onto the PN identity and removes the stub', async () => {
+    it('B-DATA-01: migrates the stub rows onto the PN identity and removes the stub', async () => {
       const { identity: pnIdentity, pn } = await makeContact(prisma)
       const stub = await makeStub('Stubby')
       const chat = await makeChat(prisma, { type: 'GROUP', jid: groupJid() })
@@ -126,7 +126,7 @@ describe('identity linking + merging (real DB)', () => {
      * Smoke 2026-10-01 (a): a burst of lid-mapping.update for one PN does find-then-create
      * and the loser hits `Unique constraint failed (phoneNumber)` (P2002).
      */
-    it.fails('a burst of links for the same new PN does not throw P2002', async () => {
+    it('a burst of links for the same new PN does not throw P2002', async () => {
       const pn = pnJid()
       const results = await Promise.allSettled([
         linker.linkLidAndPn(lidJid(), pn, 'test'),

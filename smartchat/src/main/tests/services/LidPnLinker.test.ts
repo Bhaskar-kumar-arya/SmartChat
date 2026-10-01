@@ -19,6 +19,7 @@ describe('LidPnLinker', () => {
       updateIdentity: vi.fn(),
       createIdentity: vi.fn(),
       findMeIdentity: vi.fn(),
+      mergeIdentityInto: vi.fn().mockResolvedValue(undefined)
     } as any
 
     aliasRepo = {
@@ -103,19 +104,35 @@ describe('LidPnLinker', () => {
     expect(lidMapRepo.upsertLidMap).not.toHaveBeenCalled()
   })
 
-  it('should delete orphan lid identity if it has no references', async () => {
+  it('B-DATA-01: merges a LID-only stub orphan (rows follow) into the canonical identity', async () => {
     aliasRepo.findIdentityAlias.mockImplementation(async (jid) => {
-      if (jid === '123@lid') return { jid, type: 'LID', identityId: 40 } as any // old identity
+      if (jid === '123@lid') return { jid, type: 'LID', identityId: 40 } as never // old identity
       return null
     })
-    identityRepo.findIdentityByPhoneNumber.mockResolvedValue({ id: 50 } as any) // new canonical identity
-    
-    identityRepo.countIdentityReferences.mockResolvedValue({
-      aliases: 0, messages: 0, members: 0, reactions: 0
-    } as any)
+    identityRepo.findIdentityByPhoneNumber.mockResolvedValue({ id: 50 } as never) // new canonical identity
+    identityRepo.findIdentityById.mockResolvedValue({ id: 40, phoneNumber: null } as never)
 
     await linker.linkLidAndPn('123@lid', '456@s.whatsapp.net', 'test')
 
+    expect(identityRepo.mergeIdentityInto).toHaveBeenCalledWith(40, 50)
+    expect(aliasRepo.upsertIdentityAlias).toHaveBeenCalledWith('123@lid', 'LID', 50)
+    expect(identityRepo.deleteIdentity).not.toHaveBeenCalled()
+  })
+
+  it('should delete a non-stub orphan identity only if it has no references', async () => {
+    aliasRepo.findIdentityAlias.mockImplementation(async (jid) => {
+      if (jid === '123@lid') return { jid, type: 'LID', identityId: 40 } as never
+      return null
+    })
+    identityRepo.findIdentityByPhoneNumber.mockResolvedValue({ id: 50 } as never)
+    identityRepo.findIdentityById.mockResolvedValue({ id: 40, phoneNumber: '999@s.whatsapp.net' } as never)
+    identityRepo.countIdentityReferences.mockResolvedValue({
+      aliases: 0, messages: 0, members: 0, reactions: 0
+    } as never)
+
+    await linker.linkLidAndPn('123@lid', '456@s.whatsapp.net', 'test')
+
+    expect(identityRepo.mergeIdentityInto).not.toHaveBeenCalled()
     expect(aliasRepo.upsertIdentityAlias).toHaveBeenCalledWith('123@lid', 'LID', 50)
     expect(identityRepo.countIdentityReferences).toHaveBeenCalledWith(40)
     expect(identityRepo.deleteIdentity).toHaveBeenCalledWith(40)
