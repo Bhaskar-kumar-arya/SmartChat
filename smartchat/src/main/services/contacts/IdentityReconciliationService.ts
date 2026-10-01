@@ -1,10 +1,12 @@
-import { PrismaClient } from '@prisma/client'
+import { IIdentityRepository } from './IIdentityRepository'
+import { ILidMapRepository } from './ILidMapRepository'
 import { IContactMutationService } from './IContactService'
 import { IIdentityReconciliationService } from './IIdentityReconciliationService'
 
 export class IdentityReconciliationService implements IIdentityReconciliationService {
   constructor(
-    private prisma: PrismaClient,
+    private readonly identityRepository: IIdentityRepository,
+    private readonly lidMapRepository: ILidMapRepository,
     private contactService: IContactMutationService
   ) {}
 
@@ -19,14 +21,7 @@ export class IdentityReconciliationService implements IIdentityReconciliationSer
     let skipped = 0
 
     // Find all LID-only stubs: no phoneNumber, at least one LID alias, non-trivial pushName
-    const stubs = await this.prisma.identity.findMany({
-      where: {
-        phoneNumber: null,
-        pushName: { not: null },
-        aliases: { some: { type: 'LID' } }
-      },
-      include: { aliases: true }
-    })
+    const stubs = await this.identityRepository.findLidStubsWithPushName()
 
     if (stubs.length === 0) {
       return { merged, skipped }
@@ -56,18 +51,13 @@ export class IdentityReconciliationService implements IIdentityReconciliationSer
       new Set(stubs.flatMap((s) => s.aliases.filter((a) => a.type === 'LID').map((a) => a.jid)))
     )
     const lidMapRows = stubLidJids.length
-      ? await this.prisma.lidMap.findMany({ where: { lid: { in: stubLidJids } } })
+      ? await this.lidMapRepository.findLidMaps(stubLidJids)
       : []
     const lidToPn = new Map(lidMapRows.map((r) => [r.lid, r.pn]))
     const isDistinctivePushName = (name: string): boolean => /\s/.test(name) && name.trim().length >= 4
 
     // Find all candidate PN identities with matching pushNames in bulk
-    const allCandidates = await this.prisma.identity.findMany({
-      where: {
-        phoneNumber: { not: null },
-        pushName: { in: pushNames }
-      }
-    })
+    const allCandidates = await this.identityRepository.findPnIdentitiesByPushNames(pushNames)
 
     // Group candidates by pushName (trimmed matches)
     const candidatesMap = new Map<string, typeof allCandidates>()
@@ -115,76 +105,9 @@ export class IdentityReconciliationService implements IIdentityReconciliationSer
       }
 
       try {
-        // Steps 1-6 run in a single interactive transaction so a mid-merge
-        // failure (lock contention, FK/unique conflict, or a concurrent
-        // history-sync write re-adding a child row) rolls back to the
-        // pre-merge state instead of leaving a dangling half-merged stub.
-        await this.prisma.$transaction(async (tx) => {
-          // 1. Re-point all LID aliases from stub → keep
-          await tx.identityAlias.updateMany({
-            where: { identityId: stubId },
-            data: { identityId: keepId }
-          })
-
-          // 2. Re-point messages
-          await tx.message.updateMany({
-            where: { senderId: stubId },
-            data: { senderId: keepId }
-          })
-
-          // 3. Merge ChatMember rows — handle composite PK conflicts
-          const stubMemberships = await tx.chatMember.findMany({ where: { identityId: stubId } })
-          for (const m of stubMemberships) {
-            const conflict = await tx.chatMember.findUnique({
-              where: { chatJid_identityId: { chatJid: m.chatJid, identityId: keepId } }
-            })
-            if (conflict) {
-              await tx.chatMember.delete({
-                where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } }
-              })
-            } else {
-              await tx.chatMember.update({
-                where: { chatJid_identityId: { chatJid: m.chatJid, identityId: stubId } },
-                data: { identityId: keepId }
-              })
-            }
-          }
-
-          // 4. Merge Reactions — handle composite PK conflicts
-          const stubReactions = await tx.reaction.findMany({ where: { senderId: stubId } })
-          for (const r of stubReactions) {
-            const conflict = await tx.reaction.findUnique({
-              where: { messageId_senderId: { messageId: r.messageId, senderId: keepId } }
-            })
-            if (conflict) {
-              await tx.reaction.delete({
-                where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } }
-              })
-            } else {
-              await tx.reaction.update({
-                where: { messageId_senderId: { messageId: r.messageId, senderId: stubId } },
-                data: { senderId: keepId }
-              })
-            }
-          }
-
-          // 5. Enrich the survivor with any unique data the stub held
-          const enrichUpdate: {
-            displayName?: string | null
-            verifiedName?: string | null
-            profilePictureUrl?: string | null
-          } = {}
-          if (!keep.displayName && stub.displayName) enrichUpdate.displayName = stub.displayName
-          if (!keep.verifiedName && stub.verifiedName) enrichUpdate.verifiedName = stub.verifiedName
-          if (!keep.profilePictureUrl && stub.profilePictureUrl)
-            enrichUpdate.profilePictureUrl = stub.profilePictureUrl
-          if (Object.keys(enrichUpdate).length > 0) {
-            await tx.identity.update({ where: { id: keepId }, data: enrichUpdate })
-          }
-
-          // 6. Delete the now-empty stub
-          await tx.identity.delete({ where: { id: stubId } })
-        })
+        // Single shared merge transaction (IdentityRepository.mergeIdentityInto):
+        // a mid-merge failure rolls back instead of leaving a half-merged stub.
+        await this.identityRepository.mergeIdentityInto(stubId, keepId)
 
         merged++
         console.log(`[deduplicateIdentities] Merged stub id=${stubId} ("${pushName}") → id=${keepId} (${keep.phoneNumber})`)

@@ -41,7 +41,7 @@ describe('identity linking + merging (real DB)', () => {
     await resetDb(prisma)
     identityRepo = new IdentityRepository(prisma)
     linker = new LidPnLinker(identityRepo, new AliasRepository(prisma), new LidMapRepository(prisma))
-    reconciliation = new IdentityReconciliationService(prisma, {} as IContactMutationService)
+    reconciliation = new IdentityReconciliationService(identityRepo, new LidMapRepository(prisma), {} as IContactMutationService)
   })
 
   /** A LID-only stub: no phoneNumber, one LID alias, optional pushName. */

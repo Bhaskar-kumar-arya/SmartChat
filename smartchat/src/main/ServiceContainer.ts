@@ -204,7 +204,7 @@ export function createServices(
     contactCache,
     strategies
   )
-  const identityReconciliationService = new IdentityReconciliationService(prisma, contactService)
+  const identityReconciliationService = new IdentityReconciliationService(identityRepository, lidMapRepository, contactService)
   const groupMembershipService = new GroupMembershipService(chatMemberRepository, contactService)
   const embeddingWorkerManager = new EmbeddingWorkerManager({
     workerPath: path.join(__dirname, 'embedding.worker.js'),

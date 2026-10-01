@@ -34,6 +34,10 @@ export interface IIdentityQueryRepository {
   findIdentityByPhoneNumber(phoneNumber: string): Promise<Identity | null>
   findIdentityById(id: number): Promise<Identity | null>
   countIdentityReferences(id: number): Promise<ReferenceCounts>
+  /** LID-only stubs (no phoneNumber, >=1 LID alias) that carry a pushName; aliases included. */
+  findLidStubsWithPushName(): Promise<IdentityWithAliases[]>
+  /** Identities that have a phoneNumber and a pushName in `pushNames`. */
+  findPnIdentitiesByPushNames(pushNames: string[]): Promise<Identity[]>
   searchIdentities(query: string, take?: number): Promise<IdentityWithAliases[]>
 }
 
