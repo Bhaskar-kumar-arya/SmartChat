@@ -4,6 +4,7 @@ import { IKernelAPIRouter } from '../IKernelAPIRouter'
 import { IWAEventBus } from '../../services/whatsapp/IWAEventBus'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { KernelError } from '../api-modules/KernelErrors'
+import { EventDeliveryPolicy } from '../events/EventDeliveryPolicy'
 
 function serializeError(err: unknown): { code: string; message: string } {
   if (err instanceof KernelError) {
@@ -64,14 +65,9 @@ export function registerPanelIpcHandlers(
     return getBus ?? null
   }
 
-  const hasEventPermission = (pluginId: string, eventName: string): boolean => {
-    // No permission store wired (tests/legacy) → don't gate.
-    if (!permissions) return true
-    return (
-      permissions.hasCapability(pluginId, `events:${eventName}`) ||
-      permissions.hasCapability(pluginId, 'events:*')
-    )
-  }
+  // Same policy the kernel events module uses: subscribe gate, delivery-time
+  // capability re-check, resource-scope filter and sanitising. (B-KRN-06/10)
+  const policy = new EventDeliveryPolicy(permissions)
 
   const removeSubscription = (subKey: string): void => {
     const sub = panelSubscriptions.get(subKey)
@@ -131,7 +127,8 @@ export function registerPanelIpcHandlers(
 
     // Same permission gate the kernel events module applies (S9-02): a panel
     // must not be able to subscribe to WhatsApp bus events it never declared.
-    if (!hasEventPermission(pluginId, eventName)) {
+    const authKey = policy.resolveAuthKey(pluginId, eventName)
+    if (!authKey) {
       return {
         ok: false,
         error: {
@@ -144,9 +141,11 @@ export function registerPanelIpcHandlers(
     const subKey = `${panelId}:${eventName}`
     removeSubscription(subKey)
 
-    const handler = (payload: unknown) => {
+    const handler = (data: unknown) => {
+      const decision = policy.decide(pluginId, eventName, authKey, data)
+      if (!decision.deliver) return
       if (!event.sender.isDestroyed()) {
-        event.sender.send('smartchat:event', { event: eventName, payload })
+        event.sender.send('smartchat:event', { event: eventName, payload: decision.payload })
       }
     }
 

@@ -179,7 +179,8 @@ export class KernelMessagesModule extends BaseKernelModule {
       case 'delete': {
         const { jid, messageId } = payload as { jid: string; messageId: string }
         this.requireCapability(pluginId, 'messages:delete')
-        this.requireResourceScope(pluginId, 'messages:delete', jid)
+        // Scope on the message's real chat, not the caller-supplied jid. (B-KRN-07)
+        await this.requireMessageScope(pluginId, 'messages:delete', messageId, jid)
         const sock = this.getSocketOrThrow()
         return await this.messageActionService.deleteMessage(sock, messageId, jid)
       }
@@ -192,7 +193,8 @@ export class KernelMessagesModule extends BaseKernelModule {
           reaction?: string
         }
         this.requireCapability(pluginId, 'messages:send')
-        this.requireResourceScope(pluginId, 'messages:send', jid)
+        // Scope on the message's real chat, not the caller-supplied jid. (B-KRN-07)
+        await this.requireMessageScope(pluginId, 'messages:send', messageId, jid)
         const sock = this.getSocketOrThrow()
         const targetReaction = emoji || reaction || ''
         return await this.messageActionService.reactToMessage(sock, messageId, targetReaction, jid)

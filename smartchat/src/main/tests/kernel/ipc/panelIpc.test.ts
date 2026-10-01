@@ -301,7 +301,7 @@ describe('panelIpc', () => {
       return { handler: capturedHandler!, send }
     }
 
-    it.fails('B-KRN-06: drops events for chats outside the plugin resource scope', async () => {
+    it('B-KRN-06: drops events for chats outside the plugin resource scope', async () => {
       const permissions = {
         hasCapability: vi.fn().mockReturnValue(true),
         isResourceAllowed: vi.fn((_p: string, _c: string, jid: string) => jid === 'allowed@s.whatsapp.net')
@@ -315,7 +315,7 @@ describe('panelIpc', () => {
       expect(send).toHaveBeenCalledTimes(1)
     })
 
-    it.fails('B-KRN-06: sanitizes the payload (no sock, functions; bigint to string)', async () => {
+    it('B-KRN-06: sanitizes the payload (no sock, functions; bigint to string)', async () => {
       const permissions = { hasCapability: vi.fn().mockReturnValue(true), isResourceAllowed: vi.fn().mockReturnValue(true) }
       const { handler, send } = await subscribeScoped(permissions)
 
@@ -326,7 +326,7 @@ describe('panelIpc', () => {
       })
     })
 
-    it.fails('B-KRN-10: revoking the capability stops delivery to a live panel subscription', async () => {
+    it('B-KRN-10: revoking the capability stops delivery to a live panel subscription', async () => {
       const permissions = { hasCapability: vi.fn().mockReturnValue(true), isResourceAllowed: vi.fn().mockReturnValue(true) }
       const { handler, send } = await subscribeScoped(permissions)
 

@@ -371,7 +371,7 @@ describe('KernelEventsModule', () => {
       }
     })
   })
-  it.fails('B-KRN-10: revoking the capability stops delivery on a live subscription', async () => {
+  it('B-KRN-10: revoking the capability stops delivery on a live subscription', async () => {
     const mockChannel = { sendToPlugin: vi.fn(), sendResponseToPlugin: vi.fn(), onPluginRequest: vi.fn(), destroy: vi.fn() }
     const eventsModule = new KernelEventsModule(mockPermissions, mockBus, vi.fn().mockReturnValue(mockChannel))
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
