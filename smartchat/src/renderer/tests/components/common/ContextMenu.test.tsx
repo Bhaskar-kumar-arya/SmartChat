@@ -65,16 +65,14 @@ describe('ContextMenu', () => {
       />
     )
 
-    const moreItem = screen.getByText('More').closest('li')
+    const moreItem = screen.getByText('More').closest('li') as HTMLElement
     expect(moreItem).toBeInTheDocument()
 
-    if (moreItem) {
-      fireEvent.mouseEnter(moreItem)
-      expect(await screen.findByText('Sub Item 1')).toBeInTheDocument()
+    fireEvent.mouseEnter(moreItem)
+    expect(await screen.findByText('Sub Item 1')).toBeInTheDocument()
 
-      fireEvent.click(screen.getByText('Sub Item 1'))
-      expect(handleSubAction).toHaveBeenCalledTimes(1)
-      expect(handleClose).toHaveBeenCalledTimes(1)
-    }
+    fireEvent.click(screen.getByText('Sub Item 1'))
+    expect(handleSubAction).toHaveBeenCalledTimes(1)
+    expect(handleClose).toHaveBeenCalledTimes(1)
   })
 })

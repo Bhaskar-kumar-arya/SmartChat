@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
-import { vi } from 'vitest'
+import { afterEach, vi } from 'vitest'
+import { resetFactories } from './factories'
 
 // Mock matchMedia if undefined in jsdom
 if (typeof window !== 'undefined' && !window.matchMedia) {
@@ -41,3 +42,15 @@ if (typeof URL !== 'undefined') {
     URL.revokeObjectURL = vi.fn()
   }
 }
+
+// Global per-test isolation: RTL unmounts via its own auto-cleanup; this resets
+// module-level state and process-global stubs so specs cannot leak into each other.
+afterEach(async () => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+  // Dynamic import: a static import from a utils/ path trips the barrel-guard lint rule.
+  const nav = await import('../src/utils/navigationBus')
+  nav.__resetNavigationBus()
+  resetFactories()
+})

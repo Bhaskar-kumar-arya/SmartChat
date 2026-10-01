@@ -137,9 +137,10 @@ describe('useAudioRecorder', () => {
     })
 
     // Simulate data available
-    if (ondataavailableCallback) {
-      ondataavailableCallback({ data: new Blob(['chunk1'], { type: 'audio/webm' }) })
-    }
+    expect(ondataavailableCallback).not.toBeNull()
+    act(() => {
+      ondataavailableCallback?.({ data: new Blob(['chunk1'], { type: 'audio/webm' }) })
+    })
 
     act(() => {
       result.current.stopRecording()
@@ -148,6 +149,8 @@ describe('useAudioRecorder', () => {
     expect(result.current.isRecording).toBe(false)
     expect(mockMediaRecorder.stop).toHaveBeenCalled()
     expect(result.current.audioBlob).toBeInstanceOf(Blob)
+    // The chunk fed to ondataavailable must end up in the blob.
+    expect(result.current.audioBlob?.size).toBe('chunk1'.length)
   })
 
   it('should cancel recording and reset state without creating a blob', async () => {

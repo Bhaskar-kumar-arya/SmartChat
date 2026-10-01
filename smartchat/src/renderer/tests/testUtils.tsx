@@ -37,5 +37,7 @@ export function renderWithProviders(
 }
 
 // Re-export everything from @testing-library/react
+export { makeMessage, makeChat } from './factories'
+export type { MockApiService } from './mocks/mockApiService'
 export * from '@testing-library/react'
 export { default as userEvent } from '@testing-library/user-event'

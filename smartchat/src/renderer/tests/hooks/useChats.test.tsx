@@ -4,11 +4,11 @@ import { renderHook, act } from '@testing-library/react'
 import { useChats } from '@renderer/components/chat/hooks/useChats'
 import { APIProvider } from '@renderer/context/APIContext'
 import { createMockApiService } from '../mocks/mockApiService'
+import { makeMessage } from '../factories'
 import { ChatItem, MessageItem } from '@renderer/types/chatTypes'
 
 describe('useChats', () => {
   let mockApi: ReturnType<typeof createMockApiService>
-  let newMessageCallback: ((msg: MessageItem) => void) | null = null
 
   const sampleChats: ChatItem[] = [
     { jid: 'user1@s.whatsapp.net', name: 'Alice', unreadCount: 2, timestamp: '1000', lastMessage: 'Hi', lastMessageTimestamp: '1000' },
@@ -22,16 +22,8 @@ describe('useChats', () => {
   }
 
   beforeEach(() => {
-    newMessageCallback = null
     mockApi = createMockApiService({
       getChats: vi.fn().mockResolvedValue(sampleChats),
-      onNewMessage: vi.fn().mockImplementation((cb) => {
-        newMessageCallback = cb
-        return () => { newMessageCallback = null }
-      }),
-      onChatUpdated: vi.fn().mockReturnValue(() => {}),
-      onMessageEdited: vi.fn().mockReturnValue(() => {}),
-      onMessageStatusUpdated: vi.fn().mockReturnValue(() => {}),
     })
   })
 
@@ -73,20 +65,15 @@ describe('useChats', () => {
     const slowApi = createMockApiService({
       getChats: vi.fn().mockImplementation(() => new Promise((r) => { resolveChats = r })),
       getChat: vi.fn().mockResolvedValue({ jid: 'new@s.whatsapp.net', name: 'New', unreadCount: 0, timestamp: '5000', lastMessage: '', lastMessageTimestamp: '5000' }),
-      onNewMessage: vi.fn().mockImplementation((cb) => { newMessageCallback = cb; return () => {} }),
-      onChatUpdated: vi.fn().mockReturnValue(() => {}),
-      onMessageEdited: vi.fn().mockReturnValue(() => {}),
-      onMessageStatusUpdated: vi.fn().mockReturnValue(() => {}),
     })
 
     const { result } = renderHook(() => useChats(null), { wrapper: createWrapper(slowApi) })
 
     // Event lands before getChats() resolves.
     await act(async () => {
-      newMessageCallback?.({
-        id: 'm1', chatJid: 'new@s.whatsapp.net', participant: null,
-        messageType: 'conversation', textContent: 'hi', timestamp: '5000', fromMe: false,
-      } as MessageItem)
+      slowApi.emit.newMessage(makeMessage({
+        id: 'm1', chatJid: 'new@s.whatsapp.net', textContent: 'hi', timestamp: '5000',
+      }))
       await Promise.resolve()
     })
 
@@ -132,7 +119,7 @@ describe('useChats', () => {
     }
 
     act(() => {
-      if (newMessageCallback) newMessageCallback(incoming)
+      mockApi.emit.newMessage(incoming)
     })
 
     const aliceChat = result.current.allChats.find((c) => c.jid === 'user1@s.whatsapp.net')

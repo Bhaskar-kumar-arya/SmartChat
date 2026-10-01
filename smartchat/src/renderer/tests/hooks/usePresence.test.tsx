@@ -5,11 +5,9 @@ import { usePresence } from '@renderer/hooks/usePresence'
 import { APIProvider } from '@renderer/context/APIContext'
 import { PresenceProvider } from '@renderer/context/PresenceContext'
 import { createMockApiService } from '../mocks/mockApiService'
-import { PresenceUpdate } from '@renderer/types/chatTypes'
 
 describe('usePresence', () => {
   let mockApi: ReturnType<typeof createMockApiService>
-  let presenceCallback: ((update: PresenceUpdate) => void) | null = null
 
   const createWrapper = (api = mockApi) => {
     return ({ children }: { children: React.ReactNode }) => (
@@ -21,13 +19,7 @@ describe('usePresence', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
-    presenceCallback = null
-    mockApi = createMockApiService({
-      onPresenceUpdate: vi.fn().mockImplementation((cb) => {
-        presenceCallback = cb
-        return () => { presenceCallback = null }
-      }),
-    })
+    mockApi = createMockApiService()
   })
 
   afterEach(() => {
@@ -41,9 +33,7 @@ describe('usePresence', () => {
 
     expect(result.current.getActivePresence('user1@s.whatsapp.net')).toBeNull()
 
-    act(() => {
-      if (presenceCallback) {
-        presenceCallback({
+    mockApi.emit.presenceUpdate({
           remoteJid: 'user1@s.whatsapp.net',
           presences: {
             'user1@s.whatsapp.net': {
@@ -52,8 +42,6 @@ describe('usePresence', () => {
             },
           },
         })
-      }
-    })
 
     expect(result.current.getActivePresence('user1@s.whatsapp.net')).toBe('typing...')
   })
@@ -63,9 +51,7 @@ describe('usePresence', () => {
       wrapper: createWrapper(),
     })
 
-    act(() => {
-      if (presenceCallback) {
-        presenceCallback({
+    mockApi.emit.presenceUpdate({
           remoteJid: 'group1@g.us',
           presences: {
             'p1@s.whatsapp.net': {
@@ -75,14 +61,10 @@ describe('usePresence', () => {
             },
           },
         })
-      }
-    })
 
     expect(result.current.getActivePresence('group1@g.us')).toBe('Alice is typing...')
 
-    act(() => {
-      if (presenceCallback) {
-        presenceCallback({
+    mockApi.emit.presenceUpdate({
           remoteJid: 'group1@g.us',
           presences: {
             'p2@s.whatsapp.net': {
@@ -92,8 +74,6 @@ describe('usePresence', () => {
             },
           },
         })
-      }
-    })
 
     expect(result.current.getActivePresence('group1@g.us')).toBe('2 people are typing...')
   })
@@ -105,9 +85,7 @@ describe('usePresence', () => {
 
     const pastTimestamp = Date.now() - 15000
 
-    act(() => {
-      if (presenceCallback) {
-        presenceCallback({
+    mockApi.emit.presenceUpdate({
           remoteJid: 'user1@s.whatsapp.net',
           presences: {
             'user1@s.whatsapp.net': {
@@ -116,8 +94,6 @@ describe('usePresence', () => {
             },
           },
         })
-      }
-    })
 
     // Advance 2 seconds for interval check
     act(() => {
@@ -130,9 +106,7 @@ describe('usePresence', () => {
   it('F3-06: expires stale `available` presence after the TTL', () => {
     const { result } = renderHook(() => usePresence(), { wrapper: createWrapper() })
 
-    act(() => {
-      if (presenceCallback) {
-        presenceCallback({
+    mockApi.emit.presenceUpdate({
           remoteJid: 'user1@s.whatsapp.net',
           presences: {
             'user1@s.whatsapp.net': {
@@ -141,8 +115,6 @@ describe('usePresence', () => {
             },
           },
         })
-      }
-    })
 
     expect(result.current.getActivePresence('user1@s.whatsapp.net')).toBe('online')
 
@@ -154,9 +126,7 @@ describe('usePresence', () => {
   it('F3-07: matches presence by JID identity, not exact string', () => {
     const { result } = renderHook(() => usePresence(), { wrapper: createWrapper() })
 
-    act(() => {
-      if (presenceCallback) {
-        presenceCallback({
+    mockApi.emit.presenceUpdate({
           remoteJid: '12345:3@s.whatsapp.net',
           presences: {
             '12345:3@s.whatsapp.net': {
@@ -165,8 +135,6 @@ describe('usePresence', () => {
             },
           },
         })
-      }
-    })
 
     // Looked up with the device-suffix-free / @lid form.
     expect(result.current.getActivePresence('12345@lid')).toBe('typing...')
