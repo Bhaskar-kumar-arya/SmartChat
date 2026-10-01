@@ -199,7 +199,13 @@ export class KernelBootstrapper {
     const installed = await loader.listInstalled()
     for (const manifest of installed) {
       permissions.registerPluginManifest(manifest.id, manifest.permissions)
-      await host.load(manifest.id)
+      // One bad installed plugin must not abort boot (B-KRN-04). It stays installed
+      // but not loaded, which `extension:list` reports as isLoaded: false.
+      try {
+        await host.load(manifest.id)
+      } catch (err) {
+        console.error(`[KernelBootstrapper] plugin '${manifest.id}' failed to load; continuing boot:`, err)
+      }
     }
 
     const dispose = async () => {
