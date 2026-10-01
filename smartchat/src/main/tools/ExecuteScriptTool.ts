@@ -113,7 +113,10 @@ export class ExecuteScriptTool implements AITool {
 
   description: string = DESCRIPTION_BASE + '(initializing — tool list not yet available)';
 
-  constructor(private readonly toolRegistry: IToolRegistry) {}
+  constructor(
+    private readonly toolRegistry: IToolRegistry,
+    private readonly maxExecutionMs: number = MAX_EXECUTION_MS
+  ) {}
 
   parametersSchema = {
     type: 'object',
@@ -168,8 +171,10 @@ export class ExecuteScriptTool implements AITool {
     // "timed out" script can't still send messages / write to the DB.
     let aborted = false;
 
+    // Null-prototype sandbox: a plain `{}` would link the global to the host
+    // Object.prototype (-> host Function -> host `process`).
     const context = vm.createContext(
-      {},
+      Object.create(null) as vm.Context,
       { codeGeneration: { strings: true, wasm: false } }
     );
 
@@ -211,8 +216,22 @@ export class ExecuteScriptTool implements AITool {
     try {
       const compiled = this.compileScript(wrapped);
       // runInContext returns a Promise (the IIFE result)
-      scriptPromise = compiled.runInContext(context) as Promise<unknown>;
+      // The V8 timeout interrupts synchronous loops that the async race below can't.
+      scriptPromise = compiled.runInContext(context, { timeout: this.maxExecutionMs }) as Promise<unknown>;
     } catch (syntaxErr: unknown) {
+      if ((syntaxErr as { code?: string } | null)?.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') {
+        return {
+          text: JSON.stringify({
+            explanation,
+            success: false,
+            timedOut: true,
+            error: `[ExecuteScriptTool] Script exceeded ${this.maxExecutionMs / 1000}s timeout.`,
+            logs,
+            toolCallCount
+          }, null, 2),
+          citations: ctx?.citationEmitter?.getEntries()
+        };
+      }
       const syntaxErrMsg = syntaxErr instanceof Error ? syntaxErr.message : String(syntaxErr);
       return {
         text: JSON.stringify({
@@ -360,8 +379,8 @@ export class ExecuteScriptTool implements AITool {
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             onTimeout();
-            reject(new Error(`[ExecuteScriptTool] Script exceeded ${MAX_EXECUTION_MS / 1000}s timeout.`));
-          }, MAX_EXECUTION_MS);
+            reject(new Error(`[ExecuteScriptTool] Script exceeded ${this.maxExecutionMs / 1000}s timeout.`));
+          }, this.maxExecutionMs);
         })
       ]);
     } finally {
