@@ -67,7 +67,7 @@ describe('ProfilePicture', () => {
 
   // B-UIAPP-06: a forced refresh that resolves after the component switched to
   // another contact must not paint the old contact's photo or hide the new one.
-  it.fails('ignores a stale refresh result after the jid changes', async () => {
+  it('ignores a stale refresh result after the jid changes', async () => {
     let resolveRefresh: (v: string | null) => void = () => {}
     const mockApi = createMockApiService()
     mockApi.getProfilePicture = vi.fn(
