@@ -1,8 +1,110 @@
-import { vi } from 'vitest'
+import { vi, type Mock } from 'vitest'
+import { act } from '@testing-library/react'
 import { IAPIService } from '@renderer/services/IAPIService'
 
-export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPIService {
-  const defaultMock: IAPIService = {
+// ---------------------------------------------------------------------------
+// Typed event emitters (R-UICHAT-01)
+//
+// Every on* subscription on IAPIService is mocked to register its callback in
+// a per-service registry and return a real unsubscribe. Tests then fire the
+// event through `api.emit.<name>(...)` (or `api.emit.event('onX', ...)`), which
+// calls the registered callbacks inside `act()` so React state flushes.
+// Payload types are derived from IAPIService, so signature drift fails typecheck.
+// ---------------------------------------------------------------------------
+
+type ApiEventName = {
+  [K in keyof Required<IAPIService>]: K extends `on${string}` ? K : never
+}[keyof Required<IAPIService>]
+
+/** Callback parameters of an on* subscription, e.g. [msg: MessageItem]. */
+type EventArgs<K extends ApiEventName> = Required<IAPIService>[K] extends (
+  cb: (...args: infer A) => void
+) => unknown
+  ? A
+  : Required<IAPIService>[K] extends (cb: infer F) => unknown
+    ? F extends (...args: infer A) => void
+      ? A
+      : never
+    : never
+
+type EmitName<K extends string> = K extends `on${infer N}` ? Uncapitalize<N> : never
+
+export type MockApiEmitters = {
+  [K in ApiEventName as EmitName<K>]: (...args: EventArgs<K>) => void
+} & {
+  /** Generic form: `emit.event('onNewMessage', msg)`. */
+  event: <K extends ApiEventName>(name: K, ...args: EventArgs<K>) => void
+  /** Number of live subscribers for an event (to assert unsubscribe on unmount). */
+  listenerCount: (name: ApiEventName) => number
+}
+
+export type MockApiService = IAPIService & { emit: MockApiEmitters }
+
+// Exhaustive on purpose: adding an on* method to IAPIService fails typecheck
+// here until the mock learns about it.
+const EVENT_NAMES: Record<ApiEventName, true> = {
+  onNewMessage: true,
+  onMessageEdited: true,
+  onMessageDeleted: true,
+  onChatUpdated: true,
+  onPresenceUpdate: true,
+  onWaQr: true,
+  onWaConnected: true,
+  onWaLoggedOut: true,
+  onWaSessionReplaced: true,
+  onWaSyncProgress: true,
+  onWaSyncStatus: true,
+  onWaSyncComplete: true,
+  onWaHistoryAppended: true,
+  onEmbeddingProgress: true,
+  onEmbeddingState: true,
+  onMessageStatusUpdated: true,
+  onOpenChat: true,
+  onExtensionChatPush: true,
+  onExtensionFocus: true,
+  onContributionsUpdated: true,
+  onModalShow: true,
+  onOverlayShow: true,
+  onOverlaySend: true,
+  onOverlayClose: true,
+}
+
+type AnyCb = (...args: unknown[]) => void
+
+function createEventHub(): {
+  subscriptions: Record<string, Mock>
+  emit: MockApiEmitters
+} {
+  const registry = new Map<string, Set<AnyCb>>()
+  const subscriptions: Record<string, Mock> = {}
+  const fire = (name: string, args: unknown[]): void => {
+    const cbs = [...(registry.get(name) ?? [])]
+    act(() => {
+      cbs.forEach((cb) => cb(...args))
+    })
+  }
+  const emit: Record<string, unknown> = {
+    event: (name: string, ...args: unknown[]) => fire(name, args),
+    listenerCount: (name: string) => registry.get(name)?.size ?? 0,
+  }
+  for (const name of Object.keys(EVENT_NAMES)) {
+    registry.set(name, new Set())
+    subscriptions[name] = vi.fn((cb: AnyCb) => {
+      registry.get(name)!.add(cb)
+      return () => {
+        registry.get(name)!.delete(cb)
+      }
+    })
+    const short = name.slice(2, 3).toLowerCase() + name.slice(3)
+    emit[short] = (...args: unknown[]) => fire(name, args)
+  }
+  return { subscriptions, emit: emit as MockApiEmitters }
+}
+
+export function createMockApiService(overrides: Partial<IAPIService> = {}): MockApiService {
+  const hub = createEventHub()
+  const defaultMock = {
+    ...(hub.subscriptions as unknown as Partial<IAPIService>),
     getChats: vi.fn().mockResolvedValue([]),
     getChat: vi.fn().mockResolvedValue(null),
     getMessages: vi.fn().mockResolvedValue([]),
@@ -50,33 +152,17 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
     openFile: vi.fn().mockResolvedValue(true),
 
     // Event Listeners
-    onNewMessage: vi.fn().mockReturnValue(() => {}),
-    onMessageEdited: vi.fn().mockReturnValue(() => {}),
-    onMessageDeleted: vi.fn().mockReturnValue(() => {}),
-    onChatUpdated: vi.fn().mockReturnValue(() => {}),
-    onPresenceUpdate: vi.fn().mockReturnValue(() => {}),
-    onWaQr: vi.fn().mockReturnValue(() => {}),
-    onWaConnected: vi.fn().mockReturnValue(() => {}),
-    onWaLoggedOut: vi.fn().mockReturnValue(() => {}),
-    onWaSessionReplaced: vi.fn().mockReturnValue(() => {}),
-    onWaSyncProgress: vi.fn().mockReturnValue(() => {}),
-    onWaSyncStatus: vi.fn().mockReturnValue(() => {}),
-    onWaSyncComplete: vi.fn().mockReturnValue(() => {}),
     skipSync: vi.fn(),
     getSyncFullHistory: vi.fn().mockResolvedValue(false),
     setSyncFullHistory: vi.fn().mockResolvedValue(true),
     fetchMessageHistory: vi.fn().mockResolvedValue({ status: 'no-anchor' }),
-    onWaHistoryAppended: vi.fn().mockReturnValue(() => {}),
     getProfilePicture: vi.fn().mockResolvedValue(null),
     selectFile: vi.fn().mockResolvedValue(null),
     searchAll: vi.fn().mockResolvedValue({ chats: [], messages: [], media: [] }),
     indexEmbeddings: vi.fn().mockResolvedValue(undefined),
-    onEmbeddingProgress: vi.fn().mockReturnValue(() => {}),
-    onEmbeddingState: vi.fn().mockReturnValue(() => {}),
     clearVectors: vi.fn().mockResolvedValue(undefined),
     saveTempFile: vi.fn().mockResolvedValue('/tmp/file'),
     downloadUrlToTemp: vi.fn().mockResolvedValue('/tmp/file'),
-    onMessageStatusUpdated: vi.fn().mockReturnValue(() => {}),
     getMessageReceipts: vi.fn().mockResolvedValue([]),
 
     // AI Chat & Session methods
@@ -124,7 +210,6 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
     }),
     setNotificationPreferences: vi.fn().mockResolvedValue(undefined),
     setActiveChat: vi.fn().mockResolvedValue(undefined),
-    onOpenChat: vi.fn().mockReturnValue(() => {}),
 
     // Extension System
     extensionList: vi.fn().mockResolvedValue([]),
@@ -136,8 +221,6 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
     extensionGetDocs: vi.fn().mockResolvedValue(''),
     extensionChatSend: vi.fn(),
     extensionChatHistory: vi.fn().mockResolvedValue([]),
-    onExtensionChatPush: vi.fn().mockReturnValue(() => {}),
-    onExtensionFocus: vi.fn().mockReturnValue(() => {}),
 
     // Contribution System
     getContributions: vi.fn().mockResolvedValue({
@@ -162,25 +245,20 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): IAPI
       ]
     }),
     executeContribution: vi.fn().mockResolvedValue(undefined),
-    onContributionsUpdated: vi.fn().mockReturnValue(() => {}),
 
     // Declarative Modal API
-    onModalShow: vi.fn().mockReturnValue(() => {}),
     resolveModal: vi.fn(),
 
     // Webview Overlay API
-    onOverlayShow: vi.fn().mockReturnValue(() => {}),
-    onOverlaySend: vi.fn().mockReturnValue(() => {}),
-    onOverlayClose: vi.fn().mockReturnValue(() => {}),
     overlaySubmit: vi.fn(),
     overlayEvent: vi.fn(),
     overlayDismiss: vi.fn(),
     getOverlayPreloadPath: vi.fn().mockReturnValue('file:///mock/overlay-preload.js'),
-  }
-
+  } as IAPIService
 
   return {
     ...defaultMock,
     ...overrides,
+    emit: hub.emit,
   }
 }

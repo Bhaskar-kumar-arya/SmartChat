@@ -8,7 +8,6 @@ import { MessageItem } from '@renderer/types/chatTypes'
 
 describe('useMessages', () => {
   let mockApi: ReturnType<typeof createMockApiService>
-  let newMessageCallback: ((msg: MessageItem) => void) | null = null
 
   const sampleMessages: MessageItem[] = [
     {
@@ -30,19 +29,11 @@ describe('useMessages', () => {
   }
 
   beforeEach(() => {
-    newMessageCallback = null
 
     mockApi = createMockApiService({
       getMessages: vi.fn().mockResolvedValue(sampleMessages),
       getMessagesAround: vi.fn().mockResolvedValue(sampleMessages),
       markRead: vi.fn().mockResolvedValue(true),
-      onNewMessage: vi.fn().mockImplementation((cb) => {
-        newMessageCallback = cb
-        return () => { newMessageCallback = null }
-      }),
-      onMessageEdited: vi.fn().mockReturnValue(() => {}),
-      onMessageDeleted: vi.fn().mockReturnValue(() => {}),
-      onMessageStatusUpdated: vi.fn().mockReturnValue(() => {}),
     })
   })
 
@@ -93,7 +84,7 @@ describe('useMessages', () => {
     }
 
     act(() => {
-      if (newMessageCallback) newMessageCallback(incoming)
+      mockApi.emit.newMessage(incoming)
     })
 
     expect(result.current.messages).toHaveLength(2)

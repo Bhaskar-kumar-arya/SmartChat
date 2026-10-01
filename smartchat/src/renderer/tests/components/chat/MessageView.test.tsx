@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderWithProviders, screen, fireEvent } from '../../testUtils'
+import { renderWithProviders, screen, fireEvent, makeMessage } from '../../testUtils'
 import MessageView from '@renderer/components/chat/MessageView'
 import { MessageItem as IMessageItem } from '@renderer/types/chatTypes'
 
@@ -106,26 +106,32 @@ describe('MessageView', () => {
   })
 
   it('does not mutate the shared message.reactions array when opening the modal [F5-07]', () => {
-    const msg = dummyMessages[1]
-    msg.reactions = [
-      { text: '👍', senderId: 'a@s.whatsapp.net', senderName: 'A', timestamp: '100' },
-      { text: '❤️', senderId: 'b@s.whatsapp.net', senderName: 'B', timestamp: '200' }
-    ]
-    const before = msg.reactions.map((r) => r.text)
-    renderWithProviders(<MessageView {...defaultProps} messages={[dummyMessages[0], msg]} />)
-    const badge = document.querySelector('.reactions-display') || document.querySelector('.reaction-chip')
-    if (badge) fireEvent.click(badge)
-    expect(msg.reactions.map((r) => r.text)).toEqual(before)
+    // Own fixture: never mutate the shared dummyMessages (it leaked into later tests).
+    const msg = makeMessage({
+      fromMe: true,
+      reactions: [
+        { text: '👍', senderId: 'a@s.whatsapp.net', senderName: 'A', timestamp: '100' },
+        { text: '❤️', senderId: 'b@s.whatsapp.net', senderName: 'B', timestamp: '200' }
+      ]
+    })
+    const before = msg.reactions!.map((r) => r.text)
+    renderWithProviders(<MessageView {...defaultProps} messages={[makeMessage(), msg]} />)
+    const badge = document.querySelector('.message-reactions')
+    expect(badge).toBeInTheDocument()
+    fireEvent.click(badge as Element)
+    // The modal really opened (so the sort path ran) ...
+    expect(screen.getByText('Reactions')).toBeInTheDocument()
+    // ... and the shared array was left untouched.
+    expect(msg.reactions!.map((r) => r.text)).toEqual(before)
   })
 
   it('renders reaction details modal when clicking reactions view handler', async () => {
     renderWithProviders(<MessageView {...defaultProps} />)
 
-    const reactionBadge = document.querySelector('.reactions-display') || document.querySelector('.reaction-chip')
-    if (reactionBadge) {
-      fireEvent.click(reactionBadge)
-      expect(screen.getByText('Reactions')).toBeInTheDocument()
-      expect(screen.getByText('Alice')).toBeInTheDocument()
-    }
+    const reactionBadge = document.querySelector('.message-reactions')
+    expect(reactionBadge).toBeInTheDocument()
+    fireEvent.click(reactionBadge as Element)
+    expect(screen.getByText('Reactions')).toBeInTheDocument()
+    expect(screen.getByText('Alice')).toBeInTheDocument()
   })
 })

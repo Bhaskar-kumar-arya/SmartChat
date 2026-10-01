@@ -70,7 +70,8 @@ describe('MessageInput', () => {
 
       // Pressing send must NOT deliver the note to chat B
       const sendVoiceBtn = document.querySelector('.recording-action-btn.success') as HTMLElement
-      if (sendVoiceBtn) await user.click(sendVoiceBtn)
+      expect(sendVoiceBtn).toBeInTheDocument()
+      await user.click(sendVoiceBtn)
 
       expect(onSendMedia).not.toHaveBeenCalled()
     })
