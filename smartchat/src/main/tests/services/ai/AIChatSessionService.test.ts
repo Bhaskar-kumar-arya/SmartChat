@@ -98,4 +98,55 @@ describe('AIChatSessionService', () => {
       expect.stringContaining('"useThinkMode": false')
     )
   })
+
+  describe('preferences safety (F-AI-5)', () => {
+    const written = () => {
+      const calls = vi.mocked(fs.writeFileSync).mock.calls
+      return calls.length ? JSON.parse(String(calls[calls.length - 1][1])) : undefined
+    }
+
+    it('merges into existing on-disk preferences, preserving unrelated keys', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ externalApiToken: 'tok', externalApiPort: 4000, autoSaveChats: true })
+      )
+      await service.setAIOptions({ model: 'm1' })
+      expect(written()).toEqual({ externalApiToken: 'tok', externalApiPort: 4000, autoSaveChats: true, model: 'm1' })
+    })
+
+    it('does not overwrite an unparseable preferences file with defaults (setAIOptions)', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('{ not json')
+      await service.setAIOptions({ model: 'm1' })
+      expect(fs.writeFileSync).not.toHaveBeenCalled()
+    })
+
+    it('does not overwrite an unparseable preferences file with defaults (setAutoSavePreference)', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockImplementation(() => {
+        throw new Error('EIO')
+      })
+      await service.setAutoSavePreference(false)
+      expect(fs.writeFileSync).not.toHaveBeenCalled()
+    })
+
+    it('still writes when the preferences file does not exist yet', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+      await service.setAutoSavePreference(false)
+      expect(written()).toEqual({ autoSaveChats: false })
+    })
+
+    it('ignores non-whitelisted keys such as externalApiToken from set-ai-options', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ externalApiToken: 'tok' }))
+      await service.setAIOptions({ externalApiToken: 'evil', externalApiPort: 1, model: 'm1', junk: true })
+      expect(written()).toEqual({ externalApiToken: 'tok', model: 'm1' })
+    })
+
+    it('drops whitelisted keys with the wrong value type', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+      await service.setAIOptions({ model: 42, useThinkMode: 'yes', contextLength: 'big', autoSaveChats: false })
+      expect(written()).toEqual({ autoSaveChats: false })
+    })
+  })
 })

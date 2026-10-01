@@ -146,16 +146,34 @@ export class AIChatSessionService implements IAIChatSessionService {
 
   // ── Settings ──
 
-  private readPreferences() {
+  /**
+   * `trusted` is false when the file exists but could not be read/parsed. In that
+   * case the returned defaults are for display only and must never be persisted
+   * (F-AI-5: doing so erased externalApiToken/externalApiPort).
+   */
+  private readPreferences(): { prefs: Record<string, unknown>; trusted: boolean } {
     try {
       if (fs.existsSync(preferencesPath)) {
         const data = fs.readFileSync(preferencesPath, 'utf-8')
-        return JSON.parse(data)
+        const parsed = JSON.parse(data)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return { prefs: parsed, trusted: true }
+        }
+        console.error('AI preferences file is not a JSON object; not overwriting it')
+        return { prefs: { autoSaveChats: true }, trusted: false }
       }
     } catch (e) {
-      console.error('Failed to read AI preferences:', e)
+      console.error('Failed to read AI preferences (will not overwrite it):', e)
+      return { prefs: { autoSaveChats: true }, trusted: false }
     }
-    return { autoSaveChats: true } // Default true as requested
+    return { prefs: { autoSaveChats: true }, trusted: true } // Default true as requested
+  }
+
+  /** Read-modify-write against the freshest on-disk state; refuses when the file is unreadable. */
+  private updatePreferences(patch: Record<string, unknown>): void {
+    const { prefs, trusted } = this.readPreferences()
+    if (!trusted) return
+    this.writePreferences({ ...prefs, ...patch })
   }
 
   private writePreferences(prefs: Record<string, unknown>) {
@@ -167,29 +185,35 @@ export class AIChatSessionService implements IAIChatSessionService {
   }
 
   async getAIOptions(): Promise<{ useThinkMode: boolean; model: string; contextLength: number; autoSaveChats: boolean }> {
-    const prefs = this.readPreferences()
+    const { prefs } = this.readPreferences()
     return {
       useThinkMode: prefs.useThinkMode !== false,
-      model: prefs.model || 'gemini:gemma-4-31b-it',
-      contextLength: prefs.contextLength || 24576,
+      model: (typeof prefs.model === 'string' && prefs.model) || 'gemini:gemma-4-31b-it',
+      contextLength: (typeof prefs.contextLength === 'number' && prefs.contextLength) || 24576,
       autoSaveChats: prefs.autoSaveChats !== false
     }
   }
 
   async setAIOptions(options: Record<string, unknown>): Promise<void> {
-    const prefs = this.readPreferences()
-    const updated = { ...prefs, ...options }
-    this.writePreferences(updated)
+    // Only the four renderer-owned keys, with the right types, may be set here.
+    // Everything else (externalApiToken, externalApiPort, ...) is not renderer-writable.
+    const patch: Record<string, unknown> = {}
+    if (typeof options?.useThinkMode === 'boolean') patch.useThinkMode = options.useThinkMode
+    if (typeof options?.model === 'string') patch.model = options.model
+    if (typeof options?.contextLength === 'number' && Number.isFinite(options.contextLength)) {
+      patch.contextLength = options.contextLength
+    }
+    if (typeof options?.autoSaveChats === 'boolean') patch.autoSaveChats = options.autoSaveChats
+    if (Object.keys(patch).length === 0) return
+    this.updatePreferences(patch)
   }
 
   async getAutoSavePreference(): Promise<boolean> {
-    const prefs = this.readPreferences()
+    const { prefs } = this.readPreferences()
     return prefs.autoSaveChats !== false // Default true
   }
 
   async setAutoSavePreference(enabled: boolean): Promise<void> {
-    const prefs = this.readPreferences()
-    prefs.autoSaveChats = enabled
-    this.writePreferences(prefs)
+    this.updatePreferences({ autoSaveChats: enabled })
   }
 }
