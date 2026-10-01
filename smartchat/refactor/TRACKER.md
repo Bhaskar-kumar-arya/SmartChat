@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: WASYNC (H-02) · BOOT (H-03) · SCHEMA (H-04) · DI (X-01) · PRELOAD-mock (N-07). **Owner scope: only H-02, H-03, H-04, X-01, N-06, N-07, N-09 — no other unit after these.**
+- Locks held: WASYNC (H-02) · BOOT (H-03) · DI (X-01) · PRELOAD-mock (N-07). **Owner scope: only H-02, H-03, H-04, X-01, N-06, N-07, N-09 — no other unit after these.**
 - `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint ratchet baseline committed (scripts/lint-baseline.json, 22 rules, Prettier excluded): no-explicit-any 897 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22
 
 ## Owner smoke queue (🔎)
@@ -15,6 +15,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 4. (S-03) In `npm run dev`, a plugin with ai:tools:call calls ctx.ai.callTool('sendMessage',{jid,text}): dialog appears; Cancel→PERMISSION_DENIED, Allow→sends. In devtools window.api.executeContribution({slot:'ai-tool',...}) rejects. Main AI chat tools still work.
 5. (S-04, optional) Untick events:* for a plugin in Settings: its panel/worker stops receiving events without reload.
 2. (S-01) In a real Electron build: a plugin panel/overlay still renders; from a plugin page devtools `fetch('plugin://../dev.db')` is denied (403).
+6. (H-04) Start app on an existing profile: log shows "Dimension mismatch detected. Recreating table with 384 dims". Trigger bulk index (indexAll, ipcHandlers.ts:~394), then run a deep search: hits returned, no "Failed to index message" errors.
 1. After pushing, check GitHub Actions: CI workflow green on ubuntu AND windows (windows untested); then mark both checks required on main (Settings > Branches).
 
 ## Follow-ups inbox (triaged at each wave boundary)
@@ -31,6 +32,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (N-01) 11 other repository tests still use hand-rolled deleteMany → migrate to resetDb in later units; helpers.ts has `any` in createMockSocket/createTestServiceContainer/injectEvent (ratchet debt); per-worker userData path outside repo not audited. (flake) 3rd sighting of an intermittent single unhandled error in a full vitest run (seen on S-04, H-01, H-06 post-merge; always clean on re-run; panel-plugin e2e worker-start race is a known cause) → fix in N-06; until then a lone 'Errors 1' that disappears on re-run is treated as this flake.
 - (N-05) Drift allow-lists (strict equality, can only shrink): C-04 removes extension:chat-*/get-docs/ping/extension:chat-push/focus/toast/wa-disconnected/aiChat etc.; C-03 removes IAPIService gaps (getPanelPreloadPath, notifyPanelClosed, onPanelClose/Open). Follow-ups: execute-tool dialog path untested (no `dialog` in electron mock); ai-chat-stream ipcMain.on has no isTrustedSender check (→ F-AI-3/C-02); contract test is regex-based (literal channels only).
 - (N-02) Pinned known WA bugs as it.fails: B-WA-04 (init failure not treated as worker death), B-WA-01 (user not set from wa-me event), B-WA-13 (skipSync ignores {status:'deferred'}), B-WA-15 (groupFetchAllParticipating type) → flipped by F-WA-1/F-WA-2/F-WA-4 (remove .fails when fixed). eslint `**/utils` no-restricted-imports also flags legitimate sibling imports (../utils/workerUtils) → narrow the pattern in Z-05. waFakes at src/main/tests/helpers/waFakes.ts.
+- (H-04) Re-index has no automatic trigger (indexAll must be invoked; auto-trigger touches IPC/BOOT → F-APP-2). MessageVector row can succeed while vec0 insert fails (non-atomic, F-APP-2/R-DATA). embedding.worker.ts has stale "768-dim" comment (Z-07). Local full-suite load flakes also seen: codetantra-otp-relay, ExecuteScriptTool S12-04 timeout.
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -59,7 +61,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | H-01 | W1 · UC | MessageItem hooks-order crash | W0 | – | MERGED | 98ee4cc |
 | H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | IN PROGRESS | refactor/H-02 |
 | H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | IN PROGRESS | refactor/H-03 |
-| H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | IN PROGRESS | refactor/H-04 |
+| H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | MERGED | c4dcb16 |
 | H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | WAITING | |
 | H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | MERGED | fae5b34 |
 | X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | IN PROGRESS | refactor/X-01 |
