@@ -1,4 +1,3 @@
-import vm from 'vm';
 import { describe, it, expect, vi } from 'vitest';
 import { ExecuteScriptTool } from '../../tools/ExecuteScriptTool';
 import type { AITool, IToolRegistry, ToolResult } from '../../services/ai/IToolRegistry';
@@ -61,6 +60,7 @@ describe('ExecuteScriptTool sandbox hardening (S12-03)', () => {
     expect(out.success).toBe(true);
     // Every attempt must resolve to "undefined" (process not defined in the
     // context) or a thrown error — never the host's "object".
+    expect(out.result as string[]).toHaveLength(3);
     for (const a of out.result as string[]) {
       expect(a === 'undefined' || a.startsWith('throw:')).toBe(true);
     }
@@ -90,15 +90,16 @@ describe('ExecuteScriptTool sandbox hardening (S12-03)', () => {
   });
 
   it('refuses further tool calls after the wall-clock timeout fires (S12-04)', async () => {
-    vi.useFakeTimers();
     let echoCalls = 0;
     let resolveSlow: () => void = () => {};
+    let slowEntered: () => void = () => {};
+    const slowStarted = new Promise<void>((res) => { slowEntered = res; });
     const slowTool: AITool = {
       name: 'slow',
       description: 'never resolves until we say so',
       parametersSchema: { type: 'object' },
       requiresPermission: false,
-      execute: () => new Promise<ToolResult>((res) => { resolveSlow = () => res({ text: '{}' }); })
+      execute: () => new Promise<ToolResult>((res) => { slowEntered(); resolveSlow = () => res({ text: '{}' }); })
     };
     const countingEcho: AITool = {
       ...echoTool,
@@ -108,28 +109,22 @@ describe('ExecuteScriptTool sandbox hardening (S12-03)', () => {
       }
     };
 
-    const tool = new ExecuteScriptTool(makeRegistry([slowTool, countingEcho]));
+    const tool = new ExecuteScriptTool(makeRegistry([slowTool, countingEcho]), 1500);
     const resPromise = tool.execute({
       script: `await slow(); await echo({ after: 'timeout' }); return 'done';`,
       explanation: 'test'
     });
-
-    // Let the script start and enter `await slow()`.
-    await vi.advanceTimersByTimeAsync(1);
-    // Fire the 60s wall-clock timeout.
-    await vi.advanceTimersByTimeAsync(60_000);
+    await slowStarted;
 
     const res = JSON.parse((await resPromise).text) as { success: boolean; timedOut?: boolean };
     expect(res.success).toBe(false);
     expect(res.timedOut).toBe(true);
 
-    // The orphaned script now resumes — its next tool call must be rejected.
+    // The script process is killed: letting the pending tool resolve must not
+    // lead to any further tool call.
     resolveSlow();
-    await vi.advanceTimersByTimeAsync(1);
-    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 200));
     expect(echoCalls).toBe(0);
-
-    vi.useRealTimers();
   });
 
   it('surfaces a tool error as a catchable script error, not a host object', async () => {
@@ -160,22 +155,9 @@ describe('ExecuteScriptTool isolation (S-02, B-AI-01 / B-AI-02)', () => {
       `
     );
     expect(out.success).toBe(true);
+    expect(out.result as string[]).toHaveLength(2);
     for (const a of out.result as string[]) {
       expect(a === 'undefined' || a.startsWith('throw:')).toBe(true);
-    }
-  });
-
-  it('passes a V8 timeout to runInContext so a synchronous loop is interruptible', async () => {
-    const spy = vi.spyOn(vm.Script.prototype, 'runInContext');
-    try {
-      const tool = new ExecuteScriptTool(makeRegistry([]));
-      await run(tool, `return 1;`);
-      const callsWithTimeout = spy.mock.calls.filter(
-        (c) => typeof (c[1] as { timeout?: number } | undefined)?.timeout === 'number'
-      );
-      expect(callsWithTimeout.length).toBeGreaterThan(0);
-    } finally {
-      spy.mockRestore();
     }
   });
 
@@ -193,5 +175,46 @@ describe('ExecuteScriptTool isolation (S-02, B-AI-01 / B-AI-02)', () => {
     const out = (await run(tool, `await new Promise(() => {}); return 1;`)) as { success: boolean; timedOut?: boolean };
     expect(out.success).toBe(false);
     expect(out.timedOut).toBe(true);
+  });
+
+  it('kills a script that starves the event loop with an endless microtask chain', async () => {
+    const tool = new ExecuteScriptTool(makeRegistry([]), 500);
+    const started = Date.now();
+    const out = (await run(tool, `while (true) { await null; }`)) as { success: boolean; timedOut?: boolean };
+    expect(out.success).toBe(false);
+    expect(out.timedOut).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('runs the script without host bindings or host secrets', async () => {
+    process.env.S02_HOST_SECRET = 'host-only';
+    try {
+      const tool = new ExecuteScriptTool(makeRegistry([echoTool]));
+      const out = await run(
+        tool,
+        `
+        const probes = [
+          () => typeof process, () => typeof require, () => typeof module,
+          () => echo.constructor.constructor('return typeof process')(),
+          () => Object.getPrototypeOf(globalThis).constructor.constructor('return typeof process')(),
+        ];
+        return probes.map((p) => { try { return String(p()); } catch (e) { return 'throw:' + e.name; } });
+        `
+      );
+      expect(out.success).toBe(true);
+      expect(out.result).toEqual(['undefined', 'undefined', 'undefined', 'undefined', 'undefined']);
+    } finally {
+      delete process.env.S02_HOST_SECRET;
+    }
+  });
+
+  it('reports syntax errors and uncaught script errors without crashing the host', async () => {
+    const tool = new ExecuteScriptTool(makeRegistry([]));
+    const syn = await run(tool, `return (;`);
+    expect(syn.success).toBe(false);
+    expect(syn.error).toMatch(/^Syntax error:/);
+    const thrown = await run(tool, `throw new Error('nope');`);
+    expect(thrown.success).toBe(false);
+    expect(thrown.error).toBe('nope');
   });
 });
