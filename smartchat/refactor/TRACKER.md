@@ -27,6 +27,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (S-02) executeScript child is still plain Node with an inner vm soft boundary: a vm escape reaches fs/child_process in an empty-env child → consider Node --permission / OS sandbox (new unit S-05, AI lane, after N-09). ~50–100ms startup per call; non-serialisable results become script errors; stray console.log in ExecuteScriptTool.initialize (Z-01).
 - (S-03) Default consent dialog lives inside KernelAIModule → inject from KernelBootstrapper (fold into H-06/R-KRN-09, KHOST). ai-assistant builtin handlers still call tool.execute directly (now unreachable from renderer IPC; revisit R-SOLID-M-02). Gated tools without args.jid (executeScript, queryDatabase) get consent only, no chat scope. Chat-scope semantics = messages:read for readMessages, else messages:send on args.jid (owner may override). Plugin-registered ai-tools are requiresPermission:false (unchanged).
 - (S-04) Revocation = drop at delivery, handlers stay attached (regrant resumes without resubscribe); real teardown needs permission-store hook → F-KRN-3/R-SOLID-M-02. KernelEventsModule.unsubscribe while bus null leaves entry (KRN.md:148) → F-KRN-1. B-KRN-11 LID alias bypass → F-KRN-4 (or R-KRN-07). Possible rare flake: 'Errors 1' seen once in a full vitest run under load (unreproduced).
+- (H-06) extension:list has isLoaded:false but no failure reason → R-KRN-05/F-KRN-2 (add error field). Failed plugin keeps its registerPluginManifest registration; verify PluginHost cleans up partial activation (F-KRN-2). extensionInstallHandler has the same unguarded host.load (B-KRN-09, IPC lock) → F-KRN-2.
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -56,7 +57,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | WAITING | |
 | H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | WAITING | |
 | H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | WAITING | |
-| H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | IN PROGRESS | refactor/H-06 |
+| H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | MERGED | fae5b34 |
 | X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | WAITING | |
 | N-01 | W1 · DATA | Main test infra + factories | W0 | – | IN PROGRESS | refactor/N-01 |
 | N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | IN PROGRESS | refactor/N-02 |
