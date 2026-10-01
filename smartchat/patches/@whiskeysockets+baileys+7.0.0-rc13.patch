@@ -1,0 +1,32 @@
+diff --git a/node_modules/@whiskeysockets/baileys/lib/Utils/chat-utils.js b/node_modules/@whiskeysockets/baileys/lib/Utils/chat-utils.js
+index c30265d..fa98ff1 100644
+--- a/node_modules/@whiskeysockets/baileys/lib/Utils/chat-utils.js
++++ b/node_modules/@whiskeysockets/baileys/lib/Utils/chat-utils.js
+@@ -658,6 +658,11 @@ export const chatModificationToAppPatch = (mod, jid) => {
+     return patch;
+ };
+ export const processSyncAction = (syncAction, ev, me, initialSyncOpts, logger) => {
++    try {
++        ev.emit('app-state.sync', syncAction);
++    } catch (e) {
++        logger?.error({ err: e }, 'Failed to emit app-state.sync');
++    }
+     const isInitialSync = !!initialSyncOpts;
+     const accountSettings = initialSyncOpts?.accountSettings;
+     logger?.trace({ syncAction, initialSync: !!initialSyncOpts }, 'processing sync action');
+diff --git a/node_modules/@whiskeysockets/baileys/lib/Utils/decode-wa-message.js b/node_modules/@whiskeysockets/baileys/lib/Utils/decode-wa-message.js
+index 52ba6f9..c02eb7e 100644
+--- a/node_modules/@whiskeysockets/baileys/lib/Utils/decode-wa-message.js
++++ b/node_modules/@whiskeysockets/baileys/lib/Utils/decode-wa-message.js
+@@ -264,7 +264,11 @@ export const decryptMessageNode = (stanza, meId, meLid, repository, logger) => {
+                                 throw new Error(`Unknown e2e type: ${e2eType}`);
+                         }
+                         let msg = proto.Message.decode(e2eType !== 'plaintext' ? unpadRandomMax16(msgBuffer) : msgBuffer);
++                        const messageContextInfo = msg.messageContextInfo;
+                         msg = msg.deviceSentMessage?.message || msg;
++                        if (messageContextInfo) {
++                            msg.messageContextInfo = messageContextInfo;
++                        }
+                         if (msg.senderKeyDistributionMessage) {
+                             //eslint-disable-next-line max-depth
+                             try {

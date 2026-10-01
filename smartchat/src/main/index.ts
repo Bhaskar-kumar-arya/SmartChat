@@ -8,11 +8,6 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'plugin', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true, allowServiceWorkers: true } }
 ])
 
-import { BaileysPatcher } from './services/whatsapp/BaileysPatcher'
-
-// Apply all node_modules patches for Baileys library before anything else starts
-BaileysPatcher.patch()
-
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { WhatsAppConnectionManager } from './services/whatsapp/WhatsAppConnectionManager'
