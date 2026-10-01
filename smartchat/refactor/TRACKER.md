@@ -29,6 +29,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (S-04) Revocation = drop at delivery, handlers stay attached (regrant resumes without resubscribe); real teardown needs permission-store hook → F-KRN-3/R-SOLID-M-02. KernelEventsModule.unsubscribe while bus null leaves entry (KRN.md:148) → F-KRN-1. B-KRN-11 LID alias bypass → F-KRN-4 (or R-KRN-07). Possible rare flake: 'Errors 1' seen once in a full vitest run under load (unreproduced).
 - (H-06) extension:list has isLoaded:false but no failure reason → R-KRN-05/F-KRN-2 (add error field). Failed plugin keeps its registerPluginManifest registration; verify PluginHost cleans up partial activation (F-KRN-2). extensionInstallHandler has the same unguarded host.load (B-KRN-09, IPC lock) → F-KRN-2.
 - (N-01) 11 other repository tests still use hand-rolled deleteMany → migrate to resetDb in later units; helpers.ts has `any` in createMockSocket/createTestServiceContainer/injectEvent (ratchet debt); per-worker userData path outside repo not audited. (flake) 3rd sighting of an intermittent single unhandled error in a full vitest run (seen on S-04, H-01, H-06 post-merge; always clean on re-run; panel-plugin e2e worker-start race is a known cause) → fix in N-06; until then a lone 'Errors 1' that disappears on re-run is treated as this flake.
+- (N-05) Drift allow-lists (strict equality, can only shrink): C-04 removes extension:chat-*/get-docs/ping/extension:chat-push/focus/toast/wa-disconnected/aiChat etc.; C-03 removes IAPIService gaps (getPanelPreloadPath, notifyPanelClosed, onPanelClose/Open). Follow-ups: execute-tool dialog path untested (no `dialog` in electron mock); ai-chat-stream ipcMain.on has no isTrustedSender check (→ F-AI-3/C-02); contract test is regex-based (literal channels only).
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -64,7 +65,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | IN PROGRESS | refactor/N-02 |
 | N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | MERGED | ae1a3c8 |
 | N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | MERGED | ae1a3c8 |
-| N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | IN PROGRESS | refactor/N-05 |
+| N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | MERGED | 17c3268 |
 | N-06 | W1 · KRN | Kernel test harness | W0 | – | WAITING | |
 | N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | WAITING | |
 | N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | WAITING | |
