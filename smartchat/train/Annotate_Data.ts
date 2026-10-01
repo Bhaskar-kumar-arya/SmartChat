@@ -50,8 +50,8 @@ const MAX_CONCURRENT_CHATS = 5; // Maximum chats being annotated at the same tim
 const LAUNCH_INTERVAL = (60 * 1000) / RPM_LIMIT; // Minimum ms between request dispatches
 const MAX_RETRIES = 15;          // Max attempts per window before giving up
 
-// API KEY CONFIGURATION
-const GEMINI_API_KEY = "AIzaSyDTfVHNlBOGLdgRSGISCPccYCq9-YLRGd0";
+// API KEY CONFIGURATION: set the GEMINI_API_KEY environment variable (never commit a key).
+const GEMINI_API_KEY = "";
 
 interface WindowSlice {
   windowIndex: number;
@@ -505,7 +505,7 @@ async function main() {
 
   const finalApiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
   if (!finalApiKey) {
-    console.error(`${colors.red}❌ Error: Gemini API key is missing.${colors.reset}`);
+    console.error(`${colors.red}❌ Error: Gemini API key is missing. Set the GEMINI_API_KEY environment variable.${colors.reset}`);
     process.exit(1);
   }
 
