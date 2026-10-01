@@ -11,11 +11,12 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint 1,694 errors / 9,935 warnings (≈9,910 are Prettier, ignored)
 
 ## Owner smoke queue (🔎)
-_empty_
+1. After pushing, check GitHub Actions: CI workflow green on ubuntu AND windows (windows untested); then mark both checks required on main (Settings > Branches).
 
 ## Follow-ups inbox (triaged at each wave boundary)
 - (G-04) Gemini key `AIzaSy…YLRGd0` is in git history: OWNER must rotate it. Audit docs may have stale paths to moved `bug-audit*`; `.agents/skills/feature-and-bugfix/SKILL.md` mentions bug files; logger lives at `src/main/utils/logger.ts` (relocate if a shared dir appears); `test:run` and `test:run:all` scripts are identical. Fold into Z-08 (docs).
 - (G-01) codetantra plugin manifest fails SDK `validateManifest` (globalSetup zips it plainly) → fold into R-KRN-10. `packages/sdk` dist is gitignored; CI must build it (globalSetup does for tests; `plugin:package:*` assumes prior build). `AIService` eagerly constructs `LMStudioProvider` (lazy-connect later, AI lane). `src/main/index.ts:37` references `dev_only/logs` (BOOT, fold into D-05). ipcGuards win32 branch untested until Windows CI. milestone2 unreadCount expectation corrected 0→5 (ChatSyncHandler.ts:76 persists provided value). G-01 rewrote smartchat/.gitignore line endings (CRLF→LF), harmless.
+- (G-02) Flaky unhandled 'Cannot find module …/index.js' in kernel/e2e/panel-plugin.test.ts (worker starts after temp dir cleanup), seen under coverage; create a fix unit in KRN lane (candidate: N-06/F-KRN-1). CI uses `npm ci --legacy-peer-deps` (npm arborist crash on lockfile; same as build-mac.yml); Node 22. G-03 must add lint-ratchet step at TODO(G-03) in .github/workflows/ci.yml. 🔎 owner: after first CI run, require checks 'Typecheck + tests (ubuntu-latest)' and '(windows-latest)' on main; confirm windows job green.
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -32,9 +33,9 @@ _empty_
 | ID | Wave · lane | Title | Deps | Locks | Status | Branch / merge sha |
 |---|---|---|---|---|---|---|
 | G-01 | W0 | Hermetic green suite | – | – | MERGED | 0d52a54 |
-| G-02 | W0 | CI workflow (ubuntu + windows) | G-01 | – | IN PROGRESS | refactor/G-02 |
+| G-02 | W0 | CI workflow (ubuntu + windows) | G-01 | – | MERGED | 355e7ca |
 | G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | MERGED | eb206db |
-| G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | WAITING | |
+| G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | IN PROGRESS | refactor/G-03 | |
 | S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | WAITING | |
 | S-02 | W1 · AI | executeScript isolation (hotfix → child process) | W0 | – | WAITING | |
 | S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | WAITING | |
