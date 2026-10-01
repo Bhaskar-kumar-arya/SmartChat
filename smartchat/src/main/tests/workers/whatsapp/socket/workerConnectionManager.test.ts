@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import * as fs from 'fs'
+import * as os from 'os'
+import { join } from 'path'
+import Database from 'better-sqlite3'
+import * as sqliteVec from 'sqlite-vec'
 import { WorkerConnectionManager } from '../../../../workers/whatsapp/socket/workerConnectionManager'
 
 /**
@@ -97,5 +102,80 @@ describe('WorkerConnectionManager — S1-02 wipeAllData atomicity', () => {
 
     expect(execCalls).toContain('PRAGMA foreign_keys = OFF;')
     expect(execCalls).toContain('PRAGMA foreign_keys = ON;')
+  })
+})
+
+/**
+ * B-WA-02: the worker wipe deleted every sqlite_master table, including the
+ * `vec0` virtual table (and its shadow tables) created by the main process.
+ * The worker never loads sqlite-vec, so `DELETE FROM "vec_messages"` throws
+ * `no such module: vec0`, the transaction rolls back (AuthState included) and a
+ * phone-side unlink loops on dead creds forever. Real SQLite file, with the
+ * extension loaded only while creating the schema (like main) and NOT when wiping.
+ */
+describe('WorkerConnectionManager — B-WA-02 wipe with vec0 virtual table', () => {
+  let dir: string
+  beforeEach(() => {
+    dir = fs.mkdtempSync(join(os.tmpdir(), 'wipe-vec-'))
+  })
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it.fails('wipes real tables and leaves the vec0 table alone when the extension is not loaded', async () => {
+    const dbPath = join(dir, 'test.db')
+    const setup = new Database(dbPath)
+    sqliteVec.load(setup)
+    setup.exec(`
+      CREATE TABLE AuthState (id TEXT PRIMARY KEY, data TEXT);
+      CREATE TABLE Chat (id TEXT PRIMARY KEY);
+      CREATE VIRTUAL TABLE vec_messages USING vec0(messageId TEXT PRIMARY KEY, vector FLOAT[4]);
+      INSERT INTO AuthState VALUES ('creds', 'x');
+      INSERT INTO Chat VALUES ('c1');
+    `)
+    setup.close()
+
+    // Worker-side connection: no sqlite-vec loaded.
+    const db = new Database(dbPath)
+    const prisma = {
+      $queryRawUnsafe: vi.fn(async (sql: string) => db.prepare(sql).all()),
+      // Lazy like Prisma's PrismaPromise: runs only when awaited, so inside
+      // $transaction the statements execute between BEGIN and COMMIT/ROLLBACK.
+      $executeRawUnsafe: vi.fn((sql: string) => {
+        const run = (): Promise<number> =>
+          new Promise((resolve, reject) => {
+            try {
+              resolve(db.prepare(sql).run().changes)
+            } catch (e) {
+              reject(e)
+            }
+          })
+        return {
+          then: (a: never, b: never) => run().then(a, b),
+          catch: (b: never) => run().catch(b)
+        }
+      }),
+      $transaction: vi.fn(async (ops: PromiseLike<unknown>[]) => {
+        db.exec('BEGIN')
+        try {
+          for (const op of ops) await op
+          db.exec('COMMIT')
+        } catch (e) {
+          db.exec('ROLLBACK')
+          throw e
+        }
+      })
+    }
+
+    const manager = makeManager()
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (manager as any).wipeAllData(prisma, join(dir, 'userdata'))
+
+      expect(db.prepare('SELECT count(*) AS n FROM AuthState').get()).toEqual({ n: 0 })
+      expect(db.prepare('SELECT count(*) AS n FROM Chat').get()).toEqual({ n: 0 })
+    } finally {
+      db.close()
+    }
   })
 })
