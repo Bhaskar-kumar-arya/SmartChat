@@ -16,6 +16,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 5. (S-04, optional) Untick events:* for a plugin in Settings: its panel/worker stops receiving events without reload.
 2. (S-01) In a real Electron build: a plugin panel/overlay still renders; from a plugin page devtools `fetch('plugin://../dev.db')` is denied (403).
 6. (H-04) Start app on an existing profile: log shows "Dimension mismatch detected. Recreating table with 384 dims". Trigger bulk index (indexAll, ipcHandlers.ts:~394), then run a deep search: hits returned, no "Failed to index message" errors.
+7. (H-02) Link WhatsApp, then unlink the device from the phone: app wipes local data and shows a fresh QR (worker log "All database tables cleared"), no 401 reconnect loop. Re-pair; chats sync, semantic search works.
 1. After pushing, check GitHub Actions: CI workflow green on ubuntu AND windows (windows untested); then mark both checks required on main (Settings > Branches).
 
 ## Follow-ups inbox (triaged at each wave boundary)
@@ -34,6 +35,8 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (N-02) Pinned known WA bugs as it.fails: B-WA-04 (init failure not treated as worker death), B-WA-01 (user not set from wa-me event), B-WA-13 (skipSync ignores {status:'deferred'}), B-WA-15 (groupFetchAllParticipating type) → flipped by F-WA-1/F-WA-2/F-WA-4 (remove .fails when fixed). eslint `**/utils` no-restricted-imports also flags legitimate sibling imports (../utils/workerUtils) → narrow the pattern in Z-05. waFakes at src/main/tests/helpers/waFakes.ts.
 - (H-04) Re-index has no automatic trigger (indexAll must be invoked; auto-trigger touches IPC/BOOT → F-APP-2). MessageVector row can succeed while vec0 insert fails (non-atomic, F-APP-2/R-DATA). embedding.worker.ts has stale "768-dim" comment (Z-07). Local full-suite load flakes also seen: codetantra-otp-relay, ExecuteScriptTool S12-04 timeout.
 - (X-01) helpers.ts now drives history sync through real WorkerHistorySyncManager (stub publisher). integration_tests_plan.md:129 still mentions HistorySyncManager (Z-08). Local machine OOMs on default vitest workers when worktrees are active (use --maxWorkers=3).
+- (H-02) wipeAndReconnect reconnects immediately with no backoff if wipe fails (→ R-WA-12). Stale vec_messages rows linger after worker-side wipe (main should clear on wipe event → R-WA-12/F-APP-2). Failed post-pairing creds write only logged. Local codetantra-otp-relay also load-flaky.
+- (N-06) voice-transcriber-overlay + test-all-features-plugin not migrated to createTestKernel (harness needs custom module sets) → fold into F-KRN-1. Real fix for load-flake timeouts: dedicated kernel-e2e vitest project / lower concurrency (→ Z-05). Channel pass-through (WorkerPluginChannel.sendRequestToPlugin payload) not directly mutation-proved. PluginHost.load does not terminate worker on failed activation if destroy throws (F-KRN-1).
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -60,7 +63,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | MERGED | d42c4b8 |
 | S-04 | W1 · KRN | EventDeliveryPolicy + scope enforcement | W0 | – | MERGED | f3d493f |
 | H-01 | W1 · UC | MessageItem hooks-order crash | W0 | – | MERGED | 98ee4cc |
-| H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | IN PROGRESS | refactor/H-02 |
+| H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | MERGED | 10fafc6 |
 | H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | IN PROGRESS | refactor/H-03 |
 | H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | MERGED | c4dcb16 |
 | H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | WAITING | |
@@ -71,7 +74,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | MERGED | ae1a3c8 |
 | N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | MERGED | ae1a3c8 |
 | N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | MERGED | 17c3268 |
-| N-06 | W1 · KRN | Kernel test harness | W0 | – | IN PROGRESS | refactor/N-06 |
+| N-06 | W1 · KRN | Kernel test harness | W0 | – | MERGED | 841ad3c |
 | N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | IN PROGRESS | refactor/N-07 |
 | N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | WAITING | |
 | N-09 | W1 · AI | Provider test util + role-mapping tests | W0 | – | WAITING | |
