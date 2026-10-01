@@ -141,6 +141,52 @@ async function refreshTokens(refreshToken) {
   }
 }
 
+// First-time login: exchange the pasted OAuth authorization code for tokens.
+// Runs here (not in the panel) because plugin panels are CSP-restricted to plugin:// and
+// cannot reach login.microsoftonline.com.
+async function exchangeAuthCode(authCode, codeVerifier) {
+  ctx.log.info('[OAuth] Exchanging authorization code with Microsoft endpoint...');
+  try {
+    const params = new URLSearchParams();
+    params.append('client_id', CLIENT_ID);
+    params.append('grant_type', 'authorization_code');
+    params.append('scope', SCOPE);
+    params.append('code', authCode);
+    params.append('redirect_uri', REDIRECT_URI);
+    if (codeVerifier) params.append('code_verifier', codeVerifier);
+
+    const res = await fetch(TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': REDIRECT_URI
+      },
+      body: params.toString()
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      ctx.log.error('[OAuth] Code exchange failed:', res.status, errText);
+      return { success: false, message: `Token exchange failed (${res.status}): ${errText}` };
+    }
+
+    const data = await res.json();
+    if (!data.id_token || !data.refresh_token) {
+      return { success: false, message: `No refresh token returned. Response: ${JSON.stringify(data)}` };
+    }
+    await saveTokens({
+      access_token: data.access_token,
+      id_token: data.id_token,
+      refresh_token: data.refresh_token,
+      expires_at: Date.now() + ((data.expires_in || 3600) * 1000)
+    });
+    return { success: true, message: 'Authentication Successful! Refresh token saved.' };
+  } catch (err) {
+    ctx.log.error('[OAuth] Exception during exchangeAuthCode:', err);
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
 // Login to CodeTantra using ID token to get session cookies
 async function loginToCodeTantra(idToken) {
   ctx.log.info('[CodeTantra Login] Exchanging ID token with CodeTantra callback...');
@@ -635,6 +681,13 @@ if (ctx.contributions.registerAITool) {
     return { text: res.success ? `Success: ${res.meetings.length} classes loaded` : `Failed: ${res.error}` };
   });
 
+  ctx.contributions.registerAITool('codetantra_exchange_code', async (args) => {
+    const code = String((args && args.code) || '').trim();
+    if (!code) return { text: 'Failed: code is required.' };
+    const res = await exchangeAuthCode(code, String((args && args.codeVerifier) || ''));
+    return { text: res.success ? `Success: ${res.message}` : `Failed: ${res.message}` };
+  });
+
   ctx.contributions.registerAITool('codetantra_submit_otp', async (args) => {
     const meetingId = String(args.meetingId || '').trim();
     const otp = String(args.otp || '').trim();
@@ -656,6 +709,19 @@ if (ctx.ai && ctx.ai.registerTool) {
       properties: {}
     }
   }).catch(err => ctx.log.error('Failed to register codetantra_refresh_meetings in ToolRegistry:', err.message));
+
+  ctx.ai.registerTool({
+    name: 'codetantra_exchange_code',
+    description: 'Exchanges a pasted Microsoft OAuth authorization code for CodeTantra login tokens',
+    schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string' },
+        codeVerifier: { type: 'string' }
+      },
+      required: ['code']
+    }
+  }).catch(err => ctx.log.error('Failed to register codetantra_exchange_code in ToolRegistry:', err.message));
 
   ctx.ai.registerTool({
     name: 'codetantra_submit_otp',

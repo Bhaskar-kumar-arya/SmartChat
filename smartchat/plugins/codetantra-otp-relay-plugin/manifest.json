@@ -53,6 +53,18 @@
     ],
     "aiTools": [
       {
+        "name": "codetantra_exchange_code",
+        "description": "Exchanges a pasted Microsoft OAuth authorization code for CodeTantra login tokens",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "code": { "type": "string" },
+            "codeVerifier": { "type": "string" }
+          },
+          "required": ["code"]
+        }
+      },
+      {
         "name": "codetantra_submit_otp",
         "description": "Submits CodeTantra OTP for a class meeting via Node background session",
         "schema": {

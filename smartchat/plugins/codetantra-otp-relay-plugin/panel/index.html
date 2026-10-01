@@ -952,60 +952,33 @@
       const verifier = currentCodeVerifier || localStorage.getItem('pkce_code_verifier') || '';
 
       try {
-        const params = new URLSearchParams();
-        params.append('client_id', CLIENT_ID);
-        params.append('grant_type', 'authorization_code');
-        params.append('scope', SCOPE);
-        params.append('code', authCode);
-        params.append('redirect_uri', REDIRECT_URI);
-        if (verifier) {
-          params.append('code_verifier', verifier);
+        // The exchange runs in the plugin worker: this panel's CSP blocks remote fetches.
+        if (!window.__smartchat || !window.__smartchat.api || !window.__smartchat.api.ai) {
+          throw new Error('SmartChat API Bridge is not initialized');
         }
-
-        const res = await fetch(TOKEN_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Origin': REDIRECT_URI
-          },
-          body: params.toString()
+        const rawRes = await window.__smartchat.api.ai.callTool('codetantra_exchange_code', {
+          code: authCode,
+          codeVerifier: verifier
         });
+        const textVal = (typeof rawRes === 'object' && rawRes !== null && rawRes.text)
+          ? rawRes.text
+          : (typeof rawRes === 'string' ? rawRes : '');
+        const ok = textVal.startsWith('Success:');
+        const cleanMsg = textVal.replace(/^(Success|Failed):\s*/, '').trim();
 
-        if (!res.ok) {
-          const errText = await res.text();
-          if (msgEl) {
-            msgEl.style.color = '#f87171';
-            msgEl.textContent = `❌ Token exchange failed (${res.status}): ${errText}`;
-          }
-          return false;
-        }
-
-        const data = await res.json();
-        if (data.id_token && data.refresh_token) {
-          const tokens = {
-            access_token: data.access_token,
-            id_token: data.id_token,
-            refresh_token: data.refresh_token,
-            expires_at: Date.now() + ((data.expires_in || 3600) * 1000)
-          };
-
-          if (window.__smartchat && window.__smartchat.api && window.__smartchat.api.storage) {
-            await window.__smartchat.api.storage.set('codetantra_tokens', tokens);
-          }
-
+        if (ok) {
           if (msgEl) {
             msgEl.style.color = '#4ade80';
-            msgEl.textContent = '🎉 Authentication Successful! Refresh token saved.';
+            msgEl.textContent = `🎉 ${cleanMsg || 'Authentication Successful! Refresh token saved.'}`;
           }
           checkAuthStatus();
           return true;
-        } else {
-          if (msgEl) {
-            msgEl.style.color = '#f87171';
-            msgEl.textContent = `❌ No refresh token returned. Response: ${JSON.stringify(data)}`;
-          }
-          return false;
         }
+        if (msgEl) {
+          msgEl.style.color = '#f87171';
+          msgEl.textContent = `❌ ${cleanMsg || 'Token exchange failed'}`;
+        }
+        return false;
       } catch (err) {
         if (msgEl) {
           msgEl.style.color = '#f87171';
