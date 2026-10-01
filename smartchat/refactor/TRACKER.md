@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: WASYNC (H-02) · BOOT (H-03) · DI (X-01) · PRELOAD-mock (N-07). **Owner scope: only H-02, H-03, H-04, X-01, N-06, N-07, N-09 — no other unit after these.**
+- Locks held: WASYNC (H-02) · BOOT (H-03) · PRELOAD-mock (N-07). **Owner scope: only H-02, H-03, H-04, X-01, N-06, N-07, N-09 — no other unit after these.**
 - `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint ratchet baseline committed (scripts/lint-baseline.json, 22 rules, Prettier excluded): no-explicit-any 897 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22
 
 ## Owner smoke queue (🔎)
@@ -33,6 +33,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (N-05) Drift allow-lists (strict equality, can only shrink): C-04 removes extension:chat-*/get-docs/ping/extension:chat-push/focus/toast/wa-disconnected/aiChat etc.; C-03 removes IAPIService gaps (getPanelPreloadPath, notifyPanelClosed, onPanelClose/Open). Follow-ups: execute-tool dialog path untested (no `dialog` in electron mock); ai-chat-stream ipcMain.on has no isTrustedSender check (→ F-AI-3/C-02); contract test is regex-based (literal channels only).
 - (N-02) Pinned known WA bugs as it.fails: B-WA-04 (init failure not treated as worker death), B-WA-01 (user not set from wa-me event), B-WA-13 (skipSync ignores {status:'deferred'}), B-WA-15 (groupFetchAllParticipating type) → flipped by F-WA-1/F-WA-2/F-WA-4 (remove .fails when fixed). eslint `**/utils` no-restricted-imports also flags legitimate sibling imports (../utils/workerUtils) → narrow the pattern in Z-05. waFakes at src/main/tests/helpers/waFakes.ts.
 - (H-04) Re-index has no automatic trigger (indexAll must be invoked; auto-trigger touches IPC/BOOT → F-APP-2). MessageVector row can succeed while vec0 insert fails (non-atomic, F-APP-2/R-DATA). embedding.worker.ts has stale "768-dim" comment (Z-07). Local full-suite load flakes also seen: codetantra-otp-relay, ExecuteScriptTool S12-04 timeout.
+- (X-01) helpers.ts now drives history sync through real WorkerHistorySyncManager (stub publisher). integration_tests_plan.md:129 still mentions HistorySyncManager (Z-08). Local machine OOMs on default vitest workers when worktrees are active (use --maxWorkers=3).
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -64,7 +65,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | MERGED | c4dcb16 |
 | H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | WAITING | |
 | H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | MERGED | fae5b34 |
-| X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | IN PROGRESS | refactor/X-01 |
+| X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | MERGED | 6951b94 |
 | N-01 | W1 · DATA | Main test infra + factories | W0 | – | MERGED | ae1a3c8 |
 | N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | MERGED | 21bbcf7 |
 | N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | MERGED | ae1a3c8 |
