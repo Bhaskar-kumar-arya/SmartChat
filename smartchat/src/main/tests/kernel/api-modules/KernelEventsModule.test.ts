@@ -92,6 +92,20 @@ describe('KernelEventsModule', () => {
     expect(lateBus.on).not.toHaveBeenCalled()
   })
 
+  it.fails('unsubscribe while the bus is null drops the live entry so a reconnect does not resurrect it (F-KRN-1)', async () => {
+    let bus: IWAEventBus | null = mockBus
+    const m = new KernelEventsModule(mockPermissions, () => bus)
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    await m.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+
+    bus = null
+    await m.handle('plugin-a', 'kernel:events:unsubscribe', { event: 'message:incoming' })
+
+    const lateBus = { on: vi.fn(), off: vi.fn(), emit: vi.fn(), removeAllListeners: vi.fn() } as unknown as IWAEventBus
+    m.onBusConnected(lateBus)
+    expect(lateBus.on).not.toHaveBeenCalled()
+  })
+
   it('throws NOT_FOUND for unknown action type', async () => {
     await expect(
       module.handle('plugin-a', 'kernel:events:unknown', {})

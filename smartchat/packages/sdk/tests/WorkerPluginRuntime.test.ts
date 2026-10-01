@@ -292,4 +292,103 @@ describe('WorkerPluginRuntime', () => {
     const result = await overlayPromise
     expect(result).toEqual({ text: 'Submitted text after user delay' })
   })
+
+  // F-KRN-1 (B-KRN-05): fire-and-forget SDK calls must not become unhandled
+  // rejections (which kill a worker thread) when the kernel refuses them.
+  describe('fire-and-forget rejection hygiene (B-KRN-05)', () => {
+    const denyAll = (): void => {
+      port2.on('message', (msg) => {
+        port2.postMessage({
+          id: msg.id,
+          ok: false,
+          error: { code: 'PERMISSION_DENIED', message: 'denied' }
+        })
+      })
+    }
+
+    async function collectUnhandled(run: () => void): Promise<unknown[]> {
+      const seen: unknown[] = []
+      const listeners = process.listeners('unhandledRejection')
+      process.removeAllListeners('unhandledRejection')
+      const onUnhandled = (reason: unknown): void => {
+        seen.push(reason)
+      }
+      process.on('unhandledRejection', onUnhandled)
+      try {
+        run()
+        await new Promise((r) => setTimeout(r, 100))
+      } finally {
+        process.off('unhandledRejection', onUnhandled)
+        for (const l of listeners) process.on('unhandledRejection', l as never)
+      }
+      return seen
+    }
+
+    it.fails('ui.toast refused by the kernel does not leave an unhandled rejection', async () => {
+      const runtime = new WorkerPluginRuntime(port1, manifest)
+      const ctx = runtime.getContext()
+      denyAll()
+      const seen = await collectUnhandled(() => ctx.ui!.toast('hi'))
+      expect(seen).toEqual([])
+    })
+
+    it.fails('events.on subscribe/unsubscribe refused by the kernel leaves no unhandled rejection', async () => {
+      const runtime = new WorkerPluginRuntime(port1, manifest)
+      const ctx = runtime.getContext()
+      denyAll()
+      const seen = await collectUnhandled(() => {
+        const off = ctx.events!.on('message:incoming' as never, (() => undefined) as never)
+        off()
+      })
+      expect(seen).toEqual([])
+    })
+
+    it.fails('overlay handle send/close refused by the kernel leave no unhandled rejection', async () => {
+      const runtime = new WorkerPluginRuntime(port1, manifest)
+      const ctx = runtime.getContext()
+      port2.on('message', (msg) => {
+        if (msg.type === 'kernel:ui:showOverlay') {
+          port2.postMessage({ id: msg.id, ok: true, payload: { overlayId: 'ov1' } })
+        } else {
+          port2.postMessage({ id: msg.id, ok: false, error: { code: 'PERMISSION_DENIED', message: 'denied' } })
+        }
+      })
+      const handle = (await ctx.ui!.showOverlay({ panel: 'x.html', mode: 'handle' } as never)) as unknown as {
+        send: (e: string, d: unknown) => void
+        close: () => void
+      }
+      const seen = await collectUnhandled(() => {
+        handle.send('e', {})
+        handle.close()
+      })
+      expect(seen).toEqual([])
+    })
+  })
+
+  // F-KRN-1 (B-KRN-13): one throwing handler must not starve the others.
+  it.fails('a throwing event handler does not stop later handlers for the same event (B-KRN-13)', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest)
+    const ctx = runtime.getContext()
+    port2.on('message', (msg) => {
+      if (msg.type === 'kernel:events:subscribe') port2.postMessage({ id: msg.id, ok: true })
+    })
+    const second = vi.fn()
+    ctx.events!.on('message:incoming' as never, (() => {
+      throw new Error('boom')
+    }) as never)
+    ctx.events!.on('message:incoming' as never, second as never)
+
+    const replied = new Promise<void>((resolve) => {
+      port2.on('message', (msg) => {
+        if (msg.id === 'evt-1') resolve()
+      })
+    })
+    port2.postMessage({
+      id: 'evt-1',
+      type: 'kernel:events:emit',
+      payload: { event: 'message:incoming', payload: { x: 1 } }
+    })
+    await replied
+    expect(second).toHaveBeenCalledWith({ x: 1 })
+  })
 })
