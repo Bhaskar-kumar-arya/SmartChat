@@ -1,4 +1,6 @@
 import { vi } from 'vitest'
+import type { IAIKeyService } from '../../../services/ai/IAIKeyService'
+import type { IToolRegistry } from '../../../services/ai/IToolRegistry'
 import { GroqProvider } from '../../../services/ai/providers/GroqProvider'
 import { MistralProvider } from '../../../services/ai/providers/MistralProvider'
 import { DeepSeekProvider } from '../../../services/ai/providers/DeepSeekProvider'
@@ -10,11 +12,33 @@ import { GeminiProvider } from '../../../services/ai/providers/GeminiProvider'
  * reassembly can be exercised identically across providers.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyProvider = any
+/** Minimal structural view of a provider as the tests drive it (private members included). */
+export interface TestProvider {
+  client?: unknown
+  ai?: unknown
+  formatMessages(
+    prompt: string,
+    history: Array<{ role: string; content: string }>,
+    systemPrompt: string
+  ): Array<{ role: string; content: string }>
+  generateResponse(
+    prompt: string,
+    history: Array<{ role: string; content: string; isSystem?: boolean }>,
+    options: { model?: string; [key: string]: unknown },
+    signal?: AbortSignal
+  ): Promise<string>
+  generateResponseStream(
+    prompt: string,
+    history: Array<{ role: string; content: string; isSystem?: boolean }>,
+    options: { model?: string; [key: string]: unknown },
+    onChunk: (chunk: string) => void,
+    signal?: AbortSignal
+  ): Promise<void>
+}
+export type AnyProvider = TestProvider
 
-export const keyService = { getKey: vi.fn().mockReturnValue('test-key') } as never
-export const toolRegistry = { getAllTools: vi.fn().mockReturnValue([]) } as never
+export const keyService = { getKey: vi.fn().mockReturnValue('test-key') } as unknown as IAIKeyService
+export const toolRegistry = { getAllTools: vi.fn().mockReturnValue([]) } as unknown as IToolRegistry
 
 /** Async-iterable stand-in for an SDK stream. */
 export function streamOf<T>(chunks: T[]): AsyncIterable<T> {
@@ -32,9 +56,9 @@ export interface OpenAICompatCase {
 
 /** Groq / Mistral / DeepSeek share the OpenAI chat-completions shape. */
 export const openAICompatProviders: OpenAICompatCase[] = [
-  { name: 'GroqProvider', make: () => new GroqProvider(keyService, toolRegistry) },
-  { name: 'MistralProvider', make: () => new MistralProvider(keyService, toolRegistry) },
-  { name: 'DeepSeekProvider', make: () => new DeepSeekProvider(keyService, toolRegistry) }
+  { name: 'GroqProvider', make: () => new GroqProvider(keyService, toolRegistry) as unknown as TestProvider },
+  { name: 'MistralProvider', make: () => new MistralProvider(keyService, toolRegistry) as unknown as TestProvider },
+  { name: 'DeepSeekProvider', make: () => new DeepSeekProvider(keyService, toolRegistry) as unknown as TestProvider }
 ]
 
 export interface ToolDelta {
@@ -117,7 +141,7 @@ export interface FakeGemini {
 }
 
 export function makeGemini(streamChunks: Array<{ text?: string }> = [{ text: 'ok' }]): FakeGemini {
-  const provider = new GeminiProvider(keyService, toolRegistry) as AnyProvider
+  const provider = new GeminiProvider(keyService, toolRegistry) as unknown as TestProvider
   const generateContentStream = vi.fn().mockResolvedValue(streamOf(streamChunks))
   const generateContent = vi.fn().mockResolvedValue({ text: 'ok' })
   provider.ai = { models: { generateContentStream, generateContent } }

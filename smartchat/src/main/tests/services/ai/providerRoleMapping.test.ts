@@ -24,7 +24,7 @@ describe('provider history role mapping (S6-02)', () => {
     describe(name, () => {
       it('maps role "ai" to assistant', () => {
         const msgs = make().formatMessages('next', history, '')
-        expect(msgs.find((m: { content: string }) => m.content === 'hello there').role).toBe('assistant')
+        expect(msgs.find(m => m.content === 'hello there')?.role).toBe('assistant')
       })
 
       it.each(['model', 'assistant'])('maps role "%s" to assistant', role => {
@@ -41,7 +41,7 @@ describe('provider history role mapping (S6-02)', () => {
           ],
           ''
         )
-        expect(msgs.map((m: { role: string }) => m.role)).toEqual(['user', 'user', 'user'])
+        expect(msgs.map(m => m.role)).toEqual(['user', 'user', 'user'])
       })
 
       it('prepends the system prompt and appends the prompt as the final user turn', () => {
