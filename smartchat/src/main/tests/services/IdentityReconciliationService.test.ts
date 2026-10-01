@@ -1,46 +1,26 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 import { IdentityReconciliationService } from '../../services/contacts/IdentityReconciliationService'
+import { IIdentityRepository } from '../../services/contacts/IIdentityRepository'
+import { ILidMapRepository } from '../../services/contacts/ILidMapRepository'
 import { IContactMutationService } from '../../services/contacts/IContactService'
-import { PrismaClient } from '@prisma/client'
 
 describe('IdentityReconciliationService', () => {
   let service: IdentityReconciliationService
-  let prisma: any // Mocked PrismaClient
+  let identityRepo: { findLidStubsWithPushName: Mock; findPnIdentitiesByPushNames: Mock; mergeIdentityInto: Mock }
+  let lidMapRepo: { findLidMaps: Mock }
   let contactService: import('vitest').Mocked<IContactMutationService>
 
+  const stub = (id: number, pushName: string, lid: string): Record<string, unknown> => ({
+    id, pushName, displayName: null, verifiedName: null, profilePictureUrl: null, aliases: [{ jid: lid, type: 'LID' }]
+  })
+
   beforeEach(() => {
-    prisma = {
-      identity: {
-        findMany: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-      },
-      identityAlias: {
-        updateMany: vi.fn(),
-      },
-      message: {
-        updateMany: vi.fn(),
-      },
-      chatMember: {
-        findMany: vi.fn(),
-        findUnique: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-      },
-      reaction: {
-        findMany: vi.fn(),
-        findUnique: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-      },
-      lidMap: {
-        findMany: vi.fn().mockResolvedValue([]),
-      }
+    identityRepo = {
+      findLidStubsWithPushName: vi.fn().mockResolvedValue([]),
+      findPnIdentitiesByPushNames: vi.fn().mockResolvedValue([]),
+      mergeIdentityInto: vi.fn().mockResolvedValue(undefined)
     }
-    // Interactive transaction: run the callback against the same mock client.
-    prisma.$transaction = vi.fn((arg: any) =>
-      typeof arg === 'function' ? arg(prisma) : Promise.all(arg)
-    )
+    lidMapRepo = { findLidMaps: vi.fn().mockResolvedValue([]) }
 
     contactService = {
       linkLidAndPn: vi.fn(),
@@ -50,82 +30,59 @@ describe('IdentityReconciliationService', () => {
       registerMe: vi.fn(),
     } as any
 
-    service = new IdentityReconciliationService(prisma as PrismaClient, contactService)
+    service = new IdentityReconciliationService(
+      identityRepo as unknown as IIdentityRepository,
+      lidMapRepo as unknown as ILidMapRepository,
+      contactService
+    )
   })
 
   it('deduplicateIdentities does nothing if no stubs are found', async () => {
-    prisma.identity.findMany.mockResolvedValue([])
     const result = await service.deduplicateIdentities()
     expect(result).toEqual({ merged: 0, skipped: 0 })
   })
 
-  it('deduplicateIdentities runs the stub merge inside a single interactive transaction', async () => {
-    prisma.identity.findMany
-      .mockResolvedValueOnce([
-        { id: 1, pushName: 'Alice', displayName: null, verifiedName: null, profilePictureUrl: null, aliases: [{ jid: 'a@lid', type: 'LID' }] },
-      ])
-      .mockResolvedValueOnce([{ id: 2, pushName: 'Alice', phoneNumber: '123', displayName: 'Alice' }])
+  it('deduplicateIdentities delegates the merge to IdentityRepository.mergeIdentityInto', async () => {
+    identityRepo.findLidStubsWithPushName.mockResolvedValue([stub(1, 'Alice', 'a@lid')])
+    identityRepo.findPnIdentitiesByPushNames.mockResolvedValue([{ id: 2, pushName: 'Alice', phoneNumber: '123', displayName: 'Alice' }])
     // P2-S5-02: corroborate the pushName match with a LidMap ledger row
-    prisma.lidMap.findMany.mockResolvedValue([{ lid: 'a@lid', pn: '123' }])
-    prisma.identityAlias.updateMany.mockResolvedValue({ count: 1 })
-    prisma.message.updateMany.mockResolvedValue({ count: 0 })
-    prisma.chatMember.findMany.mockResolvedValue([])
-    prisma.reaction.findMany.mockResolvedValue([])
-    prisma.identity.delete.mockResolvedValue({})
+    lidMapRepo.findLidMaps.mockResolvedValue([{ lid: 'a@lid', pn: '123' }])
 
     const result = await service.deduplicateIdentities()
 
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1)
-    expect(prisma.identity.delete).toHaveBeenCalledWith({ where: { id: 1 } })
+    expect(identityRepo.mergeIdentityInto).toHaveBeenCalledTimes(1)
+    expect(identityRepo.mergeIdentityInto).toHaveBeenCalledWith(1, 2)
     expect(result).toEqual({ merged: 1, skipped: 0 })
   })
 
-  it('deduplicateIdentities does not delete the stub if an earlier merge step fails (tx rolls back)', async () => {
-    prisma.identity.findMany
-      .mockResolvedValueOnce([
-        { id: 1, pushName: 'Bob', displayName: null, verifiedName: null, profilePictureUrl: null, aliases: [{ jid: 'b@lid', type: 'LID' }] },
-      ])
-      .mockResolvedValueOnce([{ id: 2, pushName: 'Bob', phoneNumber: '999', displayName: 'Bob' }])
-    prisma.lidMap.findMany.mockResolvedValue([{ lid: 'b@lid', pn: '999' }])
-    prisma.identityAlias.updateMany.mockResolvedValue({ count: 1 })
-    prisma.message.updateMany.mockRejectedValue(new Error('DB locked'))
+  it('deduplicateIdentities counts a failed merge as skipped', async () => {
+    identityRepo.findLidStubsWithPushName.mockResolvedValue([stub(1, 'Bob', 'b@lid')])
+    identityRepo.findPnIdentitiesByPushNames.mockResolvedValue([{ id: 2, pushName: 'Bob', phoneNumber: '999', displayName: 'Bob' }])
+    lidMapRepo.findLidMaps.mockResolvedValue([{ lid: 'b@lid', pn: '999' }])
+    identityRepo.mergeIdentityInto.mockRejectedValue(new Error('DB locked'))
 
     const result = await service.deduplicateIdentities()
 
-    expect(prisma.identity.delete).not.toHaveBeenCalled()
     expect(result).toEqual({ merged: 0, skipped: 1 })
   })
 
   it('P2-S5-02: does NOT merge on a bare common-pushName match with no corroboration', async () => {
-    prisma.identity.findMany
-      .mockResolvedValueOnce([
-        { id: 1, pushName: 'Mom', displayName: null, verifiedName: null, profilePictureUrl: null, aliases: [{ jid: 'x@lid', type: 'LID' }] },
-      ])
-      .mockResolvedValueOnce([{ id: 2, pushName: 'Mom', phoneNumber: '111', displayName: 'Mom' }])
-    prisma.lidMap.findMany.mockResolvedValue([])
+    identityRepo.findLidStubsWithPushName.mockResolvedValue([stub(1, 'Mom', 'x@lid')])
+    identityRepo.findPnIdentitiesByPushNames.mockResolvedValue([{ id: 2, pushName: 'Mom', phoneNumber: '111', displayName: 'Mom' }])
 
     const result = await service.deduplicateIdentities()
 
-    expect(prisma.$transaction).not.toHaveBeenCalled()
-    expect(prisma.identity.delete).not.toHaveBeenCalled()
+    expect(identityRepo.mergeIdentityInto).not.toHaveBeenCalled()
     expect(result).toEqual({ merged: 0, skipped: 1 })
   })
 
   it('P2-S5-02: merges a distinctive multi-word pushName without a ledger row', async () => {
-    prisma.identity.findMany
-      .mockResolvedValueOnce([
-        { id: 1, pushName: 'John Smith', displayName: null, verifiedName: null, profilePictureUrl: null, aliases: [{ jid: 'y@lid', type: 'LID' }] },
-      ])
-      .mockResolvedValueOnce([{ id: 2, pushName: 'John Smith', phoneNumber: '222', displayName: 'John Smith' }])
-    prisma.lidMap.findMany.mockResolvedValue([])
-    prisma.identityAlias.updateMany.mockResolvedValue({ count: 1 })
-    prisma.message.updateMany.mockResolvedValue({ count: 0 })
-    prisma.chatMember.findMany.mockResolvedValue([])
-    prisma.reaction.findMany.mockResolvedValue([])
-    prisma.identity.delete.mockResolvedValue({})
+    identityRepo.findLidStubsWithPushName.mockResolvedValue([stub(1, 'John Smith', 'y@lid')])
+    identityRepo.findPnIdentitiesByPushNames.mockResolvedValue([{ id: 2, pushName: 'John Smith', phoneNumber: '222', displayName: 'John Smith' }])
 
     const result = await service.deduplicateIdentities()
 
+    expect(identityRepo.mergeIdentityInto).toHaveBeenCalledWith(1, 2)
     expect(result).toEqual({ merged: 1, skipped: 0 })
   })
 

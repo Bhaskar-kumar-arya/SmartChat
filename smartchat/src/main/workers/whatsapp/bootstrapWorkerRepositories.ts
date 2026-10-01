@@ -159,7 +159,7 @@ export function bootstrapWorkerRepositories(
   }
 
   // Identity Reconciliation
-  const identityReconciliationService = new IdentityReconciliationService(prisma, contactService)
+  const identityReconciliationService = new IdentityReconciliationService(identityRepository, lidMapRepository, contactService)
 
   // Message Service Processors
   const secretMessageService = new SecretMessageService(prisma)

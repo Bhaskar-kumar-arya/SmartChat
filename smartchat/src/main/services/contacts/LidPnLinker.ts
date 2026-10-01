@@ -53,31 +53,31 @@ export class LidPnLinker implements ILidPnLinker {
 
     if (pnIdentity) {
       identityId = pnIdentity.id
-      const orphanId = lidAlias && lidAlias.identityId !== identityId ? lidAlias.identityId : null
-
-      // Re-point the LID alias to the canonical PN identity
-      await this.aliasRepository.upsertIdentityAlias(cleanLid, 'LID', identityId)
-
-      // Delete the old LID-only stub if nothing else references it
-      if (orphanId) {
-        const { aliases: aliasCount, messages: msgCount, members: memberCount, reactions: reactionCount } =
-          await this.identityRepository.countIdentityReferences(orphanId)
-
-        if (aliasCount === 0 && msgCount === 0 && memberCount === 0 && reactionCount === 0) {
-          await this.identityRepository.deleteIdentity(orphanId).catch((err: unknown) => {
-            console.error('[LidPnLinker] Failed to delete orphaned identity:', err)
-          })
-        }
-      }
+      await this.repointLidToIdentity(cleanLid, identityId, lidAlias?.identityId ?? null)
     } else if (lidAlias) {
       identityId = lidAlias.identityId
-      // Update the identity to have the phone number
-      await this.identityRepository.updateIdentity(identityId, { phoneNumber: cleanPn })
-      await this.aliasRepository.upsertIdentityAlias(cleanPn, 'PN', identityId)
+      try {
+        // Update the identity to have the phone number
+        await this.identityRepository.updateIdentity(identityId, { phoneNumber: cleanPn })
+        await this.aliasRepository.upsertIdentityAlias(cleanPn, 'PN', identityId)
+      } catch (err) {
+        // A concurrent link claimed this phoneNumber first: fold the stub into it.
+        const winner = isUniqueViolation(err) ? await this.identityRepository.findIdentityByPhoneNumber(cleanPn) : null
+        if (!winner) throw err
+        identityId = winner.id
+        await this.repointLidToIdentity(cleanLid, identityId, lidAlias.identityId)
+      }
     } else {
       // Neither exists, create a new identity and both aliases
-      const newId = await this.identityRepository.createIdentity({ phoneNumber: cleanPn })
-      identityId = newId.id
+      try {
+        identityId = (await this.identityRepository.createIdentity({ phoneNumber: cleanPn })).id
+      } catch (err) {
+        // Burst of lid-mapping.update after pairing: a concurrent link created the
+        // identity between our lookup and create. Reuse it instead of failing (P2002).
+        const winner = isUniqueViolation(err) ? await this.identityRepository.findIdentityByPhoneNumber(cleanPn) : null
+        if (!winner) throw err
+        identityId = winner.id
+      }
       await this.aliasRepository.upsertIdentityAlias(cleanPn, 'PN', identityId)
       await this.aliasRepository.upsertIdentityAlias(cleanLid, 'LID', identityId)
     }
@@ -92,4 +92,34 @@ export class LidPnLinker implements ILidPnLinker {
       onLinked(cleanLid, cleanPn, identityId)
     }
   }
+
+  /**
+   * Re-points `lid` to the canonical identity and disposes of the identity that
+   * previously held it. A LID-only stub (no phoneNumber) is merged wholesale so its
+   * messages, reactions and memberships follow (B-DATA-01); any other orphan keeps
+   * the legacy behaviour (delete only when nothing references it).
+   */
+  private async repointLidToIdentity(lid: string, identityId: number, orphanId: number | null): Promise<void> {
+    const orphan = orphanId !== null && orphanId !== identityId ? await this.identityRepository.findIdentityById(orphanId) : null
+
+    if (orphan && !orphan.phoneNumber) {
+      await this.identityRepository.mergeIdentityInto(orphan.id, identityId)
+    }
+
+    // Idempotent after a merge (the alias already moved); required when there was no stub.
+    await this.aliasRepository.upsertIdentityAlias(lid, 'LID', identityId)
+
+    if (orphan && orphan.phoneNumber) {
+      const { aliases, messages, members, reactions } = await this.identityRepository.countIdentityReferences(orphan.id)
+      if (aliases === 0 && messages === 0 && members === 0 && reactions === 0) {
+        await this.identityRepository.deleteIdentity(orphan.id).catch((err: unknown) => {
+          console.error('[LidPnLinker] Failed to delete orphaned identity:', err)
+        })
+      }
+    }
+  }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002'
 }

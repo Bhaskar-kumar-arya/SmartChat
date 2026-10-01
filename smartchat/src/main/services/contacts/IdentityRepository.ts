@@ -133,6 +133,26 @@ export class IdentityRepository implements IIdentityRepository {
     return { aliases, messages, members, reactions }
   }
 
+  async findLidStubsWithPushName(): Promise<IdentityWithAliases[]> {
+    return this.prisma.identity.findMany({
+      where: {
+        phoneNumber: null,
+        pushName: { not: null },
+        aliases: { some: { type: 'LID' } }
+      },
+      include: { aliases: true }
+    })
+  }
+
+  async findPnIdentitiesByPushNames(pushNames: string[]): Promise<Identity[]> {
+    return this.prisma.identity.findMany({
+      where: {
+        phoneNumber: { not: null },
+        pushName: { in: pushNames }
+      }
+    })
+  }
+
   async searchIdentities(query: string, take: number = 20): Promise<IdentityWithAliases[]> {
     return this.prisma.identity.findMany({
       where: {
