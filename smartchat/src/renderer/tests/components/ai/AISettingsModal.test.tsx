@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderWithProviders, screen, userEvent } from '../../testUtils'
 import AISettingsModal from '@renderer/components/ai/AISettingsModal'
 import { createMockApiService } from '../../mocks/mockApiService'
+import { captureUnhandledRejections } from '../../helpers/captureUnhandled'
 
 describe('AISettingsModal', () => {
   const mockOptions = {
@@ -117,6 +118,38 @@ describe('AISettingsModal', () => {
     await user.tab()
     expect(setProviderKey).toHaveBeenCalledTimes(1)
     expect(setProviderKey).toHaveBeenCalledWith('gemini', 'secret-key-123')
+  })
+
+  // B-UIAPP-09: a rejected setAiAutoSave must not escape as an unhandled rejection.
+  it('does not leak an unhandled rejection when setAiAutoSave fails', async () => {
+    const user = userEvent.setup()
+    // Plain function, not vi.fn(): a vitest spy attaches its own handler to a
+    // rejected return value, which would hide the unhandled rejection.
+    const calls: boolean[] = []
+    const setAiAutoSave = (checked: boolean): Promise<void> => {
+      calls.push(checked)
+      return Promise.reject(new Error('pref write failed'))
+    }
+    const onOptionsChange = vi.fn()
+    renderWithProviders(
+      <AISettingsModal
+        isOpen={true}
+        onClose={vi.fn()}
+        options={mockOptions}
+        onOptionsChange={onOptionsChange}
+        availableModels={mockModels}
+      />,
+      { apiService: createMockApiService({ setAiAutoSave }) }
+    )
+
+    const capture = captureUnhandledRejections()
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[checkboxes.length - 1])
+    const unhandled = await capture.stop()
+
+    expect(calls).toEqual([false])
+    expect(onOptionsChange).toHaveBeenCalledWith({ ...mockOptions, autoSaveChats: false })
+    expect(unhandled).toEqual([])
   })
 
   it('triggers onClose when Done button is clicked', async () => {

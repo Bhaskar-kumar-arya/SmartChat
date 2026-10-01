@@ -65,6 +65,35 @@ describe('ProfilePicture', () => {
     })
   })
 
+  // B-UIAPP-06: a forced refresh that resolves after the component switched to
+  // another contact must not paint the old contact's photo or hide the new one.
+  it('ignores a stale refresh result after the jid changes', async () => {
+    let resolveRefresh: (v: string | null) => void = () => {}
+    const mockApi = createMockApiService()
+    mockApi.getProfilePicture = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolveRefresh = resolve
+        })
+    )
+
+    const { rerender } = renderWithProviders(
+      <ProfilePicture jid="a@s.whatsapp.net" initialUrl="http://example.com/a-broken.jpg" />,
+      { apiService: mockApi }
+    )
+    fireEvent.error(screen.getByRole('img', { name: 'Profile' }))
+
+    rerender(<ProfilePicture jid="b@s.whatsapp.net" initialUrl="http://example.com/b.jpg" />)
+    resolveRefresh('http://example.com/a-fresh.jpg')
+
+    await waitFor(() => {
+      expect(mockApi.getProfilePicture).toHaveBeenCalledWith('a@s.whatsapp.net', 'preview', true)
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    const img = screen.getByRole('img', { name: 'Profile' }) as HTMLImageElement
+    expect(img.src).toBe('http://example.com/b.jpg')
+  })
+
   it('handles click callback', () => {
     const handleClick = vi.fn()
     renderWithProviders(

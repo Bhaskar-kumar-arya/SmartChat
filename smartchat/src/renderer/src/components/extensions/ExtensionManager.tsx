@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactElement } from 'react'
 import { useExtensionManager } from '../../hooks/useExtensionManager'
 import { useAPI } from '../../context/APIContext'
 import { ExtensionCard } from './ExtensionCard'
@@ -15,14 +15,19 @@ interface ExtensionManagerProps {
  * Modal overlay following SettingsModal pattern.
  * Uses useExtensionManager() — zero direct api calls.
  */
-export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat }: ExtensionManagerProps) {
+export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat }: ExtensionManagerProps): ReactElement | null {
+  // The body owns the data hook and local state, so mounting it only while open
+  // refetches the list on every open and drops selection/errors on close (B-UIAPP-07).
+  if (!isOpen) return null
+  return <ExtensionManagerBody onClose={onClose} onOpenExtensionChat={onOpenExtensionChat} />
+}
+
+function ExtensionManagerBody({ onClose, onOpenExtensionChat }: Omit<ExtensionManagerProps, 'isOpen'>): ReactElement {
   const api = useAPI()
   const { extensions, loading, error, install, unload, reload, uninstall } = useExtensionManager()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
   const [installError, setInstallError] = useState<string | null>(null)
-
-  if (!isOpen) return null
 
   const handleInstall = async () => {
     setInstallError(null)
@@ -40,6 +45,18 @@ export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat 
       setInstallError(`Failed to install extension: ${String(err)}`)
     } finally {
       setInstalling(false)
+    }
+  }
+
+  // Reload/uninstall run from click handlers nobody awaits: surface a backend
+  // failure in the alert banner instead of an unhandled rejection (B-UIAPP-08).
+  const runGuarded = async (label: string, action: () => Promise<void>): Promise<void> => {
+    setInstallError(null)
+    try {
+      await action()
+    } catch (err) {
+      console.error(`Failed to ${label} extension:`, err)
+      setInstallError(`Failed to ${label} extension: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -115,10 +132,10 @@ export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat 
                     isLoaded={ext.isLoaded}
                     isSelected={selectedId === ext.id}
                     onToggle={() => handleToggle(ext.id, ext.isLoaded)}
-                    onReload={() => reload(ext.id)}
+                    onReload={() => void runGuarded('reload', () => reload(ext.id))}
                     onUninstall={() => {
                       if (window.confirm(`Are you sure you want to uninstall ${ext.manifest.name} and clear its data?`)) {
-                        uninstall(ext.id)
+                        void runGuarded('uninstall', () => uninstall(ext.id))
                         if (selectedId === ext.id) setSelectedId(null)
                       }
                     }}

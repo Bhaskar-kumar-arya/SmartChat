@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import WaveformPlayer from '@renderer/components/common/WaveformPlayer'
+import WaveSurfer from 'wavesurfer.js'
 
 // Mock WaveSurfer
 const mockWsInstance = {
@@ -58,5 +59,15 @@ describe('WaveformPlayer', () => {
     fireEvent.click(screen.getByText('2x'))
     expect(screen.getByText('1x')).toBeInTheDocument()
     expect(mockWsInstance.setPlaybackRate).toHaveBeenCalledWith(1)
+  })
+
+  // B-UIAPP-02: a re-render that passes an equal-content `peaks` array (as
+  // AudioMessage does on every render) must not destroy the playing instance.
+  it('does not recreate WaveSurfer when re-rendered with an equal-content peaks array', () => {
+    const { rerender } = render(<WaveformPlayer url="blob:a" peaks={[0.1, 0.5]} preDuration={5} />)
+    rerender(<WaveformPlayer url="blob:a" peaks={[0.1, 0.5]} preDuration={5} />)
+
+    expect(WaveSurfer.create).toHaveBeenCalledTimes(1)
+    expect(mockWsInstance.destroy).not.toHaveBeenCalled()
   })
 })

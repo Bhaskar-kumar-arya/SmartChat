@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderWithProviders, screen, userEvent, waitFor } from '../../testUtils'
 import ExtensionManager from '@renderer/components/extensions/ExtensionManager'
 import { createMockApiService } from '../../mocks/mockApiService'
+import { captureUnhandledRejections } from '../../helpers/captureUnhandled'
 
 describe('ExtensionManager', () => {
   const mockExtensions = [
@@ -66,6 +67,61 @@ describe('ExtensionManager', () => {
     await waitFor(() => {
       expect(extensionInstall).toHaveBeenCalledWith('/path/to/my-extension.scext')
     })
+  })
+
+  // B-UIAPP-07: the list must be refreshed each time the manager is opened and
+  // transient UI state must not leak across open/close.
+  it('refreshes the extension list and clears transient state on reopen', async () => {
+    const user = userEvent.setup()
+    const makeExt = (name: string): (typeof mockExtensions)[number] => ({
+      ...mockExtensions[0],
+      manifest: { ...mockExtensions[0].manifest, name }
+    })
+    const extensionList = vi
+      .fn()
+      .mockResolvedValueOnce([makeExt('Old Plugin')])
+      .mockResolvedValue([makeExt('New Plugin')])
+    const apiService = createMockApiService({
+      extensionList,
+      selectFile: vi.fn().mockResolvedValue(['/path/not-an-extension.zip'])
+    })
+
+    const { rerender } = renderWithProviders(<ExtensionManager isOpen={true} onClose={vi.fn()} />, {
+      apiService
+    })
+    await waitFor(() => expect(screen.getByText('Old Plugin')).toBeInTheDocument())
+    await user.click(screen.getByTitle('Install .scext package'))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    rerender(<ExtensionManager isOpen={false} onClose={vi.fn()} />)
+    rerender(<ExtensionManager isOpen={true} onClose={vi.fn()} />)
+
+    await waitFor(() => expect(screen.getByText('New Plugin')).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  // B-UIAPP-08: a backend failure on reload/uninstall must surface as feedback,
+  // not an unhandled rejection.
+  it('reports reload and uninstall failures instead of leaking unhandled rejections', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const apiService = createMockApiService({
+      extensionList: vi.fn().mockResolvedValue(mockExtensions),
+      // Plain functions, not vi.fn(): a spy would mark the rejection as handled.
+      extensionReload: () => Promise.reject(new Error('reload boom')),
+      extensionUninstall: () => Promise.reject(new Error('uninstall boom'))
+    })
+    renderWithProviders(<ExtensionManager isOpen={true} onClose={vi.fn()} />, { apiService })
+    await screen.findByText('Weather Bot')
+
+    const capture = captureUnhandledRejections()
+    await user.click(screen.getByTitle('Reload extension'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('reload boom')
+    await user.click(screen.getByTitle('Uninstall extension'))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('uninstall boom'))
+    const unhandled = await capture.stop()
+
+    expect(unhandled).toEqual([])
   })
 
   it('calls onClose when close icon button is clicked', async () => {

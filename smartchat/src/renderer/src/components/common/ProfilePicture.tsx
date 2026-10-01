@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAPI } from '../../context/APIContext'
 
 interface ProfilePictureProps {
@@ -24,6 +24,11 @@ export const ProfilePicture: React.FC<ProfilePictureProps> = ({
   const [url, setUrl] = useState<string | null>(initialUrl || null)
   const [retryAttempted, setRetryAttempted] = useState(false)
   const [loadError, setLoadError] = useState(false)
+
+  const jidRef = useRef(jid)
+  useEffect(() => {
+    jidRef.current = jid
+  }, [jid])
 
   // Sync state with props when switching chats
   useEffect(() => {
@@ -56,14 +61,19 @@ export const ProfilePicture: React.FC<ProfilePictureProps> = ({
   const handleImageError = async () => {
     if (!retryAttempted && jid) {
       setRetryAttempted(true)
+      const requestedJid = jid
       try {
         const freshUrl = await api.getProfilePicture(jid, 'preview', true)
+        // The header instance is reused across chats: drop the result if the
+        // contact changed while the refresh was in flight (B-UIAPP-06).
+        if (jidRef.current !== requestedJid) return
         if (freshUrl && freshUrl !== url) {
           setUrl(freshUrl)
           return
         }
       } catch (err) {
         console.error('[ProfilePicture] Error refreshing profile picture:', err)
+        if (jidRef.current !== requestedJid) return
       }
     }
     // If we already retried or it failed again, show fallback

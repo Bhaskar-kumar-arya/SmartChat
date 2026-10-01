@@ -19,10 +19,18 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
   const playbackSpeedRef = useRef(1)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(preDuration || 0)
+  // Peaks/preDuration are only hints for the initial render of a given url. Read
+  // them through a ref so a new-but-equal array from the parent (B-UIAPP-02)
+  // does not destroy and recreate the player mid-playback.
+  const hintsRef = useRef({ peaks, preDuration })
+  useEffect(() => {
+    hintsRef.current = { peaks, preDuration }
+  })
 
   useEffect(() => {
     if (!containerRef.current) return
 
+    const { peaks: initialPeaks, preDuration: initialDuration } = hintsRef.current
     const ws = WaveSurfer.create({
       container: containerRef.current,
       waveColor: 'rgba(233, 237, 239, 0.25)',
@@ -34,8 +42,8 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
       height: 30,
       normalize: true,
       url: url,
-      peaks: peaks ? [peaks] : undefined,
-      duration: preDuration
+      peaks: initialPeaks ? [initialPeaks] : undefined,
+      duration: initialDuration
     })
 
     wavesurferRef.current = ws
@@ -60,7 +68,7 @@ export default function WaveformPlayer({ url, isPtt = true, peaks, preDuration, 
     return () => {
       ws.destroy()
     }
-  }, [url, isPtt, peaks, preDuration])
+  }, [url, isPtt])
 
   const togglePlay = useCallback(() => {
     wavesurferRef.current?.playPause()
