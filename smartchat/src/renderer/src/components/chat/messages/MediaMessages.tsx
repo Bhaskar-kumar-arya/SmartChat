@@ -392,7 +392,7 @@ export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isD
     const handleDownload = async () => {
         setDownloadFailed(false)
         try {
-            await onDownload()
+            await onDownload?.()
         } catch (err) {
             console.error('Failed to download document:', err)
             setDownloadFailed(true)
