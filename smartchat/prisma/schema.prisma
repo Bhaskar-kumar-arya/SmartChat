@@ -208,7 +208,7 @@ model MessageVector {
   message   Message @relation(fields: [messageId], references: [id])
   /// FK → Message.id — the message this vector represents.
   messageId String  @id
-  /// Serialised float32 embedding vector (768 dimensions).
+  /// Serialised float32 embedding vector (EMBEDDING_DIMENSIONS, see embeddingDimensions.ts).
   vector    String
 }
 
