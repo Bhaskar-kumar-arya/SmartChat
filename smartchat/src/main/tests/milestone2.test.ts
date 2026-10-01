@@ -14,8 +14,9 @@ import {
 } from './helpers'
 
 // ── Fixture Loading ─────────────────────────────────────────────────────────
+// Synthetic, committed fixture (no real chats). Never point this at dev_only/.
 
-const fixturePath = join(__dirname, '../../../dev_only/logs/wa_events_test_fixture.json')
+const fixturePath = join(__dirname, 'fixtures/wa_events_synthetic.json')
 const fixtureEvents: Array<{ event: string; payload: any }> = JSON.parse(
   readFileSync(fixturePath, 'utf8')
 )
@@ -244,7 +245,7 @@ describe('Milestone 2 Integration Tests', () => {
 
       const chat = await prisma.chat.findUnique({ where: { jid: chatJid } })
       expect(chat?.name).toBe('Support Chat')
-      expect(chat?.unreadCount).toBe(0) // Intentionally ignored for > 0 by ChatService
+      expect(chat?.unreadCount).toBe(5) // ChatSyncHandler persists the provided unreadCount on create (stale expectation of 0 corrected in G-01)
       expect(chat?.pinned).toBe(1)
       expect(Number(chat?.timestamp)).toBe(ts)
     })

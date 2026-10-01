@@ -1,4 +1,3 @@
-import { execSync } from 'child_process'
 import { join } from 'path'
 import { existsSync, unlinkSync } from 'fs'
 import { PrismaClient } from '@prisma/client'
@@ -6,6 +5,22 @@ import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { vi, beforeAll, afterAll } from 'vitest'
 
 // Electron is mocked via vitest.config.ts alias pointing to electron-mock.ts
+
+// Hermetic: never open a websocket to a local LM Studio instance. AIService constructs
+// an LMStudioProvider (and thus an LMStudioClient) eagerly; the real client connects on
+// construction and rejects asynchronously when LM Studio is not running.
+vi.mock('@lmstudio/sdk', () => {
+  class LMStudioClient {
+    public llm = {
+      load: vi.fn().mockRejectedValue(new Error('LM Studio is mocked in tests')),
+      unload: vi.fn().mockResolvedValue(undefined),
+      listLoaded: vi.fn().mockResolvedValue([])
+    }
+    public system = { listDownloadedModels: vi.fn().mockResolvedValue([]) }
+  }
+  const Chat = { empty: vi.fn(() => ({ append: vi.fn() })), from: vi.fn(() => ({ append: vi.fn() })) }
+  return { LMStudioClient, Chat }
+})
 
 // Mock EmbeddingService globally
 vi.mock('../services/search/EmbeddingService', () => {
@@ -49,15 +64,9 @@ beforeAll(async () => {
     }
   }
 
-  // 2. Ensure template DB exists once
+  // 2. Template DB is created once, before any worker starts, by globalSetup.ts (B-DATA-07)
   if (!existsSync(templateDbPath)) {
-    console.log('[Test Setup] Creating template SQLite database at', templateDbPath)
-    process.env.DATABASE_URL = `file:${templateDbPath}`
-    execSync('npx prisma db push --accept-data-loss', {
-      stdio: 'inherit',
-      cwd: join(__dirname, '../../..')
-    })
-    process.env.DATABASE_URL = databaseUrl
+    throw new Error(`[Test Setup] ${templateDbPath} missing: globalSetup did not run`)
   }
 
   // 3. Fast copy from template DB
@@ -84,7 +93,7 @@ afterAll(async () => {
   }
   
   // Clean up user data directory
-  const userDataDir = join(__dirname, `../../../../prisma/test-user-data-${workerId}`)
+  const userDataDir = join(__dirname, `../../../prisma/test-user-data-${workerId}`)
   if (existsSync(userDataDir)) {
     try {
       const fs = require('fs')

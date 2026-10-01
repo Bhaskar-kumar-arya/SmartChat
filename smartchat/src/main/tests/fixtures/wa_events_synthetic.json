@@ -1,0 +1,936 @@
+[
+  {
+    "event": "messaging-history.set",
+    "payload": {
+      "chats": [
+        {
+          "id": "15550101000@s.whatsapp.net",
+          "name": "Synthetic Contact 1",
+          "unreadCount": 0,
+          "conversationTimestamp": 1700000000
+        },
+        {
+          "id": "15550101001@s.whatsapp.net",
+          "name": "Synthetic Contact 2",
+          "unreadCount": 1,
+          "conversationTimestamp": 1700000100
+        },
+        {
+          "id": "15550101002@s.whatsapp.net",
+          "name": "Synthetic Contact 3",
+          "unreadCount": 2,
+          "conversationTimestamp": 1700000200
+        },
+        {
+          "id": "15550101003@s.whatsapp.net",
+          "name": "Synthetic Contact 4",
+          "unreadCount": 0,
+          "conversationTimestamp": 1700000300
+        },
+        {
+          "id": "15550101004@s.whatsapp.net",
+          "name": "Synthetic Contact 5",
+          "unreadCount": 1,
+          "conversationTimestamp": 1700000400
+        },
+        {
+          "id": "15550101005@s.whatsapp.net",
+          "name": "Synthetic Contact 6",
+          "unreadCount": 2,
+          "conversationTimestamp": 1700000500
+        },
+        {
+          "id": "15550101006@s.whatsapp.net",
+          "name": "Synthetic Contact 7",
+          "unreadCount": 0,
+          "conversationTimestamp": 1700000600
+        },
+        {
+          "id": "15550101007@s.whatsapp.net",
+          "name": "Synthetic Contact 8",
+          "unreadCount": 1,
+          "conversationTimestamp": 1700000700
+        },
+        {
+          "id": "15550101008@s.whatsapp.net",
+          "name": "Synthetic Contact 9",
+          "unreadCount": 2,
+          "conversationTimestamp": 1700000800
+        },
+        {
+          "id": "15550101009@s.whatsapp.net",
+          "name": "Synthetic Contact 10",
+          "unreadCount": 0,
+          "conversationTimestamp": 1700000900
+        },
+        {
+          "id": "15550101010@s.whatsapp.net",
+          "name": "Synthetic Contact 11",
+          "unreadCount": 1,
+          "conversationTimestamp": 1700001000
+        },
+        {
+          "id": "15550101011@s.whatsapp.net",
+          "name": "Synthetic Contact 12",
+          "unreadCount": 2,
+          "conversationTimestamp": 1700001100
+        },
+        {
+          "id": "15550101012@s.whatsapp.net",
+          "name": "Synthetic Contact 13",
+          "unreadCount": 0,
+          "conversationTimestamp": 1700001200
+        },
+        {
+          "id": "15550101013@s.whatsapp.net",
+          "name": "Synthetic Contact 14",
+          "unreadCount": 1,
+          "conversationTimestamp": 1700001300
+        },
+        {
+          "id": "15550101014@s.whatsapp.net",
+          "name": "Synthetic Contact 15",
+          "unreadCount": 2,
+          "conversationTimestamp": 1700001400
+        },
+        {
+          "id": "15550101015@s.whatsapp.net",
+          "name": "Synthetic Contact 16",
+          "unreadCount": 0,
+          "conversationTimestamp": 1700001500
+        },
+        {
+          "id": "15550101016@s.whatsapp.net",
+          "name": "Synthetic Contact 17",
+          "unreadCount": 1,
+          "conversationTimestamp": 1700001600
+        },
+        {
+          "id": "15550101017@s.whatsapp.net",
+          "name": "Synthetic Contact 18",
+          "unreadCount": 2,
+          "conversationTimestamp": 1700001700
+        },
+        {
+          "id": "15550101018@s.whatsapp.net",
+          "name": "Synthetic Contact 19",
+          "unreadCount": 0,
+          "conversationTimestamp": 1700001800
+        },
+        {
+          "id": "15550101019@s.whatsapp.net",
+          "name": "Synthetic Contact 20",
+          "unreadCount": 1,
+          "conversationTimestamp": 1700001900
+        }
+      ],
+      "contacts": [
+        {
+          "id": "15550101000@s.whatsapp.net",
+          "name": "Synthetic Contact 1",
+          "notify": "Synth 1"
+        },
+        {
+          "id": "15550101001@s.whatsapp.net",
+          "name": "Synthetic Contact 2",
+          "notify": "Synth 2"
+        },
+        {
+          "id": "15550101002@s.whatsapp.net",
+          "name": "Synthetic Contact 3",
+          "notify": "Synth 3"
+        },
+        {
+          "id": "15550101003@s.whatsapp.net",
+          "name": "Synthetic Contact 4",
+          "notify": "Synth 4"
+        },
+        {
+          "id": "15550101004@s.whatsapp.net",
+          "name": "Synthetic Contact 5",
+          "notify": "Synth 5"
+        },
+        {
+          "id": "15550101005@s.whatsapp.net",
+          "name": "Synthetic Contact 6",
+          "notify": "Synth 6"
+        },
+        {
+          "id": "15550101006@s.whatsapp.net",
+          "name": "Synthetic Contact 7",
+          "notify": "Synth 7"
+        },
+        {
+          "id": "15550101007@s.whatsapp.net",
+          "name": "Synthetic Contact 8",
+          "notify": "Synth 8"
+        },
+        {
+          "id": "15550101008@s.whatsapp.net",
+          "name": "Synthetic Contact 9",
+          "notify": "Synth 9"
+        },
+        {
+          "id": "15550101009@s.whatsapp.net",
+          "name": "Synthetic Contact 10",
+          "notify": "Synth 10"
+        },
+        {
+          "id": "15550101010@s.whatsapp.net",
+          "name": "Synthetic Contact 11",
+          "notify": "Synth 11"
+        },
+        {
+          "id": "15550101011@s.whatsapp.net",
+          "name": "Synthetic Contact 12",
+          "notify": "Synth 12"
+        },
+        {
+          "id": "15550101012@s.whatsapp.net",
+          "name": "Synthetic Contact 13",
+          "notify": "Synth 13"
+        },
+        {
+          "id": "15550101013@s.whatsapp.net",
+          "name": "Synthetic Contact 14",
+          "notify": "Synth 14"
+        },
+        {
+          "id": "15550101014@s.whatsapp.net",
+          "name": "Synthetic Contact 15",
+          "notify": "Synth 15"
+        },
+        {
+          "id": "15550101015@s.whatsapp.net",
+          "name": "Synthetic Contact 16",
+          "notify": "Synth 16"
+        },
+        {
+          "id": "15550101016@s.whatsapp.net",
+          "name": "Synthetic Contact 17",
+          "notify": "Synth 17"
+        },
+        {
+          "id": "15550101017@s.whatsapp.net",
+          "name": "Synthetic Contact 18",
+          "notify": "Synth 18"
+        },
+        {
+          "id": "15550101018@s.whatsapp.net",
+          "name": "Synthetic Contact 19",
+          "notify": "Synth 19"
+        },
+        {
+          "id": "15550101019@s.whatsapp.net",
+          "name": "Synthetic Contact 20",
+          "notify": "Synth 20"
+        }
+      ],
+      "messages": [
+        {
+          "key": {
+            "remoteJid": "15550101000@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_0_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 1"
+          },
+          "messageTimestamp": 1700000000,
+          "pushName": "Synth 1"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101000@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_0_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 1"
+          },
+          "messageTimestamp": 1700000001,
+          "pushName": "Synth 1"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101000@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_0_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 1"
+          },
+          "messageTimestamp": 1700000002
+        },
+        {
+          "key": {
+            "remoteJid": "15550101001@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_1_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 2"
+          },
+          "messageTimestamp": 1700000100,
+          "pushName": "Synth 2"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101001@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_1_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 2"
+          },
+          "messageTimestamp": 1700000101,
+          "pushName": "Synth 2"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101001@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_1_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 2"
+          },
+          "messageTimestamp": 1700000102
+        },
+        {
+          "key": {
+            "remoteJid": "15550101002@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_2_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 3"
+          },
+          "messageTimestamp": 1700000200,
+          "pushName": "Synth 3"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101002@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_2_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 3"
+          },
+          "messageTimestamp": 1700000201,
+          "pushName": "Synth 3"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101002@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_2_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 3"
+          },
+          "messageTimestamp": 1700000202
+        },
+        {
+          "key": {
+            "remoteJid": "15550101003@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_3_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 4"
+          },
+          "messageTimestamp": 1700000300,
+          "pushName": "Synth 4"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101003@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_3_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 4"
+          },
+          "messageTimestamp": 1700000301,
+          "pushName": "Synth 4"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101003@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_3_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 4"
+          },
+          "messageTimestamp": 1700000302
+        },
+        {
+          "key": {
+            "remoteJid": "15550101004@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_4_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 5"
+          },
+          "messageTimestamp": 1700000400,
+          "pushName": "Synth 5"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101004@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_4_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 5"
+          },
+          "messageTimestamp": 1700000401,
+          "pushName": "Synth 5"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101004@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_4_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 5"
+          },
+          "messageTimestamp": 1700000402
+        },
+        {
+          "key": {
+            "remoteJid": "15550101005@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_5_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 6"
+          },
+          "messageTimestamp": 1700000500,
+          "pushName": "Synth 6"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101005@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_5_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 6"
+          },
+          "messageTimestamp": 1700000501,
+          "pushName": "Synth 6"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101005@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_5_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 6"
+          },
+          "messageTimestamp": 1700000502
+        },
+        {
+          "key": {
+            "remoteJid": "15550101006@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_6_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 7"
+          },
+          "messageTimestamp": 1700000600,
+          "pushName": "Synth 7"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101006@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_6_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 7"
+          },
+          "messageTimestamp": 1700000601,
+          "pushName": "Synth 7"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101006@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_6_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 7"
+          },
+          "messageTimestamp": 1700000602
+        },
+        {
+          "key": {
+            "remoteJid": "15550101007@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_7_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 8"
+          },
+          "messageTimestamp": 1700000700,
+          "pushName": "Synth 8"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101007@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_7_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 8"
+          },
+          "messageTimestamp": 1700000701,
+          "pushName": "Synth 8"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101007@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_7_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 8"
+          },
+          "messageTimestamp": 1700000702
+        },
+        {
+          "key": {
+            "remoteJid": "15550101008@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_8_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 9"
+          },
+          "messageTimestamp": 1700000800,
+          "pushName": "Synth 9"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101008@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_8_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 9"
+          },
+          "messageTimestamp": 1700000801,
+          "pushName": "Synth 9"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101008@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_8_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 9"
+          },
+          "messageTimestamp": 1700000802
+        },
+        {
+          "key": {
+            "remoteJid": "15550101009@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_9_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 10"
+          },
+          "messageTimestamp": 1700000900,
+          "pushName": "Synth 10"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101009@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_9_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 10"
+          },
+          "messageTimestamp": 1700000901,
+          "pushName": "Synth 10"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101009@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_9_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 10"
+          },
+          "messageTimestamp": 1700000902
+        },
+        {
+          "key": {
+            "remoteJid": "15550101010@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_10_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 11"
+          },
+          "messageTimestamp": 1700001000,
+          "pushName": "Synth 11"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101010@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_10_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 11"
+          },
+          "messageTimestamp": 1700001001,
+          "pushName": "Synth 11"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101010@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_10_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 11"
+          },
+          "messageTimestamp": 1700001002
+        },
+        {
+          "key": {
+            "remoteJid": "15550101011@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_11_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 12"
+          },
+          "messageTimestamp": 1700001100,
+          "pushName": "Synth 12"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101011@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_11_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 12"
+          },
+          "messageTimestamp": 1700001101,
+          "pushName": "Synth 12"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101011@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_11_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 12"
+          },
+          "messageTimestamp": 1700001102
+        },
+        {
+          "key": {
+            "remoteJid": "15550101012@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_12_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 13"
+          },
+          "messageTimestamp": 1700001200,
+          "pushName": "Synth 13"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101012@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_12_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 13"
+          },
+          "messageTimestamp": 1700001201,
+          "pushName": "Synth 13"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101012@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_12_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 13"
+          },
+          "messageTimestamp": 1700001202
+        },
+        {
+          "key": {
+            "remoteJid": "15550101013@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_13_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 14"
+          },
+          "messageTimestamp": 1700001300,
+          "pushName": "Synth 14"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101013@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_13_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 14"
+          },
+          "messageTimestamp": 1700001301,
+          "pushName": "Synth 14"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101013@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_13_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 14"
+          },
+          "messageTimestamp": 1700001302
+        },
+        {
+          "key": {
+            "remoteJid": "15550101014@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_14_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 15"
+          },
+          "messageTimestamp": 1700001400,
+          "pushName": "Synth 15"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101014@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_14_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 15"
+          },
+          "messageTimestamp": 1700001401,
+          "pushName": "Synth 15"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101014@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_14_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 15"
+          },
+          "messageTimestamp": 1700001402
+        },
+        {
+          "key": {
+            "remoteJid": "15550101015@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_15_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 16"
+          },
+          "messageTimestamp": 1700001500,
+          "pushName": "Synth 16"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101015@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_15_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 16"
+          },
+          "messageTimestamp": 1700001501,
+          "pushName": "Synth 16"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101015@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_15_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 16"
+          },
+          "messageTimestamp": 1700001502
+        },
+        {
+          "key": {
+            "remoteJid": "15550101016@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_16_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 17"
+          },
+          "messageTimestamp": 1700001600,
+          "pushName": "Synth 17"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101016@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_16_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 17"
+          },
+          "messageTimestamp": 1700001601,
+          "pushName": "Synth 17"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101016@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_16_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 17"
+          },
+          "messageTimestamp": 1700001602
+        },
+        {
+          "key": {
+            "remoteJid": "15550101017@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_17_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 18"
+          },
+          "messageTimestamp": 1700001700,
+          "pushName": "Synth 18"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101017@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_17_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 18"
+          },
+          "messageTimestamp": 1700001701,
+          "pushName": "Synth 18"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101017@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_17_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 18"
+          },
+          "messageTimestamp": 1700001702
+        },
+        {
+          "key": {
+            "remoteJid": "15550101018@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_18_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 19"
+          },
+          "messageTimestamp": 1700001800,
+          "pushName": "Synth 19"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101018@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_18_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 19"
+          },
+          "messageTimestamp": 1700001801,
+          "pushName": "Synth 19"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101018@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_18_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 19"
+          },
+          "messageTimestamp": 1700001802
+        },
+        {
+          "key": {
+            "remoteJid": "15550101019@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_19_0"
+          },
+          "message": {
+            "conversation": "Synthetic message 1 for contact 20"
+          },
+          "messageTimestamp": 1700001900,
+          "pushName": "Synth 20"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101019@s.whatsapp.net",
+            "fromMe": false,
+            "id": "SYNTH_19_1"
+          },
+          "message": {
+            "conversation": "Synthetic message 2 for contact 20"
+          },
+          "messageTimestamp": 1700001901,
+          "pushName": "Synth 20"
+        },
+        {
+          "key": {
+            "remoteJid": "15550101019@s.whatsapp.net",
+            "fromMe": true,
+            "id": "SYNTH_19_2"
+          },
+          "message": {
+            "conversation": "Synthetic message 3 for contact 20"
+          },
+          "messageTimestamp": 1700001902
+        }
+      ],
+      "isLatest": true,
+      "syncType": 2,
+      "progress": 100
+    }
+  }
+]

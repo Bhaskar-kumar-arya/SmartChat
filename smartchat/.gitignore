@@ -13,6 +13,8 @@ venv/
 /prisma/*.db-journal
 /prisma/*.db-shm
 /prisma/*.db-wal
+/prisma/*.db.hash
+/prisma/test-user-data-*/
 /scripts/node_modules
 /wiki
 /dev_only
@@ -20,4 +22,4 @@ venv/
 /train/generated_threads.json
 *.tsbuildinfo
 plugins/*.scext
-*.scext
+*.scext

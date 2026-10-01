@@ -9,6 +9,7 @@ export default defineConfig({
           name: 'main',
           globals: true,
           environment: 'node',
+          globalSetup: ['./src/main/tests/globalSetup.ts'],
           setupFiles: ['./src/main/tests/setup.ts'],
           include: ['src/main/tests/**/*.test.ts'],
           testTimeout: 15000,
@@ -22,6 +23,7 @@ export default defineConfig({
         resolve: {
           alias: {
             '@': resolve(__dirname, './src'),
+            '@smartchat/sdk': resolve(__dirname, './packages/sdk/src/index.ts'),
             'electron': resolve(__dirname, './src/main/tests/electron-mock.ts')
           }
         }
