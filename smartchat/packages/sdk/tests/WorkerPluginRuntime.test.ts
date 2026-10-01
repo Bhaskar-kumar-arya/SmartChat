@@ -112,6 +112,33 @@ describe('WorkerPluginRuntime', () => {
     expect(actionSpy).toHaveBeenCalledWith({ chatJid: '123@s.whatsapp.net' })
   })
 
+  // The renderer sends slash commands with `context: { jid, text }`, but the SDK contract
+  // (CommandContext) promises `chatJid`. Plugins following the typings got undefined.
+  it.fails('passes CommandContext.chatJid to a slash command handler (renderer sends jid)', async () => {
+    const runtime = new WorkerPluginRuntime(port1, manifest)
+    const ctx = runtime.getContext()
+    const spy = vi.fn().mockResolvedValue(undefined)
+    ctx.contributions.registerSlashCommand?.('ping', spy)
+
+    const done = new Promise<void>((resolve) => {
+      const listener = (res: { id?: string }): void => {
+        if (res.id === 'req-slash') {
+          port2.off('message', listener)
+          resolve()
+        }
+      }
+      port2.on('message', listener)
+    })
+    port2.postMessage({
+      id: 'req-slash',
+      type: 'contribution:execute:slash-command',
+      payload: { id: 'ping', name: 'ping', args: '', context: { jid: '123@s.whatsapp.net', text: '/ping' } }
+    })
+    await done
+
+    expect(spy.mock.calls[0][1].chatJid).toBe('123@s.whatsapp.net')
+  })
+
   it('should post log messages over port via ctx.log', async () => {
     const runtime = new WorkerPluginRuntime(port1, manifest)
     const ctx = runtime.getContext()
