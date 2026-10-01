@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { KernelAIModule } from '../../../kernel/api-modules/KernelAIModule'
+import { KernelAIModule, ToolConsentRequester } from '../../../kernel/api-modules/KernelAIModule'
 import { IPermissionStore } from '../../../kernel/permissions/IPermissionStore'
 import { IAIService } from '../../../services/ai/IAIService'
 import { IToolRegistry } from '../../../services/ai/IToolRegistry'
@@ -113,6 +113,109 @@ describe('KernelAIModule', () => {
 
     expect(mockExecute).toHaveBeenCalledWith({ query: 'test' })
     expect(result).toEqual({ text: 'Tool output' })
+  })
+
+  // B-KRN-01 (S-03): callTool must not run permission-gated builtins silently.
+  it('B-KRN-01: refuses a permission-gated tool when no consent path is wired', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    const mockExecute = vi.fn().mockResolvedValue({ text: 'ran' })
+    vi.mocked(mockToolRegistry.getTool).mockReturnValue({
+      name: 'executeScript',
+      description: 'Run JS',
+      parametersSchema: {},
+      requiresPermission: true,
+      execute: mockExecute
+    })
+
+    await expect(
+      module.handle('plugin-a', 'kernel:ai:callTool', { toolName: 'executeScript', args: { script: '1' } })
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(mockExecute).not.toHaveBeenCalled()
+  })
+
+  describe('B-KRN-01: consent and chat scope for permission-gated tools', () => {
+    const gatedTool = (name: string, execute = vi.fn().mockResolvedValue({ text: 'ran' })): typeof execute => {
+      vi.mocked(mockToolRegistry.getTool).mockReturnValue({
+        name,
+        description: 'gated',
+        parametersSchema: {},
+        requiresPermission: true,
+        execute
+      })
+      return execute
+    }
+    const withConsent = (consent: ToolConsentRequester): KernelAIModule =>
+      new KernelAIModule(mockPermissions, mockAIService, mockToolRegistry, undefined, undefined, consent)
+
+    beforeEach(() => {
+      vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+      vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    })
+
+    it('runs the tool only after the user approves', async () => {
+      const execute = gatedTool('executeScript')
+      const consent = vi.fn<ToolConsentRequester>().mockResolvedValue(true)
+      const result = await withConsent(consent).handle('plugin-a', 'kernel:ai:callTool', {
+        toolName: 'executeScript',
+        args: { script: '1' }
+      })
+      expect(consent).toHaveBeenCalledWith('plugin-a', expect.objectContaining({ name: 'executeScript' }), { script: '1' })
+      expect(execute).toHaveBeenCalledWith({ script: '1' })
+      expect(result).toEqual({ text: 'ran' })
+    })
+
+    it('does not run the tool when the user declines', async () => {
+      const execute = gatedTool('queryDatabase')
+      await expect(
+        withConsent(vi.fn<ToolConsentRequester>().mockResolvedValue(false)).handle('plugin-a', 'kernel:ai:callTool', {
+          toolName: 'queryDatabase',
+          args: { sql: 'select 1' }
+        })
+      ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+      expect(execute).not.toHaveBeenCalled()
+    })
+
+    it('enforces the plugin chat scope on args.jid before prompting', async () => {
+      const execute = gatedTool('sendMessage')
+      const consent = vi.fn<ToolConsentRequester>().mockResolvedValue(true)
+      vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+        (_p, cap, res) => !(cap === 'messages:send' && res === 'blocked@s.whatsapp.net')
+      )
+      await expect(
+        withConsent(consent).handle('plugin-a', 'kernel:ai:callTool', {
+          toolName: 'sendMessage',
+          args: { jid: 'blocked@s.whatsapp.net', text: 'hi' }
+        })
+      ).rejects.toMatchObject({ code: 'PERMISSION_DENIED', permission: 'messages:send' })
+      expect(consent).not.toHaveBeenCalled()
+      expect(execute).not.toHaveBeenCalled()
+    })
+
+    it('requires messages:read (not send) for readMessages and rejects without the capability', async () => {
+      const execute = gatedTool('readMessages')
+      vi.mocked(mockPermissions.hasCapability).mockImplementation((_p, cap) => cap !== 'messages:read')
+      await expect(
+        withConsent(vi.fn<ToolConsentRequester>().mockResolvedValue(true)).handle('plugin-a', 'kernel:ai:callTool', {
+          toolName: 'readMessages',
+          args: { jid: 'x@s.whatsapp.net' }
+        })
+      ).rejects.toMatchObject({ code: 'PERMISSION_DENIED', permission: 'messages:read' })
+      expect(execute).not.toHaveBeenCalled()
+    })
+
+    it('does not prompt for tools that are not permission-gated', async () => {
+      const consent = vi.fn<ToolConsentRequester>()
+      vi.mocked(mockToolRegistry.getTool).mockReturnValue({
+        name: 'free',
+        description: 'x',
+        parametersSchema: {},
+        requiresPermission: false,
+        execute: vi.fn().mockResolvedValue({ text: 'ok' })
+      })
+      await withConsent(consent).handle('plugin-a', 'kernel:ai:callTool', { toolName: 'free', args: {} })
+      expect(consent).not.toHaveBeenCalled()
+    })
   })
 
   it('registers tool when ai:tools:register capability is granted', async () => {

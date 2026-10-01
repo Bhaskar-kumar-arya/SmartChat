@@ -1,10 +1,39 @@
+import { BrowserWindow, dialog } from 'electron'
 import { BaseKernelModule } from './BaseKernelModule'
 import { IPermissionStore } from '../permissions/IPermissionStore'
 import { IAIService, AIChatContext, AIHistoryMessage, AIMention } from '../../services/ai/IAIService'
 import { IAIChatSessionService } from '../../services/ai/IAIChatSessionService'
 import { IToolRegistry, AITool } from '../../services/ai/IToolRegistry'
 import { IPluginChannel, isBidirectionalPluginChannel } from '../channels/IPluginChannel'
-import { KernelError, KernelNotFoundError } from './KernelErrors'
+import { KernelError, KernelNotFoundError, KernelPermissionError } from './KernelErrors'
+
+/**
+ * Asks the user (out of band, in the main process) whether `pluginId` may run a
+ * permission-gated AI tool. Resolves true only on explicit approval. (B-KRN-01)
+ */
+export type ToolConsentRequester = (pluginId: string, tool: AITool, args: Record<string, unknown>) => Promise<boolean>
+
+/** Default consent: the same main-process warning dialog the IPC `execute-tool` path uses. */
+const defaultToolConsent: ToolConsentRequester = async (pluginId, tool) => {
+  // No dialog available (e.g. headless/test) means no way to obtain consent: deny.
+  if (typeof dialog?.showMessageBox !== 'function') return false
+  const win = BrowserWindow.getFocusedWindow() ?? undefined
+  const options = {
+    type: 'warning' as const,
+    buttons: ['Cancel', 'Allow'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Permission required',
+    message: `Allow plugin "${pluginId}" to run "${tool.name}"?`,
+    detail: tool.description || 'This tool can act on your behalf or access local data.'
+  }
+  const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
+  return response === 1
+}
+
+/** For gated tools that target a chat (`args.jid`): the plugin capability whose chat scope applies. */
+const TOOL_CHAT_CAPABILITY: Record<string, string> = { readMessages: 'messages:read' }
+const DEFAULT_TOOL_CHAT_CAPABILITY = 'messages:send'
 
 export class KernelAIModule extends BaseKernelModule {
   readonly namespace = 'kernel:ai'
@@ -14,7 +43,8 @@ export class KernelAIModule extends BaseKernelModule {
     private readonly aiService: IAIService,
     private readonly toolRegistry: IToolRegistry,
     private readonly getChannel?: (pluginId: string) => IPluginChannel | undefined,
-    private readonly aiChatSessionService?: IAIChatSessionService
+    private readonly aiChatSessionService?: IAIChatSessionService,
+    private readonly requestToolConsent: ToolConsentRequester = defaultToolConsent
   ) {
     super(permissions)
   }
@@ -126,7 +156,25 @@ export class KernelAIModule extends BaseKernelModule {
         if (!tool) {
           throw new KernelNotFoundError(`AI Tool '${toolName}' not found in ToolRegistry`)
         }
-        return await tool.execute(args || {})
+        const toolArgs = args || {}
+        // B-KRN-01: permission-gated builtins (sendMessage, executeScript, queryDatabase, ...)
+        // need the same user consent as the IPC/HTTP paths, and a chat-targeted call
+        // must respect the plugin's chat scope.
+        if (tool.requiresPermission !== false) {
+          if (typeof toolArgs.jid === 'string') {
+            const capability = TOOL_CHAT_CAPABILITY[toolName] ?? DEFAULT_TOOL_CHAT_CAPABILITY
+            this.requireCapability(pluginId, capability)
+            this.requireResourceScope(pluginId, capability, toolArgs.jid, 'chat')
+          }
+          const approved = await this.requestToolConsent(pluginId, tool, toolArgs)
+          if (!approved) {
+            throw new KernelPermissionError(
+              `Tool '${toolName}' requires user approval and was not approved for plugin '${pluginId}'`,
+              'ai:tools:call'
+            )
+          }
+        }
+        return await tool.execute(toolArgs)
       }
 
       case 'registerTool': {

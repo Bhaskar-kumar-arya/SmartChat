@@ -100,6 +100,45 @@ describe('contributionIpc', () => {
     cleanup()
   })
 
+  // B-KRN-02 (S-03): the renderer-facing execute IPC must not drive ai-tool handlers.
+  it('B-KRN-02: rejects slot "ai-tool" on kernel:contribution:execute without dispatching', async () => {
+    const mockChannel: IPluginChannel = {
+      sendToPlugin: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      destroy: vi.fn()
+    }
+    vi.mocked(mockHost.getPlugin).mockReturnValue({
+      id: 'com.smartchat.builtin.ai-assistant',
+      manifest: {
+        id: 'com.smartchat.builtin.ai-assistant',
+        name: 'AI',
+        version: '1.0.0',
+        apiVersion: '2',
+        main: 'index.js',
+        permissions: [],
+        contributions: {}
+      },
+      channel: mockChannel,
+      isBuiltin: true
+    })
+
+    const cleanup = registerContributionIpcHandlers(registry, mockHost)
+    const executeHandler = handlers.get('kernel:contribution:execute')
+
+    await expect(
+      executeHandler!({}, {
+        slot: 'ai-tool',
+        pluginId: 'com.smartchat.builtin.ai-assistant',
+        id: 'executeScript',
+        args: '{"script":"1"}'
+      })
+    ).rejects.toThrow()
+    expect(mockChannel.sendToPlugin).not.toHaveBeenCalled()
+
+    cleanup()
+  })
+
   it('throws error on execute if plugin is not loaded', async () => {
     vi.mocked(mockHost.getPlugin).mockReturnValue(undefined)
 
