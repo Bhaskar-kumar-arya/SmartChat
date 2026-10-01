@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import { ReactionRepository } from '../../services/messages/ReactionRepository'
-import { getPrismaClient } from '../helpers'
+import { getPrismaClient, resetDb } from '../helpers'
+import { makeChat, makeIdentity, makeMessage } from '../factories'
 
 describe('ReactionRepository', () => {
   let prisma: PrismaClient
@@ -17,18 +18,15 @@ describe('ReactionRepository', () => {
   })
 
   beforeEach(async () => {
-    await prisma.reaction.deleteMany()
-    await prisma.message.deleteMany()
-    await prisma.chat.deleteMany()
-    await prisma.identity.deleteMany()
+    await resetDb(prisma)
   })
 
   const dummyChat = '123@g.us'
 
   it('should upsert and delete reaction', async () => {
-    await prisma.identity.create({ data: { id: 1, phoneNumber: 'u1@s.whatsapp.net' } })
-    await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
-    await prisma.message.create({ data: { id: 'm1', chatJid: dummyChat, fromMe: false, timestamp: 10n, messageType: 'conversation', content: '{}' } })
+    await makeIdentity(prisma, { id: 1, phoneNumber: 'u1@s.whatsapp.net' })
+    await makeChat(prisma, { jid: dummyChat, type: 'GROUP' })
+    await makeMessage(prisma, dummyChat, { id: 'm1', timestamp: 10n })
 
     // Create reaction
     await repository.upsertReaction('m1', 1, '👍', 100n)

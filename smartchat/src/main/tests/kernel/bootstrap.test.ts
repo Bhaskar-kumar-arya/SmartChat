@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 import { KernelBootstrapper } from '../../kernel/KernelBootstrapper'
 import { ServiceContainer } from '../../ServiceContainer'
 
@@ -68,5 +71,56 @@ describe('KernelBootstrapper', () => {
     const result = await bootstrapper.boot()
     expect(result.host).toBeDefined()
     await result.dispose()
+  })
+
+  describe('a plugin that fails to load (H-06)', () => {
+    let extDir: string
+
+    beforeEach(() => {
+      extDir = fs.mkdtempSync(path.join(os.tmpdir(), 'h06-ext-'))
+      // Valid manifests whose entry file does not exist, so loader.load() throws.
+      for (const id of ['broken.one', 'broken.two']) {
+        fs.mkdirSync(path.join(extDir, id))
+        fs.writeFileSync(
+          path.join(extDir, id, 'manifest.json'),
+          JSON.stringify({
+            id,
+            name: id,
+            version: '1.0.0',
+            main: 'missing.js',
+            apiVersion: '2',
+            permissions: [],
+            contributions: {}
+          })
+        )
+      }
+    })
+
+    afterEach(() => {
+      fs.rmSync(extDir, { recursive: true, force: true })
+    })
+
+    it('does not abort boot; other plugins load and the failed ones stay not-loaded', async () => {
+      const bootstrapper = new KernelBootstrapper({
+        services: mockServices,
+        getMainWindow: () => null,
+        getBus: () => null,
+        getSock: () => null,
+        extensionsPath: extDir
+      })
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const result = await bootstrapper.boot()
+
+      const loaded = result.host.listLoaded()
+      expect(loaded).toContain('com.smartchat.builtin.whatsapp-core')
+      expect(loaded).not.toContain('broken.one')
+      expect(loaded).not.toContain('broken.two')
+      // extension:list derives isLoaded from listInstalled() vs listLoaded()
+      const installed = (await result.loader.listInstalled()).map((m) => m.id)
+      expect(installed).toEqual(expect.arrayContaining(['broken.one', 'broken.two']))
+
+      await result.dispose()
+    })
   })
 })
