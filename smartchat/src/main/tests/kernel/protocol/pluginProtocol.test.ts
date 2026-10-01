@@ -76,7 +76,7 @@ describe('pluginProtocol', () => {
 
     for (const url of ['plugin://../dev.db', 'plugin://./index.html']) {
       vi.mocked(net.fetch).mockClear()
-      const response = (await handler({ url } as any)) as Response
+      const response = (await handler({ url } as unknown as Request)) as Response
       expect(response.status).toBe(403)
       expect(net.fetch).not.toHaveBeenCalled()
     }
