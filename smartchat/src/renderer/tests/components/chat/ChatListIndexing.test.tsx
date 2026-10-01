@@ -1,15 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderWithProviders, screen, fireEvent, waitFor, act } from '../../testUtils'
 import { createMockApiService } from '../../mocks/mockApiService'
 import ChatList from '@renderer/components/chat/ChatList'
-
-// Pin-phase only: today the failure escapes as an unhandled rejection (the bug).
-// Swallow it so the it.fails pin keeps the run free of unhandled errors.
-const swallowUnhandledRejections = () => {
-  const original = process.emit.bind(process) as (event: string, ...args: unknown[]) => boolean
-  vi.spyOn(process, 'emit').mockImplementation(((event: string, ...args: unknown[]) =>
-    event === 'unhandledRejection' ? true : original(event, ...args)) as typeof process.emit)
-}
 
 describe('ChatList indexing (B-UICHAT-14)', () => {
   const defaultProps = {
@@ -21,14 +13,9 @@ describe('ChatList indexing (B-UICHAT-14)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    swallowUnhandledRejections()
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it.fails('shows a toast and does not start indexing when clearVectors rejects', async () => {
+  it('shows a toast and does not start indexing when clearVectors rejects', async () => {
     const api = createMockApiService()
     api.getChats = vi.fn().mockResolvedValue([])
     api.clearVectors = vi.fn().mockRejectedValue(new Error('clear exploded'))

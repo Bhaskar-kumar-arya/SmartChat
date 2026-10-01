@@ -3,6 +3,7 @@ import { useChats } from './hooks/useChats'
 import { usePresence } from '../../hooks/usePresence'
 import { useSearch } from './hooks/useSearch'
 import { useAPI } from '../../context/APIContext'
+import { useToast } from '../../context/ToastContext'
 import { formatChatTime, isMuted } from '../../utils/formatters'
 import { ChatItem, SearchFilters, SearchMode, MessageType } from '../../types/chatTypes'
 import { getPresenceStatusText } from '../../utils/presenceUtils'
@@ -49,6 +50,7 @@ export default function ChatList({
 }: ChatListProps) {
 
   const api = useAPI()
+  const { showError } = useToast()
   const { 
     chats, 
     allChats, 
@@ -153,7 +155,13 @@ export default function ChatList({
   const confirmIndex = async () => {
     setShowIndexConfirm(false)
     if (clearIndexFirst) {
-      await api.clearVectors()
+      try {
+        await api.clearVectors()
+      } catch (err) {
+        console.error('Clearing the search index failed:', err)
+        showError(err, 'Could not clear the search index.')
+        return
+      }
     }
     setIndexingProgress(0)
     try {
