@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderWithProviders, screen, fireEvent, userEvent } from '../../testUtils'
+import { renderWithProviders, screen, fireEvent, userEvent, waitFor } from '../../testUtils'
+import { createMockApiService } from '../../mocks/mockApiService'
 import MessageInput from '@renderer/components/chat/MessageInput'
 import { MessageItem } from '@renderer/types/chatTypes'
 
@@ -180,5 +181,49 @@ describe('MessageInput', () => {
 
     expect(apiService.selectFile).toHaveBeenCalled()
     expect(onAttachFiles).toHaveBeenCalledWith(['/path/to/file1.png', '/path/to/file2.pdf'])
+  })
+
+  describe('Enter with an open @ token (B-UICHAT-04)', () => {
+    const typeWithCaretAtEnd = (editor: HTMLElement, value: string) => {
+      editor.textContent = value
+      const range = document.createRange()
+      range.selectNodeContents(editor)
+      range.collapse(false)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(range)
+      fireEvent.input(editor)
+    }
+
+    it.fails('sends on Enter in a DM even though the text contains an @ token', () => {
+      const onSend = vi.fn()
+      renderWithProviders(<MessageInput {...defaultProps} onSend={onSend} />)
+      const editor = document.querySelector('.message-input') as HTMLElement
+
+      typeWithCaretAtEnd(editor, 'mail me at bob@corp.com')
+      fireEvent.keyDown(editor, { key: 'Enter', shiftKey: false })
+
+      expect(onSend).toHaveBeenCalledWith('mail me at bob@corp.com', [])
+    })
+
+    it('does not send on Enter while a visible mention menu is open in a group', async () => {
+      const onSend = vi.fn()
+      const apiService = createMockApiService()
+      apiService.getGroupParticipants = vi.fn().mockResolvedValue([
+        { jid: '111@s.whatsapp.net', name: 'Bob', isAdmin: false, isMe: false }
+      ])
+      renderWithProviders(
+        <MessageInput {...defaultProps} activeJid="g1@g.us" onSend={onSend} />,
+        { apiService }
+      )
+      const editor = document.querySelector('.message-input') as HTMLElement
+      await waitFor(() => expect(apiService.getGroupParticipants).toHaveBeenCalled())
+
+      typeWithCaretAtEnd(editor, 'hi @bo')
+      await screen.findByText('Bob')
+      fireEvent.keyDown(editor, { key: 'Enter', shiftKey: false })
+
+      expect(onSend).not.toHaveBeenCalled()
+    })
   })
 })
