@@ -92,26 +92,20 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
     // progress UI / embedding pause / finish timer.
     const isOnDemand = rawSyncType === WorkerHistorySyncManager.ON_DEMAND_SYNC_TYPE
 
+    if (isOnDemand) {
+      // B-WA-06: on-demand pages are NOT counted in activeChunks. They never
+      // arm/flush the finish machinery, so counting them could leave a deferred
+      // finishSync (pendingFinish) un-flushed forever.
+      try {
+        await this.handleOnDemandChunk(data, sock)
+      } catch (err) {
+        console.error('[WorkerHistorySync] Error processing sync payload:', err)
+      }
+      return
+    }
+
     this.activeChunks++
     try {
-      if (isOnDemand) {
-        const syncResult = await handleHistorySync(
-          data as HistorySyncData,
-          this.deps.contactService,
-          this.deps.aliasRepository,
-          this.deps.chatRepository,
-          this.deps.communityRepository,
-          this.deps.messageRepository,
-          this.deps.reactionRepository
-        )
-        this.deps.mediaService.downloadFavoriteStickersFromSync(syncResult.importedMessages, sock).catch((err) => {
-          console.error('[WorkerHistorySync] Failed to process favorite stickers from on-demand page:', err)
-        })
-        console.log(`[WorkerHistorySync] on-demand history page persisted: ${syncResult.messageCount} messages`)
-        this.eventPublisher.publish('wa-history-appended', { messageCount: syncResult.messageCount })
-        return
-      }
-
       this.syncChunkCount++
       const rawData = data as Record<string, unknown>
       const reportedProgress = typeof rawData.progress === 'number' ? rawData.progress : undefined
@@ -183,7 +177,7 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       console.error('[WorkerHistorySync] Error processing sync payload:', err)
     } finally {
       this.activeChunks--
-      if (!isOnDemand && this.activeChunks === 0 && !this.syncComplete) {
+      if (this.activeChunks === 0 && !this.syncComplete) {
         if (this.pendingFinish) {
           this.pendingFinish = false
           await this.finishSync(sock, syncFullHistory).catch((err) => {
@@ -195,6 +189,61 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
         }
       }
     }
+  }
+
+  /**
+   * B-WA-16: always announce the outcome of an on-demand page, success or failure,
+   * so the renderer never has to wait out its timeout. `jid` is set only when the
+   * page unambiguously belongs to one chat; `requestId` is Baileys'
+   * peerDataRequestSessionId when present. Both are additive to the legacy payload.
+   */
+  private async handleOnDemandChunk(data: unknown, sock: WASocket): Promise<void> {
+    const raw = (data ?? {}) as { chats?: Array<{ id?: unknown }>; peerDataRequestSessionId?: unknown }
+    const chatIds = Array.isArray(raw.chats)
+      ? raw.chats.map((c) => c?.id).filter((id): id is string => typeof id === 'string')
+      : []
+    const jid = chatIds.length === 1 ? chatIds[0] : undefined
+    const requestId = typeof raw.peerDataRequestSessionId === 'string' ? raw.peerDataRequestSessionId : undefined
+    const identity = { ...(jid !== undefined && { jid }), ...(requestId !== undefined && { requestId }) }
+
+    try {
+      const syncResult = await handleHistorySync(
+        data as HistorySyncData,
+        this.deps.contactService,
+        this.deps.aliasRepository,
+        this.deps.chatRepository,
+        this.deps.communityRepository,
+        this.deps.messageRepository,
+        this.deps.reactionRepository
+      )
+      this.deps.mediaService.downloadFavoriteStickersFromSync(syncResult.importedMessages, sock).catch((err) => {
+        console.error('[WorkerHistorySync] Failed to process favorite stickers from on-demand page:', err)
+      })
+      console.log(`[WorkerHistorySync] on-demand history page persisted: ${syncResult.messageCount} messages`)
+      this.eventPublisher.publish('wa-history-appended', { ...identity, messageCount: syncResult.messageCount })
+    } catch (err) {
+      console.error('[WorkerHistorySync] Error processing on-demand history page:', err)
+      this.eventPublisher.publish('wa-history-appended', {
+        ...identity,
+        messageCount: 0,
+        error: err instanceof Error ? err.message : String(err)
+      })
+    }
+  }
+
+  /**
+   * B-WA-11: arm the inactivity safety timer without waiting for a chunk. Used on
+   * socket open when a previous sync was interrupted (restart/crash) and
+   * WhatsApp may not resend any chunks. No-op if complete, a chunk is writing
+   * (its finally re-arms), or a timer is already armed.
+   */
+  armInactivityTimer(sock: WASocket, syncFullHistory: boolean): void {
+    if (this.syncComplete || this.activeChunks > 0 || this.syncTimeout) return
+    this.syncTimeout = setTimeout(() => {
+      this.finishSync(sock, syncFullHistory).catch((err) => {
+        console.error('[WorkerHistorySync] Inactivity-timer finishSync failed:', err)
+      })
+    }, HISTORY_SYNC_TIMEOUT_MS)
   }
 
   async finishSync(sock: WASocket, syncFullHistory: boolean): Promise<'completed' | 'deferred'> {

@@ -159,6 +159,18 @@ export class WorkerConnectionManager {
       prisma
     })
 
+    // B-WA-11: a sync interrupted by a restart may never be resent by WhatsApp, and the
+    // inactivity timer is otherwise armed only by an arriving chunk. Arm it on open when
+    // history sync is incomplete. Skipped on fresh login, where chunks are guaranteed.
+    if (!this.isFreshLogin && !isHistorySyncCompleted) {
+      const sock = this.sock
+      sock.ev.on('connection.update', (update): void => {
+        if (update.connection === 'open') {
+          repos.historySyncManager.armInactivityTimer(sock, this.syncFullHistory)
+        }
+      })
+    }
+
     // saveCreds now throws after retries (B-WA-05); nothing awaits this handler,
     // so catch here to avoid an unhandled rejection in the worker.
     this.sock.ev.on('creds.update', (): void => {
