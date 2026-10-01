@@ -11,8 +11,8 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint ratchet baseline committed (scripts/lint-baseline.json, 22 rules, Prettier excluded): no-explicit-any 897 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22
 
 ## Owner smoke queue (🔎)
-3. (S-02) Dev/packaged Electron: an AI chat executeScript call (e.g. queryDatabase) returns results + logs; a  script leaves the app responsive and times out (~60s). Child is spawned via process.execPath -e with ELECTRON_RUN_AS_NODE=1: untested under real Electron.
-4. (S-03) , plugin with ai:tools:call calls ctx.ai.callTool('sendMessage',{jid,text}): dialog appears; Cancel→PERMISSION_DENIED, Allow→sends. In devtools window.api.executeContribution({slot:'ai-tool',...}) rejects. Main AI chat tools still work.
+3. (S-02) Dev/packaged Electron: an AI chat executeScript call (e.g. queryDatabase) returns results + logs; a `while(true){}` script leaves the app responsive and times out (~60s). Child is spawned via process.execPath -e with ELECTRON_RUN_AS_NODE=1: untested under real Electron.
+4. (S-03) In `npm run dev`, a plugin with ai:tools:call calls ctx.ai.callTool('sendMessage',{jid,text}): dialog appears; Cancel→PERMISSION_DENIED, Allow→sends. In devtools window.api.executeContribution({slot:'ai-tool',...}) rejects. Main AI chat tools still work.
 5. (S-04, optional) Untick events:* for a plugin in Settings: its panel/worker stops receiving events without reload.
 2. (S-01) In a real Electron build: a plugin panel/overlay still renders; from a plugin page devtools `fetch('plugin://../dev.db')` is denied (403).
 1. After pushing, check GitHub Actions: CI workflow green on ubuntu AND windows (windows untested); then mark both checks required on main (Settings > Branches).
