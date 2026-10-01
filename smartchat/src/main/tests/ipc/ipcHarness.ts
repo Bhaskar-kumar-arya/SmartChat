@@ -17,7 +17,7 @@ import type { ISecureFileRegistry } from '../../services/protocol/ISecureFileReg
  */
 export function deepStub<T>(): T {
   const make = (): unknown =>
-    new Proxy(function () {}, {
+    new Proxy(() => undefined, {
       get: (_t, prop) => (prop === 'then' ? undefined : make()),
       apply: () => undefined
     })

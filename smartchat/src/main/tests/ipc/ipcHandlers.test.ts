@@ -164,7 +164,7 @@ describe('IPC handlers via recording ipcMain', () => {
   })
 
   describe('ai-chat-stream (ipcMain.on)', () => {
-    async function runStream(ipc: Recorder) {
+    async function runStream(ipc: Recorder): Promise<ReturnType<typeof vi.fn>> {
       const send = vi.fn()
       const listeners = ipc.getListeners('ai-chat-stream')
       expect(listeners).toHaveLength(1)

@@ -25,7 +25,7 @@ export const shell = {
 export class BrowserWindow {
   static getAllWindows(): BrowserWindow[] { return [] }
   static getFocusedWindow(): BrowserWindow | null { return null }
-  static fromWebContents(_wc: unknown): BrowserWindow | null { return null }
+  static fromWebContents(): BrowserWindow | null { return null }
   isDestroyed() { return false }
   isFocused() { return false }
   webContents = {
@@ -40,7 +40,7 @@ export class Notification {
   on() {}
 }
 
-type IpcHandler = (...args: any[]) => unknown
+type IpcHandler = (...args: unknown[]) => unknown
 
 // N-05: recording ipcMain. `handle`/`handleOnce` record invoke-style handlers,
 // `on`/`once` record send-style listeners, both keyed by channel, so tests can

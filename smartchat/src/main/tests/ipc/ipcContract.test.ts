@@ -31,7 +31,7 @@ const indexSrc = readFileSync(join(MAIN_DIR, 'index.ts'), 'utf8')
 // Literal channel names only: dynamic channels (`${channelId}-chunk`) are not checkable.
 // Channels come from every preload script (index, panel-preload, overlay-preload).
 const preloadFiles = readdirSync(PRELOAD_DIR).filter(f => f.endsWith('.ts') && !f.endsWith('.d.ts'))
-const readPreload = (files: string[]) => files.map(f => readFileSync(join(PRELOAD_DIR, f), 'utf8')).join('\n')
+const readPreload = (files: string[]): string => files.map(f => readFileSync(join(PRELOAD_DIR, f), 'utf8')).join('\n')
 const allPreloadSrc = readPreload(preloadFiles)
 // overlay-preload listens to events sent by the renderer's <webview> host (not main), so it is
 // excluded from the main-emitter check.
@@ -59,7 +59,7 @@ beforeAll(() => {
   registeredSend = [...ipc.sendChannels(), ...strings(/ipcMain\.on\(\s*'([^']+)'/g, indexSrc)]
 })
 
-const missing = (have: string[], want: string[]) =>
+const missing = (have: string[], want: string[]): string[] =>
   [...new Set(have)].filter(c => !want.includes(c)).sort()
 
 /**
@@ -112,7 +112,7 @@ const PRELOAD_NOT_IN_IAPI: Record<string, string> = {
 // IAPIService method the preload does not implement
 const IAPI_NOT_IN_PRELOAD: Record<string, string> = {}
 
-function expectDrift(actual: string[], allowed: Record<string, string>) {
+function expectDrift(actual: string[], allowed: Record<string, string>): void {
   expect(actual).toEqual(Object.keys(allowed).sort())
 }
 
