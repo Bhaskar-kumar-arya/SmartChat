@@ -23,3 +23,6 @@ venv/
 *.tsbuildinfo
 plugins/*.scext
 *.scext
+
+# Test coverage output
+coverage/

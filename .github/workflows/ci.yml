@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck + tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    defaults:
+      run:
+        working-directory: smartchat
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Same Node major as build-mac.yml (@electron/rebuild >=4 needs >=22.12).
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: smartchat/package-lock.json
+
+      # --legacy-peer-deps matches build-mac.yml (plain `npm ci` hits an npm
+      # arborist crash on this lockfile). The Electron binary is not needed
+      # for typecheck/tests.
+      - name: Install npm dependencies
+        run: npm ci --legacy-peer-deps
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # Tests run under plain Node, so better-sqlite3 must be built for Node
+      # (not Electron). See CLAUDE.md "native better-sqlite3 rebuild dance".
+      - name: Rebuild better-sqlite3 for Node
+        run: npm rebuild better-sqlite3
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # TODO(G-03): add the lint-ratchet step here (after typecheck, before
+      # tests). It does not exist yet; do not add until G-03 lands.
+
+      - name: Unit tests
+        run: npx vitest run
+
+      # Report-only coverage on ubuntu (no thresholds). Separate and
+      # non-gating: under coverage instrumentation the panel-plugin e2e test
+      # has shown a flaky unhandled "Cannot find module .../index.js" error.
+      - name: Coverage report (report only)
+        if: matrix.os == 'ubuntu-latest'
+        continue-on-error: true
+        run: npm run test:coverage
