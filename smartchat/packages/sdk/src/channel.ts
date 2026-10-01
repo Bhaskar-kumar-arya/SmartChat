@@ -185,7 +185,12 @@ export class WorkerPluginRuntime {
       const cmdName = name || id
       const handler = this.slashCommandHandlers.get(cmdName)
       if (handler) {
-        await handler(args || '', context)
+        // The host sends `{ jid, text }`; CommandContext promises `chatJid`. Provide both.
+        const normalized =
+          context && typeof context === 'object' && context.chatJid === undefined && typeof context.jid === 'string'
+            ? { ...context, chatJid: context.jid }
+            : context
+        await handler(args || '', normalized)
       } else {
         const err = new Error(`Slash command '${cmdName}' not found`)
         ;(err as any).code = 'NOT_FOUND'

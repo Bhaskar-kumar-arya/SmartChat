@@ -114,7 +114,7 @@ describe('WorkerPluginRuntime', () => {
 
   // The renderer sends slash commands with `context: { jid, text }`, but the SDK contract
   // (CommandContext) promises `chatJid`. Plugins following the typings got undefined.
-  it.fails('passes CommandContext.chatJid to a slash command handler (renderer sends jid)', async () => {
+  it('passes CommandContext.chatJid to a slash command handler (renderer sends jid)', async () => {
     const runtime = new WorkerPluginRuntime(port1, manifest)
     const ctx = runtime.getContext()
     const spy = vi.fn().mockResolvedValue(undefined)
