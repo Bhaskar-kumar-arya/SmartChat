@@ -115,6 +115,25 @@ describe('KernelAIModule', () => {
     expect(result).toEqual({ text: 'Tool output' })
   })
 
+  // B-KRN-01 (S-03): callTool must not run permission-gated builtins silently.
+  it.fails('B-KRN-01: refuses a permission-gated tool when no consent path is wired', async () => {
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    vi.mocked(mockPermissions.isResourceAllowed).mockReturnValue(true)
+    const mockExecute = vi.fn().mockResolvedValue({ text: 'ran' })
+    vi.mocked(mockToolRegistry.getTool).mockReturnValue({
+      name: 'executeScript',
+      description: 'Run JS',
+      parametersSchema: {},
+      requiresPermission: true,
+      execute: mockExecute
+    })
+
+    await expect(
+      module.handle('plugin-a', 'kernel:ai:callTool', { toolName: 'executeScript', args: { script: '1' } })
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    expect(mockExecute).not.toHaveBeenCalled()
+  })
+
   it('registers tool when ai:tools:register capability is granted', async () => {
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
 
