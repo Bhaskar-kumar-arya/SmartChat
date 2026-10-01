@@ -21,9 +21,6 @@ import {
   SYNC_AUTO_FINISH_THRESHOLD,
   HISTORY_SYNC_TIMEOUT_MS
 } from '../../../constants'
-import { createLogger } from '../../../utils/logger'
-
-const log = createLogger('WorkerHistorySync')
 
 export interface HistorySyncDependencies {
   mediaService: IMediaService
@@ -220,12 +217,12 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
         this.deps.reactionRepository
       )
       this.deps.mediaService.downloadFavoriteStickersFromSync(syncResult.importedMessages, sock).catch((err) => {
-        log.error('Failed to process favorite stickers from on-demand page:', err)
+        console.error('[WorkerHistorySync] Failed to process favorite stickers from on-demand page:', err)
       })
-      log.info(`on-demand history page persisted: ${syncResult.messageCount} messages`)
+      console.log(`[WorkerHistorySync] on-demand history page persisted: ${syncResult.messageCount} messages`)
       this.eventPublisher.publish('wa-history-appended', { ...identity, messageCount: syncResult.messageCount })
     } catch (err) {
-      log.error('Error processing on-demand history page:', err)
+      console.error('[WorkerHistorySync] Error processing on-demand history page:', err)
       this.eventPublisher.publish('wa-history-appended', {
         ...identity,
         messageCount: 0,
@@ -244,7 +241,7 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
     if (this.syncComplete || this.activeChunks > 0 || this.syncTimeout) return
     this.syncTimeout = setTimeout(() => {
       this.finishSync(sock, syncFullHistory).catch((err) => {
-        log.error('Inactivity-timer finishSync failed:', err)
+        console.error('[WorkerHistorySync] Inactivity-timer finishSync failed:', err)
       })
     }, HISTORY_SYNC_TIMEOUT_MS)
   }

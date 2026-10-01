@@ -22,7 +22,11 @@ describe('WorkerConnectionManager — B-WA-11 inactivity timer on open', () => {
   let handlers: Record<string, Handler[]>
   let historySyncManager: { clear: ReturnType<typeof vi.fn>; isInProgress: boolean; armInactivityTimer: ReturnType<typeof vi.fn> }
 
-  async function connectWith(opts: { hasCreds: boolean; historySyncCompleted: boolean; syncFullHistory?: boolean }) {
+  async function connectWith(opts: {
+    hasCreds: boolean
+    historySyncCompleted: boolean
+    syncFullHistory?: boolean
+  }): Promise<{ sock: unknown }> {
     handlers = {}
     const sock = {
       ev: {

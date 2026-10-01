@@ -114,16 +114,16 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
   })
   describe('ON_DEMAND chunks (B-WA-06 / B-WA-16)', () => {
     const ON_DEMAND = 6
-    const makeSock = () => ({ groupFetchAllParticipating: vi.fn().mockResolvedValue([]) }) as any
+    const makeSock = (): never => ({ groupFetchAllParticipating: vi.fn().mockResolvedValue([]) }) as never
 
     // B-WA-06
     it('B-WA-06: finishSync deferred by an in-flight initial chunk still completes when an on-demand chunk settles last', async () => {
       const sock = makeSock()
-      let resolveInitial: (v: any) => void = () => {}
-      let resolveOnDemand: (v: any) => void = () => {}
+      let resolveInitial: (v: unknown) => void = () => {}
+      let resolveOnDemand: (v: unknown) => void = () => {}
       vi.mocked(handleHistorySync)
-        .mockReturnValueOnce(new Promise((r) => { resolveInitial = r }) as any)
-        .mockReturnValueOnce(new Promise((r) => { resolveOnDemand = r }) as any)
+        .mockReturnValueOnce(new Promise((r) => { resolveInitial = r }) as never)
+        .mockReturnValueOnce(new Promise((r) => { resolveOnDemand = r }) as never)
 
       const initial = manager.handleSyncChunk({ progress: 10, syncType: 3 }, true, sock)
       const onDemand = manager.handleSyncChunk({ syncType: ON_DEMAND, chats: [] }, true, sock)
@@ -141,7 +141,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     // B-WA-06
     it('B-WA-06: an in-flight on-demand page does not defer finishSync', async () => {
       const sock = makeSock()
-      vi.mocked(handleHistorySync).mockReturnValue(new Promise(() => {}) as any)
+      vi.mocked(handleHistorySync).mockReturnValue(new Promise(() => {}) as never)
       void manager.handleSyncChunk({ syncType: ON_DEMAND, chats: [] }, true, sock)
       await expect(manager.finishSync(sock, true)).resolves.toBe('completed')
     })
@@ -158,7 +158,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
 
     // B-WA-16
     it('B-WA-16: the success payload carries jid and requestId', async () => {
-      vi.mocked(handleHistorySync).mockResolvedValue({ importedMessages: [], messageCount: 3 } as any)
+      vi.mocked(handleHistorySync).mockResolvedValue({ importedMessages: [], messageCount: 3 } as never)
       await manager.handleSyncChunk(
         { syncType: ON_DEMAND, chats: [{ id: 'a@s.whatsapp.net' }], peerDataRequestSessionId: 'req-1' },
         true,
@@ -172,7 +172,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     })
 
     it('an on-demand page never touches initial-sync state (no pause, no progress, no timer)', async () => {
-      vi.mocked(handleHistorySync).mockResolvedValue({ importedMessages: [], messageCount: 2 } as any)
+      vi.mocked(handleHistorySync).mockResolvedValue({ importedMessages: [], messageCount: 2 } as never)
       await manager.handleSyncChunk({ syncType: ON_DEMAND, chats: [] }, true, makeSock())
       expect(mockDeps.embeddingService.setPaused).not.toHaveBeenCalled()
       expect(mockPublisher.publish).not.toHaveBeenCalledWith('wa-sync-progress', expect.anything())
@@ -183,7 +183,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
 
   describe('armInactivityTimer (B-WA-11)', () => {
     it('finishes an incomplete sync after the inactivity window when no chunk ever arrives', async () => {
-      const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+      const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as never
       manager.armInactivityTimer(sock, true)
       await vi.advanceTimersByTimeAsync(179_999)
       expect(mockAuthSettings.setHistorySyncCompleted).not.toHaveBeenCalled()
@@ -192,7 +192,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     })
 
     it('is a no-op once the sync is complete', async () => {
-      const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
+      const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as never
       await manager.finishSync(sock, true)
       mockAuthSettings.setHistorySyncCompleted.mockClear()
       manager.armInactivityTimer(sock, true)
@@ -201,9 +201,9 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
     })
 
     it('does not run while a chunk is writing (the chunk re-arms in its finally)', async () => {
-      const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as any
-      let resolveSync: (v: any) => void = () => {}
-      vi.mocked(handleHistorySync).mockReturnValue(new Promise((r) => { resolveSync = r }) as any)
+      const sock = { groupFetchAllParticipating: vi.fn().mockResolvedValue([]) } as never
+      let resolveSync: (v: unknown) => void = () => {}
+      vi.mocked(handleHistorySync).mockReturnValue(new Promise((r) => { resolveSync = r }) as never)
       const chunk = manager.handleSyncChunk({ progress: 10, syncType: 3 }, true, sock)
       manager.armInactivityTimer(sock, true)
       await vi.advanceTimersByTimeAsync(200_000)
