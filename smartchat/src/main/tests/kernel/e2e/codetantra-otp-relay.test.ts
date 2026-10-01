@@ -50,4 +50,19 @@ describe('CodeTantra OTP Relay Plugin E2E Test', () => {
     expect(chatActions.some(a => a.id === 'action.codetantra.relay-otp')).toBe(true)
     expect(aiTools.some(t => t.name === 'codetantra_submit_otp')).toBe(true)
   })
+  // Plugin panels are served with `connect-src 'self' plugin:` (F10-01), so a panel-side
+  // fetch to login.microsoftonline.com dies with "Failed to fetch". The auth-code exchange
+  // must run in the plugin worker (no CSP) and be reached via ai.callTool.
+  it.fails('registers codetantra_exchange_code so the panel can delegate the token exchange', async () => {
+    const manifest = await k.loader.install(scextPath)
+    k.permissions.registerPluginManifest(manifest.id, manifest.permissions || [])
+    await k.host.load(manifest.id)
+
+    expect(k.contributions.getAll('ai-tool').some((t) => t.name === 'codetantra_exchange_code')).toBe(true)
+  })
+
+  it.fails('panel does not fetch the Microsoft token endpoint itself (blocked by plugin CSP)', () => {
+    const html = fs.readFileSync(path.join(pluginsDir, 'codetantra-otp-relay-plugin/panel/index.html'), 'utf8')
+    expect(html).not.toMatch(/fetch\(\s*TOKEN_ENDPOINT/)
+  })
 })
