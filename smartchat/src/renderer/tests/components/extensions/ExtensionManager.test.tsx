@@ -68,6 +68,37 @@ describe('ExtensionManager', () => {
     })
   })
 
+  // B-UIAPP-07: the list must be refreshed each time the manager is opened and
+  // transient UI state must not leak across open/close.
+  it.fails('refreshes the extension list and clears transient state on reopen', async () => {
+    const user = userEvent.setup()
+    const makeExt = (name: string): (typeof mockExtensions)[number] => ({
+      ...mockExtensions[0],
+      manifest: { ...mockExtensions[0].manifest, name }
+    })
+    const extensionList = vi
+      .fn()
+      .mockResolvedValueOnce([makeExt('Old Plugin')])
+      .mockResolvedValue([makeExt('New Plugin')])
+    const apiService = createMockApiService({
+      extensionList,
+      selectFile: vi.fn().mockResolvedValue(['/path/not-an-extension.zip'])
+    })
+
+    const { rerender } = renderWithProviders(<ExtensionManager isOpen={true} onClose={vi.fn()} />, {
+      apiService
+    })
+    await waitFor(() => expect(screen.getByText('Old Plugin')).toBeInTheDocument())
+    await user.click(screen.getByTitle('Install .scext package'))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    rerender(<ExtensionManager isOpen={false} onClose={vi.fn()} />)
+    rerender(<ExtensionManager isOpen={true} onClose={vi.fn()} />)
+
+    await waitFor(() => expect(screen.getByText('New Plugin')).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('calls onClose when close icon button is clicked', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
