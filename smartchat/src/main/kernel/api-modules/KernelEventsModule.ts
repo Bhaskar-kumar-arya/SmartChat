@@ -4,14 +4,7 @@ import { IWAEventBus, AsyncHandler } from '../../services/whatsapp/IWAEventBus'
 import { WAEventMap } from '../../services/whatsapp/WAEventTypes'
 import { IPluginChannel } from '../channels/IPluginChannel'
 import { KernelPermissionError, KernelNotFoundError } from './KernelErrors'
-
-/**
- * Events that carry message/chat content for *many* chats in a single payload
- * (the jid lives under `messages[].key.remoteJid`, not at the top level). For a
- * chat-scoped subscription these must be filtered element-by-element or the
- * plugin receives the full cross-chat backlog. (S7-01)
- */
-const MULTI_CHAT_ARRAY_EVENTS = new Set<string>(['messages:append'])
+import { EventDeliveryPolicy } from '../events/EventDeliveryPolicy'
 
 interface PluginSubscription {
   handler: AsyncHandler<any>
@@ -21,6 +14,7 @@ interface PluginSubscription {
 
 export class KernelEventsModule extends BaseKernelModule {
   readonly namespace = 'kernel:events'
+  private readonly policy: EventDeliveryPolicy
   private pluginSubscriptions = new Map<string, Map<string, PluginSubscription>>()
   /** Subscriptions requested while the bus was null — replayed on the next onBusConnected() call */
   private pendingSubscriptions: Array<{ pluginId: string; event: keyof WAEventMap; authKey: string }> = []
@@ -31,6 +25,7 @@ export class KernelEventsModule extends BaseKernelModule {
     private readonly getChannel?: (pluginId: string) => IPluginChannel | undefined
   ) {
     super(permissions)
+    this.policy = new EventDeliveryPolicy(permissions)
   }
 
   private resolveBus(): IWAEventBus | null {
@@ -86,29 +81,9 @@ export class KernelEventsModule extends BaseKernelModule {
     const handler: AsyncHandler<any> = async (_data: any) => {
       const channel = this.getChannel?.(pluginId)
       if (channel) {
-        const allowed = (jid: string): boolean =>
-          this.permissions.isResourceAllowed(pluginId, authKey, jid)
-
-        let payload: any = _data
-
-        if (MULTI_CHAT_ARRAY_EVENTS.has(eventName)) {
-          // The payload carries content for many chats; scope it down to the
-          // plugin's allow-list per array element. `isResourceAllowed` is
-          // default-allow, so an unscoped plugin keeps the whole payload. (S7-01)
-          const filtered = filterMultiChatArrayPayload(eventName, _data, allowed)
-          if (!filtered) return
-          payload = filtered
-        } else {
-          // Best-effort per-chat scope filter: if the payload names a single
-          // chat and the plugin's events scope denies it, drop the event.
-          // Checked against the capability key the subscription was authorised
-          // under only — not an AND across both keys. (S7-01, S7-02)
-          const chatJid = extractChatJid(_data)
-          if (chatJid && !allowed(chatJid)) {
-            return
-          }
-        }
-        const sanitizedData = sanitizeForPlugin(payload)
+        const decision = this.policy.decide(pluginId, eventName, authKey, _data)
+        if (!decision.deliver) return
+        const sanitizedData = decision.payload
         channel.sendToPlugin({
           id: `evt:${String(event)}:${Date.now()}:${Math.random().toString(36).substring(2, 7)}`,
           type: 'kernel:events:emit',
@@ -138,17 +113,15 @@ export class KernelEventsModule extends BaseKernelModule {
     switch (action) {
       case 'subscribe': {
         const { event } = payload as { event: keyof WAEventMap }
-        const perm = `events:${String(event)}`
-        if (!this.permissions.hasCapability(pluginId, perm) && !this.permissions.hasCapability(pluginId, 'events:*')) {
+        // The capability key that authorised this subscription is remembered so
+        // the delivery-time checks use that key only. (S7-02)
+        const authKey = this.policy.resolveAuthKey(pluginId, String(event))
+        if (!authKey) {
           throw new KernelPermissionError(
             `Plugin '${pluginId}' lacks permission for event '${String(event)}'`,
-            perm
+            `events:${String(event)}`
           )
         }
-
-        // Remember which capability key authorised this subscription so the
-        // delivery-time scope filter checks that key only. (S7-02)
-        const authKey = this.permissions.hasCapability(pluginId, perm) ? perm : 'events:*'
 
         const bus = this.resolveBus()
         if (bus) {
@@ -184,65 +157,4 @@ export class KernelEventsModule extends BaseKernelModule {
         throw new KernelNotFoundError(`Unknown action '${type}' in module '${this.namespace}'`)
     }
   }
-}
-
-/**
- * Filter a multi-chat array event payload down to the array elements whose
- * owning chat the plugin is allowed to see. Returns the narrowed payload, or
- * `undefined` if nothing remains (the event should not be delivered). (S7-01)
- */
-function filterMultiChatArrayPayload(
-  eventName: string,
-  data: unknown,
-  allowed: (jid: string) => boolean
-): unknown | undefined {
-  if (!data || typeof data !== 'object') return data
-  if (eventName === 'messages:append') {
-    const o = data as { messages?: unknown[] }
-    if (!Array.isArray(o.messages)) return data
-    const kept = o.messages.filter((m) => {
-      const jid = (m as { key?: { remoteJid?: unknown } })?.key?.remoteJid
-      return typeof jid === 'string' ? allowed(jid) : true
-    })
-    if (kept.length === 0) return undefined
-    return { ...o, messages: kept }
-  }
-  return data
-}
-
-/** Extract a single owning chat jid from a WA event payload, if it has one. */
-function extractChatJid(val: unknown): string | undefined {
-  if (!val || typeof val !== 'object') return undefined
-  const o = val as Record<string, any>
-  const direct = o.chatJid ?? o.remoteJid ?? o.jid
-  if (typeof direct === 'string' && direct.includes('@')) return direct
-  const keyJid = o.key?.remoteJid
-  if (typeof keyJid === 'string' && keyJid.includes('@')) return keyJid
-  return undefined
-}
-
-function sanitizeForPlugin(val: unknown): unknown {
-  if (val === null || val === undefined) return val
-  const type = typeof val
-  if (type === 'function' || type === 'symbol') {
-    return undefined
-  }
-  if (type === 'bigint') {
-    return (val as bigint).toString()
-  }
-  if (type === 'object') {
-    if (Array.isArray(val)) {
-      return val.map((item) => sanitizeForPlugin(item)).filter((v) => v !== undefined)
-    }
-    const clean: Record<string, unknown> = {}
-    for (const key of Object.keys(val as object)) {
-      if (key === 'sock') continue
-      const cleanedVal = sanitizeForPlugin((val as Record<string, unknown>)[key])
-      if (cleanedVal !== undefined) {
-        clean[key] = cleanedVal
-      }
-    }
-    return clean
-  }
-  return val
 }

@@ -504,6 +504,37 @@ describe('KernelMessagesModule', () => {
       ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
     })
 
+    it('B-KRN-07: delete ignores a spoofed jid and scopes on the real chat', async () => {
+      lookup.findMessageById.mockResolvedValue({ chatJid: 'private@s.whatsapp.net' })
+      vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+        (_p, _c, resource) => resource === 'allowed@s.whatsapp.net'
+      )
+
+      await expect(
+        moduleWithLookup().handle('plugin-a', 'kernel:messages:delete', {
+          messageId: 'msg-x',
+          jid: 'allowed@s.whatsapp.net'
+        })
+      ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+      expect(mockMessageActionService.deleteMessage).not.toHaveBeenCalled()
+    })
+
+    it('B-KRN-07: react ignores a spoofed jid and scopes on the real chat', async () => {
+      lookup.findMessageById.mockResolvedValue({ chatJid: 'private@s.whatsapp.net' })
+      vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
+        (_p, _c, resource) => resource === 'allowed@s.whatsapp.net'
+      )
+
+      await expect(
+        moduleWithLookup().handle('plugin-a', 'kernel:messages:react', {
+          messageId: 'msg-x',
+          emoji: '+1',
+          jid: 'allowed@s.whatsapp.net'
+        })
+      ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+      expect(mockMessageActionService.reactToMessage).not.toHaveBeenCalled()
+    })
+
     it('forward also enforces scope on every destination jid', async () => {
       lookup.findMessageById.mockResolvedValue({ chatJid: 'allowed@s.whatsapp.net' })
       vi.mocked(mockPermissions.isResourceAllowed).mockImplementation(
