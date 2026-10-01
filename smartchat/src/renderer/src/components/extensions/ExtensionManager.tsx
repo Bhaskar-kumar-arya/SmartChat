@@ -16,13 +16,18 @@ interface ExtensionManagerProps {
  * Uses useExtensionManager() — zero direct api calls.
  */
 export default function ExtensionManager({ isOpen, onClose, onOpenExtensionChat }: ExtensionManagerProps) {
+  // The body owns the data hook and local state, so mounting it only while open
+  // refetches the list on every open and drops selection/errors on close (B-UIAPP-07).
+  if (!isOpen) return null
+  return <ExtensionManagerBody onClose={onClose} onOpenExtensionChat={onOpenExtensionChat} />
+}
+
+function ExtensionManagerBody({ onClose, onOpenExtensionChat }: Omit<ExtensionManagerProps, 'isOpen'>) {
   const api = useAPI()
   const { extensions, loading, error, install, unload, reload, uninstall } = useExtensionManager()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
   const [installError, setInstallError] = useState<string | null>(null)
-
-  if (!isOpen) return null
 
   const handleInstall = async () => {
     setInstallError(null)

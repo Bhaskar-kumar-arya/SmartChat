@@ -70,7 +70,7 @@ describe('ExtensionManager', () => {
 
   // B-UIAPP-07: the list must be refreshed each time the manager is opened and
   // transient UI state must not leak across open/close.
-  it.fails('refreshes the extension list and clears transient state on reopen', async () => {
+  it('refreshes the extension list and clears transient state on reopen', async () => {
     const user = userEvent.setup()
     const makeExt = (name: string): (typeof mockExtensions)[number] => ({
       ...mockExtensions[0],
