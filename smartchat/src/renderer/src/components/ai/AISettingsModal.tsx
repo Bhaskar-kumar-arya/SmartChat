@@ -263,7 +263,9 @@ export default function AISettingsModal({ isOpen, onClose, options, onOptionsCha
               onChange={(e) => {
                 const checked = e.target.checked;
                 onOptionsChange({ ...options, autoSaveChats: checked });
-                api.setAiAutoSave(checked);
+                api.setAiAutoSave(checked).catch((err) => {
+                  console.error('Failed to persist auto-save preference:', err);
+                });
               }}
             />
           </div>

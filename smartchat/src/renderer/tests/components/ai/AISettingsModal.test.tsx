@@ -121,7 +121,7 @@ describe('AISettingsModal', () => {
   })
 
   // B-UIAPP-09: a rejected setAiAutoSave must not escape as an unhandled rejection.
-  it.fails('does not leak an unhandled rejection when setAiAutoSave fails', async () => {
+  it('does not leak an unhandled rejection when setAiAutoSave fails', async () => {
     const user = userEvent.setup()
     // Plain function, not vi.fn(): a vitest spy attaches its own handler to a
     // rejected return value, which would hide the unhandled rejection.
