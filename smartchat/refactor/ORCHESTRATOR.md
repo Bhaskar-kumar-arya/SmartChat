@@ -18,8 +18,7 @@ A fresh session must be able to resume from those two files alone. Keep them acc
 
 ## 1. Pick ready units
 A unit is **READY** when: every dep is `MERGED`; none of its locks (PLAN §4.2) is held by an
-`IN PROGRESS` unit; and its wave's gate units are merged (Wave 0 before anything else; G-03 needs a
-moment with no other branch in flight).
+`IN PROGRESS` unit; and its wave's gate units are merged (Wave 0 before anything else).
 Prefer, in order: the critical path (PLAN §5 schedule) → crit/high bugs → units that unblock the most others.
 Run **at most ~6 subagents at once**; fewer if the machine is small. Mark each picked unit `IN PROGRESS`
 with its locks in TRACKER *before* dispatching.
@@ -72,5 +71,5 @@ reject it with a reason.
 - Never implement a unit yourself. The exception is trivial merge-conflict resolution, which you must re-verify.
 - Never let two in-flight units hold the same lock.
 - Never merge on a red gate, and never weaken or skip a test to get green.
-- Never mix waves' gate order: nothing starts before G-01; G-03 (mass formatting) runs with no other branch in flight.
+- Never mix waves' gate order: nothing starts before G-01. Prettier/formatting is out of scope (owner decision): never run a mass format.
 - You are the only writer of `TRACKER.md`.

@@ -6,9 +6,9 @@ Statuses: `READY` (deps met) · `WAITING` (deps pending) · `IN PROGRESS` · `RE
 Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN §4.2.
 
 ## Current state
-- Wave: **0 (not started)**
+- Wave: **0 (in progress)**
 - Locks held: none
-- `main` baseline: typecheck ✅ · vitest 6 fail / 85 unhandled errors (non-hermetic) · lint 1,694 errors / 9,935 warnings
+- `main` baseline: typecheck ✅ · vitest 6 fail / 85 unhandled errors (non-hermetic) · lint 1,694 errors / 9,935 warnings (≈9,910 are Prettier, ignored)
 
 ## Owner smoke queue (🔎)
 _empty_
@@ -20,6 +20,7 @@ _empty_
 | Date | Session | Notes |
 |---|---|---|
 | 2026-09-30 | audit | Audit + plan committed. No units started. |
+| 2026-10-01 | orch-1 | Baseline reproduced: typecheck ✅, vitest 6 fail / 85 errors. Env note: `npm ci` needs `ELECTRON_SKIP_BINARY_DOWNLOAD=1` here; run `node_modules/.bin/prisma generate` and `npm rebuild better-sqlite3` AFTER npm ci. Owner decision: Prettier out of scope (G-03 reduced to lint baseline, prettier rule excluded). |
 
 ---
 
@@ -27,10 +28,10 @@ _empty_
 
 | ID | Wave · lane | Title | Deps | Locks | Status | Branch / merge sha |
 |---|---|---|---|---|---|---|
-| G-01 | W0 | Hermetic green suite | – | – | READY | |
+| G-01 | W0 | Hermetic green suite | – | – | IN PROGRESS | refactor/G-01 |
 | G-02 | W0 | CI workflow (ubuntu + windows) | G-01 | – | WAITING | |
-| G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | READY | |
-| G-03 | W0 | Prettier one-shot + lint baseline/`lint:ratchet` (no other branch in flight) | G-01, G-02, G-04 | ALL | WAITING | |
+| G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | IN PROGRESS | refactor/G-04 |
+| G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | WAITING | |
 | S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | WAITING | |
 | S-02 | W1 · AI | executeScript isolation (hotfix → child process) | W0 | – | WAITING | |
 | S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | WAITING | |

@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "soundEnabled": true,
+  "notifyWhenFocused": false,
+  "minimizeToTray": true,
+  "launchOnStartup": false
+}

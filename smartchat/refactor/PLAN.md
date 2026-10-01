@@ -18,7 +18,7 @@
 |---|---|
 | `npm run typecheck` | ✅ passes. But `window.api` is silently typed `any`: `preload/index.d.ts` imports a `types` barrel that doesn't exist, and `skipLibCheck` hides the error. |
 | Circular imports (madge, main + renderer) | ✅ none |
-| `eslint .` | ❌ 1,694 errors, 9,935 warnings. Of these, 9,910 are Prettier warnings (formatting never enforced), 897 are `no-explicit-any` and **22 are `rules-of-hooks`**. |
+| `eslint .` | ❌ 1,694 errors, 9,935 warnings. Of these, 9,910 are Prettier warnings (formatting is out of scope per owner; ignored), 897 are `no-explicit-any` and **22 are `rules-of-hooks`**. |
 | `vitest run` (Linux) | ❌ 6 failing tests, **85 unhandled errors**, 1,203 passing |
 | Why tests fail | Not hermetic: unit tests connect to a real LM Studio; a fixture is read from the git-ignored `dev_only/`; e2e plugin tests need `.scext` builds that nothing produces; one test only passes on Windows. |
 | CI | Only a macOS DMG build. **No typecheck, lint or test runs on any push or PR.** |
@@ -221,7 +221,7 @@ Legend: **risk** L/M/H · `CONTRACT` = public contract change · 🔎 = needs ow
 |---|---|---|---|---|
 | G-01 | **Hermetic green suite.** Mock LM Studio/network in `AIService.test`/`milestone3`. Replace the `dev_only` fixture with a **synthetic** committed fixture (never commit the real one: it holds personal chats). Add a vitest globalSetup that packs the `.scext` test plugins and aliases `@smartchat/sdk`. Make the path test platform-aware. Fix the test-DB template race and userData path (B-DATA-07/08). Make unhandled rejections fail the run. Target: 0 failures, 0 errors, twice in a row, on Linux and Windows. | R-DATA-01 (part), R-APP-12 | – | L |
 | G-02 | **CI workflow** (ubuntu + windows): `npm ci` → `prisma generate` → typecheck → vitest → lint ratchet. Add `@vitest/coverage-v8` (report only). Required status check on `main`. | R-APP-12 | G-01 | L |
-| G-03 | **Format + lint baseline.** One `prettier --write` commit plus `.git-blame-ignore-revs`. Commit a per-rule baseline (`scripts/lint-baseline.json`) plus an `npm run lint:ratchet` script that fails if any rule's count rises (CI runs it). `rules-of-hooks`/`exhaustive-deps` must become zero-tolerance as they get fixed. **Merge while no other branch is open** (it touches every file). | – | G-01 | L |
+| G-03 | **Lint baseline.** No mass formatting: Prettier is out of scope (owner decision), so `prettier/prettier` is excluded from the baseline and the ratchet. Commit a per-rule baseline (`scripts/lint-baseline.json`) plus an `npm run lint:ratchet` script that fails if any rule's count rises (CI runs it). `rules-of-hooks`/`exhaustive-deps` must become zero-tolerance as they get fixed. Touches only config/scripts, so it no longer needs an exclusive window. | – | G-01 | L |
 | G-04 | **Repo hygiene + agent guide.** Remove the key from `train/Annotate_Data.ts` (env var). Move `bug-audit*` into `docs/audits/archive/` and `bug.txt` items into the tracker; delete `runWithLogswn.txt`. Add a root **`CLAUDE.md`** with the build/test commands (incl. the native `better-sqlite3` rebuild dance), the guardrails from §3, and the lock table. Add a tiny `logger` module (scoped, levels) that later units adopt. | – | ∥ G-02 | L |
 
 ### Wave 1 — Security hotfixes + safety nets (all parallel; disjoint files) · ~20 sessions
@@ -324,7 +324,7 @@ SOLID-R-19 (quote-click bypasses `onScrollToMessage`) is folded into R-UICHAT-06
 
 ### Schedule at a glance
 ```
-Wave 0  G-01 ─► G-02 ∥ G-04 ─► G-03 (freeze window)
+Wave 0  G-01 ─► G-02 ∥ G-04 ─► G-03 (no freeze window; no mass format)
 Wave 1  S-01 S-02 S-03 S-04 H-01..H-06 X-01 N-01..N-09          (≈6 parallel subagents)
 Wave 2  lanes MSG | WA | DATA | AI | KRN | APP | UC | UA          (≈6-8 parallel)
 Wave 3  IPC chain C-01..C-06  ∥  DI chain D-01..D-05  ∥ rest of wave 2
