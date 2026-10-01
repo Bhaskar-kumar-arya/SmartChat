@@ -8,6 +8,8 @@ import { ContributionSlot } from '../contributions/ContributionPoints'
 import { DirectPluginChannel } from '../channels/DirectPluginChannel'
 import { isBidirectionalPluginChannel, KernelResponse } from '../channels/IPluginChannel'
 import { PluginContext } from './PluginContext'
+// eslint-disable-next-line no-restricted-imports -- specific file (logger.ts), not the utils barrel; the pattern over-matches
+import { createLogger } from '../../utils/logger'
 import { ContributionsDeclaration } from './PluginManifest'
 import {
   PluginChatItem,
@@ -111,6 +113,8 @@ const MANIFEST_TO_SLOT_MAPPINGS: ManifestContributionMapper[] = [
     toContrib: (c, pluginId) => ({ pluginId, exportName: c })
   }
 ]
+
+const log = createLogger('kernel:plugin-host')
 
 export type ContributionHandler = (...args: any[]) => Promise<unknown> | unknown
 
@@ -507,6 +511,16 @@ export class PluginHost implements IPluginHost {
     } else {
       channel.sendToPlugin(activateReq)
     }
+
+    // The worker may die later on its own (async throw, OOM, process.exit).
+    // Treat that as an unload so the plugin stops showing contributions that
+    // can only hang. Registered after activation so a crash during activation
+    // is handled by the rollback above, not twice. (B-KRN-05)
+    channel.onClosed?.((reason) => {
+      if (this.registry.get(id)?.channel !== channel) return
+      log.error(`plugin '${id}' crashed; unloading`, reason.message)
+      void this.unload(id).catch((err) => log.error(`unload after crash failed for '${id}'`, err))
+    })
   }
 
   async unload(id: string): Promise<void> {

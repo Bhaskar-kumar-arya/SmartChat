@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
-import { MessageChannel } from 'node:worker_threads'
+import { EventEmitter } from 'node:events'
+import { MessageChannel, Worker } from 'node:worker_threads'
 import { WorkerPluginChannel, PLUGIN_REQUEST_TIMEOUT_MS } from '../../../kernel/channels/WorkerPluginChannel'
 import { KernelRequest, KernelResponse } from '../../../kernel/channels/IPluginChannel'
+
+type WithOnClosed = { onClosed?: (h: (err: Error) => void) => void }
 
 describe('WorkerPluginChannel', () => {
   it('delivers kernel requests to port2 and plugin requests to onPluginRequest', async () => {
@@ -180,5 +183,48 @@ describe('WorkerPluginChannel', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // F-KRN-1 (B-KRN-05): the channel must notice the worker dying.
+  describe('worker lifecycle (F-KRN-1)', () => {
+    it('onClosed fires and pending requests reject when the worker throws asynchronously', async () => {
+      const worker = new Worker(
+        "require('node:worker_threads').parentPort.on('message', () => setTimeout(() => { throw new Error('boom') }, 10))",
+        { eval: true }
+      )
+      const channel = new WorkerPluginChannel(worker, worker)
+      const onClosed = vi.fn()
+      ;(channel as unknown as WithOnClosed).onClosed?.(onClosed)
+
+      const pending = channel.sendRequestToPlugin({ id: 'r1', type: 'x', payload: {} })
+      await expect(pending).rejects.toThrow()
+      expect(onClosed).toHaveBeenCalledTimes(1)
+      expect(onClosed.mock.calls[0][0]).toBeInstanceOf(Error)
+      channel.destroy()
+    })
+
+    it('onClosed does not fire for an intentional destroy()', async () => {
+      const worker = new Worker('setInterval(() => {}, 1000)', { eval: true })
+      const channel = new WorkerPluginChannel(worker, worker)
+      const onClosed = vi.fn()
+      ;(channel as unknown as WithOnClosed).onClosed?.(onClosed)
+      const exited = new Promise((r) => worker.once('exit', r))
+      channel.destroy()
+      await exited
+      expect(onClosed).not.toHaveBeenCalled()
+    })
+
+    it('destroy() still terminates the worker when closing the port throws', () => {
+      const fake = Object.assign(new EventEmitter(), {
+        postMessage: vi.fn(),
+        close: vi.fn(() => {
+          throw new Error('close failed')
+        }),
+        terminate: vi.fn().mockResolvedValue(0)
+      })
+      const channel = new WorkerPluginChannel(fake as never, fake as never)
+      expect(() => channel.destroy()).not.toThrow()
+      expect(fake.terminate).toHaveBeenCalled()
+    })
   })
 })

@@ -1,5 +1,9 @@
 import { MessagePort, Worker } from 'node:worker_threads'
 import { IBidirectionalPluginChannel, KernelRequest, KernelResponse } from './IPluginChannel'
+// eslint-disable-next-line no-restricted-imports -- specific file (logger.ts), not the utils barrel; the pattern over-matches
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('kernel:worker-channel')
 
 /**
  * Ceiling for a kernel→plugin request. A plugin that never replies (crashed
@@ -69,6 +73,9 @@ export class WorkerPluginChannel implements IBidirectionalPluginChannel {
   private pluginRequestHandler: ((msg: KernelRequest) => Promise<void>) | null = null
   private pendingRequests = new Map<string, PendingRequest>()
   private isDestroyed = false
+  /** Set when the worker died on its own (uncaught error / unexpected exit). (B-KRN-05) */
+  private isClosed = false
+  private closedHandlers: Array<(reason: Error) => void> = []
   private port: MessagePort | Worker
   private worker: Worker | null
 
@@ -76,6 +83,46 @@ export class WorkerPluginChannel implements IBidirectionalPluginChannel {
     this.port = port
     this.worker = worker
     this.port.on('message', this.handlePortMessage)
+    if (this.worker) {
+      // Without an 'error' listener a worker crash only surfaces as the main
+      // process' uncaughtException, and the plugin would stay "loaded" forever.
+      this.worker.on('error', this.handleWorkerError)
+      this.worker.on('exit', this.handleWorkerExit)
+    }
+  }
+
+  private handleWorkerError = (err: Error): void => {
+    this.markClosed(err instanceof Error ? err : new Error(String(err)))
+  }
+
+  private handleWorkerExit = (code: number): void => {
+    this.markClosed(new Error(`Plugin worker exited unexpectedly (code ${code})`))
+  }
+
+  /** Worker died by itself: fail pending requests now and tell the host once. */
+  private markClosed(cause: Error): void {
+    if (this.isDestroyed || this.isClosed) return
+    this.isClosed = true
+    log.warn('plugin worker closed unexpectedly', cause.message)
+    const err = new Error(`PLUGIN_CRASHED: ${cause.message}`)
+    for (const [, pending] of this.pendingRequests) {
+      if (pending.timer) clearTimeout(pending.timer)
+      pending.reject(err)
+    }
+    this.pendingRequests.clear()
+    const handlers = this.closedHandlers
+    this.closedHandlers = []
+    for (const h of handlers) {
+      try {
+        h(err)
+      } catch (e) {
+        log.error('onClosed handler threw', e)
+      }
+    }
+  }
+
+  onClosed(handler: (reason: Error) => void): void {
+    this.closedHandlers.push(handler)
   }
 
   private handlePortMessage = (msg: unknown): void => {
@@ -98,13 +145,13 @@ export class WorkerPluginChannel implements IBidirectionalPluginChannel {
   }
 
   sendToPlugin(msg: KernelRequest): void {
-    if (this.isDestroyed) return
+    if (this.isDestroyed || this.isClosed) return
     assertSerializable(msg.payload)
     this.port.postMessage(msg)
   }
 
   sendResponseToPlugin(msg: KernelResponse): void {
-    if (this.isDestroyed) return
+    if (this.isDestroyed || this.isClosed) return
     assertSerializable(msg.payload)
     if (msg.error) {
       assertSerializable(msg.error, 'error')
@@ -113,7 +160,7 @@ export class WorkerPluginChannel implements IBidirectionalPluginChannel {
   }
 
   sendRequestToPlugin(msg: KernelRequest): Promise<KernelResponse> {
-    if (this.isDestroyed) {
+    if (this.isDestroyed || this.isClosed) {
       // Resolve a KernelResponse (not reject) so callers get the same failure
       // shape DirectPluginChannel gives them for a destroyed channel. (P2-S9-04)
       return Promise.resolve({
@@ -150,14 +197,35 @@ export class WorkerPluginChannel implements IBidirectionalPluginChannel {
     this.pendingRequests.clear()
 
     this.pluginRequestHandler = null
-    if ('off' in this.port && typeof this.port.off === 'function') {
-      this.port.off('message', this.handlePortMessage)
+    this.closedHandlers = []
+    // Each step is isolated: a throwing close() must not skip terminate(), or
+    // the worker thread leaks.
+    try {
+      if ('off' in this.port && typeof this.port.off === 'function') {
+        this.port.off('message', this.handlePortMessage)
+      }
+      if (this.worker) {
+        this.worker.off('error', this.handleWorkerError)
+        this.worker.off('exit', this.handleWorkerExit)
+        // Keep a no-op listener so a late startup error cannot become an unhandled 'error'.
+        this.worker.on('error', () => undefined)
+      }
+    } catch (err) {
+      log.warn('detaching listeners failed', err)
     }
-    if ('close' in this.port && typeof this.port.close === 'function') {
-      this.port.close()
+    try {
+      if ('close' in this.port && typeof this.port.close === 'function') {
+        this.port.close()
+      }
+    } catch (err) {
+      log.warn('port.close failed', err)
     }
     if (this.worker) {
-      void this.worker.terminate()
+      try {
+        void Promise.resolve(this.worker.terminate()).catch(() => undefined)
+      } catch (err) {
+        log.warn('worker.terminate failed', err)
+      }
     }
   }
 }

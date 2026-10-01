@@ -23,6 +23,11 @@ export interface IPluginChannel {
   sendToPlugin(msg: KernelRequest): void
   sendResponseToPlugin(msg: KernelResponse): void
   onPluginRequest(handler: (msg: KernelRequest) => Promise<void>): void
+  /**
+   * Optional: invoked at most once if the plugin side dies on its own (worker
+   * error/exit) rather than through destroy(). In-process channels never close.
+   */
+  onClosed?(handler: (reason: Error) => void): void
   destroy(): void
 }
 

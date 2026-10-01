@@ -143,12 +143,12 @@ export class KernelEventsModule extends BaseKernelModule {
           (s) => !(s.pluginId === pluginId && s.event === event)
         )
         const pluginMap = this.pluginSubscriptions.get(pluginId)
-        if (bus && pluginMap) {
-          const sub = pluginMap.get(String(event))
-          if (sub) {
-            bus.off(event, sub.handler)
-            pluginMap.delete(String(event))
-          }
+        // Drop the live entry even when the bus is currently null, otherwise the
+        // next onBusConnected() re-attaches a subscription the plugin cancelled.
+        const sub = pluginMap?.get(String(event))
+        if (sub) {
+          if (bus) bus.off(event, sub.handler)
+          pluginMap!.delete(String(event))
         }
         return { success: true, event: String(event) }
       }
