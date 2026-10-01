@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import { AliasRepository } from '../../services/contacts/AliasRepository'
-import { getPrismaClient } from '../helpers'
+import { getPrismaClient, resetDb } from '../helpers'
+import { makeIdentity } from '../factories'
 
 describe('AliasRepository', () => {
   let prisma: PrismaClient
@@ -17,16 +18,11 @@ describe('AliasRepository', () => {
   })
 
   beforeEach(async () => {
-    await prisma.reaction.deleteMany()
-    await prisma.message.deleteMany()
-    await prisma.chatMember.deleteMany()
-    await prisma.identityAlias.deleteMany()
-    await prisma.chat.deleteMany()
-    await prisma.identity.deleteMany()
+    await resetDb(prisma)
   })
 
   it('should upsert and find an alias', async () => {
-    const ident = await prisma.identity.create({ data: { phoneNumber: 'foo@s.whatsapp.net' } })
+    const ident = await makeIdentity(prisma, { phoneNumber: 'foo@s.whatsapp.net' })
     
     // upsert first time (create)
     const created = await repository.upsertIdentityAlias('my-alias@lid', 'LID', ident.id)
