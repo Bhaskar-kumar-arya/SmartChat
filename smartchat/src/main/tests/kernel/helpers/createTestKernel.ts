@@ -90,7 +90,7 @@ export const ackWorkerSource = `
 const { parentPort } = require('node:worker_threads')
 parentPort.on('message', (msg) => {
   if (msg && typeof msg.id === 'string' && typeof msg.type === 'string') {
-    parentPort.postMessage({ id: msg.id, ok: true, payload: { echoed: msg.type } })
+    parentPort.postMessage({ id: msg.id, ok: true, payload: { echoed: msg.type, received: msg.payload } })
   }
 })
 `

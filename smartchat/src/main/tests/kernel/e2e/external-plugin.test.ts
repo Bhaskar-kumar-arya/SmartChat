@@ -51,7 +51,11 @@ describe('External Plugin E2E Lifecycle', () => {
       payload: { id: 'e2e-action', context: { jid: '12345@s.whatsapp.net' } }
     })
     expect(res.ok).toBe(true)
-    expect(res.payload).toEqual({ echoed: 'contribution:execute:chat-action' })
+    // The worker echoes the payload it actually received, proving id + context.jid are delivered.
+    expect(res.payload).toEqual({
+      echoed: 'contribution:execute:chat-action',
+      received: { id: 'e2e-action', context: { jid: '12345@s.whatsapp.net' } }
+    })
 
     // 6. Unload plugin
     await k.host.unload(pluginId)
