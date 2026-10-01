@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
 import { join } from 'path'
+import { isAllowedGuestPreload } from './utils/guestPreload'
 import fs from 'fs'
 
 // Register 'app' and 'plugin' protocols as privileged at the top level BEFORE app is ready
@@ -196,11 +197,7 @@ app.whenReady().then(async () => {
       webPreferences.sandbox = true
       delete (webPreferences as Record<string, unknown>).preloadURL
       // Only the app's own bundled preloads are allowed on a guest.
-      const allowedPreloads = [
-        join(__dirname, '../preload/panel-preload.js'),
-        join(__dirname, '../preload/overlay-preload.js')
-      ]
-      if (params.preload && !allowedPreloads.includes(params.preload)) {
+      if (params.preload && !isAllowedGuestPreload(params.preload, join(__dirname, '../preload'))) {
         console.warn('[Main] Stripped unexpected webview preload:', params.preload)
         delete (params as Record<string, unknown>).preload
       }
