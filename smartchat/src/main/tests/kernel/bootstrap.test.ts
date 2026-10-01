@@ -100,7 +100,7 @@ describe('KernelBootstrapper', () => {
       fs.rmSync(extDir, { recursive: true, force: true })
     })
 
-    it.fails('does not abort boot; other plugins load and the failed ones stay not-loaded', async () => {
+    it('does not abort boot; other plugins load and the failed ones stay not-loaded', async () => {
       const bootstrapper = new KernelBootstrapper({
         services: mockServices,
         getMainWindow: () => null,
