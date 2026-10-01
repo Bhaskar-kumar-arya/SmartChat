@@ -3,6 +3,9 @@
  * letting vitest report them as run-level errors. Await `stop()` after the
  * code under test has run: it waits a macrotask so pending rejections have been
  * dispatched, restores the original listeners and returns the captured reasons.
+ *
+ * Caveat: a `vi.fn()` spy attaches its own handler to a rejected return value,
+ * so a rejecting mock must be a plain function for the rejection to surface.
  */
 export function captureUnhandledRejections(): { stop: () => Promise<unknown[]> } {
   const original = process.listeners('unhandledRejection')
