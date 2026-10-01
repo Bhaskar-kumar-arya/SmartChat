@@ -109,12 +109,6 @@ import { SocketAccessor } from './services/whatsapp/types'
 import { WAWorkerBridge } from './workers/bridge/WAWorkerBridge'
 import { IWindowEventEmitter } from './workers/bridge/IWindowEventEmitter'
 import { dbPath } from './auth'
-import { HistorySyncManager } from './services/whatsapp/HistorySyncManager'
-import { IHistorySyncManager } from './services/whatsapp/IHistorySyncManager'
-import { WAEventWiringService } from './services/whatsapp/WAEventWiringService'
-import { IWAEventWiringService } from './services/whatsapp/IWAEventWiringService'
-import { IWACatchUpManager } from './services/whatsapp/IWACatchUpManager'
-import { WACatchUpManager } from './services/whatsapp/WACatchUpManager'
 
 import { IKeyStorage } from './services/ai/IKeyStorage'
 import { FSKeyStorage } from './services/ai/FSKeyStorage'
@@ -328,9 +322,6 @@ export function createServices(
     getBus,
     windowEmitter
   )
-  const catchUpManager: IWACatchUpManager = new WACatchUpManager(embeddingService, authSettingsService)
-  const historySyncManager = new HistorySyncManager(services, getMainWindow, authSettingsService)
-  const waEventWiringService = new WAEventWiringService(historySyncManager)
 
   Object.assign(services, {
     identityRepository,
@@ -377,9 +368,6 @@ export function createServices(
     messageFormatterRegistry,
     waWorkerBridge,
     aiKeyService,
-    historySyncManager,
-    waEventWiringService,
-    catchUpManager,
     apiServer,
     callService,
     getBus
@@ -434,9 +422,6 @@ export type ServiceContainer = {
   messageFormatterRegistry: MessageFormatterRegistry
   waWorkerBridge: WAWorkerBridge
   aiKeyService: IAIKeyService
-  historySyncManager: IHistorySyncManager
-  waEventWiringService: IWAEventWiringService
-  catchUpManager: IWACatchUpManager
   apiServer: IAPIServer
   callService: ICallQueryService & ICallMutationService
   getBus: () => IWAEventBus | null
