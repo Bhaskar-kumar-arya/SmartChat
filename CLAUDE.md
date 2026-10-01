@@ -9,7 +9,7 @@ The refactor plan and state are in `smartchat/refactor/` (`PLAN.md`, `TRACKER.md
 | Install | `npm ci` (in sandboxes: `ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci`), then `node_modules/.bin/prisma generate` |
 | Typecheck | `npm run typecheck` (= `typecheck:node` + `typecheck:web`) |
 | Tests | `npx vitest run` (or `npm run test:run`, which rebuilds better-sqlite3 for Node first) |
-| Lint | `npm run lint` |
+| Lint | `npm run lint` (ratchet vs. baseline: `npm run lint:ratchet`; `-- --update` lowers it) |
 | Dev app | `npm run dev` |
 | Build | `npm run build` |
 

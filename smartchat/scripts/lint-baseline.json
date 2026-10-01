@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "zeroTolerance": [
+    "react-hooks/exhaustive-deps",
+    "react-hooks/rules-of-hooks"
+  ],
+  "rules": {
+    "(no-rule)": 3,
+    "@typescript-eslint/ban-ts-comment": 2,
+    "@typescript-eslint/explicit-function-return-type": 430,
+    "@typescript-eslint/no-empty-function": 5,
+    "@typescript-eslint/no-explicit-any": 897,
+    "@typescript-eslint/no-require-imports": 50,
+    "@typescript-eslint/no-this-alias": 1,
+    "@typescript-eslint/no-unsafe-function-type": 30,
+    "@typescript-eslint/no-unused-vars": 70,
+    "no-empty": 18,
+    "no-restricted-imports": 107,
+    "prefer-const": 8,
+    "react-hooks/exhaustive-deps": 22,
+    "react-hooks/immutability": 2,
+    "react-hooks/preserve-manual-memoization": 2,
+    "react-hooks/refs": 5,
+    "react-hooks/rules-of-hooks": 22,
+    "react-hooks/set-state-in-effect": 12,
+    "react-refresh/only-export-components": 12,
+    "react/display-name": 14,
+    "react/no-unescaped-entities": 8,
+    "react/no-unknown-property": 5
+  }
+}
