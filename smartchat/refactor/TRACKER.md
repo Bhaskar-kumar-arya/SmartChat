@@ -7,8 +7,8 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: WASYNC (H-02) · BOOT (H-03) · PRELOAD-mock (N-07). **Owner scope: only H-02, H-03, H-04, X-01, N-06, N-07, N-09 — no other unit after these.**
-- `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint ratchet baseline committed (scripts/lint-baseline.json, 22 rules, Prettier excluded): no-explicit-any 897 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22
+- Locks held: none. **Owner scope: only H-02, H-03, H-04, X-01, N-06, N-07, N-09 (all MERGED) — no other unit started; awaiting owner direction.**
+- `main` baseline (60eae18): typecheck ✅ · vitest 251 files / 1481 passed / 5 expected-fail / 0 failed / 0 errors (clean worktree, --maxWorkers=3) · lint ratchet baseline: no-explicit-any 852 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22 (rest unchanged)
 
 ## Owner smoke queue (🔎)
 3. (S-02) Dev/packaged Electron: an AI chat executeScript call (e.g. queryDatabase) returns results + logs; a `while(true){}` script leaves the app responsive and times out (~60s). Child is spawned via process.execPath -e with ELECTRON_RUN_AS_NODE=1: untested under real Electron.
@@ -17,6 +17,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 2. (S-01) In a real Electron build: a plugin panel/overlay still renders; from a plugin page devtools `fetch('plugin://../dev.db')` is denied (403).
 6. (H-04) Start app on an existing profile: log shows "Dimension mismatch detected. Recreating table with 384 dims". Trigger bulk index (indexAll, ipcHandlers.ts:~394), then run a deep search: hits returned, no "Failed to index message" errors.
 7. (H-02) Link WhatsApp, then unlink the device from the phone: app wipes local data and shows a fresh QR (worker log "All database tables cleared"), no 401 reconnect loop. Re-pair; chats sync, semantic search works.
+8. (H-03) After `npm ci --legacy-peer-deps` + `npm run test:rebuild:electron` + `npm run dev`: no "[BaileysPatcher]" startup error; mute/pin toggled from the phone reaches the app (app-state.sync). Packaged build (`build:win`/`build:mac`): app.asar chat-utils.js contains app-state.sync.
 1. After pushing, check GitHub Actions: CI workflow green on ubuntu AND windows (windows untested); then mark both checks required on main (Settings > Branches).
 
 ## Follow-ups inbox (triaged at each wave boundary)
@@ -37,6 +38,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (X-01) helpers.ts now drives history sync through real WorkerHistorySyncManager (stub publisher). integration_tests_plan.md:129 still mentions HistorySyncManager (Z-08). Local machine OOMs on default vitest workers when worktrees are active (use --maxWorkers=3).
 - (H-02) wipeAndReconnect reconnects immediately with no backoff if wipe fails (→ R-WA-12). Stale vec_messages rows linger after worker-side wipe (main should clear on wipe event → R-WA-12/F-APP-2). Failed post-pairing creds write only logged. Local codetantra-otp-relay also load-flaky.
 - (N-06) voice-transcriber-overlay + test-all-features-plugin not migrated to createTestKernel (harness needs custom module sets) → fold into F-KRN-1. Real fix for load-flake timeouts: dedicated kernel-e2e vitest project / lower concurrency (→ Z-05). Channel pass-through (WorkerPluginChannel.sendRequestToPlugin payload) not directly mutation-proved. PluginHost.load does not terminate worker on failed activation if destroy throws (F-KRN-1).
+- (H-03) package-lock churn: npm install rewrites ~1150 unrelated lock lines on this machine (different npm/flags) → consider normalising (Z-08). patches/.gitattributes forces LF (autocrlf breaks patch-package). `npm ci` alongside other npm procs failed once (retry ok). (N-09) LMStudioProvider has zero tests; provider code uses bare console.warn (Z-01); B-AI-04 pinned it.fails → flip in F-AI-1; id-match mutation in Groq index fallback not caught. (N-07) globalCitationCache has no reset export (R-UIAPP-03); remaining tests override on* callbacks with `?.` capture → migrate to emit in N-08; renderWithProviders apiService typed IAPIService (no emit); typed fn<K> mock factory + ModalPortal suite merge not done. (ops) NEVER `git worktree remove -f -f` on worktrees with a node_modules junction: it deleted the shared node_modules once (restored via npm ci + electron install.js). Use `cmd /c rmdir <junction>` first. Two stale worktree dirs remain under .claude/worktrees (agent-ac23…, agent-ace4…), plus verify-main.
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -44,6 +46,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 |---|---|---|
 | 2026-09-30 | audit | Audit + plan committed. No units started. |
 | 2026-10-01 | orch-2 | Baseline: typecheck ✅; vitest 248 files pass / 4 fail (kernel e2e timeouts under load: voice-transcriber-overlay 36s, test-all-features 11s; passes in isolation = load flake on this machine). Dispatched H-02, H-03, H-04, X-01, N-06, N-07; N-09 next when a slot frees. |
+| 2026-10-01 | orch-2 (done) | All 7 owner-scoped units merged (H-04 X-01 H-02 N-06 N-09 H-03 N-07). Final main 60eae18: typecheck ✅, vitest 251 files/1481 pass/0 fail/0 err clean. Subagent-verified gates were noisy under load (many parallel vitest runs); final gate re-run clean. Stopped per owner. Smoke queue items 6-8 added. |
 | 2026-10-01 | orch-1 (Wave 0 done) | G-02, G-03 merged; ratchet baseline committed; main: typecheck ✅, vitest 243 files/1232 pass/0 fail/0 err. Awaiting owner OK for Wave 1. |
 | 2026-10-01 | orch-1 (G-01 done) | G-01 and G-04 merged; suite green twice. |
 | 2026-10-01 | orch-1 | Baseline reproduced: typecheck ✅, vitest 6 fail / 85 errors. Env note: `npm ci` needs `ELECTRON_SKIP_BINARY_DOWNLOAD=1` here; run `node_modules/.bin/prisma generate` and `npm rebuild better-sqlite3` AFTER npm ci. Owner decision: Prettier out of scope (G-03 reduced to lint baseline, prettier rule excluded). |
@@ -64,7 +67,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | S-04 | W1 · KRN | EventDeliveryPolicy + scope enforcement | W0 | – | MERGED | f3d493f |
 | H-01 | W1 · UC | MessageItem hooks-order crash | W0 | – | MERGED | 98ee4cc |
 | H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | MERGED | 10fafc6 |
-| H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | IN PROGRESS | refactor/H-03 |
+| H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | MERGED | 6147dff |
 | H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | MERGED | c4dcb16 |
 | H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | WAITING | |
 | H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | MERGED | fae5b34 |
@@ -75,9 +78,9 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | MERGED | ae1a3c8 |
 | N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | MERGED | 17c3268 |
 | N-06 | W1 · KRN | Kernel test harness | W0 | – | MERGED | 841ad3c |
-| N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | IN PROGRESS | refactor/N-07 |
+| N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | MERGED | 270dbe2 |
 | N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | WAITING | |
-| N-09 | W1 · AI | Provider test util + role-mapping tests | W0 | – | WAITING | |
+| N-09 | W1 · AI | Provider test util + role-mapping tests | W0 | – | MERGED | 305a3f9 |
 | F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | WAITING | |
 | F-MSG-2 | W2 · MSG | Stop double-processing edits | F-MSG-1 | – | WAITING | |
 | F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | WAITING | |
