@@ -148,8 +148,13 @@ export class WorkerPluginRuntime {
       const { event, payload } = (req.payload as { event: string; payload: unknown }) || {}
       const handlers = this.eventHandlers.get(event)
       if (handlers) {
+        // One throwing handler must not starve the ones after it. (B-KRN-13)
         for (const h of handlers) {
-          await h(payload)
+          try {
+            await h(payload)
+          } catch (err) {
+            console.error(`[WorkerPluginRuntime:${this.manifest.id}] event handler for '${event}' threw:`, err)
+          }
         }
       }
     })
@@ -342,6 +347,20 @@ export class WorkerPluginRuntime {
     })
   }
 
+  /**
+   * Send a request whose result nobody awaits. A refusal (PERMISSION_DENIED,
+   * timeout, closed port) must be logged, never left as an unhandled rejection:
+   * in a worker thread that becomes an uncaught exception and kills the plugin. (B-KRN-05)
+   */
+  private fireAndForget(type: string, payload: unknown): void {
+    this.request(type, payload).catch((err: unknown) => {
+      console.warn(
+        `[WorkerPluginRuntime:${this.manifest.id}] fire-and-forget '${type}' failed:`,
+        err instanceof Error ? err.message : err
+      )
+    })
+  }
+
   private async requestOverlayHandle(opts: OverlayOptions): Promise<PluginOverlayHandle> {
     const res = await this.request<{ overlayId: string }>('kernel:ui:showOverlay', { ...opts, mode: 'handle' })
     const overlayId = res.overlayId
@@ -364,10 +383,10 @@ export class WorkerPluginRuntime {
         }
       },
       send: (event: string, data: unknown) => {
-        void this.request('kernel:ui:overlay:send', { overlayId, event, data })
+        this.fireAndForget('kernel:ui:overlay:send', { overlayId, event, data })
       },
       close: () => {
-        void this.request('kernel:ui:overlay:close', { overlayId })
+        this.fireAndForget('kernel:ui:overlay:close', { overlayId })
       }
     }
 
@@ -385,7 +404,7 @@ export class WorkerPluginRuntime {
         const evt = String(event)
         if (!self.eventHandlers.has(evt)) {
           self.eventHandlers.set(evt, [])
-          void self.request('kernel:events:subscribe', { event: evt })
+          self.fireAndForget('kernel:events:subscribe', { event: evt })
         }
         self.eventHandlers.get(evt)!.push(handler as any)
 
@@ -396,7 +415,7 @@ export class WorkerPluginRuntime {
             if (idx >= 0) list.splice(idx, 1)
             if (list.length === 0) {
               self.eventHandlers.delete(evt)
-              void self.request('kernel:events:unsubscribe', { event: evt })
+              self.fireAndForget('kernel:events:unsubscribe', { event: evt })
             }
           }
         }
@@ -405,7 +424,7 @@ export class WorkerPluginRuntime {
 
     const uiAPI: IPluginUIAPI = {
       notify: (opts) => self.request('kernel:ui:notify', opts),
-      toast: (msg, level = 'info') => void self.request('kernel:ui:toast', { message: msg, level }),
+      toast: (msg, level = 'info') => self.fireAndForget('kernel:ui:toast', { message: msg, level }),
       showForm: <T extends Record<string, unknown> = Record<string, unknown>>(schema: OverlayFormSchema) =>
         self.request<T | null>('kernel:ui:showForm', schema, 0),
       showConfirm: (opts) => self.request<boolean>('kernel:ui:showConfirm', opts, 0),

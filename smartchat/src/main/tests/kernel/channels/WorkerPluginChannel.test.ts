@@ -187,7 +187,7 @@ describe('WorkerPluginChannel', () => {
 
   // F-KRN-1 (B-KRN-05): the channel must notice the worker dying.
   describe('worker lifecycle (F-KRN-1)', () => {
-    it.fails('onClosed fires and pending requests reject when the worker throws asynchronously', async () => {
+    it('onClosed fires and pending requests reject when the worker throws asynchronously', async () => {
       const worker = new Worker(
         "require('node:worker_threads').parentPort.on('message', () => setTimeout(() => { throw new Error('boom') }, 10))",
         { eval: true }
@@ -214,7 +214,7 @@ describe('WorkerPluginChannel', () => {
       expect(onClosed).not.toHaveBeenCalled()
     })
 
-    it.fails('destroy() still terminates the worker when closing the port throws', () => {
+    it('destroy() still terminates the worker when closing the port throws', () => {
       const fake = Object.assign(new EventEmitter(), {
         postMessage: vi.fn(),
         close: vi.fn(() => {

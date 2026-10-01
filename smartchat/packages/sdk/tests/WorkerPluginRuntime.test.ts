@@ -324,7 +324,7 @@ describe('WorkerPluginRuntime', () => {
       return seen
     }
 
-    it.fails('ui.toast refused by the kernel does not leave an unhandled rejection', async () => {
+    it('ui.toast refused by the kernel does not leave an unhandled rejection', async () => {
       const runtime = new WorkerPluginRuntime(port1, manifest)
       const ctx = runtime.getContext()
       denyAll()
@@ -332,7 +332,7 @@ describe('WorkerPluginRuntime', () => {
       expect(seen).toEqual([])
     })
 
-    it.fails('events.on subscribe/unsubscribe refused by the kernel leaves no unhandled rejection', async () => {
+    it('events.on subscribe/unsubscribe refused by the kernel leaves no unhandled rejection', async () => {
       const runtime = new WorkerPluginRuntime(port1, manifest)
       const ctx = runtime.getContext()
       denyAll()
@@ -343,7 +343,7 @@ describe('WorkerPluginRuntime', () => {
       expect(seen).toEqual([])
     })
 
-    it.fails('overlay handle send/close refused by the kernel leave no unhandled rejection', async () => {
+    it('overlay handle send/close refused by the kernel leave no unhandled rejection', async () => {
       const runtime = new WorkerPluginRuntime(port1, manifest)
       const ctx = runtime.getContext()
       port2.on('message', (msg) => {
@@ -366,7 +366,7 @@ describe('WorkerPluginRuntime', () => {
   })
 
   // F-KRN-1 (B-KRN-13): one throwing handler must not starve the others.
-  it.fails('a throwing event handler does not stop later handlers for the same event (B-KRN-13)', async () => {
+  it('a throwing event handler does not stop later handlers for the same event (B-KRN-13)', async () => {
     const runtime = new WorkerPluginRuntime(port1, manifest)
     const ctx = runtime.getContext()
     port2.on('message', (msg) => {

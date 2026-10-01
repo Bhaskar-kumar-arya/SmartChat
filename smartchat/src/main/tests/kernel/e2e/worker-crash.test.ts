@@ -38,7 +38,7 @@ describe('worker crash handling (real worker)', () => {
     await k.teardown()
   })
 
-  it.fails('a worker that throws asynchronously after activation is unloaded and its contributions removed', async () => {
+  it('a worker that throws asynchronously after activation is unloaded and its contributions removed', async () => {
     k.writePlugin({
       id: PLUGIN_ID,
       manifest: { contributions: { chatActions: [{ id: 'crash.action', label: 'Crash' }] } },
@@ -54,7 +54,7 @@ describe('worker crash handling (real worker)', () => {
     expect(k.contributions.getAll('chat-action').some((a) => a.id === 'crash.action')).toBe(false)
   })
 
-  it.fails('pending kernel->plugin requests reject promptly when the worker dies', async () => {
+  it('pending kernel->plugin requests reject promptly when the worker dies', async () => {
     k.writePlugin({ id: PLUGIN_ID, source: crashAfterActivateSource })
     const { channel } = await k.loader.load(PLUGIN_ID)
     const bidi = channel as unknown as {

@@ -92,7 +92,7 @@ describe('KernelEventsModule', () => {
     expect(lateBus.on).not.toHaveBeenCalled()
   })
 
-  it.fails('unsubscribe while the bus is null drops the live entry so a reconnect does not resurrect it (F-KRN-1)', async () => {
+  it('unsubscribe while the bus is null drops the live entry so a reconnect does not resurrect it (F-KRN-1)', async () => {
     let bus: IWAEventBus | null = mockBus
     const m = new KernelEventsModule(mockPermissions, () => bus)
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
