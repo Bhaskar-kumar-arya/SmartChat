@@ -85,7 +85,7 @@ describe('MembershipSyncHandler (real DB)', () => {
 
   // Found while characterizing (same family as B-DATA-02): the stub's LID alias is never persisted,
   // so every re-hydration creates another stub for the same LID.
-  it.fails('persists the LID alias of a stub and does not duplicate it on re-hydration', async () => {
+  it('persists the LID alias of a stub and does not duplicate it on re-hydration', async () => {
     const jid = groupJid()
     await makeChat(prisma, { jid, type: 'GROUP' })
     const lid = lidJid()
@@ -136,7 +136,7 @@ describe('MembershipSyncHandler (real DB)', () => {
   })
 
   // B-DATA-02: a LID-only participant whose PN is known only via the group owner's ownerPn
-  it.fails('links a LID-only participant to the PN derived from ownerPn and records the member (B-DATA-02)', async () => {
+  it('links a LID-only participant to the PN derived from ownerPn and records the member (B-DATA-02)', async () => {
     const jid = groupJid()
     await makeChat(prisma, { jid, type: 'GROUP' })
     const lid = lidJid()
