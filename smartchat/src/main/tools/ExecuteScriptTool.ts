@@ -1,5 +1,5 @@
-import vm from 'vm';
 import { AITool, IToolRegistry } from '../services/ai/IToolRegistry';
+import { runScriptInChild } from './ExecuteScriptRunner';
 
 const MAX_EXECUTION_MS = 60_000; // 60 second wall-clock timeout
 const MAX_TOOL_CALLS = 10000;       // prevent runaway loops
@@ -59,51 +59,7 @@ The user is looking for specific information. A simple search might return isola
 AVAILABLE TOOLS (injected as globals):
 `;
 
-const FILENAME_SCRIPT = 'smartscript.js';
-const SCRIPT_LINE_OFFSET = -1;
 const MSG_NO_RETURN_VALUE = '(script completed with no return value)';
-
-/**
- * Bootstrap that runs *inside* the vm context. It receives the host bridge
- * callbacks only as function parameters (closure-scoped) — never as reachable
- * globals — so user script code cannot walk `.constructor.constructor` from an
- * injected host function back into the main realm (`return process` / `require`).
- * Everything the script can see (`console`, the tool globals) is built here from
- * the context's own intrinsics and only forwards JSON-serialisable primitives
- * across the boundary.
- */
-const CONTEXT_BOOTSTRAP = `
-"use strict";
-const __B = __bridge__;
-const __names = __toolNames__;
-try { Error.prepareStackTrace = undefined; } catch (e) {}
-// The sandbox global object is created in the host realm, so its inherited
-// \`constructor\` is the *host* Object (→ host Function → host \`process\`/\`require\`).
-// Pin it to this context's Object so \`x.constructor.constructor\` cannot escape.
-try {
-  Object.defineProperty(globalThis, 'constructor', {
-    value: Object, writable: true, configurable: true, enumerable: false
-  });
-} catch (e) {}
-globalThis.console = {
-  log:   function () { __B('log', JSON.stringify({ level: 'log',   msg: Array.prototype.map.call(arguments, String).join(' ') })); },
-  warn:  function () { __B('log', JSON.stringify({ level: 'warn',  msg: Array.prototype.map.call(arguments, String).join(' ') })); },
-  error: function () { __B('log', JSON.stringify({ level: 'error', msg: Array.prototype.map.call(arguments, String).join(' ') })); },
-};
-async function __callTool(name, args) {
-  let argJson;
-  try { argJson = JSON.stringify(args === undefined ? {} : args); }
-  catch (e) { throw new Error('Tool arguments for "' + name + '" are not JSON-serialisable'); }
-  const raw = await __B('tool', JSON.stringify({ name: name, args: argJson }));
-  let parsed;
-  try { parsed = JSON.parse(raw); } catch (e) { return raw; }
-  if (parsed && parsed.__scriptError__ === true) { throw new Error(String(parsed.message)); }
-  return parsed;
-}
-for (let i = 0; i < __names.length; i++) {
-  (function (n) { globalThis[n] = function (args) { return __callTool(n, args); }; })(__names[i]);
-}
-`;
 
 // ── Tool ───────────────────────────────────────────────────────────────────────
 
@@ -113,7 +69,10 @@ export class ExecuteScriptTool implements AITool {
 
   description: string = DESCRIPTION_BASE + '(initializing — tool list not yet available)';
 
-  constructor(private readonly toolRegistry: IToolRegistry) {}
+  constructor(
+    private readonly toolRegistry: IToolRegistry,
+    private readonly maxExecutionMs: number = MAX_EXECUTION_MS
+  ) {}
 
   parametersSchema = {
     type: 'object',
@@ -162,16 +121,9 @@ export class ExecuteScriptTool implements AITool {
 
     const logs: string[] = [];
     let toolCallCount = 0;
-    // Flipped true when the wall-clock timeout fires. `vm` has no async
-    // interruption, so the orphaned script keeps running after we reject the
-    // caller — this flag lets the bridge refuse any further tool calls so a
-    // "timed out" script can't still send messages / write to the DB.
+    // Flipped true when the wall-clock timeout fires, so the bridge refuses any
+    // tool call that is still in flight when the script process is killed.
     let aborted = false;
-
-    const context = vm.createContext(
-      {},
-      { codeGeneration: { strings: true, wasm: false } }
-    );
 
     const bridge = this.buildBridge(
       logs,
@@ -187,62 +139,28 @@ export class ExecuteScriptTool implements AITool {
       .map(t => t.name)
       .filter(n => n !== this.name);
 
-    try {
-      const installer = vm.compileFunction(CONTEXT_BOOTSTRAP, ['__bridge__', '__toolNames__'], {
-        parsingContext: context
-      });
-      installer(bridge, toolNames);
-    } catch (bootErr: unknown) {
-      const bootErrMsg = bootErr instanceof Error ? bootErr.message : String(bootErr);
-      return {
-        text: JSON.stringify(
-          { explanation, success: false, error: `Sandbox init failed: ${bootErrMsg}`, logs, toolCallCount },
-          null,
-          2
-        ),
-        citations: ctx?.citationEmitter?.getEntries()
-      };
-    }
-
-    // Wrap script in an async IIFE so top-level 'await' and 'return' work
-    const wrapped = `(async function __smartscript__() {\n${script}\n})()`;
-
-    let scriptPromise: Promise<unknown>;
-    try {
-      const compiled = this.compileScript(wrapped);
-      // runInContext returns a Promise (the IIFE result)
-      scriptPromise = compiled.runInContext(context) as Promise<unknown>;
-    } catch (syntaxErr: unknown) {
-      const syntaxErrMsg = syntaxErr instanceof Error ? syntaxErr.message : String(syntaxErr);
-      return {
-        text: JSON.stringify({
-          explanation,
-          success: false,
-          error: `Syntax error: ${syntaxErrMsg}`,
-          logs,
-          toolCallCount
-        }, null, 2),
-        citations: ctx?.citationEmitter?.getEntries()
-      };
-    }
-
-    // Race the script against a wall-clock timeout (handles async hangs)
-    let result: unknown;
-    let timedOut = false;
-
-    try {
-      result = await this.runScriptWithTimeout(scriptPromise, () => {
-        timedOut = true;
+    // The script runs in a separate process with no host bindings; see ExecuteScriptRunner.
+    const outcome = await runScriptInChild({
+      script,
+      toolNames,
+      bridge,
+      timeoutMs: this.maxExecutionMs,
+      onTimeout: () => {
         aborted = true;
-      });
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      }
+    });
+
+    if (!outcome.ok) {
+      const error =
+        outcome.phase === 'syntax' ? `Syntax error: ${outcome.error}`
+        : outcome.phase === 'boot' ? `Sandbox init failed: ${outcome.error}`
+        : outcome.error;
       return {
         text: JSON.stringify({
           explanation,
           success: false,
-          timedOut,
-          error: errMsg,
+          ...(outcome.phase === 'timeout' ? { timedOut: true } : {}),
+          error,
           logs,
           toolCallCount
         }, null, 2),
@@ -250,6 +168,7 @@ export class ExecuteScriptTool implements AITool {
       };
     }
 
+    const result: unknown = outcome.resultJson !== undefined ? JSON.parse(outcome.resultJson) : undefined;
     return {
       text: JSON.stringify({
         explanation,
@@ -263,16 +182,10 @@ export class ExecuteScriptTool implements AITool {
   }
 
   /**
-   * The single host-realm callback handed to the in-context bootstrap. It is
-   * passed as a closure-scoped parameter (never exposed as a sandbox global), so
-   * user script code has no path from it back to the host realm. It accepts and
-   * returns only strings — no host objects cross the boundary.
-   *
-   * NOTE: `vm` is a soft boundary, not a jail. This design removes the trivial
-   * `constructor.constructor` / injected-global escapes; a determined attacker
-   * with advanced stack-trace tricks may still reach the host. The tool remains
-   * `requiresPermission = true` and must not be exposed on unauthenticated
-   * surfaces (see the HTTP tools controller).
+   * Host-side handler for the one IPC call the script process can make. It
+   * accepts and returns only strings; the script process never holds a host
+   * object. The tool remains `requiresPermission = true` and must not be exposed
+   * on unauthenticated surfaces (see the HTTP tools controller).
    */
   private buildBridge(
     logs: string[],
@@ -340,34 +253,5 @@ export class ExecuteScriptTool implements AITool {
         });
       }
     };
-  }
-
-  private compileScript(wrappedScript: string): vm.Script {
-    return new vm.Script(wrappedScript, {
-      filename: FILENAME_SCRIPT,
-      lineOffset: SCRIPT_LINE_OFFSET
-    });
-  }
-
-  private async runScriptWithTimeout(
-    scriptPromise: Promise<unknown>,
-    onTimeout: () => void
-  ): Promise<unknown> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        scriptPromise,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            onTimeout();
-            reject(new Error(`[ExecuteScriptTool] Script exceeded ${MAX_EXECUTION_MS / 1000}s timeout.`));
-          }, MAX_EXECUTION_MS);
-        })
-      ]);
-    } finally {
-      // Clear on the success path so a dangling timer doesn't keep the event
-      // loop busy for the full timeout after the script already resolved.
-      if (timer) clearTimeout(timer);
-    }
   }
 }
