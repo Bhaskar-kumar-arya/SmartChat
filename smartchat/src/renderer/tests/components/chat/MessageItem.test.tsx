@@ -76,7 +76,7 @@ describe('MessageItem — hooks order across normal/system flips (B-UICHAT-00)',
 
   // The pre-branch hooks are context-only, so React 19 does not throw on the flip;
   // the early return instead skips the effects' cleanups (leaked document listener).
-  it.fails('does not leak effects when a message flips normal -> system -> normal', () => {
+  it('does not leak effects when a message flips normal -> system -> normal', () => {
     const live = new Set<EventListenerOrEventListenerObject>()
     const addSpy = vi.spyOn(document, 'addEventListener').mockImplementation((type, fn) => {
       if (type === 'mousedown') live.add(fn as EventListener)
