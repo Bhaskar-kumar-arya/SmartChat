@@ -47,7 +47,7 @@ describe('MessageItem — edit/delete failures and edit draft (B-UICHAT-10, B-UI
     expect(await screen.findByRole('alert')).toHaveTextContent('delete exploded')
   })
 
-  it.fails('re-seeds the edit draft from the message text on each open (B-UICHAT-13)', () => {
+  it('re-seeds the edit draft from the message text on each open (B-UICHAT-13)', () => {
     const { rerender } = renderWithProviders(
       <MessageItem msg={mine} onReply={vi.fn()} onViewReactions={vi.fn()} onEdit={vi.fn()} />
     )
