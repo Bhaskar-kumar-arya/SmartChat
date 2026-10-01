@@ -1,16 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import path from 'node:path'
-import fs from 'node:fs'
-import os from 'node:os'
-import { PluginLoader } from '../../../kernel/plugins/PluginLoader'
-import { PluginRegistry } from '../../../kernel/plugins/PluginRegistry'
-import { PluginHost } from '../../../kernel/plugins/PluginHost'
-import { KernelAPIRouter } from '../../../kernel/KernelAPIRouter'
-import { ContributionRegistry } from '../../../kernel/contributions/ContributionRegistry'
-import { PermissionStore } from '../../../kernel/permissions/PermissionStore'
-import { KernelUIModule } from '../../../kernel/api-modules/KernelUIModule'
-import { PanelHost } from '../../../kernel/ui/PanelHost'
 import { registerPanelIpcHandlers } from '../../../kernel/ipc/panelIpc'
+import { createTestKernel, type TestKernel } from '../helpers/createTestKernel'
 import { ipcMain } from 'electron'
 
 vi.mock('electron', () => {
@@ -48,148 +38,58 @@ const PLUGIN_ID = 'com.smartchat.panel-test'
 const PLUGIN_PERMISSIONS = ['ui:panel']
 
 describe('Panel Plugin - End-to-End Integration Test', () => {
-  let tmpDir: string
-  let loader: PluginLoader
-  let registry: PluginRegistry
-  let router: KernelAPIRouter
-  let contributionRegistry: ContributionRegistry
-  let permissions: PermissionStore
-  let panelHost: PanelHost
-
-  let uiModule: KernelUIModule
-  let mockWindow: { webContents: { send: ReturnType<typeof vi.fn> }; isDestroyed: () => boolean }
-  let mockEventBus: { on: ReturnType<typeof vi.fn>; off: ReturnType<typeof vi.fn>; emit: ReturnType<typeof vi.fn> }
+  let k: TestKernel
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smartchat-panel-plugin-test-'))
-    const permissionsFile = path.join(tmpDir, 'permissions.json')
-    fs.writeFileSync(permissionsFile, JSON.stringify({ plugins: {} }), 'utf8')
-
-    loader = new PluginLoader(tmpDir)
-    registry = new PluginRegistry()
-    router = new KernelAPIRouter()
-    contributionRegistry = new ContributionRegistry()
-    permissions = new PermissionStore(permissionsFile)
-
-    mockWindow = {
-      webContents: { send: vi.fn() },
-      isDestroyed: () => false
-    }
-
-    mockEventBus = {
-      on: vi.fn(),
-      off: vi.fn(),
-      emit: vi.fn()
-    }
-
-    panelHost = new PanelHost(() => mockWindow as any)
-
-    const mockNotificationService = {
-      notify: vi.fn(),
-      getPreferences: vi.fn(),
-      getPreferencesSync: vi.fn(),
-      setPreferences: vi.fn(),
-      setActiveChat: vi.fn()
-    }
-
-    const mockOverlayHost = {
-      showModal: vi.fn(),
-      resolveModal: vi.fn(),
-      showOverlay: vi.fn(),
-      sendToOverlay: vi.fn(),
-      closeOverlay: vi.fn()
-    }
-
-    uiModule = new KernelUIModule(
-      permissions,
-      mockNotificationService as any,
-      () => mockWindow as any,
-      mockOverlayHost as any,
-      panelHost
-    )
-
-    router.registerModule(uiModule)
-    new PluginHost(loader, registry, router, contributionRegistry)
-
-    registerPanelIpcHandlers(panelHost, router, mockEventBus as any)
+    k = createTestKernel({ tmpPrefix: 'smartchat-panel-plugin-test-' })
+    registerPanelIpcHandlers(k.panelHost, k.router, k.eventBus as any)
   })
 
-  afterEach(() => {
-    try {
-      fs.rmSync(tmpDir, { recursive: true, force: true })
-    } catch {
-      // ignore cleanup errors
-    }
+  // Awaits worker exit BEFORE removing the temp dir (fixes the worker-start vs
+  // rmSync race that surfaced as an unhandled "Cannot find module .../index.js").
+  afterEach(async () => {
+    await k.teardown()
   })
 
   it('loads panel contributions and handles openPanel / closePanel IPC signals', async () => {
-    const pluginDir = path.join(tmpDir, PLUGIN_ID)
-    fs.mkdirSync(pluginDir, { recursive: true })
-
-    const manifest = {
-      apiVersion: '2',
+    k.writePlugin({
       id: PLUGIN_ID,
-      name: 'Panel Test Plugin',
-      version: '1.0.0',
-      description: 'E2E test plugin for panel UI',
-      main: 'index.js',
-      permissions: PLUGIN_PERMISSIONS,
-      contributions: {
-        'sidebar-panel': [
-          {
-            id: 'sidebar-1',
-            title: 'My Custom Sidebar Panel',
-            panel: 'panels/sidebar.html',
-            icon: 'layout'
-          }
-        ],
-        'settings-page': [
-          {
-            id: 'settings-1',
-            title: 'My Custom Settings Page',
-            panel: 'panels/settings.html',
-            icon: 'settings'
-          }
-        ]
+      manifest: {
+        name: 'Panel Test Plugin',
+        description: 'E2E test plugin for panel UI',
+        permissions: PLUGIN_PERMISSIONS,
+        contributions: {
+          'sidebar-panel': [
+            { id: 'sidebar-1', title: 'My Custom Sidebar Panel', panel: 'panels/sidebar.html', icon: 'layout' }
+          ],
+          'settings-page': [
+            { id: 'settings-1', title: 'My Custom Settings Page', panel: 'panels/settings.html', icon: 'settings' }
+          ]
+        }
       }
-    }
+    })
 
-    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify(manifest), 'utf8')
-    fs.writeFileSync(
-      path.join(pluginDir, 'index.js'),
-      `
-        module.exports = {
-          activate: function(ctx) {
-            console.log('Panel test plugin activated');
-          }
-        };
-      `,
-      'utf8'
-    )
+    k.permissions.registerPluginManifest(PLUGIN_ID, PLUGIN_PERMISSIONS)
 
-    permissions.registerPluginManifest(PLUGIN_ID, PLUGIN_PERMISSIONS)
+    // loader.load() spawns a real worker that is NOT handed to the host; the
+    // harness tracks it so teardown can await its exit.
+    const loaded = await k.loader.load(PLUGIN_ID)
+    expect(k.workers.spawned).toBe(1)
 
-    const loaded = await loader.load(PLUGIN_ID)
-
-    registry.register({ id: loaded.manifest.id, manifest: loaded.manifest, isBuiltin: false, channel: loaded.channel })
-
-
-
-
-
+    k.registry.register({ id: loaded.manifest.id, manifest: loaded.manifest, isBuiltin: false, channel: loaded.channel })
 
     // Register contributions in ContributionRegistry and PanelHost
     if (loaded.manifest.contributions) {
       for (const [slot, items] of Object.entries(loaded.manifest.contributions)) {
         if (Array.isArray(items)) {
           for (const item of items) {
-            contributionRegistry.register(slot as any, {
+            k.contributions.register(slot as any, {
 
               ...item,
               pluginId: loaded.manifest.id
             })
             if (slot === 'sidebar-panel' || slot === 'settings-page') {
-              panelHost.registerPanel({
+              k.panelHost.registerPanel({
                 pluginId: loaded.manifest.id,
                 contributionId: item.id,
                 panelPath: item.panel,
@@ -202,30 +102,30 @@ describe('Panel Plugin - End-to-End Integration Test', () => {
     }
 
     // Verify registration in PanelHost
-    const sidebarPanel = panelHost.findPanel(PLUGIN_ID, 'sidebar-1')
+    const sidebarPanel = k.panelHost.findPanel(PLUGIN_ID, 'sidebar-1')
     expect(sidebarPanel).toBeDefined()
     expect(sidebarPanel?.contributionId).toEqual('sidebar-1')
     expect(sidebarPanel?.type).toEqual('sidebar')
 
-    const settingsPanel = panelHost.findPanel(PLUGIN_ID, 'settings-1')
+    const settingsPanel = k.panelHost.findPanel(PLUGIN_ID, 'settings-1')
     expect(settingsPanel).toBeDefined()
     expect(settingsPanel?.contributionId).toEqual('settings-1')
 
     // Trigger openPanel via KernelUIModule (simulating ctx.ui.openPanel('sidebar-1'))
-    const openRes = await uiModule.handle(PLUGIN_ID, 'kernel:ui:openPanel', { id: 'sidebar-1' })
+    const openRes = await k.uiModule.handle(PLUGIN_ID, 'kernel:ui:openPanel', { id: 'sidebar-1' })
     expect(openRes).toEqual({ success: true })
 
-    expect(mockWindow.webContents.send).toHaveBeenCalledWith('kernel:ui:panel:open', {
+    expect(k.window.webContents.send).toHaveBeenCalledWith('kernel:ui:panel:open', {
       contributionId: 'sidebar-1',
       pluginId: PLUGIN_ID,
       panelId: sidebarPanel!.panelId
     })
 
     // Trigger closePanel via KernelUIModule (simulating ctx.ui.closePanel('sidebar-1'))
-    const closeRes = await uiModule.handle(PLUGIN_ID, 'kernel:ui:closePanel', { id: 'sidebar-1' })
+    const closeRes = await k.uiModule.handle(PLUGIN_ID, 'kernel:ui:closePanel', { id: 'sidebar-1' })
     expect(closeRes).toEqual({ success: true })
 
-    expect(mockWindow.webContents.send).toHaveBeenCalledWith('kernel:ui:panel:close', {
+    expect(k.window.webContents.send).toHaveBeenCalledWith('kernel:ui:panel:close', {
       contributionId: 'sidebar-1',
       pluginId: PLUGIN_ID
     })
@@ -244,11 +144,11 @@ describe('Panel Plugin - End-to-End Integration Test', () => {
   })
 
   it('denies openPanel if plugin lacks ui:panel capability', async () => {
-    permissions.registerPluginManifest(PLUGIN_ID, [])
+    k.permissions.registerPluginManifest(PLUGIN_ID, [])
 
 
     await expect(
-      uiModule.handle(PLUGIN_ID, 'kernel:ui:openPanel', { id: 'sidebar-1' })
+      k.uiModule.handle(PLUGIN_ID, 'kernel:ui:openPanel', { id: 'sidebar-1' })
     ).rejects.toMatchObject({
       code: 'PERMISSION_DENIED'
     })

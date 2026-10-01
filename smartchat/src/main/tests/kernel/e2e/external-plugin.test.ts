@@ -1,127 +1,67 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import fs from 'fs'
-import path from 'path'
-import os from 'os'
-import { PluginLoader } from '../../../kernel/plugins/PluginLoader'
-import { PluginRegistry } from '../../../kernel/plugins/PluginRegistry'
-import { PluginHost } from '../../../kernel/plugins/PluginHost'
-import { ContributionRegistry } from '../../../kernel/contributions/ContributionRegistry'
-import { KernelAPIRouter } from '../../../kernel/KernelAPIRouter'
-import { PluginManifest } from '../../../kernel/plugins/PluginManifest'
-import { DirectPluginChannel } from '../../../kernel/channels/DirectPluginChannel'
+import { createTestKernel, type TestKernel } from '../helpers/createTestKernel'
 
 describe('External Plugin E2E Lifecycle', () => {
-  let tmpDir: string
-  let loader: PluginLoader
-  let registry: PluginRegistry
-  let contribRegistry: ContributionRegistry
-  let router: KernelAPIRouter
-  let host: PluginHost
+  let k: TestKernel
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smartchat-e2e-test-'))
-    loader = new PluginLoader(tmpDir)
-    registry = new PluginRegistry()
-    contribRegistry = new ContributionRegistry()
-    router = new KernelAPIRouter()
-    host = new PluginHost(loader, registry, router, contribRegistry)
+    k = createTestKernel({ tmpPrefix: 'smartchat-e2e-test-' })
   })
 
   afterEach(async () => {
-    try {
-      const loaded = host.listLoaded()
-      for (const id of loaded) {
-        await host.unload(id)
-      }
-    } catch {
-      // ignore
-    }
-    if (fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true, force: true })
-    }
+    await k.teardown()
   })
 
-  it('installs, loads, registers contributions, handles execution, and unloads plugin', async () => {
+  it('installs, loads in a real worker via host.load, registers contributions, handles execution, and unloads plugin', async () => {
     const pluginId = 'com.example.e2e-test'
-    const pluginDir = path.join(tmpDir, pluginId)
-    fs.mkdirSync(pluginDir, { recursive: true })
-
-    const manifest: PluginManifest = {
+    k.writePlugin({
       id: pluginId,
-      name: 'E2E Test Plugin',
-      version: '1.0.0',
-      apiVersion: '2',
-      main: 'index.js',
-      permissions: ['chats:read'],
-      contributions: {
-        chatActions: [
-          { id: 'e2e-action', label: 'E2E Action' }
-        ]
+      manifest: {
+        name: 'E2E Test Plugin',
+        permissions: ['chats:read'],
+        contributions: { chatActions: [{ id: 'e2e-action', label: 'E2E Action' }] }
       }
-    }
-
-    fs.writeFileSync(path.join(pluginDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8')
-    fs.writeFileSync(path.join(pluginDir, 'index.js'), '// mock entry point', 'utf8')
+    })
 
     // 1. List installed plugins
-    const installed = await loader.listInstalled()
-    expect(installed.length).toBe(1)
-    expect(installed[0].id).toBe(pluginId)
+    const installed = await k.loader.listInstalled()
+    expect(installed.map((m) => m.id)).toEqual([pluginId])
 
-    // 2. Direct channel simulation for in-memory E2E test execution
-    const channel = new DirectPluginChannel()
-    let actionExecuted = false
-    let actionPayload: any = null
+    // 2. Load through the host: real worker, real activation handshake, and
+    //    contributions registered from the manifest by the host itself.
+    await k.host.load(pluginId)
+    expect(k.workers.spawned).toBe(1)
 
-    channel.onKernelRequest(async (req) => {
-      if (req.type === 'contribution:execute:chat-action') {
-        actionExecuted = true
-        actionPayload = req.payload
-      }
-    })
+    // 3. Plugin is listed
+    expect(k.host.listLoaded()).toContain(pluginId)
 
-    registry.register({
-      id: pluginId,
-      manifest,
-      channel,
-      isBuiltin: false
-    })
-
-    // Register contributions from manifest
-    for (const action of manifest.contributions.chatActions || []) {
-      contribRegistry.register('chat-action', {
-        pluginId,
-        id: action.id,
-        label: action.label
-      })
-    }
-
-    // 3. Verify plugin in listLoaded()
-    expect(host.listLoaded()).toContain(pluginId)
-
-    // 4. Verify contributions registered
-    const chatActions = contribRegistry.getAll('chat-action')
-    const found = chatActions.find((a) => a.id === 'e2e-action')
+    // 4. Contributions registered by the host
+    const found = k.contributions.getAll('chat-action').find((a) => a.id === 'e2e-action')
     expect(found).toBeDefined()
     expect(found?.pluginId).toBe(pluginId)
     expect(found?.label).toBe('E2E Action')
 
-    // 5. Execute contribution trigger
-    channel.sendToPlugin({
+    // 5. Execute a contribution over the real channel; the worker echoes the request type.
+    const channel = k.registry.get(pluginId)!.channel as unknown as {
+      sendRequestToPlugin: (m: { id: string; type: string; payload: unknown }) => Promise<{ ok: boolean; payload: unknown }>
+    }
+    const res = await channel.sendRequestToPlugin({
       id: 'req-1',
       type: 'contribution:execute:chat-action',
       payload: { id: 'e2e-action', context: { jid: '12345@s.whatsapp.net' } }
     })
-
-    expect(actionExecuted).toBe(true)
-    expect(actionPayload).toEqual({ id: 'e2e-action', context: { jid: '12345@s.whatsapp.net' } })
+    expect(res.ok).toBe(true)
+    // The worker echoes the payload it actually received, proving id + context.jid are delivered.
+    expect(res.payload).toEqual({
+      echoed: 'contribution:execute:chat-action',
+      received: { id: 'e2e-action', context: { jid: '12345@s.whatsapp.net' } }
+    })
 
     // 6. Unload plugin
-    await host.unload(pluginId)
-    expect(host.listLoaded()).not.toContain(pluginId)
+    await k.host.unload(pluginId)
+    expect(k.host.listLoaded()).not.toContain(pluginId)
 
-    // 7. Verify contributions removed
-    const postUnloadActions = contribRegistry.getAll('chat-action')
-    expect(postUnloadActions.find((a) => a.pluginId === pluginId)).toBeUndefined()
+    // 7. Contributions removed
+    expect(k.contributions.getAll('chat-action').find((a) => a.pluginId === pluginId)).toBeUndefined()
   })
 })
