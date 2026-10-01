@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.unmock('../../services/search/VectorSyncService')
 
 import { VectorSyncService } from '../../services/search/VectorSyncService'
+import { EMBEDDING_DIMENSIONS } from '../../services/search/embeddingDimensions'
 import { IMessageVectorRepository } from '../../services/messages/IMessageVectorRepository'
 
 describe('VectorSyncService', () => {
@@ -21,7 +22,7 @@ describe('VectorSyncService', () => {
   })
 
   it('syncs valid vectors', async () => {
-    const validVector = Array(768).fill(0.1)
+    const validVector = Array(EMBEDDING_DIMENSIONS).fill(0.1)
     repo.getAllVectors.mockResolvedValue([
       { messageId: 'm1', vector: JSON.stringify(validVector) }
     ])

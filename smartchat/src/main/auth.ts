@@ -13,6 +13,7 @@ import { join } from "path";
 import { app } from "electron";
 import { is } from "@electron-toolkit/utils";
 import * as sqliteVec from "sqlite-vec";
+import { EMBEDDING_DIMENSIONS, ensureVecMessagesTable } from "./services/search/embeddingDimensions";
 import type { IVectorSyncService } from "./services/search/IVectorSyncService";
 import { existsSync, copyFileSync, mkdirSync } from "fs";
 import { runMigrations, RawSqliteDb } from "./db/schema-migrations";
@@ -128,37 +129,10 @@ export let vectorDbReady = false;
 
 export const initVectorDb = async (vectorSyncService?: IVectorSyncService) => {
   try {
-    // 1. Create the virtual table with the correct 768 dimensions for Bhasha model
-    await prisma.$executeRawUnsafe(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS vec_messages USING vec0(
-        messageId TEXT PRIMARY KEY,
-        vector FLOAT[768]
-      );
-    `);
-
-    // 2. SELF-HEAL: Check for dimension mismatch (e.g., if it was previously 384)
-    try {
-      const dummyVector = JSON.stringify(new Array(768).fill(0));
-      await prisma.$executeRawUnsafe(
-        `SELECT count(*) FROM vec_messages WHERE vector MATCH ? AND k=1`,
-        dummyVector
-      );
-    } catch (e: unknown) {
-      const errorVal = e as Error;
-      if (errorVal.message.includes("Dimension mismatch")) {
-        console.warn("[VectorDB] Dimension mismatch detected. Recreating table with 768 dims...");
-        await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS vec_messages`);
-        // S10-04: use IF NOT EXISTS here too — if the CREATE races/fails after the
-        // DROP, the app would otherwise run with no vec_messages table at all and
-        // silently return nothing for every semantic search until a restart.
-        await prisma.$executeRawUnsafe(`
-          CREATE VIRTUAL TABLE IF NOT EXISTS vec_messages USING vec0(
-            messageId TEXT PRIMARY KEY,
-            vector FLOAT[768]
-          );
-        `);
-      }
-    }
+    // 1+2. Create the vec table at the shared EMBEDDING_DIMENSIONS; self-heal on mismatch.
+    await ensureVecMessagesTable((sql, ...params) =>
+      prisma.$executeRawUnsafe(sql, ...(params as string[]))
+    );
 
     // S10-04: verify the table actually exists before proceeding — a swallowed
     // failure above must surface as a fatal init error, not a degraded search.
@@ -169,7 +143,7 @@ export const initVectorDb = async (vectorSyncService?: IVectorSyncService) => {
       throw new Error("[VectorDB] vec_messages table missing after initialization");
     }
 
-    console.log("[VectorDB] sqlite-vec table initialized successfully (768 dims)");
+    console.log(`[VectorDB] sqlite-vec table initialized successfully (${EMBEDDING_DIMENSIONS} dims)`);
 
     // 3. Check if we need to sync existing vectors from MessageVector to vec_messages
     const vecCountRaw = await prisma.$queryRawUnsafe<Array<{ count: bigint | number }>>(
