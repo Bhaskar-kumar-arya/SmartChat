@@ -6,7 +6,7 @@ import { AudioMessageProps } from '../../../types/componentProps'
 
 export const AudioMessage = ({ localURI, senderJid, onDownload, isDownloading, rawMsg }: AudioMessageProps) => {
   const [downloadFailed, setDownloadFailed] = useState(false)
-  const handleDownload = async () => {
+  const handleDownload = async (): Promise<void> => {
     setDownloadFailed(false)
     try {
       await onDownload()

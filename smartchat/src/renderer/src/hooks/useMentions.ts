@@ -100,7 +100,7 @@ export const useMentions = (activeJid: string | null) => {
 
   // The menu only renders when it has entries; Enter must be blocked only then (B-UICHAT-04).
   const menuVisible = useMemo(
-    () => showMenu && filterMentionParticipants(participants, query).length > 0,
+    (): boolean => showMenu && filterMentionParticipants(participants, query).length > 0,
     [showMenu, participants, query]
   )
 

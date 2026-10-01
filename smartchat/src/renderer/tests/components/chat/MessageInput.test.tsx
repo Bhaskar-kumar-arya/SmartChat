@@ -198,7 +198,7 @@ describe('MessageInput', () => {
   })
 
   describe('Enter with an open @ token (B-UICHAT-04)', () => {
-    const typeWithCaretAtEnd = (editor: HTMLElement, value: string) => {
+    const typeWithCaretAtEnd = (editor: HTMLElement, value: string): void => {
       editor.textContent = value
       const range = document.createRange()
       range.selectNodeContents(editor)

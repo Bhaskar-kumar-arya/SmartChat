@@ -389,7 +389,7 @@ export const DocumentMessage = ({ localURI, textContent, rawMsg, onDownload, isD
         if (localURI) api.openFile(localURI)
     }
 
-    const handleDownload = async () => {
+    const handleDownload = async (): Promise<void> => {
         setDownloadFailed(false)
         try {
             await onDownload?.()

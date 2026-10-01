@@ -19,7 +19,7 @@ describe('MessageItem — edit/delete failures and edit draft (B-UICHAT-10, B-UI
     textContent: 'original'
   }
 
-  const openMenuItem = (label: string) => {
+  const openMenuItem = (label: string): void => {
     fireEvent.click(screen.getByTitle('Message Options'))
     fireEvent.click(screen.getByText(label))
   }
