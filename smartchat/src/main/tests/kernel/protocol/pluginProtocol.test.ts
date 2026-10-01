@@ -70,7 +70,7 @@ describe('pluginProtocol', () => {
   })
 
   // S-01 (B-KRN-03): the URL host is the plugin id and must be validated.
-  it.fails('rejects ".." / "." hosts with 403 and never fetches outside the extensions dir', async () => {
+  it('rejects ".." / "." hosts with 403 and never fetches outside the extensions dir', async () => {
     registerPluginProtocol(extensionsPath)
     const handler = mockHandle.mock.calls[0][1]
 
