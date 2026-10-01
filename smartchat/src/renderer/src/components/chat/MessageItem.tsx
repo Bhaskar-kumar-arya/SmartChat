@@ -12,6 +12,7 @@ import { TemplateMessage } from './messages/TemplateMessage'
 import { SystemMessageBubble } from './messages/SystemMessage'
 import EmojiStickerGifPicker from '../picker/EmojiStickerGifPicker'
 import { useAPI } from '../../context/APIContext'
+import { useToast } from '../../context/ToastContext'
 import ConfirmModal from '../common/ConfirmModal'
 import { MessageStatusTick } from '../common/MessageStatusTick'
 import { emojiToUnified } from '../../utils/emojiUtils'
@@ -206,6 +207,7 @@ const MessageItemBody = memo(function MessageItemBody({
   onScrollToMessage
 }: MessageItemProps) {
   const api = useAPI()
+  const { showError } = useToast()
   const messageActions = useContributions('message-action')
 
   let rawMsg: RawMessageContent = {}
@@ -359,7 +361,13 @@ const MessageItemBody = memo(function MessageItemBody({
 
   const handleSaveEdit = async () => {
     if (onEdit && editText.trim() !== msg.textContent && editText.trim()) {
-      await onEdit(msg.id, editText.trim())
+      try {
+        await onEdit(msg.id, editText.trim())
+      } catch (err) {
+        // Keep the editor open with the draft so the user can retry (B-UICHAT-10).
+        showError(err, 'Could not edit the message.')
+        return
+      }
     }
     setIsEditing(false)
     setShowDropdown(false)
@@ -373,7 +381,11 @@ const MessageItemBody = memo(function MessageItemBody({
   const handleConfirmDelete = async () => {
     setShowDeleteConfirm(false)
     if (onDelete) {
-      await onDelete(msg.id)
+      try {
+        await onDelete(msg.id)
+      } catch (err) {
+        showError(err, 'Could not delete the message.')
+      }
     }
   }
 

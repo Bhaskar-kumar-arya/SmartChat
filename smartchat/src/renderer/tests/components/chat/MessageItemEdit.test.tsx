@@ -1,24 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderWithProviders, screen, fireEvent } from '../../testUtils'
 import MessageItem from '@renderer/components/chat/MessageItem'
 import { MessageItem as IMessageItem } from '@renderer/types/chatTypes'
 
-// Pin-phase only: today the failure escapes as an unhandled rejection (the bug).
-// Swallow it so the it.fails pins keep the run free of unhandled errors.
-const swallowUnhandledRejections = () => {
-  const original = process.emit.bind(process) as (event: string, ...args: unknown[]) => boolean
-  vi.spyOn(process, 'emit').mockImplementation(((event: string, ...args: unknown[]) =>
-    event === 'unhandledRejection' ? true : original(event, ...args)) as typeof process.emit)
-}
-
 describe('MessageItem — edit/delete failures and edit draft (B-UICHAT-10, B-UICHAT-13)', () => {
   beforeEach(() => {
     Element.prototype.scrollIntoView = vi.fn()
-    swallowUnhandledRejections()
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
   })
 
   const mine: IMessageItem = {
@@ -37,7 +24,7 @@ describe('MessageItem — edit/delete failures and edit draft (B-UICHAT-10, B-UI
     fireEvent.click(screen.getByText(label))
   }
 
-  it.fails('shows a toast and keeps the editor open when saving an edit fails (B-UICHAT-10)', async () => {
+  it('shows a toast and keeps the editor open when saving an edit fails (B-UICHAT-10)', async () => {
     const onEdit = vi.fn().mockRejectedValue(new Error('edit exploded'))
     renderWithProviders(<MessageItem msg={mine} onReply={vi.fn()} onViewReactions={vi.fn()} onEdit={onEdit} />)
 
@@ -50,7 +37,7 @@ describe('MessageItem — edit/delete failures and edit draft (B-UICHAT-10, B-UI
     expect(document.querySelector('.message-edit-input')).toBeInTheDocument()
   })
 
-  it.fails('shows a toast when deleting a message fails (B-UICHAT-10)', async () => {
+  it('shows a toast when deleting a message fails (B-UICHAT-10)', async () => {
     const onDelete = vi.fn().mockRejectedValue(new Error('delete exploded'))
     renderWithProviders(<MessageItem msg={mine} onReply={vi.fn()} onViewReactions={vi.fn()} onDelete={onDelete} />)
 
