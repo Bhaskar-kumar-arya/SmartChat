@@ -18,7 +18,12 @@ import { createFakeBaileysSocket, fakeParentPort } from '../../helpers/waFakes'
 type Repos = { historySyncManager: { skipSync: ReturnType<typeof vi.fn> } }
 type FakeSock = ReturnType<typeof createFakeBaileysSocket>
 
-function setup(opts: { sock?: FakeSock | null; repos?: Repos | null } = {}) {
+function setup(opts: { sock?: FakeSock | null; repos?: Repos | null } = {}): {
+  router: WorkerCommandRouter
+  sock: FakeSock
+  connectionManager: { getSocket: ReturnType<typeof vi.fn>; getRepos: ReturnType<typeof vi.fn>; setup: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn> }
+  bootstrap: ReturnType<typeof vi.fn>
+} {
   const sock = opts.sock === undefined ? createFakeBaileysSocket() : opts.sock
   const repos = opts.repos === undefined ? null : opts.repos
   const connectionManager = {

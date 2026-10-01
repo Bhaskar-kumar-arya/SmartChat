@@ -5,6 +5,7 @@ vi.mock('worker_threads', async () =>
 )
 
 import { WAWorkerBridge } from '../../../workers/bridge/WAWorkerBridge'
+import type { WorkerCommandMessage } from '../../../workers/whatsapp/whatsappWorker.types'
 import {
   FakeWorker,
   createFakeEventBus,
@@ -92,11 +93,11 @@ describe('WAWorkerBridge contract (N-02)', () => {
   })
 
   describe('commands posted to the worker (type + payload shape)', () => {
-    async function cmd<T extends Parameters<FakeWorker['commandOfType']>[0]>(
+    async function cmd<T extends WorkerCommandMessage['type']>(
       type: T,
       call: () => Promise<unknown>,
       result: unknown = { status: 'success' }
-    ) {
+    ): Promise<Extract<WorkerCommandMessage, { type: T }>> {
       started()
       const p = call()
       const posted = worker.commandOfType(type)

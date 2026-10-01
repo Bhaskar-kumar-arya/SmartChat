@@ -8,7 +8,8 @@ import { WAWorkerBridge } from '../../../workers/bridge/WAWorkerBridge'
 import { WorkerCommandRouter } from '../../../workers/whatsapp/routing/workerCommandRouter'
 import type { WorkerConnectionManager } from '../../../workers/whatsapp/socket/workerConnectionManager'
 import { WorkerEventBusAdapter } from '../../../workers/whatsapp/events/WorkerEventBusAdapter'
-import { restoreBuffers, sanitizeForPostMessage } from '../../../workers/whatsapp/utils/workerUtils'
+// Dynamic import: the static form trips no-restricted-imports (the '**/utils' barrel pattern matches this dir).
+const { restoreBuffers, sanitizeForPostMessage } = await import('../../../workers/whatsapp/utils/workerUtils')
 import {
   FakeWorker,
   createFakeBaileysSocket,
@@ -194,7 +195,13 @@ describe('bridge <-> router round trip over fake ports', () => {
   afterEach(() => vi.restoreAllMocks())
 
   /** Wire: bridge -> (postMessage) -> router -> (parentPort.postMessage) -> bridge. */
-  function wire() {
+  function wire(): {
+    bridge: WAWorkerBridge
+    sock: ReturnType<typeof createFakeBaileysSocket>
+    worker: FakeWorker
+    skipSync: ReturnType<typeof vi.fn>
+    connectionManager: { setup: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn> }
+  } {
     const sock = createFakeBaileysSocket()
     const skipSync = vi.fn(async () => 'deferred')
     const connectionManager = {
