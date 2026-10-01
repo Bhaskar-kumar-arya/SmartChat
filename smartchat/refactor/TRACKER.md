@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: none
+- Locks held: WASYNC (H-02) · BOOT (H-03) · SCHEMA (H-04) · DI (X-01) · PRELOAD-mock (N-07). **Owner scope: only H-02, H-03, H-04, X-01, N-06, N-07, N-09 — no other unit after these.**
 - `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint ratchet baseline committed (scripts/lint-baseline.json, 22 rules, Prettier excluded): no-explicit-any 897 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22
 
 ## Owner smoke queue (🔎)
@@ -37,6 +37,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | Date | Session | Notes |
 |---|---|---|
 | 2026-09-30 | audit | Audit + plan committed. No units started. |
+| 2026-10-01 | orch-2 | Baseline: typecheck ✅; vitest 248 files pass / 4 fail (kernel e2e timeouts under load: voice-transcriber-overlay 36s, test-all-features 11s; passes in isolation = load flake on this machine). Dispatched H-02, H-03, H-04, X-01, N-06, N-07; N-09 next when a slot frees. |
 | 2026-10-01 | orch-1 (Wave 0 done) | G-02, G-03 merged; ratchet baseline committed; main: typecheck ✅, vitest 243 files/1232 pass/0 fail/0 err. Awaiting owner OK for Wave 1. |
 | 2026-10-01 | orch-1 (G-01 done) | G-01 and G-04 merged; suite green twice. |
 | 2026-10-01 | orch-1 | Baseline reproduced: typecheck ✅, vitest 6 fail / 85 errors. Env note: `npm ci` needs `ELECTRON_SKIP_BINARY_DOWNLOAD=1` here; run `node_modules/.bin/prisma generate` and `npm rebuild better-sqlite3` AFTER npm ci. Owner decision: Prettier out of scope (G-03 reduced to lint baseline, prettier rule excluded). |
@@ -56,19 +57,19 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | MERGED | d42c4b8 |
 | S-04 | W1 · KRN | EventDeliveryPolicy + scope enforcement | W0 | – | MERGED | f3d493f |
 | H-01 | W1 · UC | MessageItem hooks-order crash | W0 | – | MERGED | 98ee4cc |
-| H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | WAITING | |
-| H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | WAITING | |
-| H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | WAITING | |
+| H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | IN PROGRESS | refactor/H-02 |
+| H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | IN PROGRESS | refactor/H-03 |
+| H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | IN PROGRESS | refactor/H-04 |
 | H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | WAITING | |
 | H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | MERGED | fae5b34 |
-| X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | WAITING | |
+| X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | IN PROGRESS | refactor/X-01 |
 | N-01 | W1 · DATA | Main test infra + factories | W0 | – | MERGED | ae1a3c8 |
 | N-02 | W1 · WA | Worker↔main contract characterization | W0 | – | MERGED | 21bbcf7 |
 | N-03 | W1 · MSG | Edit/reaction flow characterization | N-01 | – | MERGED | ae1a3c8 |
 | N-04 | W1 · DATA | Identity + MembershipSync integration tests | N-01 | – | MERGED | ae1a3c8 |
 | N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | MERGED | 17c3268 |
-| N-06 | W1 · KRN | Kernel test harness | W0 | – | WAITING | |
-| N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | WAITING | |
+| N-06 | W1 · KRN | Kernel test harness | W0 | – | IN PROGRESS | refactor/N-06 |
+| N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | IN PROGRESS | refactor/N-07 |
 | N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | WAITING | |
 | N-09 | W1 · AI | Provider test util + role-mapping tests | W0 | – | WAITING | |
 | F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | WAITING | |
