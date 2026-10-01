@@ -6,9 +6,9 @@ Statuses: `READY` (deps met) · `WAITING` (deps pending) · `IN PROGRESS` · `RE
 Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN §4.2.
 
 ## Current state
-- Wave: **0 (in progress)**
+- Wave: **0 complete (all 4 gates merged); awaiting owner approval to start Wave 1**
 - Locks held: none
-- `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint 1,694 errors / 9,935 warnings (≈9,910 are Prettier, ignored)
+- `main` baseline: typecheck ✅ · vitest 242 files / 1227 passed / 2 skipped / 0 failed / 0 errors (hermetic, after G-01) · lint ratchet baseline committed (scripts/lint-baseline.json, 22 rules, Prettier excluded): no-explicit-any 897 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22
 
 ## Owner smoke queue (🔎)
 1. After pushing, check GitHub Actions: CI workflow green on ubuntu AND windows (windows untested); then mark both checks required on main (Settings > Branches).
@@ -17,12 +17,14 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (G-04) Gemini key `AIzaSy…YLRGd0` is in git history: OWNER must rotate it. Audit docs may have stale paths to moved `bug-audit*`; `.agents/skills/feature-and-bugfix/SKILL.md` mentions bug files; logger lives at `src/main/utils/logger.ts` (relocate if a shared dir appears); `test:run` and `test:run:all` scripts are identical. Fold into Z-08 (docs).
 - (G-01) codetantra plugin manifest fails SDK `validateManifest` (globalSetup zips it plainly) → fold into R-KRN-10. `packages/sdk` dist is gitignored; CI must build it (globalSetup does for tests; `plugin:package:*` assumes prior build). `AIService` eagerly constructs `LMStudioProvider` (lazy-connect later, AI lane). `src/main/index.ts:37` references `dev_only/logs` (BOOT, fold into D-05). ipcGuards win32 branch untested until Windows CI. milestone2 unreadCount expectation corrected 0→5 (ChatSyncHandler.ts:76 persists provided value). G-01 rewrote smartchat/.gitignore line endings (CRLF→LF), harmless.
 - (G-02) Flaky unhandled 'Cannot find module …/index.js' in kernel/e2e/panel-plugin.test.ts (worker starts after temp dir cleanup), seen under coverage; create a fix unit in KRN lane (candidate: N-06/F-KRN-1). CI uses `npm ci --legacy-peer-deps` (npm arborist crash on lockfile; same as build-mac.yml); Node 22. G-03 must add lint-ratchet step at TODO(G-03) in .github/workflows/ci.yml. 🔎 owner: after first CI run, require checks 'Typecheck + tests (ubuntu-latest)' and '(windows-latest)' on main; confirm windows job green.
+- (G-03) Ratchet lints `.` (~40s, --no-cache); a local `coverage/` dir could add counts → add `coverage` to eslint ignores (fold into Z-05). 3 null-ruleId results counted as `(no-rule)`. Ratchet untested on Windows until CI. **Triage (end of Wave 0):** flaky panel-plugin e2e → fold into N-06; codetantra manifest → R-KRN-10; `dev_only/logs` ref in index.ts → D-05; LMStudioProvider eager construct → F-AI-1; stale bug-audit paths/skill docs → Z-08; `plugin:package:*` needs prebuilt sdk dist → Z-08 docs; test:run dup scripts → Z-08.
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
 | Date | Session | Notes |
 |---|---|---|
 | 2026-09-30 | audit | Audit + plan committed. No units started. |
+| 2026-10-01 | orch-1 (Wave 0 done) | G-02, G-03 merged; ratchet baseline committed; main: typecheck ✅, vitest 243 files/1232 pass/0 fail/0 err. Awaiting owner OK for Wave 1. |
 | 2026-10-01 | orch-1 (G-01 done) | G-01 and G-04 merged; suite green twice. |
 | 2026-10-01 | orch-1 | Baseline reproduced: typecheck ✅, vitest 6 fail / 85 errors. Env note: `npm ci` needs `ELECTRON_SKIP_BINARY_DOWNLOAD=1` here; run `node_modules/.bin/prisma generate` and `npm rebuild better-sqlite3` AFTER npm ci. Owner decision: Prettier out of scope (G-03 reduced to lint baseline, prettier rule excluded). |
 
@@ -35,7 +37,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | G-01 | W0 | Hermetic green suite | – | – | MERGED | 0d52a54 |
 | G-02 | W0 | CI workflow (ubuntu + windows) | G-01 | – | MERGED | 355e7ca |
 | G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | MERGED | eb206db |
-| G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | IN PROGRESS | refactor/G-03 | |
+| G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | MERGED | 7f6c8c9 | |
 | S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | WAITING | |
 | S-02 | W1 · AI | executeScript isolation (hotfix → child process) | W0 | – | WAITING | |
 | S-03 | W1 · KRN | Gate plugin → AI tool calls | W0 | KHOST | WAITING | |
