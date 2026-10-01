@@ -7,8 +7,8 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: WASYNC (F-WA-2), MSGREPO (F-MSG-1), KHOST (F-KRN-1), IPC (F-AI-3), DI (F-DATA-1). Owner scope (2026-10-02): N-08 + Wave-2 high-value bug fixes (F-MSG-1, F-WA-2, F-KRN-1, F-AI-1, F-AI-3, F-AI-5, F-DATA-1, F-DATA-2, F-APP-1, F-UC-3, F-UA-1); 6 agents at a time. Integration branch = claude/hopeful-johnson-ysujzy (not main).
-- `main` baseline (60eae18): typecheck ✅ · vitest 251 files / 1481 passed / 5 expected-fail / 0 failed / 0 errors (clean worktree, --maxWorkers=3) · lint ratchet baseline: no-explicit-any 852 · explicit-function-return-type 430 · no-restricted-imports 107 · rules-of-hooks 22 · exhaustive-deps 22 (rest unchanged)
+- Locks held: none. Owner scope (2026-10-02): N-08 + Wave-2 high-value bug fixes (F-MSG-1, F-WA-2, F-KRN-1, F-AI-1, F-AI-3, F-AI-5, F-DATA-1, F-DATA-2, F-APP-1, F-UC-3, F-UA-1); 6 agents at a time. Integration branch = claude/hopeful-johnson-ysujzy (push only there; local `main` fast-forwarded to origin/main aa1f4aa, not used).
+- Baseline (1843e24): typecheck ✅ · vitest 260 files / 1656 passed / 11 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet currently FAILS on no-restricted-imports 107→109 (pre-existing since c359c1a guestPreload; fixed by G-05)
 
 ## Owner smoke queue (🔎)
 3. (S-02) Dev/packaged Electron: an AI chat executeScript call (e.g. queryDatabase) returns results + logs; a `while(true){}` script leaves the app responsive and times out (~60s). Child is spawned via process.execPath -e with ELECTRON_RUN_AS_NODE=1: untested under real Electron.
@@ -20,6 +20,9 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 7. (H-02) Link WhatsApp, then unlink the device from the phone: app wipes local data and shows a fresh QR (worker log "All database tables cleared"), no 401 reconnect loop. Re-pair; chats sync, semantic search works.
 8. (H-03) After `npm ci --legacy-peer-deps` + `npm run test:rebuild:electron` + `npm run dev`: no "[BaileysPatcher]" startup error; mute/pin toggled from the phone reaches the app (app-state.sync). Packaged build (`build:win`/`build:mac`): app.asar chat-utils.js contains app-state.sync.
 1. After pushing, check GitHub Actions: CI workflow green on ubuntu AND windows (windows untested); then mark both checks required on main (Settings > Branches).
+10. (F-WA-2) Fresh pairing: history sync progresses, wa-sync-complete fires, embeddings resume. Kill app mid-sync, relaunch: sync screen shows and auto-completes ~3 min without Skip. Scroll back past local history: older messages appear (no 40s wait on failure). Skip during an on-demand scroll-back still completes.
+11. (F-MSG-1) Edit a reply on the phone: quote bubble stays, text updates live; also in a disappearing-messages chat; reload keeps quote; forward/quote edited msg sends new text; edit an image caption: image stays; edit a reply from the app: quote stays.
+12. (F-DATA-1) Fresh pairing + history sync: no `Unique constraint failed (phoneNumber)` on lid-mapping.update; a LID-first contact later linked to its PN shows one chat with old messages/reactions.
 
 ## Follow-ups inbox (triaged at each wave boundary)
 - (G-04) Gemini key `AIzaSy…YLRGd0` is in git history: OWNER must rotate it. Audit docs may have stale paths to moved `bug-audit*`; `.agents/skills/feature-and-bugfix/SKILL.md` mentions bug files; logger lives at `src/main/utils/logger.ts` (relocate if a shared dir appears); `test:run` and `test:run:all` scripts are identical. Fold into Z-08 (docs).
@@ -45,6 +48,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (smoke 2026-10-02, fixed on main, owner-verified) **Panel preload stripped** c359c1a: F9-04's `will-attach-webview` guard compared `params.preload` (a `file://` URL from getPanelPreloadPath) to raw fs paths, so every panel/overlay preload was stripped (log: `Stripped unexpected webview preload`). New helper `utils/guestPreload.ts` accepts URL or path of the two bundled preloads. Also fa63d13: new test helpers had raised the lint ratchet (+3 return-type, +6 any); typed them.
 - (smoke 2026-10-02, fixed on main, owner-verified) **CodeTantra 'Failed to fetch'** 489d6bc (test) → 8a83e64, d79d7a6, 0d0b195: the panel fetched login.microsoftonline.com but plugin pages are served with `connect-src 'self' plugin:` (F10-01). Token exchange moved to the plugin worker as AI tool `codetantra_exchange_code` (must ALSO be declared in manifest `contributions.aiTools` or the host does not register it); panel calls it via `ai.callTool`. Lessons: the kernel double-wraps a worker reply (`{text:'{"text":"Success…"}'}`), the panel now unwraps; consider unwrapping once in KernelAIModule instead. Panel-side reply handling has no automated test.
 - (smoke 2026-10-02, NOT fixed) (a) ~~SDK contract mismatch~~ FIXED (test commit + fix commit on main): `CommandContext` is typed `{chatJid?}` but slash commands received `{jid, text}`; the SDK worker dispatch (`packages/sdk/src/channel.ts`) now adds `chatJid` from `jid` (both kept). Note slash `args` still arrives as '' (renderer sends only `text`); not addressed. Plugins bundle `packages/sdk/dist`, so repackage them to pick it up. (b) **REQUIREMENT, not designed yet (build later): opt-in 'always allow' for gated AI tools.** Today every gated tool call (plugin `ctx.ai.callTool`, AI-chat `execute-tool`) shows a consent dialog every time. Owner wants the option to stop being asked: for AI chat 'always allow' is wanted (scope = the tool); for plugins the owner is asking whether it should be per plugin or global (decision pending; do not assume). Owner note 2026-10-02: the AI sidebar already has per-call Approve/Deny for tool requests, so for AI-chat tool calls the extra native OS dialog (ipcHandlers `execute-tool`, added by S10-07 so a compromised renderer cannot self-approve) is redundant UX; any change must keep main-process enforcement of consent (do not simply trust the renderer's assertion), e.g. by moving the real approval into the sidebar flow. Design, defaults, sensitive-tool exceptions and revocation are all undecided and need an owner decision before work starts. (c) **S-04 untestable**: PermissionStore.setCapability exists but no IPC/Settings UI (ExtensionCard only shows badges); needs a UI to be useful and to smoke-test. (d) `codetantra_refresh_meetings` is registered in the worker but not declared in the plugin manifest, so the panel's refresh via callTool may fail like the exchange tool did. (e) `*.scext` is gitignored but `codetantra-otp-relay.test.ts` requires `plugins/codetantra-otp-relay.scext`; check whether CI builds it or that test fails there. (f) `webview.openDevTools()` on a plugin panel (Electron 39.8.2, Windows) was followed by a main-process V8 fatal `Invoke in DisallowJavascriptExecutionScope`; trigger unconfirmed. F12 does not open devtools on `<webview>` panels (only the main window); avoid webview devtools until investigated.
+- (batch 1, 2026-10-02) **TRACKER was wrong:** N-03 (edit/reaction characterization) and N-04 (identity + MembershipSync integration tests) are marked MERGED at ae1a3c8 but that commit only has N-01 infra; agents F-MSG-1/F-DATA-1 wrote editFlow.int.test.ts and identityLinking.integration.test.ts themselves → treat N-03/N-04 as covered only by those; N-04's MembershipSync tests still absent (needed by F-DATA-2). **Lint:** `**/utils` pattern flags `utils/logger`, `guestPreload`, `jidUtils` (blocks createLogger); F-KRN-1 added 2 eslint-disable-next-line as a stopgap → G-05. (F-WA-2) B-WA-13 skipSync not fixed (WABRIDGE/IPC/PRELOAD) → new F-WA-6; workerConnectionManager `clear()` before `isInProgress` dead term; PluginHost ignores detach from router.attachChannel (→ F-KRN-2); SDK worker console.log noisy per request. (F-MSG-1) B-MSG-05 (history-sync edit) → F-MSG-3 can use applyEdit; renderer MessageItem has its own unwrapMessage copy; sync handler edit remap separate; outgoing edited reply may lose quote for recipient (unverified); preserveContextInfo now keeps media replies as media (side effect). (F-AI-3) `ai-chat` invoke path does not translate AbortError to clean end (needs decision); `ai-chat-stream` and `abort-ai-chat` lack isTrustedSender (→ C-02/F-AI-5); AIService still console.error. (F-DATA-1) concurrent AliasRepository.upsertIdentityAlias may race on jid uniqueness; deduplicateIdentities still console.*; IdentityReconciliationService ctor is now (identityRepository, lidMapRepository, contactService). (N-08) 6 it.fails pins: B-UICHAT-01/02/07, B-UIAPP-03/04, F-AI-4; App state machine also drops `ready` on late onWaSyncProgress and never clears sessionReplaced → F-UA-3; B-UICHAT-07/02 pins assume fix keeps loadMore→number and per-chat guarded send.
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -55,6 +59,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | 2026-10-01 | orch-2 (done) | All 7 owner-scoped units merged (H-04 X-01 H-02 N-06 N-09 H-03 N-07). Final main 60eae18: typecheck ✅, vitest 251 files/1481 pass/0 fail/0 err clean. Subagent-verified gates were noisy under load (many parallel vitest runs); final gate re-run clean. Stopped per owner. Smoke queue items 6-8 added. |
 | 2026-10-01 | owner smoke | Owner ran the 🔎 queue partially; found and fixed two live bugs (H-02 unlink misclassification 97d956e; individual avatars 7cf7891), each test-first with it.fails commit. Targeted tests + typecheck:node green; full suite not re-run after these two commits. Follow-ups added to the inbox. |
 | 2026-10-02 | owner smoke | Smoke continued: S-01/S-02/S-03 PASS; S-04 untestable. Fixed panel-preload strip (c359c1a), lint ratchet (fa63d13), CodeTantra token exchange (8a83e64, d79d7a6, 0d0b195), each with a test-first commit where testable. New follow-ups added (SDK CommandContext mismatch, tool always-allow design, S-04 UI, scext/CI, webview devtools crash). |
+| 2026-10-02 | orch-3 batch 1 | Owner scope: N-08 + Wave-2 high-value fixes, 6 agents at a time. Merged N-08, F-MSG-1, F-AI-3, F-DATA-1, F-WA-2, F-KRN-1 onto claude/hopeful-johnson-ysujzy (1843e24); full suite green after every merge (260 files/1656 pass/0 fail). All agents reported lint ratchet +2 no-restricted-imports as pre-existing (confirmed on base); G-05 created. Agent worktrees were based on aa1f4aa (not the sha in the brief; harmless). |
 | 2026-10-01 | orch-1 (Wave 0 done) | G-02, G-03 merged; ratchet baseline committed; main: typecheck ✅, vitest 243 files/1232 pass/0 fail/0 err. Awaiting owner OK for Wave 1. |
 | 2026-10-01 | orch-1 (G-01 done) | G-01 and G-04 merged; suite green twice. |
 | 2026-10-01 | orch-1 | Baseline reproduced: typecheck ✅, vitest 6 fail / 85 errors. Env note: `npm ci` needs `ELECTRON_SKIP_BINARY_DOWNLOAD=1` here; run `node_modules/.bin/prisma generate` and `npm rebuild better-sqlite3` AFTER npm ci. Owner decision: Prettier out of scope (G-03 reduced to lint baseline, prettier rule excluded). |
@@ -67,6 +72,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 |---|---|---|---|---|---|---|
 | G-01 | W0 | Hermetic green suite | – | – | MERGED | 0d52a54 |
 | G-02 | W0 | CI workflow (ubuntu + windows) | G-01 | – | MERGED | 355e7ca |
+| G-05 | W1 · APP | Narrow eslint no-restricted-imports (`**/utils` misfires), fix 107→109 drift, drop F-KRN-1 eslint-disables | – | – | READY | |
 | G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | MERGED | eb206db |
 | G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | MERGED | 7f6c8c9 | |
 | S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | MERGED | 929e7a3 |
@@ -87,28 +93,29 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | N-05 | W1 · APP | IPC contract-drift test + recording ipcMain | W0 | – | MERGED | 17c3268 |
 | N-06 | W1 · KRN | Kernel test harness | W0 | – | MERGED | 841ad3c |
 | N-07 | W1 · UC | Renderer test infra (emit helpers, factories, vacuous tests) | W0 | PRELOAD | MERGED | 270dbe2 |
-| N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | IN PROGRESS | refactor/N-08 |
+| N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | MERGED | 11302f0 |
 | N-09 | W1 · AI | Provider test util + role-mapping tests | W0 | – | MERGED | 305a3f9 |
-| F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | IN PROGRESS | refactor/F-MSG-1 |
+| F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | MERGED | 7a8f2bd |
 | F-MSG-2 | W2 · MSG | Stop double-processing edits | F-MSG-1 | – | WAITING | |
 | F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | WAITING | |
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | WAITING | |
 | R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
 | F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | MERGED | 21bbcf7 |
-| F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | IN PROGRESS | refactor/F-WA-2 |
+| F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | MERGED | 7630f8f |
+| F-WA-6 | W2 · WA | skipSync returns {status} (B-WA-13); widen onWaHistoryAppended types | F-WA-2 | WABRIDGE, IPC, PRELOAD | WAITING | |
 | F-WA-3 | W2 · WA | Graceful worker shutdown | F-WA-1, F-WA-2 | WABRIDGE | WAITING | |
 | F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | WAITING | |
 | F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | MERGED | 21bbcf7 |
-| F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | IN PROGRESS | refactor/F-DATA-1 |
+| F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | MERGED | e8b1d9f |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | WAITING | |
 | F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | WAITING | |
 | F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | WAITING | |
 | F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | MERGED | ae1a3c8 |
-| F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | IN PROGRESS | refactor/F-AI-3 |
+| F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | MERGED | c205617 |
 | F-AI-4 | W2 · AI | Tool-loop turn cap in the live loop | N-08 | – | WAITING | |
 | F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | WAITING | |
-| F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | IN PROGRESS | refactor/F-KRN-1 |
+| F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | MERGED | 1843e24 |
 | F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | WAITING | |
 | F-KRN-3 | W2 · KRN | Overlay lifecycle per plugin | F-KRN-2 | KHOST | WAITING | |
 | F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | MERGED | f3d493f |
