@@ -960,14 +960,19 @@
           code: authCode,
           codeVerifier: verifier
         });
-        // callTool resolves with either the {text} object or its JSON-encoded string.
-        let parsed = rawRes;
-        if (typeof rawRes === 'string') {
-          try { parsed = JSON.parse(rawRes); } catch (e) { parsed = rawRes; }
+        // The kernel can wrap the worker's reply more than once ({text:'{"text":"Success: ..."}'}),
+        // so unwrap until we reach the plain message.
+        let textVal = rawRes;
+        for (let i = 0; i < 3; i++) {
+          if (typeof textVal === 'object' && textVal !== null && 'text' in textVal) {
+            textVal = textVal.text;
+          } else if (typeof textVal === 'string' && textVal.trim().startsWith('{')) {
+            try { textVal = JSON.parse(textVal); } catch (e) { break; }
+          } else {
+            break;
+          }
         }
-        const textVal = (typeof parsed === 'object' && parsed !== null && parsed.text)
-          ? parsed.text
-          : (typeof parsed === 'string' ? parsed : '');
+        if (typeof textVal !== 'string') textVal = '';
         const ok = textVal.startsWith('Success:');
         const cleanMsg = textVal.replace(/^(Success|Failed):\s*/, '').trim();
 
