@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: none. Owner scope (2026-10-02): N-08 + Wave-2 high-value bug fixes (F-MSG-1, F-WA-2, F-KRN-1, F-AI-1, F-AI-3, F-AI-5, F-DATA-1, F-DATA-2, F-APP-1, F-UC-3, F-UA-1); 6 agents at a time. Integration branch = claude/hopeful-johnson-ysujzy (push only there; local `main` fast-forwarded to origin/main aa1f4aa, not used).
+- Locks held: IPC (F-AI-5). Batch 2 in flight: G-05, F-AI-1, F-AI-5, F-APP-1, F-UC-3, F-UA-1. Owner scope (2026-10-02): N-08 + Wave-2 high-value bug fixes (F-MSG-1, F-WA-2, F-KRN-1, F-AI-1, F-AI-3, F-AI-5, F-DATA-1, F-DATA-2, F-APP-1, F-UC-3, F-UA-1); 6 agents at a time. Integration branch = claude/hopeful-johnson-ysujzy (push only there; local `main` fast-forwarded to origin/main aa1f4aa, not used).
 - Baseline (1843e24): typecheck ✅ · vitest 260 files / 1656 passed / 11 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet currently FAILS on no-restricted-imports 107→109 (pre-existing since c359c1a guestPreload; fixed by G-05)
 
 ## Owner smoke queue (🔎)
@@ -72,7 +72,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 |---|---|---|---|---|---|---|
 | G-01 | W0 | Hermetic green suite | – | – | MERGED | 0d52a54 |
 | G-02 | W0 | CI workflow (ubuntu + windows) | G-01 | – | MERGED | 355e7ca |
-| G-05 | W1 · APP | Narrow eslint no-restricted-imports (`**/utils` misfires), fix 107→109 drift, drop F-KRN-1 eslint-disables | – | – | READY | |
+| G-05 | W1 · APP | Narrow eslint no-restricted-imports (`**/utils` misfires), fix 107→109 drift, drop F-KRN-1 eslint-disables | – | – | IN PROGRESS | refactor/G-05 |
 | G-04 | W0 | Repo hygiene, CLAUDE.md, key → env, logger module | – | – | MERGED | eb206db |
 | G-03 | W0 | Lint baseline/`lint:ratchet` (Prettier excluded; no mass format) | G-01, G-02, G-04 | – | MERGED | 7f6c8c9 | |
 | S-01 | W1 · KRN | Validate `plugin://` host | W0 | – | MERGED | 929e7a3 |
@@ -110,21 +110,21 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | MERGED | e8b1d9f |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | WAITING | |
 | F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | WAITING | |
-| F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | WAITING | |
+| F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | IN PROGRESS | refactor/F-AI-1 |
 | F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | MERGED | ae1a3c8 |
 | F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | MERGED | c205617 |
 | F-AI-4 | W2 · AI | Tool-loop turn cap in the live loop | N-08 | – | WAITING | |
-| F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | WAITING | |
+| F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | IN PROGRESS | refactor/F-AI-5 |
 | F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | MERGED | 1843e24 |
 | F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | WAITING | |
 | F-KRN-3 | W2 · KRN | Overlay lifecycle per plugin | F-KRN-2 | KHOST | WAITING | |
 | F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | MERGED | f3d493f |
-| F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | WAITING | |
+| F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | IN PROGRESS | refactor/F-APP-1 |
 | F-APP-2 | W2 · APP | Surface index-embeddings failures | N-05, H-04 | IPC | WAITING | |
 | F-UC-1 | W2 · UC | Cursor pagination + loadNewer + guarded sends `CONTRACT` 🔎 | N-08 | USEMSG, IPC, PRELOAD | WAITING | |
 | F-UC-2 | W2 · UC | Chat-switch hygiene | F-UC-1 | USEMSG | WAITING | |
-| F-UC-3 | W2 · UC | Composer/markdown/error toasts | N-07 | – | WAITING | |
-| F-UA-1 | W2 · UA | Small renderer bug batch | N-07 | – | WAITING | |
+| F-UC-3 | W2 · UC | Composer/markdown/error toasts | N-07 | – | IN PROGRESS | refactor/F-UC-3 |
+| F-UA-1 | W2 · UA | Small renderer bug batch | N-07 | – | IN PROGRESS | refactor/F-UA-1 |
 | F-UA-2 | W2 · UA | useAIStream session guard | N-08 | – | WAITING | |
 | F-UA-3 | W2 · UA | useConnectionState reducer 🔎 | N-08 | – | WAITING | |
 | C-01 | W3 · APP | Shared typed IPC contract (types only) | N-05, F-UC-1, F-AI-3, F-AI-5, F-APP-2 | IPC | WAITING | |
