@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { preserveContextInfo, preserveLocalUri, extractContextInfoFromContent } from '../../utils/messageUtils'
+import { preserveContextInfo, preserveLocalUri, applyEdit } from '../../utils/messageUtils'
 import { IMessageRepository, MessageUpsertData } from './IMessageRepository'
 import { DBMessageWithSender } from '../../domain/db.types'
 
@@ -157,52 +157,24 @@ export class MessageRepository implements IMessageRepository {
     textContent: string | null,
     editedContent: Record<string, unknown> | null
   ): Promise<void> {
-    let originalMessageContextInfo: Record<string, unknown> | null = null
-    let originalContextInfo: Record<string, unknown> | null = null
+    let existingParsed: Record<string, unknown> | null = null
     try {
       const existing = await this.prisma.message.findUnique({
         where: { id: messageId },
         select: { content: true }
       })
       if (existing?.content) {
-        const parsed = JSON.parse(existing.content) as Record<string, unknown>
-        originalMessageContextInfo = (parsed.messageContextInfo as Record<string, unknown>) ?? null
-        originalContextInfo = extractContextInfoFromContent(parsed)
+        existingParsed = JSON.parse(existing.content) as Record<string, unknown>
       }
     } catch {
       // Non-fatal — proceed without preserving context
     }
 
-    const editedContextInfo = extractContextInfoFromContent(editedContent)
-    const mergedContextInfo =
-      originalContextInfo || editedContextInfo
-        ? { ...(originalContextInfo ?? {}), ...(editedContextInfo ?? {}) }
-        : null
-
-    let contentToStore: Record<string, unknown>
-    let newMessageType: string
-
-    if (mergedContextInfo) {
-      const extText = (editedContent?.extendedTextMessage as Record<string, unknown> | undefined) ?? {}
-      contentToStore = {
-        ...(editedContent ?? {}),
-        extendedTextMessage: {
-          ...extText,
-          text: textContent ?? (extText.text as string | undefined) ?? (editedContent?.conversation as string | undefined) ?? '',
-          contextInfo: mergedContextInfo
-        },
-        ...(originalMessageContextInfo ? { messageContextInfo: originalMessageContextInfo } : {})
-      }
-      delete contentToStore.conversation
-      delete contentToStore.editedMessage
-      newMessageType = 'extendedTextMessage'
-    } else {
-      contentToStore = {
-        ...(editedContent ?? {}),
-        ...(originalMessageContextInfo ? { messageContextInfo: originalMessageContextInfo } : {})
-      }
-      newMessageType = editedContent?.extendedTextMessage ? 'extendedTextMessage' : 'conversation'
-    }
+    const { content: contentToStore, messageType: newMessageType } = applyEdit(
+      existingParsed,
+      editedContent,
+      textContent
+    )
 
     await this.prisma.message
       .updateMany({

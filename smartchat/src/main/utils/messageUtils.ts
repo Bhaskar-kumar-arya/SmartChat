@@ -294,3 +294,91 @@ export function isIndexableMessageType(messageType: string | null | undefined): 
   if (!messageType) return false
   return !NON_INDEXABLE_MESSAGE_TYPES.has(messageType)
 }
+
+type JsonRecord = Record<string, unknown>
+
+/**
+ * Merges a stored contextInfo with the one carried by an edit. Incoming fields win.
+ * Returns null when neither side has any context.
+ */
+export function mergeContextInfo(
+  existing: JsonRecord | null | undefined,
+  incoming: JsonRecord | null | undefined
+): JsonRecord | null {
+  if (!existing && !incoming) return null
+  return { ...(existing ?? {}), ...(incoming ?? {}) }
+}
+
+export interface AppliedEdit {
+  content: JsonRecord
+  messageType: string
+  textContent: string | null
+}
+
+/**
+ * Pure: computes the stored content/type for an edit of a message.
+ * Keeps the quote (contextInfo) and the E2EE `messageContextInfo` of the existing message.
+ */
+export function applyEdit(
+  existingContent: JsonRecord | null | undefined,
+  editedContent: JsonRecord | null | undefined,
+  editedText: string | null
+): AppliedEdit {
+  const existingMessageContextInfo = (existingContent?.messageContextInfo as JsonRecord | undefined) ?? null
+  const mergedContextInfo = mergeContextInfo(
+    extractContextInfoFromContent(existingContent),
+    extractContextInfoFromContent(editedContent)
+  )
+
+  if (mergedContextInfo) {
+    const extText = (editedContent?.extendedTextMessage as JsonRecord | undefined) ?? {}
+    const content: JsonRecord = {
+      ...(editedContent ?? {}),
+      extendedTextMessage: {
+        ...extText,
+        text: editedText ?? (extText.text as string | undefined) ?? (editedContent?.conversation as string | undefined) ?? '',
+        contextInfo: mergedContextInfo
+      },
+      ...(existingMessageContextInfo ? { messageContextInfo: existingMessageContextInfo } : {})
+    }
+    delete content.conversation
+    delete content.editedMessage
+    return { content, messageType: 'extendedTextMessage', textContent: editedText }
+  }
+
+  return {
+    content: {
+      ...(editedContent ?? {}),
+      ...(existingMessageContextInfo ? { messageContextInfo: existingMessageContextInfo } : {})
+    },
+    messageType: editedContent?.extendedTextMessage ? 'extendedTextMessage' : 'conversation',
+    textContent: editedText
+  }
+}
+
+/**
+ * Pure: rewrites the text/caption of an outgoing message's stored content JSON.
+ */
+export function patchEditedText(contentJson: string, newText: string): string {
+  const updatedContent = JSON.parse(contentJson || '{}')
+  const rootContextInfo = updatedContent.contextInfo as JsonRecord | undefined
+
+  if (updatedContent.extendedTextMessage) {
+    updatedContent.extendedTextMessage.text = newText
+  } else if (rootContextInfo) {
+    updatedContent.extendedTextMessage = { text: newText, contextInfo: rootContextInfo }
+    delete updatedContent.conversation
+    delete updatedContent.contextInfo
+  } else if (updatedContent.conversation !== undefined) {
+    updatedContent.conversation = newText
+  } else if (updatedContent.imageMessage) {
+    updatedContent.imageMessage.caption = newText
+  } else if (updatedContent.videoMessage) {
+    updatedContent.videoMessage.caption = newText
+  } else if (updatedContent.documentMessage) {
+    updatedContent.documentMessage.caption = newText
+  } else {
+    updatedContent.conversation = newText
+  }
+  return JSON.stringify(updatedContent)
+}

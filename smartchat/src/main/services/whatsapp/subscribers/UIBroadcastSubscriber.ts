@@ -26,7 +26,7 @@ import type { IContactNameResolver } from '../../contacts/IContactService'
 import type { IMessageQueryService } from '../../messages/IMessageQueryService'
 import type { IMessageReadRepository } from '../../messages/IMessageQueryRepository'
 import { cleanJid } from '../../../utils/jidUtils'
-import { unwrapMessage, extractContextInfoFromContent } from '../../../utils/messageUtils'
+import { unwrapMessage, extractContextInfoFromContent, applyEdit } from '../../../utils/messageUtils'
 
 export class UIBroadcastSubscriber implements IWAEventSubscriber {
   constructor(
@@ -98,49 +98,13 @@ export class UIBroadcastSubscriber implements IWAEventSubscriber {
           // non-fatal
         }
       }
-      const existingContextInfo = extractContextInfoFromContent(existingParsed)
-      const editedContextInfo = extractContextInfoFromContent(
-        event.editedContent as Record<string, unknown> | null | undefined
+      const applied = applyEdit(
+        existingParsed,
+        (event.editedContent as Record<string, unknown> | null | undefined) ?? null,
+        event.editedTextContent ?? null
       )
-      const mergedContextInfo =
-        existingContextInfo || editedContextInfo
-          ? { ...(existingContextInfo ?? {}), ...(editedContextInfo ?? {}) }
-          : null
-
-      const existingMessageContextInfo =
-        (existingParsed?.messageContextInfo as Record<string, unknown>) ?? null
-
-      let finalContent: string
-      let messageType = dbMsg.messageType
-
-      if (mergedContextInfo) {
-        const extText =
-          ((event.editedContent as Record<string, unknown> | undefined)?.extendedTextMessage as
-            | Record<string, unknown>
-            | undefined) ?? {}
-        const finalObj: Record<string, unknown> = {
-          ...((event.editedContent as Record<string, unknown> | undefined) ?? {}),
-          extendedTextMessage: {
-            ...extText,
-            text: event.editedTextContent ?? (extText.text as string | undefined) ?? '',
-            contextInfo: mergedContextInfo
-          },
-          ...(existingMessageContextInfo ? { messageContextInfo: existingMessageContextInfo } : {})
-        }
-        delete finalObj.conversation
-        delete finalObj.editedMessage
-        finalContent = JSON.stringify(finalObj)
-        messageType = 'extendedTextMessage'
-      } else {
-        const finalObj = {
-          ...((event.editedContent as Record<string, unknown> | undefined) ?? {}),
-          ...(existingMessageContextInfo ? { messageContextInfo: existingMessageContextInfo } : {})
-        }
-        finalContent = JSON.stringify(finalObj)
-        messageType = (event.editedContent as Record<string, unknown> | undefined)?.extendedTextMessage
-          ? 'extendedTextMessage'
-          : 'conversation'
-      }
+      const finalContent = JSON.stringify(applied.content)
+      const messageType = applied.messageType
 
       const merged = {
         ...dbMsg,

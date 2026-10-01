@@ -10,6 +10,7 @@ import { IChatService } from '../chats/IChatService'
 import { WAMessageContent, parseProtoMessage } from '../whatsapp/types'
 import { EnrichedMessage } from '../../ipc/message.types'
 import { cleanJid } from '../../utils/jidUtils'
+import { patchEditedText } from '../../utils/messageUtils'
 import type { IWAEventBus } from '../whatsapp/IWAEventBus'
 import { IMessageActionService, IMessageActionSocket } from './IMessageActionService'
 import { IMessageSenderService } from './IMessageSenderService'
@@ -79,33 +80,6 @@ export class MessageActionService implements IMessageActionService {
     };
   }
 
-  private getUpdatedEditContent(contentJson: string, newText: string): string {
-    const updatedContent = JSON.parse(contentJson || '{}');
-    const rootContextInfo = updatedContent.contextInfo as Record<string, unknown> | undefined;
-
-    if (updatedContent.extendedTextMessage) {
-      updatedContent.extendedTextMessage.text = newText;
-    } else if (rootContextInfo) {
-      updatedContent.extendedTextMessage = {
-        text: newText,
-        contextInfo: rootContextInfo
-      };
-      delete updatedContent.conversation;
-      delete updatedContent.contextInfo;
-    } else if (updatedContent.conversation !== undefined) {
-      updatedContent.conversation = newText;
-    } else if (updatedContent.imageMessage) {
-      updatedContent.imageMessage.caption = newText;
-    } else if (updatedContent.videoMessage) {
-      updatedContent.videoMessage.caption = newText;
-    } else if (updatedContent.documentMessage) {
-      updatedContent.documentMessage.caption = newText;
-    } else {
-      updatedContent.conversation = newText;
-    }
-    return JSON.stringify(updatedContent);
-  }
-
   /**
    * Edits the text content of a message.
    */
@@ -135,7 +109,7 @@ export class MessageActionService implements IMessageActionService {
 
     if (!result) throw new Error('Failed to edit message via WhatsApp socket');
 
-    const updatedContentJson = this.getUpdatedEditContent(dbMsg.content || '{}', newText);
+    const updatedContentJson = patchEditedText(dbMsg.content || '{}', newText);
 
     const updated = await this.messageRepository.updateAndFetchMessageWithSender(
       messageId, newText, updatedContentJson
