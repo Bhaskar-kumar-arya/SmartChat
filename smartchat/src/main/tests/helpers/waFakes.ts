@@ -189,6 +189,8 @@ export interface FakeBaileysSocket {
   groupFetchAllParticipating: Mock<() => Promise<Record<string, unknown>>>
   groupMetadata: Mock<(jid: string) => Promise<unknown>>
   profilePictureUrl: Mock<(jid: string, type?: string) => Promise<string | undefined>>
+  /** Raw iq query; the router's profile_picture_url sends its own iq through this. */
+  query: Mock<(node: unknown, timeoutMs?: number) => Promise<unknown>>
   updateMediaMessage: Mock<(msg: unknown) => Promise<unknown>>
   fetchMessageHistory: Mock<(...args: unknown[]) => Promise<string>>
   logout: Mock<() => Promise<void>>
@@ -208,6 +210,11 @@ export function createFakeBaileysSocket(): FakeBaileysSocket & WASocket {
     groupFetchAllParticipating: vi.fn(async () => ({})),
     groupMetadata: vi.fn(async (jid: string) => ({ id: jid, subject: 'Group', participants: [] })),
     profilePictureUrl: vi.fn(async () => 'https://pp.example/img.jpg'),
+    query: vi.fn(async () => ({
+      tag: 'iq',
+      attrs: {},
+      content: [{ tag: 'picture', attrs: { url: 'https://pp.example/img.jpg' } }]
+    })),
     updateMediaMessage: vi.fn(async (msg: unknown) => msg),
     fetchMessageHistory: vi.fn(async () => 'req-1'),
     logout: vi.fn(async () => undefined),

@@ -4,6 +4,10 @@ import { WorkerCommandMessage } from '../whatsappWorker.types'
 import { WorkerConnectionManager } from '../socket/workerConnectionManager'
 import { restoreBuffers, sanitizeForPostMessage } from '../utils/workerUtils'
 import { PrismaClient } from '@prisma/client'
+import { getBinaryNodeChild, jidNormalizedUser, S_WHATSAPP_NET } from '@whiskeysockets/baileys'
+
+// Kept below the bridge's 30s command timeout so Baileys' own "Timed Out" surfaces first.
+const PROFILE_PICTURE_QUERY_TIMEOUT_MS = 15_000
 
 /**
  * WorkerCommandRouter
@@ -114,7 +118,23 @@ export class WorkerCommandRouter {
         case 'profile_picture_url': {
           const sock = this.getSocketOrThrow()
           const { jid, type } = command.payload
-          const url = await sock.profilePictureUrl(jid, type)
+          // Not sock.profilePictureUrl: for user JIDs Baileys attaches a stored `tctoken`
+          // and WhatsApp then never answers (30s timeout, blank avatars). The identical
+          // iq without the token answers in ~300ms, so send it directly.
+          const result = await sock.query(
+            {
+              tag: 'iq',
+              attrs: {
+                target: jidNormalizedUser(jid),
+                to: S_WHATSAPP_NET,
+                type: 'get',
+                xmlns: 'w:profile:picture'
+              },
+              content: [{ tag: 'picture', attrs: { type, query: 'url' } }]
+            },
+            PROFILE_PICTURE_QUERY_TIMEOUT_MS
+          )
+          const url = getBinaryNodeChild(result, 'picture')?.attrs?.url
           parentPort?.postMessage({
             type: 'reply',
             correlationId: command.correlationId,

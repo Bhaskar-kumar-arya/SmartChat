@@ -44,7 +44,7 @@ describe('WorkerCommandRouter — profile_picture_url sends the iq without a tct
     content: [{ tag: 'picture', attrs: url ? { url } : {} }]
   })
 
-  it.fails('queries w:profile:picture with no tctoken child and replies with the url', async () => {
+  it('queries w:profile:picture with no tctoken child and replies with the url', async () => {
     const query = vi.fn().mockResolvedValue(pictureReply('https://pps.whatsapp.net/a.jpg'))
     const profilePictureUrl = vi.fn().mockResolvedValue(undefined)
     const router = makeRouterWithSock({ query, profilePictureUrl })
@@ -89,7 +89,7 @@ describe('WorkerCommandRouter — profile_picture_url sends the iq without a tct
     )
   })
 
-  it.fails('forwards a server error (e.g. not-authorized) as reply_error', async () => {
+  it('forwards a server error (e.g. not-authorized) as reply_error', async () => {
     const query = vi.fn().mockRejectedValue(new Error('not-authorized'))
     const router = makeRouterWithSock({ query, profilePictureUrl: vi.fn() })
 

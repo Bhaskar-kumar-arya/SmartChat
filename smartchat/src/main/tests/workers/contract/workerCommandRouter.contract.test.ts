@@ -165,9 +165,17 @@ describe('WorkerCommandRouter contract (N-02)', () => {
     await router.handleCommand({
       type: 'profile_picture_url',
       correlationId: 'c6',
-      payload: { jid: 'j', type: 'preview' }
+      payload: { jid: 'j@s.whatsapp.net', type: 'preview' }
     })
-    expect(sock.profilePictureUrl).toHaveBeenCalledWith('j', 'preview')
+    expect(sock.profilePictureUrl).not.toHaveBeenCalled()
+    expect(sock.query).toHaveBeenCalledWith(
+      {
+        tag: 'iq',
+        attrs: { target: 'j@s.whatsapp.net', to: '@s.whatsapp.net', type: 'get', xmlns: 'w:profile:picture' },
+        content: [{ tag: 'picture', attrs: { type: 'preview', query: 'url' } }]
+      },
+      expect.any(Number)
+    )
     expect(fakeParentPort.posted).toEqual([
       { type: 'reply', correlationId: 'c6', payload: { result: 'https://pp.example/img.jpg' } }
     ])
@@ -175,7 +183,7 @@ describe('WorkerCommandRouter contract (N-02)', () => {
 
   it('profile_picture_url: expected item-not-found error is replied as reply_error without console.error noise', async () => {
     const { router, sock } = setup()
-    sock.profilePictureUrl.mockRejectedValue(new Error('item-not-found'))
+    sock.query.mockRejectedValue(new Error('item-not-found'))
     await router.handleCommand({
       type: 'profile_picture_url',
       correlationId: 'c6b',
@@ -189,7 +197,7 @@ describe('WorkerCommandRouter contract (N-02)', () => {
 
   it('profile_picture_url: other errors are logged via console.error and replied as reply_error', async () => {
     const { router, sock } = setup()
-    sock.profilePictureUrl.mockRejectedValue(new Error('boom'))
+    sock.query.mockRejectedValue(new Error('boom'))
     await router.handleCommand({
       type: 'profile_picture_url',
       correlationId: 'c6c',
