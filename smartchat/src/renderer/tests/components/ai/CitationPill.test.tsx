@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderWithProviders, screen, waitFor } from '../../testUtils'
 import { CitationPill } from '@renderer/components/ai/CitationPill'
 import { createMockApiService } from '../../mocks/mockApiService'
+import { captureUnhandledRejections } from '../../utils/captureUnhandled'
 
 describe('CitationPill', () => {
   it('renders loading state initially and then displays resolved entity label', async () => {
@@ -50,6 +51,27 @@ describe('CitationPill', () => {
     await waitFor(() => {
       expect(screen.getByRole('button')).not.toBeDisabled()
     })
+  })
+
+  // B-UIAPP-10: a rejected resolveCitation IPC must render the invalid state
+  // instead of an unhandled rejection plus a pill stuck on "Loading citation…".
+  it.fails('shows an unavailable state when resolveCitation rejects', async () => {
+    // Plain function, not vi.fn(): a spy would mark the rejection as handled.
+    const apiService = createMockApiService({
+      resolveCitation: () => Promise.reject(new Error('session deleted'))
+    })
+
+    const capture = captureUnhandledRejections()
+    renderWithProviders(<CitationPill index={7} anchorText="Gone" sessionId="session-rejects" />, {
+      apiService
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('button')).toHaveAttribute('title', 'Citation unavailable')
+    })
+    const unhandled = await capture.stop()
+
+    expect(screen.getByRole('button')).toBeDisabled()
+    expect(unhandled).toEqual([])
   })
 
   it('remains disabled if citation entity resolves to null', async () => {
