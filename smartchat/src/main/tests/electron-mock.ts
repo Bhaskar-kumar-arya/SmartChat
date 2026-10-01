@@ -4,7 +4,8 @@ import fs from 'fs'
 export const app = {
   getPath: (name: string) => {
     if (name === 'userData') {
-      const path = join(__dirname, '../../../../prisma/test-user-data')
+      const workerId = process.env.VITEST_WORKER_ID || process.pid.toString()
+      const path = join(__dirname, `../../../prisma/test-user-data-${workerId}`)
       if (!fs.existsSync(path)) {
         fs.mkdirSync(path, { recursive: true })
       }

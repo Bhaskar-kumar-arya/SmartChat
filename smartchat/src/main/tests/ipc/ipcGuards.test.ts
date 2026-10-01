@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { resolve, sep } from 'path'
+import { dirname, resolve, sep } from 'path'
 import { resolveInsideDir, isTrustedSender } from '../../ipc/ipcGuards'
 
 describe('resolveInsideDir (S10-04)', () => {
@@ -14,11 +14,21 @@ describe('resolveInsideDir (S10-04)', () => {
   })
 
   it('neutralizes parent-traversal names (result never escapes base)', () => {
-    for (const name of ['../../dev.db', '..\\..\\dev.db']) {
+    // Backslash is a path separator only on Windows; on POSIX it is a legal filename
+    // character, so "..\\..\\dev.db" is one literal (harmless) file name inside base.
+    const names = ['../../dev.db', ...(process.platform === 'win32' ? ['..\\..\\dev.db'] : [])]
+    for (const name of names) {
       const out = resolveInsideDir(base, name)
       expect(out.startsWith(base + sep)).toBe(true)
-      expect(out.includes('..')).toBe(false)
+      expect(dirname(out)).toBe(base)
+      expect(out.slice(base.length + 1)).toBe('dev.db')
     }
+  })
+
+  it('keeps a backslash-traversal name inside base on every platform', () => {
+    const out = resolveInsideDir(base, '..\\..\\dev.db')
+    expect(out.startsWith(base + sep)).toBe(true)
+    expect(dirname(out)).toBe(base)
   })
 
   it('rejects empty / dot names', () => {

@@ -8,6 +8,7 @@ import { PluginHost } from '../../../kernel/plugins/PluginHost'
 import { ContributionRegistry } from '../../../kernel/contributions/ContributionRegistry'
 import { KernelAPIRouter } from '../../../kernel/KernelAPIRouter'
 import { PermissionStore } from '../../../kernel/permissions/PermissionStore'
+import { KernelEventsModule } from '../../../kernel/api-modules/KernelEventsModule'
 
 describe('CodeTantra OTP Relay Plugin E2E Test', () => {
   let tmpDir: string
@@ -28,6 +29,9 @@ describe('CodeTantra OTP Relay Plugin E2E Test', () => {
     contribRegistry = new ContributionRegistry()
     router = new KernelAPIRouter()
     permissions = new PermissionStore()
+    // The plugin subscribes to WA events on activation; without a registered events module
+    // the router rejects it asynchronously (unhandled). A null bus just queues the subscription.
+    router.registerModule(new KernelEventsModule(permissions, null))
 
     host = new PluginHost(loader, pluginRegistry, router, contribRegistry)
   })

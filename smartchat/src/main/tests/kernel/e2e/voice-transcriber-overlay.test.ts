@@ -28,6 +28,7 @@ describe('Voice Transcriber Plugin - Overlay Integration', () => {
     showOverlay: ReturnType<typeof vi.fn>
     sendToOverlay: ReturnType<typeof vi.fn>
     closeOverlay: ReturnType<typeof vi.fn>
+    isOverlayOwnedBy: ReturnType<typeof vi.fn>
   }
   let mockNotificationService: {
     notify: ReturnType<typeof vi.fn>
@@ -56,7 +57,8 @@ describe('Voice Transcriber Plugin - Overlay Integration', () => {
       resolveModal: vi.fn(),
       showOverlay: vi.fn().mockResolvedValue(undefined),
       sendToOverlay: vi.fn(),
-      closeOverlay: vi.fn()
+      closeOverlay: vi.fn(),
+      isOverlayOwnedBy: vi.fn().mockReturnValue(true)
     }
 
     mockNotificationService = {
