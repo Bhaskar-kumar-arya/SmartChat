@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, Mocked } from 'vitest'
 import { AIService } from '../../../services/ai/AIService'
+import type { AIChatContext } from '../../../services/ai/IAIService'
 import { IAIKeyService } from '../../../services/ai/IAIKeyService'
 import { IContactQueryService } from '../../../services/contacts/IContactService'
 import { IToolRegistry } from '../../../services/ai/IToolRegistry'
@@ -190,7 +191,7 @@ describe('AIService', () => {
     expect(aiService['abortedRequests'].has('stream-1')).toBe(false)
   })
 
-  it.fails('B-AI-06: does not retain the requestId in abortedRequests after an aborted non-stream generateResponse', async () => {
+  it('B-AI-06: does not retain the requestId in abortedRequests after an aborted non-stream generateResponse', async () => {
     aiService['providers']['mock'] = mockProvider
     aiService['providerOrder'] = ['mock']
 
@@ -201,15 +202,15 @@ describe('AIService', () => {
     expect(aiService['abortedRequests'].has('invoke-1')).toBe(false)
   })
 
-  it.fails('B-AI-07: /name does not match inside a longer /nameSuffix token', async () => {
-    const ctx = (name: string, jid: string) => ({ jid, name, messages: [] }) as any
+  it('B-AI-07: /name does not match inside a longer /nameSuffix token', async () => {
+    const ctx = (name: string, jid: string): AIChatContext => ({ jid, name, messages: [] } as unknown as AIChatContext)
     const out = aiService['buildFullPrompt']('summarize /GroupAB please', [ctx('GroupA', 'a@g.us')])
     // "/GroupAB" must be left untouched; GroupA context falls back to the appended block.
     expect(out.startsWith('summarize /GroupAB please')).toBe(true)
   })
 
-  it.fails('B-AI-07: longest chat name wins when one name is a prefix of another', async () => {
-    const ctx = (name: string, jid: string) => ({ jid, name, messages: [] }) as any
+  it('B-AI-07: longest chat name wins when one name is a prefix of another', async () => {
+    const ctx = (name: string, jid: string): AIChatContext => ({ jid, name, messages: [] } as unknown as AIChatContext)
     const out = aiService['buildFullPrompt']('look at /Group A now', [ctx('Group', 'short@g.us'), ctx('Group A', 'long@g.us')])
     expect(out.startsWith('look at long@g.us')).toBe(true)
   })

@@ -175,14 +175,26 @@ export class AIService implements IAIService {
     let fullPrompt = prompt
 
     if (contextFiles && contextFiles.length > 0) {
-      for (const chat of contextFiles) {
+      // B-AI-07: match longest names first and require a non-word boundary after
+      // the name, so "/GroupA" never matches inside "/GroupAB" and "/Group" never
+      // steals "/Group A". Unmatched chats are still appended in original order.
+      const unmatched = new Set<AIChatContext>(contextFiles)
+      const byLongestName = [...contextFiles].sort(
+        (a, b) => (b.name || b.jid).length - (a.name || a.jid).length
+      )
+      for (const chat of byLongestName) {
         const contextSection = this.formatChatHistory(chat)
-        const safeName = chat.name ? chat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : chat.jid
-        const contextRegex = new RegExp(`/${safeName}`, 'g')
+        const safeName = (chat.name || chat.jid).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const contextRegex = new RegExp(`/${safeName}(?![\\p{L}\\p{N}_])`, 'gu')
         if (contextRegex.test(fullPrompt)) {
-           fullPrompt = fullPrompt.replace(contextRegex, `${chat.jid} \n${contextSection}`)
-        } else {
-           fullPrompt += `\n\n=== RELEVANT CHAT CONTEXT ===\n${contextSection}`
+          contextRegex.lastIndex = 0
+          fullPrompt = fullPrompt.replace(contextRegex, () => `${chat.jid} \n${contextSection}`)
+          unmatched.delete(chat)
+        }
+      }
+      for (const chat of contextFiles) {
+        if (unmatched.has(chat)) {
+          fullPrompt += `\n\n=== RELEVANT CHAT CONTEXT ===\n${this.formatChatHistory(chat)}`
         }
       }
     }
@@ -275,7 +287,9 @@ export class AIService implements IAIService {
     contextFiles?: AIChatContext[],
     history?: AIHistoryMessage[],
     mentions?: AIMention[],
-    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string, contextLength?: number }
+    options?: { useThinkMode?: boolean, model?: string, isSystem?: boolean, requestId?: string, contextLength?: number },
+    // Internal: set by generateResponseWithTools, which owns the abort flag for the whole loop.
+    keepAbortFlag = false
   ): Promise<string> {
     try {
       const {
@@ -322,6 +336,10 @@ export class AIService implements IAIService {
       }
       console.error('[AIService] Error generating response:', error);
       throw error;
+    } finally {
+      // B-AI-06: don't leak an aborted requestId (non-stream path). Nested tool-loop
+      // calls keep it so the loop can still observe the abort between turns.
+      if (options?.requestId && !keepAbortFlag) this.abortedRequests.delete(options.requestId)
     }
   }
 
@@ -407,7 +425,8 @@ export class AIService implements IAIService {
         contextFiles,
         currentHistory,
         mentions,
-        options
+        options,
+        true
       )
 
       const toolMatch = response.match(/<tool_call>([\s\S]*?)<\/tool_call>/)
