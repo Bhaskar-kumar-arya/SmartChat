@@ -3,6 +3,14 @@ import { resolve } from 'path'
 
 export default defineConfig({
   test: {
+    // Report-only coverage (G-02): no thresholds. Run with `npm run test:coverage`.
+    coverage: {
+      provider: 'v8',
+      reporter: ['text-summary', 'lcov'],
+      reportsDirectory: './coverage',
+      include: ['src/**/*.{ts,tsx}', 'packages/sdk/src/**/*.ts'],
+      exclude: ['**/tests/**', '**/*.d.ts']
+    },
     projects: [
       {
         test: {
