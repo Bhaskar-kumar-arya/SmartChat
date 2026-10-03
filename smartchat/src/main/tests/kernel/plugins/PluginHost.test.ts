@@ -387,4 +387,100 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
       vi.useRealTimers()
     }
   })
+
+  describe('F-KRN-2 install/load races', () => {
+    const mkManifest = (id: string): PluginManifest => ({
+      id, name: id, version: '1.0.0', apiVersion: '2', main: 'dist/index.js', permissions: [], contributions: {}
+    })
+    const mkChannel = (activate: () => Promise<any> = async () => ({ id: 'x', ok: true })) => ({
+      sendToPlugin: vi.fn(),
+      onPluginRequest: vi.fn(),
+      sendResponseToPlugin: vi.fn(),
+      sendRequestToPlugin: vi.fn().mockImplementation(activate),
+      destroy: vi.fn()
+    })
+
+    // B-KRN-14
+    it.fails('B-KRN-14: concurrent load(id) calls share one in-flight load (one worker)', async () => {
+      const channels: ReturnType<typeof mkChannel>[] = []
+      vi.mocked(loader.load).mockImplementation(async (id: string) => {
+        await new Promise((r) => setTimeout(r, 5))
+        const channel = mkChannel()
+        channels.push(channel)
+        return { manifest: mkManifest(id), channel: channel as any }
+      })
+      await Promise.all([host.load('com.x.dup'), host.load('com.x.dup')])
+      expect(loader.load).toHaveBeenCalledTimes(1)
+      expect(channels.every((c) => c.destroy.mock.calls.length === 0)).toBe(true)
+    })
+
+    // B-KRN-15
+    it.fails('B-KRN-15: load() leaves no pending activation timer once the ack arrives', async () => {
+      vi.useFakeTimers()
+      try {
+        vi.mocked(loader.load).mockResolvedValue({ manifest: mkManifest('com.x.t'), channel: mkChannel() as any })
+        await host.load('com.x.t')
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it.fails('B-KRN-15: unload() leaves no pending deactivate-grace timer once the ack arrives', async () => {
+      vi.useFakeTimers()
+      try {
+        vi.mocked(loader.load).mockResolvedValue({ manifest: mkManifest('com.x.u'), channel: mkChannel() as any })
+        await host.load('com.x.u')
+        await host.unload('com.x.u')
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    // H-06 follow-up: failure reason + partial activation cleanup
+    it.fails('records a load error for a failed plugin and clears it after a successful load', async () => {
+      const bad = mkChannel(async () => ({ id: 'x', ok: false, error: { code: 'E', message: 'boom' } }))
+      vi.mocked(loader.load).mockResolvedValueOnce({ manifest: mkManifest('com.x.f'), channel: bad as any })
+      await expect(host.load('com.x.f')).rejects.toThrow(/boom/)
+      expect((host as any).getLoadError('com.x.f')).toMatch(/boom/)
+
+      vi.mocked(loader.load).mockResolvedValueOnce({ manifest: mkManifest('com.x.f'), channel: mkChannel() as any })
+      await host.load('com.x.f')
+      expect((host as any).getLoadError('com.x.f')).toBeUndefined()
+    })
+
+    it.fails('records a load error when loader.load itself rejects', async () => {
+      vi.mocked(loader.load).mockRejectedValueOnce(new Error('bad manifest'))
+      await expect(host.load('com.x.m')).rejects.toThrow(/bad manifest/)
+      expect((host as any).getLoadError('com.x.m')).toMatch(/bad manifest/)
+    })
+
+    it.fails('failed activation detaches the router channel and removes handlers', async () => {
+      const detach = vi.fn()
+      vi.mocked(router.attachChannel).mockReturnValue(detach)
+      const bad = mkChannel(async () => ({ id: 'x', ok: false, error: { code: 'E', message: 'boom' } }))
+      vi.mocked(loader.load).mockResolvedValue({ manifest: mkManifest('com.x.d'), channel: bad as any })
+      await expect(host.load('com.x.d')).rejects.toThrow(/boom/)
+      expect(detach).toHaveBeenCalledTimes(1)
+    })
+
+    it.fails('unload() detaches the router channel', async () => {
+      const detach = vi.fn()
+      vi.mocked(router.attachChannel).mockReturnValue(detach)
+      vi.mocked(loader.load).mockResolvedValue({ manifest: mkManifest('com.x.e'), channel: mkChannel() as any })
+      await host.load('com.x.e')
+      await host.unload('com.x.e')
+      expect(detach).toHaveBeenCalledTimes(1)
+    })
+
+    it.fails('unload() still unregisters the plugin when channel.destroy() throws', async () => {
+      const ch = mkChannel()
+      ch.destroy.mockImplementation(() => { throw new Error('destroy failed') })
+      vi.mocked(loader.load).mockResolvedValue({ manifest: mkManifest('com.x.g'), channel: ch as any })
+      await host.load('com.x.g')
+      await host.unload('com.x.g')
+      expect(host.listLoaded()).not.toContain('com.x.g')
+    })
+  })
 })

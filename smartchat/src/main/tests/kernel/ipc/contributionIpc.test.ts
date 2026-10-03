@@ -246,4 +246,50 @@ describe('contributionIpc', () => {
 
     cleanup()
   })
+
+  describe('F-KRN-2 extension handlers', () => {
+    const manifest = {
+      id: 'com.x.p', name: 'P', version: '2.0.0', apiVersion: '2', main: 'index.js', permissions: ['messages:read'], contributions: {}
+    }
+
+    it.fails('B-KRN-09: installing over a loaded plugin unloads the old one before loading the new', async () => {
+      const calls: string[] = []
+      const host: any = {
+        ...mockHost,
+        getPlugin: vi.fn().mockReturnValue({ id: 'com.x.p' }),
+        unload: vi.fn(async () => { calls.push('unload') }),
+        load: vi.fn(async () => { calls.push('load') }),
+        listLoaded: vi.fn().mockReturnValue([])
+      }
+      const loader: any = { install: vi.fn(async () => { calls.push('install'); return manifest }) }
+      const permissions: any = { registerPluginManifest: vi.fn(() => { calls.push('register') }) }
+      registerContributionIpcHandlers(registry, host, undefined, loader, permissions)
+      await handlers.get('extension:install')!({}, '/tmp/p.scext')
+      expect(calls).toEqual(['install', 'unload', 'register', 'load'])
+    })
+
+    it.fails('extension:list reports the load error of a plugin that failed to load', async () => {
+      const host: any = {
+        ...mockHost,
+        listLoaded: vi.fn().mockReturnValue([]),
+        getLoadError: vi.fn((id: string) => (id === 'com.x.p' ? 'activate blew up' : undefined))
+      }
+      const loader: any = { listInstalled: vi.fn().mockResolvedValue([manifest]) }
+      registerContributionIpcHandlers(registry, host, undefined, loader)
+      const list = await handlers.get('extension:list')!()
+      expect(list).toEqual([expect.objectContaining({ id: 'com.x.p', isLoaded: false, error: 'activate blew up' })])
+    })
+
+    it('extension:install rejects with the activation error but the plugin stays installed', async () => {
+      const host: any = {
+        ...mockHost,
+        getPlugin: vi.fn().mockReturnValue(undefined),
+        load: vi.fn().mockRejectedValue(new Error('activate blew up'))
+      }
+      const loader: any = { install: vi.fn().mockResolvedValue(manifest), uninstall: vi.fn() }
+      registerContributionIpcHandlers(registry, host, undefined, loader, { registerPluginManifest: vi.fn() } as any)
+      await expect(handlers.get('extension:install')!({}, '/tmp/p.scext')).rejects.toThrow(/activate blew up/)
+      expect(loader.uninstall).not.toHaveBeenCalled()
+    })
+  })
 })

@@ -138,4 +138,19 @@ describe('PermissionStore', () => {
       scope: { allow: ['allowed-jid'] }
     })
   })
+
+  it.fails('B-KRN-16: removePlugin() drops grants, scopes and the manifest registration', async () => {
+    const store = new PermissionStore(testStoragePath)
+    store.registerPluginManifest('plugin-a', ['messages:read'])
+    await store.setCapability('plugin-a', 'messages:read', false)
+    await store.setScope('plugin-a', 'messages:read', { deny: ['x@s.whatsapp.net'] })
+    ;(store as any).removePlugin('plugin-a')
+
+    store.registerPluginManifest('plugin-a', ['messages:read'])
+    expect(store.hasCapability('plugin-a', 'messages:read')).toBe(true)
+    expect(store.isResourceAllowed('plugin-a', 'messages:read', 'x@s.whatsapp.net')).toBe(true)
+    const reloaded = new PermissionStore(testStoragePath)
+    reloaded.registerPluginManifest('plugin-a', ['messages:read'])
+    expect(reloaded.hasCapability('plugin-a', 'messages:read')).toBe(true)
+  })
 })
