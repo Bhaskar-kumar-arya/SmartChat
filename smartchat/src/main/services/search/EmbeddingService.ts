@@ -152,6 +152,8 @@ export class EmbeddingService implements IEmbeddingService {
     console.log(`[EmbeddingService] Starting bulk indexing for ${total} messages...`)
     this.updateActiveState(1)
 
+    let failed = 0
+    let abortError: Error | null = null
     try {
       let done = 0
       for (const m of pending) {
@@ -171,10 +173,12 @@ export class EmbeddingService implements IEmbeddingService {
           await this.messageVectorRepository.insertIntoVecMessages(m.id, vectorJson)
         } catch (err) {
           console.error(`[EmbeddingService] Failed to index message ${m.id}:`, err)
+          failed++
           // P2-S11-01: a failed embed here means the worker/model is down for
           // this run — bail rather than logging thousands of identical errors.
           if (err instanceof Error && /worker|model/i.test(err.message)) {
             console.error('[EmbeddingService] Bulk indexing aborted mid-run (embedding worker unavailable).')
+            abortError = err
             break
           }
         }
@@ -187,6 +191,12 @@ export class EmbeddingService implements IEmbeddingService {
     } finally {
       this.updateActiveState(-1)
       console.log(`[EmbeddingService] Bulk indexing complete.`)
+    }
+
+    // B-APP-04: report failures to the caller instead of resolving as success.
+    if (abortError) throw abortError
+    if (failed > 0) {
+      throw new Error(`Indexing finished with ${failed} of ${total} messages failing to index (see logs).`)
     }
   }
 

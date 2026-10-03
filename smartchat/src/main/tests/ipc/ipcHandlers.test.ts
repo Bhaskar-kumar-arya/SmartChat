@@ -135,28 +135,8 @@ describe('IPC handlers via recording ipcMain', () => {
     })
   })
 
-  describe('embedding failure behaviour (B-APP-04: errors are swallowed today)', () => {
-    it('index-embeddings resolves undefined even when indexing throws (renderer progress is never cleared)', async () => {
-      const embeddingService = {
-        setOnActiveStateSync: vi.fn(),
-        indexAll: vi.fn().mockRejectedValue(new Error('boom'))
-      }
-      const ipc = registerAllIpc({ services: { embeddingService } })
-      await expect(ipc.invoke('index-embeddings', trustedEvent)).resolves.toBeUndefined()
-      expect(embeddingService.indexAll).toHaveBeenCalledTimes(1)
-    })
-
-    it('clear-vectors resolves undefined even when clearing throws', async () => {
-      const embeddingService = {
-        setOnActiveStateSync: vi.fn(),
-        clearAllVectors: vi.fn().mockRejectedValue(new Error('boom'))
-      }
-      const ipc = registerAllIpc({ services: { embeddingService } })
-      await expect(ipc.invoke('clear-vectors', trustedEvent)).resolves.toBeUndefined()
-      expect(embeddingService.clearAllVectors).toHaveBeenCalledTimes(1)
-    })
-
-    it.fails('index-embeddings rejects (and sends no 100% progress) when indexing throws (B-APP-04 target)', async () => {
+  describe('embedding failure behaviour (B-APP-04: errors are surfaced)', () => {
+    it('index-embeddings rejects when indexing throws', async () => {
       const embeddingService = {
         setOnActiveStateSync: vi.fn(),
         indexAll: vi.fn().mockRejectedValue(new Error('boom'))
@@ -165,7 +145,7 @@ describe('IPC handlers via recording ipcMain', () => {
       await expect(ipc.invoke('index-embeddings', trustedEvent)).rejects.toThrow('boom')
     })
 
-    it.fails('clear-vectors rejects when clearing throws (B-APP-04 target)', async () => {
+    it('clear-vectors rejects when clearing throws', async () => {
       const embeddingService = {
         setOnActiveStateSync: vi.fn(),
         clearAllVectors: vi.fn().mockRejectedValue(new Error('boom'))
