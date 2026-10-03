@@ -17,4 +17,6 @@ export interface IPluginHost {
   registerBuiltin(plugin: IBuiltinPlugin): Promise<void>
   getPlugin(id: string): PluginMetadata | undefined
   listLoaded(): string[]
+  /** Why the last load of `id` failed, if it did. */
+  getLoadError?(id: string): string | undefined
 }

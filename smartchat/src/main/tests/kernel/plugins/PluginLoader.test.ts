@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -216,5 +216,12 @@ describe('PluginLoader', () => {
     await loader.uninstall('com.acme.to-remove')
 
     expect(fs.existsSync(pluginDir)).toBe(false)
+  })
+
+  it('B-KRN-16: uninstall() invokes the onUninstalled hook with the plugin id', async () => {
+    const hook = vi.fn()
+    const l = new PluginLoader(tmpDir, () => false, hook)
+    await l.uninstall('com.acme.hooked')
+    expect(hook).toHaveBeenCalledWith('com.acme.hooked')
   })
 })

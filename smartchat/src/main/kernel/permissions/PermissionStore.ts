@@ -53,6 +53,14 @@ export class PermissionStore implements IPermissionStore {
     return true
   }
 
+  public removePlugin(pluginId: string): void {
+    this.manifestCapabilities.delete(pluginId)
+    if (this.storageData.plugins[pluginId]) {
+      delete this.storageData.plugins[pluginId]
+      this.saveToDisk()
+    }
+  }
+
   public async setCapability(pluginId: string, capability: string, granted: boolean): Promise<void> {
     this.ensurePluginRecord(pluginId)
     const current = this.storageData.plugins[pluginId].capabilities[capability] ?? { granted: true }

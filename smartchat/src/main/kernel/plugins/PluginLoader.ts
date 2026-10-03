@@ -16,7 +16,9 @@ export class PluginLoader implements IPluginLoader {
    */
   constructor(
     private readonly baseDir: string,
-    private readonly isReservedId: (id: string) => boolean = () => false
+    private readonly isReservedId: (id: string) => boolean = () => false,
+    /** Called after a plugin's files are removed so callers can drop its stored data and grants. (B-KRN-16) */
+    private readonly onUninstalled?: (id: string) => void | Promise<void>
   ) {
     if (!fs.existsSync(this.baseDir)) {
       fs.mkdirSync(this.baseDir, { recursive: true })
@@ -98,6 +100,11 @@ export class PluginLoader implements IPluginLoader {
     const pluginDir = this.resolveWithin(id)
     if (fs.existsSync(pluginDir)) {
       fs.rmSync(pluginDir, { recursive: true, force: true })
+    }
+    try {
+      await this.onUninstalled?.(id)
+    } catch (err) {
+      console.error(`[PluginLoader] post-uninstall cleanup for '${id}' failed:`, err)
     }
   }
 

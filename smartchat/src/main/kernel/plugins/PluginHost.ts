@@ -122,6 +122,12 @@ export class PluginHost implements IPluginHost {
   private handlers = new Map<string, ContributionHandler>()
   /** Per-plugin disposers for timers created via `ctx.scheduler`, cleared on unload. (S8-06) */
   private schedulerDisposers = new Map<string, Set<() => void>>()
+  /** In-flight external `load(id)` calls, so overlapping loads share one worker. (B-KRN-14) */
+  private inflightLoads = new Map<string, Promise<void>>()
+  /** Router detach callbacks from `attachChannel`, called on unload / failed activation. */
+  private channelDetachers = new Map<string, () => void>()
+  /** Why the last `load(id)` failed; cleared by a successful load or an unload. */
+  private loadErrors = new Map<string, string>()
 
   constructor(
     private readonly loader: IPluginLoader,
@@ -440,9 +446,46 @@ export class PluginHost implements IPluginHost {
     if (this.registry.get(id)) {
       return
     }
+    // Two overlapping loads of one id (double-clicked install) would otherwise
+    // spawn two workers and orphan the first. (B-KRN-14)
+    const existing = this.inflightLoads.get(id)
+    if (existing) return existing
 
+    const promise = this.loadExternal(id).then(
+      () => {
+        this.loadErrors.delete(id)
+      },
+      (err) => {
+        this.loadErrors.set(id, err instanceof Error ? err.message : String(err))
+        throw err
+      }
+    )
+    this.inflightLoads.set(id, promise)
+    try {
+      await promise
+    } finally {
+      this.inflightLoads.delete(id)
+    }
+  }
+
+  /** Reason the last load of `id` failed, if it did (surfaced by `extension:list`). */
+  getLoadError(id: string): string | undefined {
+    return this.loadErrors.get(id)
+  }
+
+  private detachChannel(id: string): void {
+    const detach = this.channelDetachers.get(id)
+    this.channelDetachers.delete(id)
+    try {
+      detach?.()
+    } catch (err) {
+      log.warn(`router detach failed for '${id}'`, err)
+    }
+  }
+
+  private async loadExternal(id: string): Promise<void> {
     const { manifest, channel } = await this.loader.load(id)
-    this.router.attachChannel(id, channel)
+    this.channelDetachers.set(id, this.router.attachChannel(id, channel))
 
     const metadata: PluginMetadata = {
       id,
@@ -479,22 +522,25 @@ export class PluginHost implements IPluginHost {
       // handlers doesn't end up "loaded" with every contribution a silent
       // no-op. On failure, roll back the registration and surface the error to
       // the installer. (S8-02)
+      let activateTimer: ReturnType<typeof setTimeout> | undefined
       try {
         const res = (await Promise.race([
           channel.sendRequestToPlugin(activateReq),
-          new Promise<KernelResponse>((_, reject) =>
-            setTimeout(
+          new Promise<KernelResponse>((_, reject) => {
+            activateTimer = setTimeout(
               () => reject(new Error(`Plugin '${id}' did not acknowledge activation`)),
               PluginHost.ACTIVATE_TIMEOUT_MS
             )
-          )
+          })
         ])) as KernelResponse
         if (res && res.ok === false) {
           throw new Error(res.error?.message || `Plugin '${id}' failed to activate`)
         }
       } catch (err) {
+        this.detachChannel(id)
         this.contributionRegistry.unregisterAll(id)
         this.registry.unregister(id)
+        this.deleteHandlers(id)
         try {
           channel.destroy()
         } catch {
@@ -506,6 +552,9 @@ export class PluginHost implements IPluginHost {
           /* best-effort */
         }
         throw err
+      } finally {
+        // The ack usually arrives in ms; don't keep a 10s timer alive. (B-KRN-15)
+        if (activateTimer) clearTimeout(activateTimer)
       }
     } else {
       channel.sendToPlugin(activateReq)
@@ -523,6 +572,7 @@ export class PluginHost implements IPluginHost {
   }
 
   async unload(id: string): Promise<void> {
+    this.loadErrors.delete(id)
     const metadata = this.registry.get(id)
     if (!metadata) {
       return
@@ -552,10 +602,17 @@ export class PluginHost implements IPluginHost {
           payload: {}
         }
         if (isBidirectionalPluginChannel(metadata.channel)) {
-          await Promise.race([
-            metadata.channel.sendRequestToPlugin(deactivateReq).catch(() => undefined),
-            new Promise((resolve) => setTimeout(resolve, PluginHost.DEACTIVATE_TIMEOUT_MS))
-          ])
+          let graceTimer: ReturnType<typeof setTimeout> | undefined
+          try {
+            await Promise.race([
+              metadata.channel.sendRequestToPlugin(deactivateReq).catch(() => undefined),
+              new Promise((resolve) => {
+                graceTimer = setTimeout(resolve, PluginHost.DEACTIVATE_TIMEOUT_MS)
+              })
+            ])
+          } finally {
+            if (graceTimer) clearTimeout(graceTimer) // (B-KRN-15)
+          }
         } else {
           metadata.channel.sendToPlugin(deactivateReq)
         }
@@ -569,14 +626,23 @@ export class PluginHost implements IPluginHost {
       }
 
       this.disposeScheduler(id)
+      this.detachChannel(id)
       this.contributionRegistry.unregisterAll(id)
-      metadata.channel.destroy()
+      // A throwing destroy() must not leave the plugin registered. (F-KRN-2)
+      try {
+        metadata.channel.destroy()
+      } catch (err) {
+        log.warn(`channel.destroy() threw for '${id}'`, err)
+      }
       this.registry.unregister(id)
+      this.deleteHandlers(id)
+    }
+  }
 
-      for (const key of this.handlers.keys()) {
-        if (key.startsWith(`${id}:`)) {
-          this.handlers.delete(key)
-        }
+  private deleteHandlers(id: string): void {
+    for (const key of Array.from(this.handlers.keys())) {
+      if (key.startsWith(`${id}:`)) {
+        this.handlers.delete(key)
       }
     }
   }

@@ -24,6 +24,8 @@ export interface IPermissionStore {
   setCapability(pluginId: string, capability: string, granted: boolean): Promise<void>
   /** Persist a scope restriction. */
   setScope(pluginId: string, capability: string, scope: PermissionScope): Promise<void>
+  /** Forget a plugin's manifest registration, grants and scopes (on uninstall). */
+  removePlugin?(pluginId: string): void
   /** Return full permission state for a plugin (used by Settings UI). */
   getPluginPermissions(pluginId: string): PluginPermissionState
 }

@@ -107,7 +107,16 @@ export class KernelBootstrapper {
     ]
     const builtinIds = new Set<string>(builtins.map((p) => p.id))
 
-    const loader = new PluginLoader(extensionsPath, (id) => builtinIds.has(id))
+    // Uninstall must not leave the plugin's stored data or the user's grants/scopes
+    // behind for a different package that later reuses the id. (B-KRN-16)
+    const loader = new PluginLoader(
+      extensionsPath,
+      (id) => builtinIds.has(id),
+      async (id) => {
+        permissions.removePlugin?.(id)
+        await storageRepo?.clear(id)
+      }
+    )
     const pluginRegistry = new PluginRegistry()
 
     const contactsModule = new KernelContactsModule(permissions, services.contactService, services.aliasRepository)

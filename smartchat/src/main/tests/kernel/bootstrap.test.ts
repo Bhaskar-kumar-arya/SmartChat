@@ -120,6 +120,29 @@ describe('KernelBootstrapper', () => {
       const installed = (await result.loader.listInstalled()).map((m) => m.id)
       expect(installed).toEqual(expect.arrayContaining(['broken.one', 'broken.two']))
 
+      expect(result.host.getLoadError?.('broken.one')).toMatch(/./)
+
+      await result.dispose()
+    })
+
+    it('B-KRN-16: uninstalling a plugin clears its stored data and permission grants', async () => {
+      const storageRepo = { clear: vi.fn().mockResolvedValue(undefined) }
+      const bootstrapper = new KernelBootstrapper({
+        services: mockServices,
+        getMainWindow: () => null,
+        getBus: () => null,
+        getSock: () => null,
+        extensionsPath: extDir,
+        storageRepo: storageRepo as never
+      })
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const result = await bootstrapper.boot()
+      await result.permissions.setCapability('broken.one', 'messages:read', false)
+
+      await result.loader.uninstall('broken.one')
+
+      expect(storageRepo.clear).toHaveBeenCalledWith('broken.one')
+      expect(result.permissions.getPluginPermissions('broken.one').capabilities).toEqual({})
       await result.dispose()
     })
   })
