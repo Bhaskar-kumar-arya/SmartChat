@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: KHOST (F-KRN-2), MSGREPO (F-MSG-3). In flight (batch 4, owner-approved): F-KRN-2, F-MSG-3, F-UA-3, F-DATA-3. Integration branch = claude/hopeful-johnson-ysujzy; owner also approved direct push to main.
+- Locks held: KHOST (F-KRN-2). In flight (batch 4, owner-approved): F-KRN-2, F-MSG-3, F-UA-3, F-DATA-3. Integration branch = claude/hopeful-johnson-ysujzy; owner also approved direct push to main.
 - Baseline: typecheck ✅ · vitest 270 files / 1756 passed / 8 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (no change)
 
 ## Owner smoke queue (🔎)
@@ -32,6 +32,8 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 16. (H-05, macOS) Cmd+Q and Dock>Quit with minimize-to-tray on fully quit; OS logout isn't blocked; red close button still hides to tray; Dock click restores the hidden window; with minimize-to-tray off, close then Dock click opens a fresh window that loads and connects; tray Quit works.
 17. (F-MSG-2) Edit a text message from the phone: updates live once, persists on reload; edit a reply (quote stays), an image caption (image stays), and a message in a disappearing chat. RISK: edits that arrive only as a messages.update echo (no upsert protocolMessage) are now dropped; if any edit is lost, that is the cause.
 18. (F-AI-4, optional) AI sidebar + a no-permission tool, prompt that loops tool calls: stops after 25 consecutive auto turns, silently; a new user message works again. (F-UA-2, optional) Approve a slow tool, switch AI chat session before it returns: nothing appears in the new session, spinner clears.
+
+19. (F-MSG-3) Log out/in with a full-history sync on a test account: message counts match; edited replies keep quote + new text; deleted messages stay deleted; no edit reverts to original text.
 
 ## Follow-ups inbox (triaged at each wave boundary)
 - (G-04) Gemini key `AIzaSy…YLRGd0` is in git history: OWNER must rotate it. Audit docs may have stale paths to moved `bug-audit*`; `.agents/skills/feature-and-bugfix/SKILL.md` mentions bug files; logger lives at `src/main/utils/logger.ts` (relocate if a shared dir appears); `test:run` and `test:run:all` scripts are identical. Fold into Z-08 (docs).
@@ -112,7 +114,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | N-09 | W1 · AI | Provider test util + role-mapping tests | W0 | – | MERGED | 305a3f9 |
 | F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | MERGED | 7a8f2bd |
 | F-MSG-2 | W2 · MSG | Stop double-processing edits | F-MSG-1 | – | MERGED | |
-| F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | IN PROGRESS | |
+| F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | MERGED | |
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | WAITING | |
 | R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
@@ -211,3 +213,4 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | Z-08 | W5 | Docs, ADRs, CLAUDE.md refresh | Z-01..Z-07 | – | WAITING | |
 | R-SOLID-M-15 | W5 | Typed stored-message content | R-MSG-08, R-SOLID-M-07, R-SOLID-M-08 | MSGREPO | WAITING | |
 - (batch 3) (F-AI-4) cap stops silently (consider a visible 'tool turn limit reached' message); only auto-executed turns count; cap duplicated (renderer MAX_TOOL_TURNS 25 vs AIService MAX_TOOL_TURNS_CAP 25) → unify in R-SOLID-R-09. (F-UA-2) stale stream chunks still write streamingBuffers by message id (harmless); tool result for the old session is dropped, not persisted; tool finishing after unmount still runs post-await path. (F-MSG-2) UIBroadcastSubscriber.onDecrypted / decryptMessage echo handling now dead for live edits (simplify after MSGREPO free); WAEventHandler handlers still console.log; echo-only edits unverified against Baileys. (H-05) `will-quit` still app.exit(0); createWindow re-registers ready-to-show→setWindow on activate (relies on isWaConnected guard); dup window-open handler → D-05/R-APP-09.
+- (F-MSG-3) PARTIAL: R-MSG-04's SyncMessagesHandler explicit targetId (edit/revoke rows keep target id instead of overwriting id) and MessageService in-batch dedupe not done (covered meanwhile by foldSyncRows; SyncMessagesHandler is not locked → fold into F-MSG-5/R-MSG-08 or a small unit). Fold ignores incoming edit timestamp; insertNewMessages still has per-row upsert fallback + console.error (R-SOLID-M-13). MSGREPO lock released.
