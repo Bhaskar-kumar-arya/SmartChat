@@ -131,6 +131,10 @@ function createWindow(): void {
     }
   })
 
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+
   mainWindow.on('ready-to-show', () => {
     if (mainWindow) {
       const isAutoStart = process.argv.includes('--hidden')
@@ -336,7 +340,14 @@ app.whenReady().then(async () => {
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else mainWindow?.show()
   })
+})
+
+// Cmd+Q / Dock quit / OS logout fire before-quit without going through the tray
+// menu; mark the quit so the close interceptor does not cancel it. (B-APP-01)
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
 app.on('window-all-closed', () => {
