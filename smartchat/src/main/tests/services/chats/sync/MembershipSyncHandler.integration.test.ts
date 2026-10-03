@@ -185,6 +185,16 @@ describe('MembershipSyncHandler (real DB)', () => {
 
     expect(await memberIdentityIds(other)).toEqual([bystander.identity.id])
   })
+  it('prune:false (live delta) keeps members absent from the list', async () => {
+    const jid = groupJid()
+    await makeChat(prisma, { jid, type: 'GROUP' })
+    const stays = await makeContact(prisma)
+    await makeChatMember(prisma, jid, stays.identity.id)
+    await handler.syncMemberships({ [jid]: { id: jid, participants: [{ id: pnJid() }] } }, { prune: false })
+    expect(await memberIdentityIds(jid)).toHaveLength(2)
+    expect(await memberIdentityIds(jid)).toContain(stays.identity.id)
+  })
+
   it('SyncRepository.deleteMembersNotIn never wipes a group when the keep list is empty', async () => {
     const jid = groupJid()
     await makeChat(prisma, { jid, type: 'GROUP' })

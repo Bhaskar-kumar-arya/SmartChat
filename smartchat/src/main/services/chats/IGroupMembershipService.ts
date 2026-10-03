@@ -11,5 +11,10 @@ export interface IGroupMembershipService {
     }>
   ): Promise<void>
 
+  /**
+   * Live add/promote/demote through the batched resolver (no pruning). `remove` is not handled here.
+   */
+  applyParticipantRoleChange(chatJid: string, jids: string[], action: 'add' | 'promote' | 'demote'): Promise<void>
+
   linkGroupMetadataOwners(update: ChatUpdatePayload): Promise<void>
 }

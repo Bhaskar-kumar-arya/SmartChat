@@ -13,7 +13,7 @@
     "@typescript-eslint/no-require-imports": 50,
     "@typescript-eslint/no-this-alias": 1,
     "@typescript-eslint/no-unsafe-function-type": 30,
-    "@typescript-eslint/no-unused-vars": 66,
+    "@typescript-eslint/no-unused-vars": 65,
     "no-empty": 18,
     "prefer-const": 8,
     "react-hooks/exhaustive-deps": 21,
