@@ -148,7 +148,7 @@ describe('KernelBootstrapper', () => {
     })
   })
 
-  it.fails('unloading a plugin closes its overlays (F-KRN-3 / B-KRN-08)', async () => {
+  it('unloading a plugin closes its overlays (F-KRN-3 / B-KRN-08)', async () => {
     const win = { isDestroyed: () => false, webContents: { send: vi.fn() } }
     const bootstrapper = new KernelBootstrapper({
       services: mockServices,

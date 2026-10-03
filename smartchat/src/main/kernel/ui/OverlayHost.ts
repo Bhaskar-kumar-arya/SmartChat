@@ -13,6 +13,7 @@ import { KernelError } from '../api-modules/KernelErrors'
 export const OVERLAY_PENDING_TIMEOUT_MS = 5 * 60_000
 
 interface PendingModal {
+  pluginId?: string
   resolve: (data: unknown) => void
   reject: (err: Error) => void
   timer?: ReturnType<typeof setTimeout>
@@ -61,7 +62,7 @@ export class OverlayHost implements IOverlayHost {
           reject(new KernelError('MODAL_TIMEOUT', `Modal '${req.modalId}' was not resolved in time`))
         }
       })
-      this.pendingModals.set(req.modalId, { resolve, reject, timer })
+      this.pendingModals.set(req.modalId, { pluginId: req.pluginId, resolve, reject, timer })
       win.webContents.send('kernel:ui:modal:show', req)
     })
   }
@@ -202,6 +203,27 @@ export class OverlayHost implements IOverlayHost {
         entry.resolve?.(null)
       }
       this.closeOverlay(overlayId)
+    }
+  }
+
+  /**
+   * Tear down everything one plugin owns: close its overlays on the renderer,
+   * resolve promise-mode overlays with null, evict entries (so a reload can
+   * reopen immediately) and reject its pending modals. Other plugins are
+   * untouched. (F-KRN-3 / B-KRN-08)
+   */
+  closeAllForPlugin(pluginId: string): void {
+    const overlayIds: string[] = []
+    for (const [overlayId, entry] of this.pendingOverlays) {
+      if (entry.pluginId === pluginId) overlayIds.push(overlayId)
+    }
+    for (const overlayId of overlayIds) this.closeOverlay(overlayId)
+
+    for (const [modalId, entry] of [...this.pendingModals]) {
+      if (entry.pluginId !== pluginId) continue
+      this.pendingModals.delete(modalId)
+      if (entry.timer) clearTimeout(entry.timer)
+      entry.reject(new KernelError('PLUGIN_UNLOADED', `Plugin '${pluginId}' was unloaded`))
     }
   }
 

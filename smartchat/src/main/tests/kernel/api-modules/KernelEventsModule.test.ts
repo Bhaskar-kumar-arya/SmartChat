@@ -81,7 +81,7 @@ describe('KernelEventsModule', () => {
     expect(newBus.on).not.toHaveBeenCalled()
   })
 
-  it.fails('removePlugin detaches handlers from the bus they were attached to even when the bus is currently null (F-KRN-3)', async () => {
+  it('removePlugin detaches handlers from the bus they were attached to even when the bus is currently null (F-KRN-3)', async () => {
     let bus: IWAEventBus | null = mockBus
     const m = new KernelEventsModule(mockPermissions, () => bus)
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
