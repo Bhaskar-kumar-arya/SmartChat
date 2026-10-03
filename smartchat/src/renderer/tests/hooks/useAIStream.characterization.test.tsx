@@ -2,7 +2,7 @@
  * N-08 characterization of useAIStream (R-UIAPP-05 safety net).
  * Pins CURRENT behaviour of executeToolCall / declineToolCall / handleRetry,
  * no-permission auto-execution, the onError path, the 30 ms drip and the 100 ms
- * auto-save timer. Known bugs are `it.fails` (B-UIAPP-03 -> F-UA-2).
+ * auto-save timer. B-UIAPP-03 fixed in F-UA-2; tool-loop turn cap fixed in F-AI-4.
  */
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -392,7 +392,7 @@ describe('useAIStream characterization', () => {
     })
 
     // B-UIAPP-03: continues into whichever session is current after `await api.executeTool`.
-    it.fails('B-UIAPP-03: a tool result arriving after a session switch does not start a stream in the new session', async () => {
+    it('B-UIAPP-03: a tool result arriving after a session switch does not start a stream in the new session', async () => {
       let release: (v: unknown) => void = () => {}
       api.executeTool = vi.fn().mockImplementation(() => new Promise((r) => { release = r }))
       const { result, rerender, props } = setup()
@@ -407,6 +407,10 @@ describe('useAIStream characterization', () => {
         await p
       })
       expect(streams).toHaveLength(0)
+      // nothing written into the new session's messages, spinner cleared
+      expect(result.current.messages.map((m) => m.id)).toEqual(['u1', 'ai-1'])
+      expect(result.current.messages[1].toolResult).toBeUndefined()
+      expect(result.current.executingToolId).toBeNull()
     })
 
     // F-AI-4: the live renderer loop caps consecutive auto tool turns at 25 (matches AIService).
