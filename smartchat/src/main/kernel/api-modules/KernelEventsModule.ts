@@ -8,6 +8,8 @@ import { EventDeliveryPolicy } from '../events/EventDeliveryPolicy'
 
 interface PluginSubscription {
   handler: AsyncHandler<any>
+  /** The bus this handler is attached to, so teardown works even when the bus getter now returns null. (F-KRN-3) */
+  bus: IWAEventBus
   /** The capability key the subscription was authorised under — scope is checked against this key only. (S7-02) */
   authKey: string
 }
@@ -63,13 +65,10 @@ export class KernelEventsModule extends BaseKernelModule {
    * and accumulate across reloads. (S8-06)
    */
   public removePlugin(pluginId: string): void {
-    const bus = this.resolveBus()
     const pluginMap = this.pluginSubscriptions.get(pluginId)
     if (pluginMap) {
-      if (bus) {
-        for (const [event, sub] of pluginMap) {
-          bus.off(event as keyof WAEventMap, sub.handler)
-        }
+      for (const [event, sub] of pluginMap) {
+        sub.bus.off(event as keyof WAEventMap, sub.handler)
       }
       this.pluginSubscriptions.delete(pluginId)
     }
@@ -101,9 +100,9 @@ export class KernelEventsModule extends BaseKernelModule {
     const pluginMap = this.pluginSubscriptions.get(pluginId)!
     const existing = pluginMap.get(eventName)
     if (existing) {
-      bus.off(event, existing.handler)
+      existing.bus.off(event, existing.handler)
     }
-    pluginMap.set(eventName, { handler, authKey })
+    pluginMap.set(eventName, { handler, authKey, bus })
     bus.on(event, handler)
   }
 
@@ -136,7 +135,6 @@ export class KernelEventsModule extends BaseKernelModule {
 
       case 'unsubscribe': {
         const { event } = payload as { event: keyof WAEventMap }
-        const bus = this.resolveBus()
         // Also drop any not-yet-replayed pending entry, or a sub→unsub before
         // the bus connects still subscribes on connect. (S8-06)
         this.pendingSubscriptions = this.pendingSubscriptions.filter(
@@ -147,7 +145,7 @@ export class KernelEventsModule extends BaseKernelModule {
         // next onBusConnected() re-attaches a subscription the plugin cancelled.
         const sub = pluginMap?.get(String(event))
         if (sub) {
-          if (bus) bus.off(event, sub.handler)
+          sub.bus.off(event, sub.handler)
           pluginMap!.delete(String(event))
         }
         return { success: true, event: String(event) }

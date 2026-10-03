@@ -79,19 +79,19 @@ export class KernelUIModule extends BaseKernelModule {
         // so they need their own capability rather than riding `ui:notification`. (S7-03)
         this.requireCapability(pluginId, 'ui:modal')
         const modalId = randomUUID()
-        return await this.getOverlayHost().showModal({ type: 'form', modalId, payload })
+        return await this.getOverlayHost().showModal({ type: 'form', modalId, pluginId, payload })
       }
 
       case 'showConfirm': {
         this.requireCapability(pluginId, 'ui:modal')
         const modalId = randomUUID()
-        return await this.getOverlayHost().showModal({ type: 'confirm', modalId, payload })
+        return await this.getOverlayHost().showModal({ type: 'confirm', modalId, pluginId, payload })
       }
 
       case 'showAlert': {
         this.requireCapability(pluginId, 'ui:modal')
         const modalId = randomUUID()
-        await this.getOverlayHost().showModal({ type: 'alert', modalId, payload })
+        await this.getOverlayHost().showModal({ type: 'alert', modalId, pluginId, payload })
         return undefined
       }
 

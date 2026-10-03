@@ -56,6 +56,8 @@ export interface BootResult {
   permissions: PermissionStore
   panelHost: PanelHost
   eventsModule: KernelEventsModule
+  /** Exposed for lifecycle tests and teardown wiring. (F-KRN-3) */
+  overlayHost: OverlayHost
   /** Re-attach panel IPC event subscriptions to a freshly created WA bus (S9-01). */
   onBusConnected: (bus: IWAEventBus) => void
   dispose: () => Promise<void>
@@ -198,6 +200,9 @@ export class KernelBootstrapper {
       // Drop the plugin's panel descriptors so stale panelIds stop resolving
       // and a reload with a changed panel path re-registers cleanly. (S9-06)
       panelHost.deregisterPlugin(pluginId)
+      // Close the plugin's overlays and reject its pending modals so a reload
+      // can reopen and nothing outlives its channel. (F-KRN-3 / B-KRN-08)
+      overlayHost.closeAllForPlugin(pluginId)
     })
 
     for (const plugin of builtins) {
@@ -240,6 +245,7 @@ export class KernelBootstrapper {
       permissions,
       panelHost,
       eventsModule,
+      overlayHost,
       onBusConnected: panelIpc.onBusConnected,
       dispose
     }
