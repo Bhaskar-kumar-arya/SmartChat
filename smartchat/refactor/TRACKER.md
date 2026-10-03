@@ -7,8 +7,8 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: KHOST (F-KRN-3), WABRIDGE (F-WA-3), IPC (F-APP-2; PRELOAD only if strictly needed). In flight (batch 5): F-KRN-3, F-MSG-5, F-WA-3, F-APP-2. Integration branch = claude/hopeful-johnson-ysujzy; owner approved direct push to main.
-- Baseline: typecheck ✅ · vitest 272 files / 1816 passed / 7 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (exhaustive-deps 20, unused-vars 65)
+- Locks held: none; nothing in flight. Batch 5 (F-KRN-3, F-MSG-5, F-WA-3, F-APP-2) MERGED; awaiting owner direction. Integration branch = claude/hopeful-johnson-ysujzy; owner approved direct push to main.
+- Baseline: typecheck ✅ · vitest 274 files / 1839 passed / 7 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (no change)
 
 ## Owner smoke queue (🔎)
 3. (S-02) Dev/packaged Electron: an AI chat executeScript call (e.g. queryDatabase) returns results + logs; a `while(true){}` script leaves the app responsive and times out (~60s). Child is spawned via process.execPath -e with ELECTRON_RUN_AS_NODE=1: untested under real Electron.
@@ -38,6 +38,11 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 20. (F-UA-3) Log in, open a chat, type a draft. Cut network / sleep+wake: chat, scroll and draft survive; 'Reconnecting and catching up…' pill appears and clears on sync complete. A late wa-sync-progress must not return you to the sync screen. Open the account elsewhere: replaced message + 'Reconnect this device →'; after fresh login/QR the button is gone. Logout from chat UI: initializing screen, no stale banner. First-time login looks as before.
 21. (F-KRN-2) Install a .scext that throws in activate: install errors, plugin listed as not loaded (error only in extension:list payload; UI doesn't show it). Reinstall a newer version of a running plugin: new code runs, manifest perms match. Double-click Install: single worker. Uninstall+reinstall same id: no old storage/grants carried over. Quit: no 10s hang.
 22. (F-DATA-3) In a real group add a member, promote/demote an admin, remove a member from the phone: member list, admin badges and mention menu update live; LID-only member makes no duplicate contact; a full sync still prunes departed members.
+
+23. (F-APP-2) Run index with the embedding model unavailable (e.g. offline on first model download): a toast appears and the progress bar clears. Normal index: progress reaches 100, no toast.
+24. (F-KRN-3) Open a handle-mode overlay from a plugin, then extension:reload or uninstall it: overlay closes; after reload the plugin can reopen it without OVERLAY_ALREADY_OPEN. (A modal open at unload stays on screen until dismissed; no renderer close channel yet.)
+25. (F-WA-3) Linked and connected, quit normally: exits promptly (<~3s even if worker wedged), worker log shows 'Shutdown complete'. Relaunch: connected, no QR. Quit mid history sync: no hang; sync resumes on relaunch, no 401 loop. Trigger a reconnect: 'Stopping worker thread…' then 'Shutdown complete', no spurious wa-disconnected banner. Quit mid-send: message state consistent after relaunch.
+26. (F-MSG-5) React from the phone in a DM, a group and a disappearing-messages chat: shows live once, survives reload; change/remove reaction updates live; react from the app and from the phone as yourself: attribution correct; chat-list preview/unread/notifications don't bump on reactions. RISK: reactions are now persisted only via messages.reaction; if that event is ever missing, nothing persists.
 
 ## Follow-ups inbox (triaged at each wave boundary)
 - (G-04) Gemini key `AIzaSy…YLRGd0` is in git history: OWNER must rotate it. Audit docs may have stale paths to moved `bug-audit*`; `.agents/skills/feature-and-bugfix/SKILL.md` mentions bug files; logger lives at `src/main/utils/logger.ts` (relocate if a shared dir appears); `test:run` and `test:run:all` scripts are identical. Fold into Z-08 (docs).
@@ -120,12 +125,12 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-MSG-2 | W2 · MSG | Stop double-processing edits | F-MSG-1 | – | MERGED | |
 | F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | MERGED | |
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
-| F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | IN PROGRESS | |
+| F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | MERGED | |
 | R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
 | F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | MERGED | 21bbcf7 |
 | F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | MERGED | 7630f8f |
 | F-WA-6 | W2 · WA | skipSync returns {status} (B-WA-13); widen onWaHistoryAppended types | F-WA-2 | WABRIDGE, IPC, PRELOAD | WAITING | |
-| F-WA-3 | W2 · WA | Graceful worker shutdown | F-WA-1, F-WA-2 | WABRIDGE | IN PROGRESS | |
+| F-WA-3 | W2 · WA | Graceful worker shutdown | F-WA-1, F-WA-2 | WABRIDGE | MERGED | |
 | F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | WAITING | |
 | F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | MERGED | 21bbcf7 |
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | MERGED | e8b1d9f |
@@ -138,10 +143,10 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | MERGED | 07416a7 |
 | F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | MERGED | 1843e24 |
 | F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | MERGED | |
-| F-KRN-3 | W2 · KRN | Overlay lifecycle per plugin | F-KRN-2 | KHOST | IN PROGRESS | |
+| F-KRN-3 | W2 · KRN | Overlay lifecycle per plugin | F-KRN-2 | KHOST | MERGED | |
 | F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | MERGED | f3d493f |
 | F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | MERGED | ba3b988 |
-| F-APP-2 | W2 · APP | Surface index-embeddings failures | N-05, H-04 | IPC | IN PROGRESS | |
+| F-APP-2 | W2 · APP | Surface index-embeddings failures | N-05, H-04 | IPC | MERGED | |
 | F-UC-1 | W2 · UC | Cursor pagination + loadNewer + guarded sends `CONTRACT` 🔎 | N-08 | USEMSG, IPC, PRELOAD | WAITING | |
 | F-UC-2 | W2 · UC | Chat-switch hygiene | F-UC-1 | USEMSG | WAITING | |
 | F-UC-3 | W2 · UC | Composer/markdown/error toasts | N-07 | – | MERGED | 7567cd3 |
@@ -219,3 +224,4 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (batch 3) (F-AI-4) cap stops silently (consider a visible 'tool turn limit reached' message); only auto-executed turns count; cap duplicated (renderer MAX_TOOL_TURNS 25 vs AIService MAX_TOOL_TURNS_CAP 25) → unify in R-SOLID-R-09. (F-UA-2) stale stream chunks still write streamingBuffers by message id (harmless); tool result for the old session is dropped, not persisted; tool finishing after unmount still runs post-await path. (F-MSG-2) UIBroadcastSubscriber.onDecrypted / decryptMessage echo handling now dead for live edits (simplify after MSGREPO free); WAEventHandler handlers still console.log; echo-only edits unverified against Baileys. (H-05) `will-quit` still app.exit(0); createWindow re-registers ready-to-show→setWindow on activate (relies on isWaConnected guard); dup window-open handler → D-05/R-APP-09.
 - (F-MSG-3) PARTIAL: R-MSG-04's SyncMessagesHandler explicit targetId (edit/revoke rows keep target id instead of overwriting id) and MessageService in-batch dedupe not done (covered meanwhile by foldSyncRows; SyncMessagesHandler is not locked → fold into F-MSG-5/R-MSG-08 or a small unit). Fold ignores incoming edit timestamp; insertNewMessages still has per-row upsert fallback + console.error (R-SOLID-M-13). MSGREPO lock released.
 - (batch 4) (F-UA-3) `reconnecting` banner never clears if worker sends wa-connected after ready but no sync-complete (renderer has no 60s safety timeout) → check worker catch-up flow; banner CSS minimal (design pass); behaviour change: ready now survives reconnect with a non-blocking banner. (F-KRN-2) CONTRACT additive: extension:list entries gain optional `error`; PluginLoader ctor optional 3rd param; Extensions UI should render `error` (ExtensionCard); KernelAPIRouter.attachChannel detach is still a no-op; extension:install rejection still unstructured; extension:uninstall swallows unload errors; KernelEventsModule/OverlayHost cleanup only via unload hook (F-KRN-3). (F-DATA-3) ParticipantParser/IdentityResolutionPlan (R-DATA-05) still missing; WAEventHandler.handleGroupParticipantsUpdate drops phoneNumber/admin (needs WABRIDGE unit); PN identity from batched path gets no PN alias row (F-DATA-2 gap); DI ctor edit: GroupMembershipService now takes membershipSyncHandler as 3rd arg. (ops) never run vitest from two agents at once on the same machine (temp-file contamination); lock KHOST released.
+- (batch 5) (F-APP-2) index-embeddings/clear-vectors now rethrow (renderer ChatList toasts; one-line renderer edit outside ownership); H-04 non-atomic MessageVector+vec0 still open (R-DATA); no auto re-index trigger; EmbeddingService.processQueue still swallows. (F-KRN-3) additive: ModalRequest.pluginId (also sent to renderer), IOverlayHost.closeAllForPlugin, BootResult.overlayHost; renderer has no kernel:ui:modal:close (PRELOAD); kernel:events:subscribe / showOverlay arriving after unload can recreate state (needs 'plugin loaded' guard); revoke still only drops at delivery (R-SOLID-M-02). (F-WA-3) additive worker command `shutdown` (acked); in-flight saveCreds/keys.set not awaited ($disconnect is only flush; WASYNC); worker doesn't self-exit after ack; SHUTDOWN_TIMEOUT_MS hard-coded 3s; wipe/clear() dead-term (WASYNC) untouched. (F-MSG-5) DI ctor edit: MessageActionService arg 4 now IMessageIdentityResolver; SyncMessagesHandler._extractInlineReaction misses ephemeralMessage-wrapped reactions (needs it.fails pin; F-MSG-4/R-MSG-08); reaction timestamp/reactor-jid logic duplicated in SyncMessagesHandler; reaction to not-yet-stored message still FK-fails (B-MSG-01 → F-MSG-4); getChatMessages reaction filter O(n·m) (R-MSG-07). Locks KHOST/WABRIDGE/IPC released.
