@@ -1,90 +1,22 @@
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useAPI } from './context/APIContext'
 import { ChatLayout } from './components/chat'
+import { useConnectionState } from './hooks/useConnectionState'
 import { ModalPortal } from './components/overlays/ModalPortal'
 import { CheckCircle2, Loader2, Circle } from 'lucide-react'
 
-type AppState = 'initializing' | 'qr' | 'connected' | 'syncing' | 'ready'
-
 export function App() {
   const api = useAPI()
-  const [qr, setQr] = useState<string | null>(null)
-  const [appState, setAppState] = useState<AppState>('initializing')
-  const [syncProgress, setSyncProgress] = useState<number>(0)
-  const [syncStatus, setSyncStatus] = useState<string>('Initializing connection...')
-  const [syncType, setSyncType] = useState<number>(0)
-  const [isRegeneratingQr, setIsRegeneratingQr] = useState<boolean>(false)
-  const [sessionReplaced, setSessionReplaced] = useState<boolean>(false)
-
-  const appStateRef = useRef<AppState>(appState)
-
-  useEffect(() => {
-    appStateRef.current = appState
-  }, [appState])
-
-  // Auth & Sync listeners
-  useEffect(() => {
-    const unSubQr = api.onWaQr((newQr: string) => {
-      setQr(newQr)
-      setIsRegeneratingQr(false)
-      setAppState('qr')
-    })
-
-    const unSubConn = api.onWaConnected((data) => {
-      setQr(null)
-      if (data?.isCatchup) {
-        setAppState('connected')
-      } else {
-        setAppState('syncing')
-        setSyncProgress(0)
-      }
-    })
-
-    const unSubLogout = api.onWaLoggedOut(() => {
-      setQr(null)
-      setAppState('initializing')
-      setSyncProgress(0)
-      setSyncType(0)
-      setSyncStatus('Initializing connection...')
-    })
-
-    const unSubSessionReplaced = api.onWaSessionReplaced(() => {
-      setQr(null)
-      setSyncProgress(0)
-      setSyncType(0)
-      setSessionReplaced(true)
-      setAppState('initializing')
-      setSyncStatus('This session was opened on another device. SmartChat has stopped syncing.')
-    })
-
-    const unSubSyncPrg = api.onWaSyncProgress((data) => {
-      setSyncProgress(data.progress)
-      setSyncType(data.syncType)
-      if (appStateRef.current !== 'syncing') {
-        setAppState('syncing')
-      }
-    })
-
-    const unSubSyncStatus = api.onWaSyncStatus((status: string) => {
-      setSyncStatus(status)
-    })
-
-    const unSubSyncComp = api.onWaSyncComplete(() => {
-      setSyncProgress(100)
-      setAppState('ready')
-    })
-
-    return () => {
-      unSubQr()
-      unSubConn()
-      unSubLogout()
-      unSubSessionReplaced()
-      unSubSyncPrg()
-      unSubSyncStatus()
-      unSubSyncComp()
-    }
-  }, [])
+  const {
+    phase: appState,
+    qr,
+    syncProgress,
+    syncStatus,
+    syncType,
+    isRegeneratingQr,
+    sessionReplaced
+  } = useConnectionState()
 
   // Define steps (placed before any early returns to satisfy React Hook rules)
   const steps = useMemo(() => [
