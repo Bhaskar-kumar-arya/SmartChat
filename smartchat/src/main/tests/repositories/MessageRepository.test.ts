@@ -322,7 +322,7 @@ describe('MessageRepository', () => {
       await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
     })
 
-    it.fails('original + edit in one batch keeps the quote and applies the edit', async () => {
+    it('original + edit in one batch keeps the quote and applies the edit', async () => {
       await repository.bulkSyncMessages([base({}), edit()])
       const row = await prisma.message.findUnique({ where: { id: 'r1' } })
       expect(row?.textContent).toBe('reply v2')
@@ -334,7 +334,7 @@ describe('MessageRepository', () => {
       expect(c.messageContextInfo).toBeDefined()
     })
 
-    it.fails('edit row before the original in the batch still wins', async () => {
+    it('edit row before the original in the batch still wins', async () => {
       await repository.bulkSyncMessages([edit(), base({})])
       const row = await prisma.message.findUnique({ where: { id: 'r1' } })
       expect(row?.textContent).toBe('reply v2')
@@ -342,7 +342,7 @@ describe('MessageRepository', () => {
       expect(JSON.parse(row!.content).extendedTextMessage.contextInfo.stanzaId).toBe('q1')
     })
 
-    it.fails('original + revoke in one batch keeps the content and marks deleted', async () => {
+    it('original + revoke in one batch keeps the content and marks deleted', async () => {
       await repository.bulkSyncMessages([base({}), revoke()])
       const row = await prisma.message.findUnique({ where: { id: 'r1' } })
       expect(row?.isDeleted).toBe(true)
@@ -350,7 +350,7 @@ describe('MessageRepository', () => {
       expect(row?.messageType).toBe('extendedTextMessage')
     })
 
-    it.fails('uses createMany once for a folded batch (no per-row upsert fallback)', async () => {
+    it('uses createMany once for a folded batch (no per-row upsert fallback)', async () => {
       const spy = vi.spyOn(prisma.message, 'upsert')
       await repository.bulkSyncMessages([base({}), edit(), base({ id: 'r2', content: '{}', textContent: 'x', messageType: 'conversation' })])
       expect(spy).not.toHaveBeenCalled()
@@ -358,12 +358,12 @@ describe('MessageRepository', () => {
       spy.mockRestore()
     })
 
-    it.fails('returns each new id once', async () => {
+    it('returns each new id once', async () => {
       const created = await repository.bulkSyncMessages([base({}), edit()])
       expect(created.map(m => m.id)).toEqual(['r1'])
     })
 
-    it.fails('re-delivered original does not un-edit or un-delete a stored message', async () => {
+    it('re-delivered original does not un-edit or un-delete a stored message', async () => {
       await prisma.message.create({
         data: { id: 'r1', chatJid: dummyChat, fromMe: false, timestamp: 10n, messageType: 'conversation',
           content: editContent, textContent: 'reply v2', isEdited: true, isDeleted: true }
@@ -387,7 +387,7 @@ describe('MessageRepository', () => {
       expect(JSON.parse(row!.content).extendedTextMessage.contextInfo.stanzaId).toBe('q1')
     })
 
-    it.fails('bulkCreateMessages collapses duplicate ids instead of falling back', async () => {
+    it('bulkCreateMessages collapses duplicate ids instead of falling back', async () => {
       const spy = vi.spyOn(prisma.message, 'upsert')
       await repository.bulkCreateMessages([base({}), base({ textContent: 'dup' })])
       expect(spy).not.toHaveBeenCalled()
