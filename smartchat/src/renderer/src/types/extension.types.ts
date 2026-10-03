@@ -22,6 +22,8 @@ export interface LoadedExtension {
   id: string
   manifest: ExtensionManifest
   isLoaded: boolean
+  /** Why the extension failed to load, when it is installed but not loaded. */
+  error?: string
 }
 
 export interface ExtensionChatMessage {

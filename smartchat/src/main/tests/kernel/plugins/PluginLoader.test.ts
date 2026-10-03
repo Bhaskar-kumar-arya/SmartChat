@@ -218,7 +218,7 @@ describe('PluginLoader', () => {
     expect(fs.existsSync(pluginDir)).toBe(false)
   })
 
-  it.fails('B-KRN-16: uninstall() invokes the onUninstalled hook with the plugin id', async () => {
+  it('B-KRN-16: uninstall() invokes the onUninstalled hook with the plugin id', async () => {
     const hook = vi.fn()
     const l = new (PluginLoader as any)(tmpDir, () => false, hook)
     await l.uninstall('com.acme.hooked')

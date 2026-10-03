@@ -401,7 +401,7 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
     })
 
     // B-KRN-14
-    it.fails('B-KRN-14: concurrent load(id) calls share one in-flight load (one worker)', async () => {
+    it('B-KRN-14: concurrent load(id) calls share one in-flight load (one worker)', async () => {
       const channels: ReturnType<typeof mkChannel>[] = []
       vi.mocked(loader.load).mockImplementation(async (id: string) => {
         await new Promise((r) => setTimeout(r, 5))
@@ -415,7 +415,7 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
     })
 
     // B-KRN-15
-    it.fails('B-KRN-15: load() leaves no pending activation timer once the ack arrives', async () => {
+    it('B-KRN-15: load() leaves no pending activation timer once the ack arrives', async () => {
       vi.useFakeTimers()
       try {
         vi.mocked(loader.load).mockResolvedValue({ manifest: mkManifest('com.x.t'), channel: mkChannel() as any })
@@ -426,7 +426,7 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
       }
     })
 
-    it.fails('B-KRN-15: unload() leaves no pending deactivate-grace timer once the ack arrives', async () => {
+    it('B-KRN-15: unload() leaves no pending deactivate-grace timer once the ack arrives', async () => {
       vi.useFakeTimers()
       try {
         vi.mocked(loader.load).mockResolvedValue({ manifest: mkManifest('com.x.u'), channel: mkChannel() as any })
@@ -439,7 +439,7 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
     })
 
     // H-06 follow-up: failure reason + partial activation cleanup
-    it.fails('records a load error for a failed plugin and clears it after a successful load', async () => {
+    it('records a load error for a failed plugin and clears it after a successful load', async () => {
       const bad = mkChannel(async () => ({ id: 'x', ok: false, error: { code: 'E', message: 'boom' } }))
       vi.mocked(loader.load).mockResolvedValueOnce({ manifest: mkManifest('com.x.f'), channel: bad as any })
       await expect(host.load('com.x.f')).rejects.toThrow(/boom/)
@@ -450,13 +450,13 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
       expect((host as any).getLoadError('com.x.f')).toBeUndefined()
     })
 
-    it.fails('records a load error when loader.load itself rejects', async () => {
+    it('records a load error when loader.load itself rejects', async () => {
       vi.mocked(loader.load).mockRejectedValueOnce(new Error('bad manifest'))
       await expect(host.load('com.x.m')).rejects.toThrow(/bad manifest/)
       expect((host as any).getLoadError('com.x.m')).toMatch(/bad manifest/)
     })
 
-    it.fails('failed activation detaches the router channel and removes handlers', async () => {
+    it('failed activation detaches the router channel and removes handlers', async () => {
       const detach = vi.fn()
       vi.mocked(router.attachChannel).mockReturnValue(detach)
       const bad = mkChannel(async () => ({ id: 'x', ok: false, error: { code: 'E', message: 'boom' } }))
@@ -465,7 +465,7 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
       expect(detach).toHaveBeenCalledTimes(1)
     })
 
-    it.fails('unload() detaches the router channel', async () => {
+    it('unload() detaches the router channel', async () => {
       const detach = vi.fn()
       vi.mocked(router.attachChannel).mockReturnValue(detach)
       vi.mocked(loader.load).mockResolvedValue({ manifest: mkManifest('com.x.e'), channel: mkChannel() as any })
@@ -474,7 +474,7 @@ describe('PluginHost (Decoupled Unit Tests)', () => {
       expect(detach).toHaveBeenCalledTimes(1)
     })
 
-    it.fails('unload() still unregisters the plugin when channel.destroy() throws', async () => {
+    it('unload() still unregisters the plugin when channel.destroy() throws', async () => {
       const ch = mkChannel()
       ch.destroy.mockImplementation(() => { throw new Error('destroy failed') })
       vi.mocked(loader.load).mockResolvedValue({ manifest: mkManifest('com.x.g'), channel: ch as any })

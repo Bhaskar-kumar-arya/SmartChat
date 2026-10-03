@@ -139,7 +139,7 @@ describe('PermissionStore', () => {
     })
   })
 
-  it.fails('B-KRN-16: removePlugin() drops grants, scopes and the manifest registration', async () => {
+  it('B-KRN-16: removePlugin() drops grants, scopes and the manifest registration', async () => {
     const store = new PermissionStore(testStoragePath)
     store.registerPluginManifest('plugin-a', ['messages:read'])
     await store.setCapability('plugin-a', 'messages:read', false)

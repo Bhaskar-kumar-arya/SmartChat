@@ -42,6 +42,8 @@ export function getContributionSnapshot(
   return snapshot
 }
 
+const errorField = (error: string | undefined): { error?: string } => (error ? { error } : {})
+
 export function registerContributionIpcHandlers(
   registry: IContributionRegistry,
   host: IPluginHost,
@@ -173,17 +175,32 @@ export function registerContributionIpcHandlers(
     return installed.map((manifest) => ({
       id: manifest.id,
       manifest,
-      isLoaded: loadedIds.has(manifest.id)
+      isLoaded: loadedIds.has(manifest.id),
+      // Why an installed plugin is not loaded (additive field).
+      ...(loadedIds.has(manifest.id) ? {} : errorField(host.getLoadError?.(manifest.id)))
     }))
   }
 
   const extensionInstallHandler = async (_event: unknown, scextPath: string) => {
     if (!loader) throw new Error('Loader not available')
     const manifest = await loader.install(scextPath)
+    // The install just replaced the plugin's files on disk. If an older version is
+    // running, drop it first, otherwise host.load() is a no-op and the old worker
+    // keeps running under the new manifest's permissions. (B-KRN-09)
+    if (host.getPlugin(manifest.id)) {
+      await host.unload(manifest.id)
+    }
     if (permissions) {
       permissions.registerPluginManifest(manifest.id, manifest.permissions)
     }
-    await host.load(manifest.id)
+    // A failed activation leaves the plugin installed but not loaded (the reason
+    // is shown by extension:list); the error is still surfaced to the installer.
+    try {
+      await host.load(manifest.id)
+    } catch (err) {
+      console.error(`[contributionIpc] installed '${manifest.id}' but it failed to load:`, err)
+      throw err
+    }
     return { success: true, manifest }
   }
 

@@ -252,7 +252,7 @@ describe('contributionIpc', () => {
       id: 'com.x.p', name: 'P', version: '2.0.0', apiVersion: '2', main: 'index.js', permissions: ['messages:read'], contributions: {}
     }
 
-    it.fails('B-KRN-09: installing over a loaded plugin unloads the old one before loading the new', async () => {
+    it('B-KRN-09: installing over a loaded plugin unloads the old one before loading the new', async () => {
       const calls: string[] = []
       const host: any = {
         ...mockHost,
@@ -268,7 +268,7 @@ describe('contributionIpc', () => {
       expect(calls).toEqual(['install', 'unload', 'register', 'load'])
     })
 
-    it.fails('extension:list reports the load error of a plugin that failed to load', async () => {
+    it('extension:list reports the load error of a plugin that failed to load', async () => {
       const host: any = {
         ...mockHost,
         listLoaded: vi.fn().mockReturnValue([]),
