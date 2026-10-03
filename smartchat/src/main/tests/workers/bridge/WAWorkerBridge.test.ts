@@ -31,6 +31,16 @@ vi.mock('worker_threads', () => {
   }
 })
 
+/** Reply to the bridge's `shutdown` command as the worker would (typed, no `any`). */
+function ackShutdown(): void {
+  const w = Worker as unknown as {
+    _getMockInstances: () => { postMessage: { mock: { calls: Array<Array<{ type: string; correlationId: string }>> } } }
+    _triggerMessage: (msg: unknown) => void
+  }
+  const shutdown = w._getMockInstances().postMessage.mock.calls.map((c) => c[0]).find((m) => m.type === 'shutdown')
+  w._triggerMessage({ type: 'reply', correlationId: shutdown?.correlationId, payload: { result: { status: 'success' } } })
+}
+
 describe('WAWorkerBridge', () => {
   let mockBus: Mocked<IWAEventBus>
   let mockWindowEmitter: Mocked<IWindowEventEmitter>
@@ -136,7 +146,9 @@ describe('WAWorkerBridge', () => {
     bridge.start(true, true)
     const workerMock = (Worker as any)._getMockInstances()
 
-    await bridge.stop()
+    const stopped = bridge.stop()
+    ackShutdown()
+    await stopped
 
     expect(workerMock.terminate).toHaveBeenCalled()
     await expect(bridge.logout()).rejects.toThrow('Worker thread is not running')
@@ -188,7 +200,9 @@ describe('WAWorkerBridge', () => {
     const onExit = vi.fn()
     bridge.setUnexpectedExitHandler(onExit)
     bridge.start(true, true)
-    await bridge.stop()
+    const stopped = bridge.stop()
+    ackShutdown()
+    await stopped
     ;(Worker as any)._triggerExit(0)
     expect(onExit).not.toHaveBeenCalled()
     expect(mockWindowEmitter.send).not.toHaveBeenCalledWith('wa-disconnected', expect.anything())
