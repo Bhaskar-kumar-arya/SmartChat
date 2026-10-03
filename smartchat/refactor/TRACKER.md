@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: none; nothing in flight. Batch 3 (H-05, F-MSG-2, F-AI-4, F-UA-2) MERGED; awaiting owner direction. Integration branch = claude/hopeful-johnson-ysujzy (push only there).
+- Locks held: KHOST (F-KRN-2), MSGREPO (F-MSG-3). In flight (batch 4, owner-approved): F-KRN-2, F-MSG-3, F-UA-3, F-DATA-3. Integration branch = claude/hopeful-johnson-ysujzy; owner also approved direct push to main.
 - Baseline: typecheck ✅ · vitest 270 files / 1756 passed / 8 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (no change)
 
 ## Owner smoke queue (🔎)
@@ -112,7 +112,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | N-09 | W1 · AI | Provider test util + role-mapping tests | W0 | – | MERGED | 305a3f9 |
 | F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | MERGED | 7a8f2bd |
 | F-MSG-2 | W2 · MSG | Stop double-processing edits | F-MSG-1 | – | MERGED | |
-| F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | WAITING | |
+| F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | IN PROGRESS | |
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | WAITING | |
 | R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
@@ -124,14 +124,14 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | MERGED | 21bbcf7 |
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | MERGED | e8b1d9f |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | MERGED | b5fc5a9 |
-| F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | WAITING | |
+| F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | IN PROGRESS | |
 | F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | MERGED | 69955ab |
 | F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | MERGED | ae1a3c8 |
 | F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | MERGED | c205617 |
 | F-AI-4 | W2 · AI | Tool-loop turn cap in the live loop | N-08 | – | MERGED | |
 | F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | MERGED | 07416a7 |
 | F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | MERGED | 1843e24 |
-| F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | WAITING | |
+| F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | IN PROGRESS | |
 | F-KRN-3 | W2 · KRN | Overlay lifecycle per plugin | F-KRN-2 | KHOST | WAITING | |
 | F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | MERGED | f3d493f |
 | F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | MERGED | ba3b988 |
@@ -141,7 +141,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-UC-3 | W2 · UC | Composer/markdown/error toasts | N-07 | – | MERGED | 7567cd3 |
 | F-UA-1 | W2 · UA | Small renderer bug batch | N-07 | – | MERGED | 0b74c4a |
 | F-UA-2 | W2 · UA | useAIStream session guard | N-08 | – | MERGED | |
-| F-UA-3 | W2 · UA | useConnectionState reducer 🔎 | N-08 | – | WAITING | |
+| F-UA-3 | W2 · UA | useConnectionState reducer 🔎 | N-08 | – | IN PROGRESS | |
 | C-01 | W3 · APP | Shared typed IPC contract (types only) | N-05, F-UC-1, F-AI-3, F-AI-5, F-APP-2 | IPC | WAITING | |
 | C-02 | W3 · APP | Typed registration; split ipcHandlers | C-01 | IPC | WAITING | |
 | C-03 | W3 · APP | Typed preload + IAPIService + typed mock | C-02 | PRELOAD | WAITING | |
