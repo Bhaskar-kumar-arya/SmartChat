@@ -5,6 +5,9 @@ import { useAPI } from '../../../context/APIContext'
 import { useToast } from '../../../context/ToastContext'
 import { parseToolCall } from '../../../utils/parseToolCall'
 
+// F-AI-4: mirrors AIService MAX_TOOL_TURNS_CAP (main-process loop is unused by the live UI).
+export const MAX_TOOL_TURNS = 25
+
 interface UseAIStreamProps {
   aiOptions: AIChatOptions
   availableTools: ToolDefinition[]
@@ -33,6 +36,8 @@ export function useAIStream({
   // F8-13: message ids whose no-permission tool call was already auto-executed,
   // so a late `-end` timer can't run it a second time.
   const autoExecutedToolIds = useRef<Set<string>>(new Set())
+  // F-AI-4: consecutive auto-executed tool turns; reset by a user-initiated stream.
+  const toolTurnCount = useRef(0)
 
   useEffect(() => {
     activeChannelIdRef.current = activeChannelId
@@ -83,6 +88,7 @@ export function useAIStream({
     isSystem: boolean = false
   ) => {
     streamingBuffers.current[aiMsgId] = ''
+    if (!isSystem) toolTurnCount.current = 0
     setLoading(true)
 
     // F8-01: snapshot the session that owns this stream. If the user switches
@@ -182,6 +188,8 @@ export function useAIStream({
             const toolData = parsed.data
             const tool = availableToolsRef.current.find((t) => t.name === toolData.tool)
             if (tool && tool.requiresPermission === false && toolData.tool) {
+              if (toolTurnCount.current >= MAX_TOOL_TURNS) return
+              toolTurnCount.current += 1
               autoExecutedToolIds.current.add(aiMsgId)
               executeToolCall(aiMsgId, toolData.tool, (toolData.arguments ?? {}) as Record<string, any>)
             }

@@ -2,8 +2,7 @@
  * N-08 characterization of useAIStream (R-UIAPP-05 safety net).
  * Pins CURRENT behaviour of executeToolCall / declineToolCall / handleRetry,
  * no-permission auto-execution, the onError path, the 30 ms drip and the 100 ms
- * auto-save timer. Known bugs are `it.fails` (B-UIAPP-03 -> F-UA-2,
- * no tool-loop turn cap -> F-AI-4).
+ * auto-save timer. Known bugs are `it.fails` (B-UIAPP-03 -> F-UA-2).
  */
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -410,8 +409,8 @@ describe('useAIStream characterization', () => {
       expect(streams).toHaveLength(0)
     })
 
-    // No turn cap in the live renderer loop (AI audit; F-AI-4). Main-process loop caps at 25.
-    it.fails('F-AI-4: the renderer tool loop stops after a bounded number of consecutive tool turns', async () => {
+    // F-AI-4: the live renderer loop caps consecutive auto tool turns at 25 (matches AIService).
+    it('F-AI-4: the renderer tool loop stops after a bounded number of consecutive tool turns', async () => {
       vi.useFakeTimers()
       const { result } = setup({ availableTools: [tool('get_time', false)] })
       seed(result, [msg({ id: 'ai-0', role: 'ai', content: '' })])
@@ -427,7 +426,34 @@ describe('useAIStream characterization', () => {
         })
         if (streams.length === before) break // loop stopped
       }
-      expect((api.executeTool as ReturnType<typeof vi.fn>).mock.calls.length).toBeLessThanOrEqual(25)
+      expect((api.executeTool as ReturnType<typeof vi.fn>).mock.calls.length).toBe(25)
+    })
+
+    it('F-AI-4: a new user-initiated stream resets the turn budget', async () => {
+      vi.useFakeTimers()
+      const { result } = setup({ availableTools: [tool('get_time', false)] })
+      seed(result, [msg({ id: 'ai-0', role: 'ai', content: '' })])
+      const runLoop = async (): Promise<void> => {
+        for (let turn = 0; turn < 30; turn++) {
+          const before = streams.length
+          act(() => last().onChunk(TOOL_CALL))
+          act(() => last().onDone())
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(100)
+          })
+          if (streams.length === before) break
+        }
+      }
+      act(() => {
+        result.current.startStream('p', [], 'ai-0')
+      })
+      await runLoop()
+      seed(result, [...result.current.messagesRef.current, msg({ id: 'ai-x', role: 'ai', content: '' })])
+      act(() => {
+        result.current.startStream('again', [], 'ai-x')
+      })
+      await runLoop()
+      expect((api.executeTool as ReturnType<typeof vi.fn>).mock.calls.length).toBe(50)
     })
   })
 
