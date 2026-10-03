@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MessageService } from '../../services/messages/MessageService'
 import { MessageParser } from '../../services/messages/MessageParser'
+import { ReactionMessageProcessor } from '../../services/messages/processors/ReactionMessageProcessor'
 
 describe('MessageService - Processing', () => {
   let service: MessageService
@@ -71,5 +72,21 @@ describe('MessageService - Processing', () => {
   it('revokeMessageInDb calls repository correctly', async () => {
     await service.revokeMessageInDb('msg1')
     expect(repository.revokeMessage).toHaveBeenCalledWith('msg1')
+  })
+
+  it('F-MSG-5: a reaction message is not persisted or returned (messages.reaction is the single writer)', async () => {
+    reactionRepository.upsertReaction = vi.fn()
+    const svc = new MessageService(
+      contactService, chatRepository, embeddingService, secretMessageService, getBus, parser,
+      repository, queryRepository, reactionRepository, enricher, identityResolver,
+      [new ReactionMessageProcessor()]
+    )
+    const msg = {
+      key: { id: 'r1', remoteJid: 'chat@s.whatsapp.net', fromMe: false },
+      message: { ephemeralMessage: { message: { reactionMessage: { key: { id: 'target' }, text: '👍' } } } }
+    }
+    const res = await svc.processMessage(msg, {} as never)
+    expect(res).toBeNull()
+    expect(reactionRepository.upsertReaction).not.toHaveBeenCalled()
   })
 })

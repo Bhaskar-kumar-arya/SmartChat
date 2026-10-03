@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ReactionMessageProcessor } from '../../../services/messages/processors/ReactionMessageProcessor'
-import { IMessageProcessingContext, IMessageServiceDependencyAccessor } from '../../../services/messages/processors/IMessageProcessorStrategy'
+import { IMessageProcessingContext, IMessageProcessorStrategy, IMessageServiceDependencyAccessor } from '../../../services/messages/processors/IMessageProcessorStrategy'
 
 describe('ReactionMessageProcessor', () => {
-  const processor = new ReactionMessageProcessor()
+  const processor: IMessageProcessorStrategy = new ReactionMessageProcessor()
 
   it('should requireChat to be true', () => {
     expect(processor.requiresChat).toBe(true)
@@ -15,158 +15,26 @@ describe('ReactionMessageProcessor', () => {
     expect(processor.supports({ messageType: 'conversation', rawMessage: {} } as any)).toBe(false)
   })
 
-  it('should process reaction message and call upsertReaction', async () => {
-    const upsertReactionMock = vi.fn().mockResolvedValue(undefined)
-    const findMeIdentityMock = vi.fn().mockResolvedValue(null)
-
+  // R-MSG-06: messages.reaction -> MessageService.processReaction is the single writer.
+  it('only classifies the message: returns null and persists nothing (fromMe or not)', async () => {
+    const upsertReaction = vi.fn().mockResolvedValue(undefined)
     const dependencies = {
-      reactionRepository: {
-        upsertReaction: upsertReactionMock
-      },
-      identityRepository: {
-        findMeIdentity: findMeIdentityMock
-      }
-    } as unknown as IMessageServiceDependencyAccessor
-
-    const context = {
-      messageType: 'reactionMessage',
-      remoteJid: 'user@s.whatsapp.net',
-      senderId: 10,
-      timestamp: 1600000000n,
-      msg: {
-        key: { id: 'msg-123', fromMe: false },
-        status: 2 // DeliveryAck
-      },
-      rawMessage: {
-        reactionMessage: {
-          key: { id: 'target-123' },
-          text: '👍'
-        }
-      },
-      textContent: null,
-      participantString: 'participant@s.whatsapp.net'
-    } as unknown as IMessageProcessingContext
-
-    const result = await processor.process(context, dependencies)
-
-    expect(upsertReactionMock).toHaveBeenCalledWith('target-123', 10, '👍', 1600000000n)
-    expect(result).toMatchObject({
-      id: 'msg-123',
-      chatJid: 'user@s.whatsapp.net',
-      fromMe: false,
-      senderId: 10,
-      participant: 'participant@s.whatsapp.net',
-      timestamp: 1600000000n,
-      messageType: 'reactionMessage',
-      isDeleted: false,
-      isEdited: false,
-      status: 'SENT'
-    })
-  })
-
-  it('P2-S2-04: fromMe reaction falls back to sock identity when me-identity not persisted, and sets senderId', async () => {
-    const upsertReactionMock = vi.fn().mockResolvedValue(undefined)
-    const getIdentityIdByJidMock = vi.fn().mockResolvedValue(77)
-
-    const dependencies = {
-      reactionRepository: { upsertReaction: upsertReactionMock },
-      identityRepository: { findMeIdentity: vi.fn().mockResolvedValue(null) },
-      contactService: { getIdentityIdByJid: getIdentityIdByJidMock }
-    } as unknown as IMessageServiceDependencyAccessor
-
-    const context = {
-      messageType: 'reactionMessage',
-      remoteJid: 'user@s.whatsapp.net',
-      senderId: null,
-      timestamp: 1600000000n,
-      sock: { user: { id: 'me:12@s.whatsapp.net', lid: 'melid:3@lid' } },
-      msg: { key: { id: 'msg-x', fromMe: true }, status: 2 },
-      rawMessage: { reactionMessage: { key: { id: 'target-x' }, text: '🔥' } }
-    } as unknown as IMessageProcessingContext
-
-    const result = await processor.process(context, dependencies)
-
-    expect(getIdentityIdByJidMock).toHaveBeenCalledWith('me')
-    expect(upsertReactionMock).toHaveBeenCalledWith('target-x', 77, '🔥', 1600000000n)
-    expect(result).toMatchObject({ senderId: 77 })
-  })
-
-  it('P2-S2-04: fromMe reaction is dropped (not persisted) when identity cannot be resolved at all', async () => {
-    const upsertReactionMock = vi.fn().mockResolvedValue(undefined)
-    const dependencies = {
-      reactionRepository: { upsertReaction: upsertReactionMock },
-      identityRepository: { findMeIdentity: vi.fn().mockResolvedValue(null) },
-      contactService: { getIdentityIdByJid: vi.fn().mockResolvedValue(null) }
-    } as unknown as IMessageServiceDependencyAccessor
-
-    const context = {
-      messageType: 'reactionMessage',
-      remoteJid: 'user@s.whatsapp.net',
-      senderId: null,
-      timestamp: 1600000000n,
-      sock: { user: { id: 'me:12@s.whatsapp.net' } },
-      msg: { key: { id: 'msg-y', fromMe: true }, status: 2 },
-      rawMessage: { reactionMessage: { key: { id: 'target-y' }, text: '🔥' } }
-    } as unknown as IMessageProcessingContext
-
-    await processor.process(context, dependencies)
-    expect(upsertReactionMock).not.toHaveBeenCalled()
-  })
-
-  it('should correctly resolve reactorId when fromMe is true', async () => {
-    const upsertReactionMock = vi.fn().mockResolvedValue(undefined)
-    const findMeIdentityMock = vi.fn().mockResolvedValue({ id: 99 })
-
-    const dependencies = {
-      reactionRepository: {
-        upsertReaction: upsertReactionMock
-      },
-      identityRepository: {
-        findMeIdentity: findMeIdentityMock
-      }
-    } as unknown as IMessageServiceDependencyAccessor
-
-    const context = {
-      messageType: 'reactionMessage',
-      remoteJid: 'user@s.whatsapp.net',
-      senderId: null, // Initial senderId might be null for fromMe
-      timestamp: 1600000000n,
-      msg: {
-        key: { id: 'msg-123', fromMe: true },
-        status: 2
-      },
-      rawMessage: {
-        reactionMessage: {
-          key: { id: 'target-123' },
-          text: '❤️'
-        }
-      }
-    } as unknown as IMessageProcessingContext
-
-    await processor.process(context, dependencies)
-
-    expect(findMeIdentityMock).toHaveBeenCalled()
-    expect(upsertReactionMock).toHaveBeenCalledWith('target-123', 99, '❤️', 1600000000n)
-  })
-
-  // F-MSG-5 / R-MSG-06: messages.reaction -> MessageService.processReaction is the single writer.
-  it.fails('F-MSG-5: only classifies the message: returns null and persists nothing', async () => {
-    const upsertReactionMock = vi.fn().mockResolvedValue(undefined)
-    const dependencies = {
-      reactionRepository: { upsertReaction: upsertReactionMock },
+      reactionRepository: { upsertReaction },
       identityRepository: { findMeIdentity: vi.fn().mockResolvedValue({ id: 99 }) }
     } as unknown as IMessageServiceDependencyAccessor
-    const context = {
-      messageType: 'reactionMessage',
-      remoteJid: 'user@s.whatsapp.net',
-      senderId: 10,
-      timestamp: 1600000000n,
-      msg: { key: { id: 'msg-1', fromMe: false }, status: 2 },
-      rawMessage: { reactionMessage: { key: { id: 'target-1' }, text: '👍' } }
-    } as unknown as IMessageProcessingContext
 
-    const result = await processor.process(context, dependencies)
-    expect(result).toBeNull()
-    expect(upsertReactionMock).not.toHaveBeenCalled()
+    for (const fromMe of [false, true]) {
+      const context = {
+        messageType: 'reactionMessage',
+        remoteJid: 'user@s.whatsapp.net',
+        senderId: fromMe ? null : 10,
+        timestamp: 1600000000n,
+        msg: { key: { id: 'msg-1', fromMe }, status: 2 },
+        rawMessage: { reactionMessage: { key: { id: 'target-1' }, text: '👍' } }
+      } as unknown as IMessageProcessingContext
+
+      expect(await processor.process(context, dependencies)).toBeNull()
+    }
+    expect(upsertReaction).not.toHaveBeenCalled()
   })
 })
