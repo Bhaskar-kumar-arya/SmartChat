@@ -1,7 +1,16 @@
 import { PrismaClient } from '@prisma/client'
-import { preserveContextInfo, preserveLocalUri, applyEdit } from '../../utils/messageUtils'
+import { preserveContextInfo, preserveLocalUri, applyEdit, foldSyncRows } from '../../utils/messageUtils'
 import { IMessageRepository, MessageUpsertData } from './IMessageRepository'
 import { DBMessageWithSender } from '../../domain/db.types'
+
+function parseJsonRecord(json: string): Record<string, unknown> | null {
+  try {
+    const v: unknown = JSON.parse(json)
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * Monotonic ordering of message delivery states. A later `messages.upsert`
@@ -124,9 +133,10 @@ export class MessageRepository implements IMessageRepository {
    */
   async bulkCreateMessages(rows: MessageUpsertData[]): Promise<void> {
     if (rows.length === 0) return
-    await this.prisma.message.createMany({ data: rows }).catch(async () => {
+    const unique = foldSyncRows(rows)
+    await this.prisma.message.createMany({ data: unique }).catch(async () => {
       // Fallback: individual upserts in a single transaction
-      const ops = rows.map(r =>
+      const ops = unique.map(r =>
         this.prisma.message.upsert({ where: { id: r.id }, update: r, create: r })
       )
       await this.prisma.$transaction(ops).catch((err: unknown) => {
@@ -252,7 +262,8 @@ export class MessageRepository implements IMessageRepository {
 
   private async updateExistingMessages(
     existingMessages: MessageUpsertData[],
-    existingContentMap: Map<string, string>
+    existingContentMap: Map<string, string>,
+    storedEdited: Set<string>
   ): Promise<void> {
     if (existingMessages.length === 0) return
 
@@ -266,7 +277,20 @@ export class MessageRepository implements IMessageRepository {
 
       let finalContent = msg.content
       const existingJson = existingContentMap.get(msg.id)
-      if (existingJson) {
+      // A re-delivered original must not overwrite a stored edit.
+      const keepStoredEdit = storedEdited.has(msg.id) && !msg.isEdited
+      if (keepStoredEdit) {
+        delete update.messageType
+        finalContent = existingJson ?? msg.content
+      } else if (existingJson && msg.isEdited) {
+        const applied = applyEdit(
+          parseJsonRecord(existingJson),
+          parseJsonRecord(msg.content),
+          msg.textContent ?? null
+        )
+        finalContent = JSON.stringify(applied.content)
+        update.messageType = applied.messageType
+      } else if (existingJson) {
         finalContent = preserveContextInfo(existingJson, msg.content)
         finalContent = preserveLocalUri(existingJson, finalContent)
         try {
@@ -279,10 +303,11 @@ export class MessageRepository implements IMessageRepository {
         }
       }
       update.content = finalContent
-      if (msg.textContent !== null) update.textContent = msg.textContent
+      if (msg.textContent !== null && !keepStoredEdit) update.textContent = msg.textContent
       update.fromMe = msg.fromMe
-      if (msg.isEdited !== undefined) update.isEdited = msg.isEdited
-      if (msg.isDeleted !== undefined) update.isDeleted = msg.isDeleted
+      // Flags are monotonic: a sync row may set them, never clear them.
+      if (msg.isEdited === true) update.isEdited = true
+      if (msg.isDeleted === true) update.isDeleted = true
 
       return this.prisma.message.update({ where: { id: msg.id }, data: update })
     })
@@ -303,22 +328,25 @@ export class MessageRepository implements IMessageRepository {
    */
   async bulkSyncMessages(rows: MessageUpsertData[]): Promise<MessageUpsertData[]> {
     if (rows.length === 0) return []
+    rows = foldSyncRows(rows)
 
     const batchIds = rows.map(m => m.id)
     const existingMsgs = await this.prisma.message.findMany({
       where: { id: { in: batchIds } },
-      select: { id: true, content: true }
+      select: { id: true, content: true, isEdited: true }
     })
     const existingContentMap = new Map<string, string>()
+    const storedEdited = new Set<string>()
     for (const row of existingMsgs) {
       if (row.content) existingContentMap.set(row.id, row.content)
+      if (row.isEdited) storedEdited.add(row.id)
     }
 
     const newMessages = rows.filter(m => !existingContentMap.has(m.id))
     const existingMessages = rows.filter(m => existingContentMap.has(m.id))
 
     await this.insertNewMessages(newMessages)
-    await this.updateExistingMessages(existingMessages, existingContentMap)
+    await this.updateExistingMessages(existingMessages, existingContentMap, storedEdited)
 
     return newMessages
   }

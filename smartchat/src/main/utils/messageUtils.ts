@@ -395,3 +395,62 @@ export function applyEdit(
     textContent: editedText
   }
 }
+
+/**
+ * Pure: folds rows that share an id into one row per id (original + edit + revoke).
+ * The sync handler remaps edit/revoke rows onto the id of their target, so a batch can carry
+ * several rows for the same id. Order in the batch does not matter: the original (a row that is
+ * neither an edit nor a revoke) is the base, edits are applied on it with `applyEdit`, and a revoke
+ * only sets `isDeleted`. Flags are monotonic (never true -> false). Output keeps first-seen order.
+ */
+export function foldSyncRows<
+  T extends {
+    id: string
+    content: string
+    messageType: string
+    textContent?: string | null
+    isEdited?: boolean
+    isDeleted?: boolean
+  }
+>(rows: T[]): T[] {
+  const groups = new Map<string, T[]>()
+  for (const r of rows) {
+    const g = groups.get(r.id)
+    if (g) g.push(r)
+    else groups.set(r.id, [r])
+  }
+  const parse = (s: string): JsonRecord | null => {
+    try {
+      const v: unknown = JSON.parse(s)
+      return v && typeof v === 'object' ? (v as JsonRecord) : null
+    } catch {
+      return null
+    }
+  }
+  const out: T[] = []
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      out.push(group[0])
+      continue
+    }
+    const baseIdx = Math.max(0, group.findIndex((r) => !r.isEdited && !r.isDeleted))
+    let acc: T = { ...group[baseIdx] }
+    for (let i = 0; i < group.length; i++) {
+      if (i === baseIdx) continue
+      const r = group[i]
+      if (r.isDeleted) acc.isDeleted = true
+      if (r.isEdited) {
+        const applied = applyEdit(parse(acc.content), parse(r.content), r.textContent ?? null)
+        acc = {
+          ...acc,
+          content: JSON.stringify(applied.content),
+          messageType: applied.messageType,
+          textContent: applied.textContent,
+          isEdited: true
+        }
+      }
+    }
+    out.push(acc)
+  }
+  return out
+}
