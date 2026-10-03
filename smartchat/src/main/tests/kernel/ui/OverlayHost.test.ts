@@ -157,4 +157,43 @@ describe('OverlayHost', () => {
       vi.useRealTimers()
     }
   })
+
+  describe('closeAllForPlugin (F-KRN-3 / B-KRN-08)', () => {
+    type WithClose = { closeAllForPlugin(pluginId: string): void }
+    const closeAll = (pluginId: string) => (overlayHost as unknown as WithClose).closeAllForPlugin(pluginId)
+
+    it.fails('closes a handle overlay on the renderer, evicts it, and lets the plugin reopen', async () => {
+      const a = (await overlayHost.showOverlay('plugin-a', { panel: 'a.html', mode: 'handle' })) as { overlayId: string }
+      mockMainWindow.webContents.send.mockClear()
+
+      closeAll('plugin-a')
+
+      expect(mockMainWindow.webContents.send).toHaveBeenCalledWith('kernel:ui:overlay:close', { overlayId: a.overlayId })
+      expect(overlayHost.hasActiveOverlayForPlugin('plugin-a')).toBe(false)
+      await expect(overlayHost.showOverlay('plugin-a', { panel: 'a.html', mode: 'handle' })).resolves.toHaveProperty('overlayId')
+    })
+
+    it.fails('resolves a promise-mode overlay with null', async () => {
+      const p = overlayHost.showOverlay('plugin-a', { panel: 'a.html' })
+      closeAll('plugin-a')
+      await expect(p).resolves.toBeNull()
+    })
+
+    it.fails("does not touch another plugin's overlays", async () => {
+      await overlayHost.showOverlay('plugin-a', { panel: 'a.html', mode: 'handle' })
+      const b = (await overlayHost.showOverlay('plugin-b', { panel: 'b.html', mode: 'handle' })) as { overlayId: string }
+      closeAll('plugin-a')
+      expect(overlayHost.isOverlayOwnedBy(b.overlayId, 'plugin-b')).toBe(true)
+      expect(overlayHost.hasActiveOverlayForPlugin('plugin-a')).toBe(false)
+    })
+
+    it.fails("rejects only that plugin's pending modals", async () => {
+      const mine = overlayHost.showModal({ type: 'confirm', modalId: 'm1', pluginId: 'plugin-a', payload: {} } as never)
+      const other = overlayHost.showModal({ type: 'confirm', modalId: 'm2', pluginId: 'plugin-b', payload: {} } as never)
+      closeAll('plugin-a')
+      await expect(mine).rejects.toThrow()
+      overlayHost.resolveModal('m2', true)
+      await expect(other).resolves.toBe(true)
+    })
+  })
 })

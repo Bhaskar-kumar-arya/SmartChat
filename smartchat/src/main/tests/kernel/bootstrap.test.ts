@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { KernelBootstrapper } from '../../kernel/KernelBootstrapper'
+import type { OverlayHost } from '../../kernel/ui/OverlayHost'
 import { ServiceContainer } from '../../ServiceContainer'
 
 describe('KernelBootstrapper', () => {
@@ -145,5 +146,25 @@ describe('KernelBootstrapper', () => {
       expect(result.permissions.getPluginPermissions('broken.one').capabilities).toEqual({})
       await result.dispose()
     })
+  })
+
+  it.fails('unloading a plugin closes its overlays (F-KRN-3 / B-KRN-08)', async () => {
+    const win = { isDestroyed: () => false, webContents: { send: vi.fn() } }
+    const bootstrapper = new KernelBootstrapper({
+      services: mockServices,
+      getMainWindow: () => win as never,
+      getBus: () => null,
+      getSock: () => null,
+      extensionsPath: '/tmp/fake-extensions-path-' + Date.now()
+    })
+    const result = await bootstrapper.boot()
+    const id = 'com.smartchat.builtin.notifications'
+    const overlayHost = (result as unknown as { overlayHost: OverlayHost }).overlayHost
+    await overlayHost.showOverlay(id, { panel: 'x.html', mode: 'handle' })
+
+    await result.host.unload(id)
+
+    expect(overlayHost.hasActiveOverlayForPlugin(id)).toBe(false)
+    await result.dispose()
   })
 })

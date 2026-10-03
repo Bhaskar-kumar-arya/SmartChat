@@ -81,6 +81,19 @@ describe('KernelEventsModule', () => {
     expect(newBus.on).not.toHaveBeenCalled()
   })
 
+  it.fails('removePlugin detaches handlers from the bus they were attached to even when the bus is currently null (F-KRN-3)', async () => {
+    let bus: IWAEventBus | null = mockBus
+    const m = new KernelEventsModule(mockPermissions, () => bus)
+    vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
+    await m.handle('plugin-a', 'kernel:events:subscribe', { event: 'message:incoming' })
+    vi.mocked(mockBus.off).mockClear()
+    bus = null
+
+    m.removePlugin('plugin-a')
+
+    expect(mockBus.off).toHaveBeenCalledWith('message:incoming', expect.any(Function))
+  })
+
   it('S8-06: unsubscribe before the bus connects removes the pending entry', async () => {
     const noBusModule = new KernelEventsModule(mockPermissions, null)
     vi.mocked(mockPermissions.hasCapability).mockReturnValue(true)
