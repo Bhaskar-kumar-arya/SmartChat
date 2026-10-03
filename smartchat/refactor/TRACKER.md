@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: none; nothing in flight. Owner-scoped batch (N-08 + Wave-2 high-value fixes) is COMPLETE; awaiting owner direction for next units. Integration branch = claude/hopeful-johnson-ysujzy (push only there).
+- Locks held: BOOT (H-05). In flight: H-05, F-MSG-2, F-AI-4, F-UA-2 (batch 3, owner-approved). Integration branch = claude/hopeful-johnson-ysujzy (push only there).
 - Baseline: typecheck ✅ · vitest 268 files / 1744 passed / 10 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (any 845, exhaustive-deps 21, unused-vars 66, no-restricted-imports 0)
 
 ## Owner smoke queue (🔎)
@@ -94,7 +94,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | H-02 | W1 · WA | Logout/wipe loop + saveCreds 🔎 | W0 | WASYNC | MERGED | 10fafc6 |
 | H-03 | W1 · WA | BaileysPatcher → patch-package 🔎 | W0 | BOOT | MERGED | 6147dff |
 | H-04 | W1 · AI | Vector dimension unify + reindex `CONTRACT` | W0 | SCHEMA | MERGED | c4dcb16 |
-| H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | WAITING | |
+| H-05 | W1 · APP | macOS quit/activate/window 🔎 | W0, H-03 | BOOT | IN PROGRESS | |
 | H-06 | W1 · KRN | Per-plugin boot isolation | W0, S-03 | KHOST | MERGED | fae5b34 |
 | X-01 | W1 · WA | Delete dead main-process worker twins | W0 | DI | MERGED | 6951b94 |
 | N-01 | W1 · DATA | Main test infra + factories | W0 | – | MERGED | ae1a3c8 |
@@ -107,7 +107,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | N-08 | W1 · UC/UA | Renderer characterization (useMessages, useAIStream, App, MessageItem) | N-07 | – | MERGED | 11302f0 |
 | N-09 | W1 · AI | Provider test util + role-mapping tests | W0 | – | MERGED | 305a3f9 |
 | F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | MERGED | 7a8f2bd |
-| F-MSG-2 | W2 · MSG | Stop double-processing edits | F-MSG-1 | – | WAITING | |
+| F-MSG-2 | W2 · MSG | Stop double-processing edits | F-MSG-1 | – | IN PROGRESS | |
 | F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | WAITING | |
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | WAITING | |
@@ -124,7 +124,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | MERGED | 69955ab |
 | F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | MERGED | ae1a3c8 |
 | F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | MERGED | c205617 |
-| F-AI-4 | W2 · AI | Tool-loop turn cap in the live loop | N-08 | – | WAITING | |
+| F-AI-4 | W2 · AI | Tool-loop turn cap in the live loop | N-08 | – | IN PROGRESS | |
 | F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | MERGED | 07416a7 |
 | F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | MERGED | 1843e24 |
 | F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | WAITING | |
@@ -136,7 +136,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-UC-2 | W2 · UC | Chat-switch hygiene | F-UC-1 | USEMSG | WAITING | |
 | F-UC-3 | W2 · UC | Composer/markdown/error toasts | N-07 | – | MERGED | 7567cd3 |
 | F-UA-1 | W2 · UA | Small renderer bug batch | N-07 | – | MERGED | 0b74c4a |
-| F-UA-2 | W2 · UA | useAIStream session guard | N-08 | – | WAITING | |
+| F-UA-2 | W2 · UA | useAIStream session guard | N-08 | – | IN PROGRESS | |
 | F-UA-3 | W2 · UA | useConnectionState reducer 🔎 | N-08 | – | WAITING | |
 | C-01 | W3 · APP | Shared typed IPC contract (types only) | N-05, F-UC-1, F-AI-3, F-AI-5, F-APP-2 | IPC | WAITING | |
 | C-02 | W3 · APP | Typed registration; split ipcHandlers | C-01 | IPC | WAITING | |
