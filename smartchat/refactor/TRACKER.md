@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: KHOST (F-KRN-2). In flight (batch 4, owner-approved): F-KRN-2, F-MSG-3, F-UA-3, F-DATA-3. Integration branch = claude/hopeful-johnson-ysujzy; owner also approved direct push to main.
+- Locks held: KHOST (F-KRN-2). In flight (batch 4): F-KRN-2, F-UA-3, F-DATA-3 (F-MSG-3 merged). Integration branch = claude/hopeful-johnson-ysujzy; owner also approved direct push to main.
 - Baseline: typecheck ✅ · vitest 270 files / 1756 passed / 8 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (no change)
 
 ## Owner smoke queue (🔎)
