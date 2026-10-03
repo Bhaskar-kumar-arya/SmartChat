@@ -427,7 +427,7 @@ describe('useAIStream characterization', () => {
         })
         if (streams.length === before) break // loop stopped
       }
-      expect((api.executeTool as ReturnType<typeof vi.fn>).mock.calls.length).toBeLessThanOrEqual(25)
+      expect((api.executeTool as ReturnType<typeof vi.fn>).mock.calls.length).toBe(25)
     })
   })
 
