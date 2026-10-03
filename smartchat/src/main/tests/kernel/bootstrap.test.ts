@@ -133,7 +133,7 @@ describe('KernelBootstrapper', () => {
         getBus: () => null,
         getSock: () => null,
         extensionsPath: extDir,
-        storageRepo: storageRepo as any
+        storageRepo: storageRepo as never
       })
       vi.spyOn(console, 'error').mockImplementation(() => {})
       const result = await bootstrapper.boot()

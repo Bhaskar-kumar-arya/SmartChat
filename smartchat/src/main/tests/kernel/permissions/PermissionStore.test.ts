@@ -144,7 +144,7 @@ describe('PermissionStore', () => {
     store.registerPluginManifest('plugin-a', ['messages:read'])
     await store.setCapability('plugin-a', 'messages:read', false)
     await store.setScope('plugin-a', 'messages:read', { deny: ['x@s.whatsapp.net'] })
-    ;(store as any).removePlugin('plugin-a')
+    store.removePlugin('plugin-a')
 
     store.registerPluginManifest('plugin-a', ['messages:read'])
     expect(store.hasCapability('plugin-a', 'messages:read')).toBe(true)

@@ -220,7 +220,7 @@ describe('PluginLoader', () => {
 
   it('B-KRN-16: uninstall() invokes the onUninstalled hook with the plugin id', async () => {
     const hook = vi.fn()
-    const l = new (PluginLoader as any)(tmpDir, () => false, hook)
+    const l = new PluginLoader(tmpDir, () => false, hook)
     await l.uninstall('com.acme.hooked')
     expect(hook).toHaveBeenCalledWith('com.acme.hooked')
   })
