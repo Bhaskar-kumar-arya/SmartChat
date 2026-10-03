@@ -169,6 +169,7 @@ export default function ChatList({
     } catch (err) {
       console.error('Indexing failed:', err)
       setIndexingProgress(null)
+      showError(err, 'Indexing failed.')
     }
   }
 

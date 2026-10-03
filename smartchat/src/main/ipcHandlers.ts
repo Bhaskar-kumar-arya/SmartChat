@@ -397,6 +397,9 @@ function registerSearchAndVectorHandlers(
       win?.webContents.send(EVENT_EMBEDDING_PROGRESS, 100)
     } catch (err) {
       console.error('[IPC] index-embeddings failed:', err)
+      // B-APP-04: surface the failure to the renderer (invoke rejects) instead
+      // of resolving as if indexing succeeded; no 100% event is sent.
+      throw err
     }
   })
 
@@ -409,6 +412,7 @@ function registerSearchAndVectorHandlers(
       await services.embeddingService.clearAllVectors()
     } catch (err: unknown) {
       console.error('[IPC] Failed to clear vectors:', err)
+      throw err
     }
   })
 }
