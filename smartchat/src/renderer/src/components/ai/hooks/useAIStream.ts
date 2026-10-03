@@ -217,9 +217,12 @@ export function useAIStream({
 
   const executeToolCall = useCallback(async (messageId: string, toolName: string, args: Record<string, any>) => {
     setExecutingToolId(messageId)
+    // B-UIAPP-03: snapshot the session that requested the tool; the tool may
+    // take a while and the user can switch / start / delete sessions meanwhile.
+    const toolSessionId = activeSessionIdRef.current
     let resultPayload = ''
     try {
-      const result = await api.executeTool(toolName, args, activeSessionIdRef.current)
+      const result = await api.executeTool(toolName, args, toolSessionId)
       resultPayload = JSON.stringify(result, null, 2)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
@@ -227,6 +230,14 @@ export function useAIStream({
     }
 
     setExecutingToolId(null)
+
+    // B-UIAPP-03: the session changed while the tool ran. The result belongs to
+    // the old session; do not write it into (or stream a follow-up in) the
+    // now-active one.
+    if (toolSessionId && activeSessionIdRef.current !== toolSessionId) {
+      return
+    }
+
     const sysMsgId = crypto.randomUUID()
     const aiMsgId = crypto.randomUUID()
 
