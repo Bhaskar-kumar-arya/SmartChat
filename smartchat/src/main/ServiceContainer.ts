@@ -275,7 +275,7 @@ export function createServices(
     getBus
   )
   const messageActionService = new MessageActionService(
-    messageRepository, reactionRepository, messageQueryRepository, identityRepository, contactService, messageService, messageService, chatService, getBus, messageSenderService
+    messageRepository, reactionRepository, messageQueryRepository, messageIdentityResolver, contactService, messageService, messageService, chatService, getBus, messageSenderService
   )
   const mediaService = new MediaService(
     messageRepository, messageQueryRepository, messageService, messageService, contactService, favoriteStickerService
