@@ -2,12 +2,18 @@
 // (B-APP-01 before-quit, B-APP-05 macOS activate, B-APP-06 null mainWindow on closed).
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-type Handler = (...args: any[]) => any
+type Handler = (...args: unknown[]) => unknown
+interface FakeWindow {
+  handlers: Map<string, Handler>
+  closed: boolean
+  show: ReturnType<typeof vi.fn>
+  hide: ReturnType<typeof vi.fn>
+}
 
 const h = vi.hoisted(() => {
   const state = {
     appHandlers: new Map<string, Handler[]>(),
-    windows: [] as any[],
+    windows: [] as FakeWindow[],
     getMainWindow: null as null | (() => unknown),
     minimizeToTray: true
   }
@@ -27,10 +33,10 @@ vi.mock('electron', () => {
     constructor() {
       h.windows.push(this)
     }
-    on(evt: string, fn: Handler) {
+    on(evt: string, fn: Handler): void {
       this.handlers.set(evt, fn)
     }
-    static getAllWindows() {
+    static getAllWindows(): FakeWindow[] {
       return h.windows.filter((w) => !w.closed)
     }
   }
@@ -63,8 +69,8 @@ vi.mock('../services/whatsapp/WhatsAppConnectionManager', () => ({
     setWindow = vi.fn()
     connect = vi.fn(async () => {})
     onBusCreated = vi.fn()
-    getBus = () => null
-    getSocket = () => null
+    getBus = (): null => null
+    getSocket = (): null => null
   }
 }))
 vi.mock('../services/whatsapp/WAEventBus', () => ({ WAEventBus: class {} }))
@@ -102,7 +108,7 @@ vi.mock('../kernel/storage/PrismaPluginStorageRepository', () => ({
 }))
 vi.mock('../kernel/KernelBootstrapper', () => ({
   KernelBootstrapper: class {
-    boot = () => new Promise(() => {})
+    boot = (): Promise<never> => new Promise(() => {})
   }
 }))
 vi.mock('../kernel/ipc/contributionIpc', () => ({ registerContributionIpcHandlers: vi.fn() }))
@@ -116,9 +122,12 @@ vi.mock('fs', async (orig) => {
   return { ...stub, default: stub }
 })
 
-const emitApp = (evt: string, ...args: unknown[]) =>
+const emitApp = (evt: string, ...args: unknown[]): void =>
   (h.appHandlers.get(evt) ?? []).forEach((fn) => fn(...args))
-const flush = () => new Promise((r) => setTimeout(r, 0))
+const fireClose = (preventDefault: () => void): void => {
+  h.windows[0].handlers.get('close')?.({ preventDefault })
+}
+const flush = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
 
 describe('main index.ts window lifecycle (H-05)', () => {
   beforeEach(async () => {
@@ -135,7 +144,7 @@ describe('main index.ts window lifecycle (H-05)', () => {
   it('creates one window and hides it on close when minimizeToTray is on', () => {
     expect(h.windows).toHaveLength(1)
     const preventDefault = vi.fn()
-    h.windows[0].handlers.get('close')!({ preventDefault })
+    fireClose(preventDefault)
     expect(preventDefault).toHaveBeenCalled()
     expect(h.windows[0].hide).toHaveBeenCalled()
   })
@@ -143,21 +152,21 @@ describe('main index.ts window lifecycle (H-05)', () => {
   it('lets close through when minimizeToTray is off', () => {
     h.minimizeToTray = false
     const preventDefault = vi.fn()
-    h.windows[0].handlers.get('close')!({ preventDefault })
+    fireClose(preventDefault)
     expect(preventDefault).not.toHaveBeenCalled()
   })
 
   // B-APP-01
-  it.fails('does not cancel window close once before-quit has fired (Cmd+Q / Dock quit / logout)', () => {
+  it('does not cancel window close once before-quit has fired (Cmd+Q / Dock quit / logout)', () => {
     emitApp('before-quit')
     const preventDefault = vi.fn()
-    h.windows[0].handlers.get('close')!({ preventDefault })
+    fireClose(preventDefault)
     expect(preventDefault).not.toHaveBeenCalled()
     expect(h.windows[0].hide).not.toHaveBeenCalled()
   })
 
   // B-APP-05
-  it.fails('shows the hidden window on activate instead of doing nothing', () => {
+  it('shows the hidden window on activate instead of doing nothing', () => {
     emitApp('activate')
     expect(h.windows).toHaveLength(1)
     expect(h.windows[0].show).toHaveBeenCalled()
@@ -170,7 +179,7 @@ describe('main index.ts window lifecycle (H-05)', () => {
   })
 
   // B-APP-06
-  it.fails('nulls the main window reference when the window is closed', () => {
+  it('nulls the main window reference when the window is closed', () => {
     expect(h.getMainWindow!()).toBe(h.windows[0])
     h.windows[0].handlers.get('closed')?.()
     expect(h.getMainWindow!()).toBeNull()
