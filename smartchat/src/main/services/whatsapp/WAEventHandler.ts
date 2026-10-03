@@ -197,6 +197,10 @@ export class WAEventHandler {
     sock: WASocket
   ): Promise<void> {
     if (itemUpdate?.message && !itemUpdate?.protocolMessage && itemKey?.id) {
+      // An edit echo (`{ editedMessage }`) is already handled via `message:edited`
+      // (upsert protocolMessage / secret-edit strategy); re-emitting it as a decrypt
+      // would process the same edit twice (R-MSG-03).
+      if ((itemUpdate.message as Record<string, unknown>).editedMessage) return
       const messageId = itemKey.id
       const chatJid = cleanJid(itemKey.remoteJid)
 
