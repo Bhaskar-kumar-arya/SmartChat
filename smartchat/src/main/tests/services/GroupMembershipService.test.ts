@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GroupMembershipService } from '../../services/chats/GroupMembershipService'
 import { IChatMemberRepository } from '../../services/chats/IChatMemberRepository'
+import { IMembershipSyncHandler } from '../../services/chats/sync/IMembershipSyncHandler'
 import { IContactMutationService, IContactQueryService } from '../../services/contacts/IContactService'
 
 describe('GroupMembershipService', () => {
   let service: GroupMembershipService
   let chatMemberRepo: import('vitest').Mocked<IChatMemberRepository>
+  let membershipSyncHandler: import('vitest').Mocked<IMembershipSyncHandler>
   let contactService: import('vitest').Mocked<IContactMutationService & IContactQueryService>
 
   beforeEach(() => {
     chatMemberRepo = {
       upsertChatMember: vi.fn(),
+      ensureChat: vi.fn().mockResolvedValue(true),
     } as any
 
     contactService = {
@@ -20,19 +23,43 @@ describe('GroupMembershipService', () => {
       upsertContact: vi.fn().mockResolvedValue(undefined),
     } as any
 
-    service = new GroupMembershipService(chatMemberRepo, contactService)
+    membershipSyncHandler = { syncMemberships: vi.fn().mockResolvedValue(undefined) } as unknown as import('vitest').Mocked<IMembershipSyncHandler>
+    service = new GroupMembershipService(chatMemberRepo, contactService, membershipSyncHandler)
   })
 
-  it('syncGroupMembers links lid and pn if both exist', async () => {
-    contactService.getIdentityIdByJid.mockResolvedValue(1)
-    chatMemberRepo.upsertChatMember.mockResolvedValue({} as any)
+  it('syncGroupMembers ensures the chat then delegates to the batched handler without pruning', async () => {
+    const participants = [{ id: 'user@lid', lid: 'user@lid', phoneNumber: 'user@s.whatsapp.net', admin: 'admin' as const }]
+    await service.syncGroupMembers('group@g.us', participants)
 
-    await service.syncGroupMembers('group@g.us', [
-      { id: 'user@lid', lid: 'user@lid', phoneNumber: 'user@s.whatsapp.net', admin: null }
-    ])
+    expect(chatMemberRepo.ensureChat).toHaveBeenCalledWith('group@g.us')
+    expect(membershipSyncHandler.syncMemberships).toHaveBeenCalledWith(
+      { 'group@g.us': { id: 'group@g.us', participants } },
+      { prune: false }
+    )
+  })
 
-    expect(contactService.linkLidAndPn).toHaveBeenCalledWith('user@lid', 'user@s.whatsapp.net', 'group.participant')
-    expect(chatMemberRepo.upsertChatMember).toHaveBeenCalledWith('group@g.us', 1, 'MEMBER')
+  it('syncGroupMembers skips empty lists and entries without id', async () => {
+    await service.syncGroupMembers('group@g.us', [{ id: '' }])
+    expect(membershipSyncHandler.syncMemberships).not.toHaveBeenCalled()
+  })
+
+  it('syncGroupMembers does not sync when the parent chat cannot be ensured', async () => {
+    chatMemberRepo.ensureChat.mockResolvedValue(false)
+    await service.syncGroupMembers('group@g.us', [{ id: 'a@s.whatsapp.net' }])
+    expect(membershipSyncHandler.syncMemberships).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['add', null],
+    ['demote', null],
+    ['promote', 'admin']
+  ] as const)('applyParticipantRoleChange(%s) maps to admin=%s in one batch', async (action, admin) => {
+    await service.applyParticipantRoleChange('group@g.us', ['a@s.whatsapp.net', 'b@lid'], action)
+    expect(membershipSyncHandler.syncMemberships).toHaveBeenCalledTimes(1)
+    expect(membershipSyncHandler.syncMemberships).toHaveBeenCalledWith(
+      { 'group@g.us': { id: 'group@g.us', participants: [{ id: 'a@s.whatsapp.net', admin }, { id: 'b@lid', admin }] } },
+      { prune: false }
+    )
   })
 
   it('linkGroupMetadataOwners links owner and descOwner LIDs and PNs', async () => {

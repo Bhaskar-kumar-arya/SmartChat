@@ -65,6 +65,7 @@ describe('ContactGroupSubscriber', () => {
 
     groupMembershipService = {
       syncGroupMembers: vi.fn().mockResolvedValue(undefined),
+      applyParticipantRoleChange: vi.fn().mockResolvedValue(undefined),
       linkGroupMetadataOwners: vi.fn().mockResolvedValue(undefined)
     }
 
@@ -113,14 +114,29 @@ describe('ContactGroupSubscriber', () => {
     expect(groupMembershipService.syncGroupMembers as any).toHaveBeenCalledWith('group@g.us', expect.any(Array) as any)
   })
 
-  it('should handle group:participants (add)', async () => {
-    contactService.getIdentityIdByJid.mockResolvedValue(1)
+  it.each(['add', 'promote', 'demote'] as const)('group:participants (%s) goes through the batched service', async (action) => {
     const event: GroupParticipantsEvent = {
       id: 'group@g.us',
-      participants: ['newuser@s.whatsapp.net'],
-      action: 'add'
+      participants: ['a@s.whatsapp.net', 'b@lid'],
+      action
     } as any
     await bus.emit('group:participants', event)
-    expect(chatMemberRepository.upsertChatMember).toHaveBeenCalledWith('group@g.us', 1, 'MEMBER')
+    expect(groupMembershipService.applyParticipantRoleChange).toHaveBeenCalledWith(
+      'group@g.us',
+      ['a@s.whatsapp.net', 'b@lid'],
+      action
+    )
+    expect(chatMemberRepository.upsertChatMember).not.toHaveBeenCalled()
+  })
+
+  it('group:participants (remove) deletes each resolved member', async () => {
+    contactService.getIdentityIdByJid.mockResolvedValue(1)
+    await bus.emit('group:participants', {
+      id: 'group@g.us',
+      participants: ['gone@s.whatsapp.net'],
+      action: 'remove'
+    } as any)
+    expect(chatMemberRepository.deleteChatMember).toHaveBeenCalledWith('group@g.us', 1)
+    expect(groupMembershipService.applyParticipantRoleChange).not.toHaveBeenCalled()
   })
 })

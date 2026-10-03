@@ -5,6 +5,7 @@ export interface ChatMemberWithIdentity extends ChatMember {
 }
 
 export interface IChatMemberRepository {
+  ensureChat(chatJid: string): Promise<boolean>
   upsertChatMember(chatJid: string, identityId: number, role: string): Promise<ChatMember | null>
   deleteChatMember(chatJid: string, identityId: number): Promise<ChatMember | null>
   findChatMembers(chatJid: string): Promise<ChatMemberWithIdentity[]>

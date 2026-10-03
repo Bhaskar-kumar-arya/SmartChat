@@ -1,5 +1,6 @@
 import { IGroupMembershipService } from './IGroupMembershipService'
 import { IContactMutationService, IContactQueryService } from '../contacts/IContactService'
+import { IMembershipSyncHandler } from './sync/IMembershipSyncHandler'
 import { IChatMemberRepository } from './IChatMemberRepository'
 import { cleanJid } from '../../utils/jidUtils'
 import { ChatUpdatePayload } from '../whatsapp/types'
@@ -7,11 +8,13 @@ import { ChatUpdatePayload } from '../whatsapp/types'
 export class GroupMembershipService implements IGroupMembershipService {
   constructor(
     private readonly chatMemberRepository: IChatMemberRepository,
-    private readonly contactService: IContactMutationService & IContactQueryService
+    private readonly contactService: IContactMutationService & IContactQueryService,
+    private readonly membershipSyncHandler: IMembershipSyncHandler
   ) {}
 
   /**
-   * Syncs group participants into the ChatMember table.
+   * Syncs live participants into ChatMember through the same batched, deduped path as full-sync
+   * hydration. Live lists are deltas, so absent members are never pruned.
    */
   async syncGroupMembers(
     chatJid: string,
@@ -23,76 +26,31 @@ export class GroupMembershipService implements IGroupMembershipService {
     }>
   ): Promise<void> {
     const cleanedChatJid = cleanJid(chatJid)
-    
-    // Pre-parse and normalize participant JIDs
-    const parsedParticipants = participants
-      .map(p => {
-        if (!p.id) return null
-        const rawId = cleanJid(p.id)
-        const lid = rawId.endsWith('@lid') ? rawId : (p.lid ? cleanJid(p.lid) : null)
-        const pn = p.phoneNumber ? cleanJid(p.phoneNumber) : null
-        return {
-          id: rawId,
-          lid,
-          pn,
-          admin: p.admin
-        }
-      })
-      .filter((p): p is NonNullable<typeof p> => p !== null)
+    const usable = participants.filter((p) => !!p.id)
+    if (usable.length === 0) return
 
-    if (parsedParticipants.length === 0) return
-
-    // Batched pre-fetch of all identity IDs for clean JIDs
-    const allQueryJids: string[] = []
-    for (const p of parsedParticipants) {
-      if (p.pn) allQueryJids.push(p.pn)
-      if (p.lid) allQueryJids.push(p.lid)
-      allQueryJids.push(p.id)
+    // The batched writer inserts ChatMember rows directly, so the FK parent must exist.
+    if (!(await this.chatMemberRepository.ensureChat(cleanedChatJid))) {
+      console.error(`[GroupMembershipService] cannot create/find chat ${cleanedChatJid}; skipping member sync`)
+      return
     }
-    await this.contactService.batchGetIdentityIds(allQueryJids)
 
-    let count = 0
-    for (const p of parsedParticipants) {
-      if (++count % 5 === 0) {
-        await new Promise(r => setImmediate(r))
-      }
+    await this.membershipSyncHandler.syncMemberships(
+      { [cleanedChatJid]: { id: cleanedChatJid, participants: usable } },
+      { prune: false }
+    )
+  }
 
-      // 1. If we have both LID and phone number, link them.
-      if (p.lid && p.pn) {
-        await this.contactService.linkLidAndPn(p.lid, p.pn, 'group.participant').catch((err) => {
-          console.error('[GroupMembershipService] Failed to link group participant LID and PN:', err)
-        })
-      }
-
-      // 2. Look up identity (pre-fetched or cached)
-      let identityId = p.pn
-        ? await this.contactService.getIdentityIdByJid(p.pn)
-        : null
-      if (!identityId && p.lid) {
-        identityId = await this.contactService.getIdentityIdByJid(p.lid)
-      }
-      if (!identityId) {
-        identityId = await this.contactService.getIdentityIdByJid(p.id)
-      }
-
-      // 3. Still not found — create a minimal contact
-      if (!identityId) {
-        const contactId = p.pn ?? p.lid ?? p.id
-        await this.contactService.upsertContact({ id: contactId, ...(p.lid && p.pn ? { lid: p.lid } : {}) }).catch((err) => {
-          console.error('[GroupMembershipService] Failed to upsert group participant contact:', err)
-        })
-        identityId = p.pn
-          ? await this.contactService.getIdentityIdByJid(p.pn)
-          : await this.contactService.getIdentityIdByJid(p.id)
-      }
-
-      if (identityId) {
-        const role = p.admin === 'superadmin' ? 'SUPERADMIN' : (p.admin === 'admin' ? 'ADMIN' : 'MEMBER')
-        await this.chatMemberRepository.upsertChatMember(cleanedChatJid, identityId, role).catch((err) => {
-          console.error('[GroupMembershipService] Failed to upsert chat member:', err)
-        })
-      }
-    }
+  async applyParticipantRoleChange(
+    chatJid: string,
+    jids: string[],
+    action: 'add' | 'promote' | 'demote'
+  ): Promise<void> {
+    const admin = action === 'promote' ? 'admin' : null
+    await this.syncGroupMembers(
+      chatJid,
+      jids.map((id) => ({ id, admin }))
+    )
   }
 
   /**

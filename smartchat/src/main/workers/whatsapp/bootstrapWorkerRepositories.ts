@@ -122,7 +122,8 @@ export function bootstrapWorkerRepositories(
   )
 
   // Chat/Group Services
-  const groupMembershipService = new GroupMembershipService(chatMemberRepository, contactService)
+  const membershipSyncHandler = new MembershipSyncHandler(syncRepository, contactService)
+  const groupMembershipService = new GroupMembershipService(chatMemberRepository, contactService, membershipSyncHandler)
   const chatService = new ChatService(
     chatRepository,
     communityRepository,
@@ -203,7 +204,6 @@ export function bootstrapWorkerRepositories(
   // Sync / Hydration Orchestration
   const communitySyncHandler = new CommunitySyncHandler(syncRepository)
   const chatSyncHandler = new ChatSyncHandler(syncRepository)
-  const membershipSyncHandler = new MembershipSyncHandler(syncRepository, contactService)
 
   const groupHydrationService = new GroupHydrationService(
     communitySyncHandler,

@@ -205,7 +205,8 @@ export function createServices(
     strategies
   )
   const identityReconciliationService = new IdentityReconciliationService(identityRepository, lidMapRepository, contactService)
-  const groupMembershipService = new GroupMembershipService(chatMemberRepository, contactService)
+  const membershipSyncHandler = new MembershipSyncHandler(syncRepository, contactService)
+  const groupMembershipService = new GroupMembershipService(chatMemberRepository, contactService, membershipSyncHandler)
   const embeddingWorkerManager = new EmbeddingWorkerManager({
     workerPath: path.join(__dirname, 'embedding.worker.js'),
     modelCacheDir: path.join(app.getPath('userData'), 'models'),
@@ -231,7 +232,6 @@ export function createServices(
   const chatActionService = new ChatActionService(chatService)
   const communitySyncHandler = new CommunitySyncHandler(syncRepository)
   const chatSyncHandler = new ChatSyncHandler(syncRepository)
-  const membershipSyncHandler = new MembershipSyncHandler(syncRepository, contactService)
   const groupHydrationService = new GroupHydrationService(
     communitySyncHandler,
     chatSyncHandler,

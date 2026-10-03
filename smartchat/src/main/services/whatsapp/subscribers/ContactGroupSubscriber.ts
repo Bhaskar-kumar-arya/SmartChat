@@ -130,29 +130,25 @@ export class ContactGroupSubscriber implements IWAEventSubscriber {
     const cleanGroupId = cleanJid(id)
     if (!cleanGroupId || !participants) return
 
+    if (action === 'add' || action === 'promote' || action === 'demote') {
+      const cleanJids = participants.map((jid) => cleanJid(jid)).filter(Boolean)
+      await this.groupMembershipService
+        .applyParticipantRoleChange(cleanGroupId, cleanJids, action)
+        .catch((err) => {
+          console.error('[ContactGroupSubscriber] Failed to sync participants in onGroupParticipants:', err)
+        })
+      return
+    }
+
+    if (action !== 'remove') return
+
     for (const jid of participants) {
       const cleanUserJid = cleanJid(jid)
-      let identityId = await this.contactService.getIdentityIdByJid(cleanUserJid)
-
-      if (!identityId) {
-        await this.contactService.upsertContact({ id: cleanUserJid }).catch((err) => {
-          console.error('[ContactGroupSubscriber] Failed to upsert contact in onGroupParticipants:', err)
-        })
-        identityId = await this.contactService.getIdentityIdByJid(cleanUserJid)
-      }
-
+      const identityId = await this.contactService.getIdentityIdByJid(cleanUserJid)
       if (!identityId) continue
-
-      if (action === 'add' || action === 'promote' || action === 'demote') {
-        const role = action === 'promote' ? 'ADMIN' : 'MEMBER'
-        await this.chatMemberRepository.upsertChatMember(cleanGroupId, identityId, role).catch((err) => {
-          console.error('[ContactGroupSubscriber] Failed to upsert ChatMember in onGroupParticipants:', err)
-        })
-      } else if (action === 'remove') {
-        await this.chatMemberRepository.deleteChatMember(cleanGroupId, identityId).catch((err) => {
-          console.error('[ContactGroupSubscriber] Failed to delete ChatMember in onGroupParticipants:', err)
-        })
-      }
+      await this.chatMemberRepository.deleteChatMember(cleanGroupId, identityId).catch((err) => {
+        console.error('[ContactGroupSubscriber] Failed to delete ChatMember in onGroupParticipants:', err)
+      })
     }
   }
 }

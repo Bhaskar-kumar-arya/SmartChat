@@ -13,7 +13,8 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
   /**
    * Synchronizes memberships and links/identities for a batch of groups.
    */
-  async syncMemberships(groups: Record<string, BaileysGroupMetadata>): Promise<void> {
+  async syncMemberships(groups: Record<string, BaileysGroupMetadata>, options: { prune?: boolean } = {}): Promise<void> {
+    const prune = options.prune ?? true
     const groupKeys = Object.keys(groups)
     if (groupKeys.length === 0) return
 
@@ -284,8 +285,10 @@ export class MembershipSyncHandler implements IMembershipSyncHandler {
       ids.push(m.identityId)
       keepByGroup.set(m.chatJid, ids)
     }
-    for (const [chatJid, keepIds] of keepByGroup) {
-      await this.syncRepository.deleteMembersNotIn(chatJid, keepIds)
+    if (prune) {
+      for (const [chatJid, keepIds] of keepByGroup) {
+        await this.syncRepository.deleteMembersNotIn(chatJid, keepIds)
+      }
     }
 
     this.contactService.populateIdentityIdCache(warmedCacheEntries)
