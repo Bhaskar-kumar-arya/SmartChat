@@ -610,3 +610,22 @@
   opacity: 0.6;
   pointer-events: none;
 }
+
+/* Non-blocking banner shown over the chat UI while a reconnect catches up (F-UA-3) */
+.reconnect-banner {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--wa-primary-dark, #00a884);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}

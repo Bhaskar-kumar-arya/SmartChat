@@ -15,6 +15,8 @@ export interface ConnectionState {
   syncType: number
   isRegeneratingQr: boolean
   sessionReplaced: boolean
+  /** True while a transient reconnect/catch-up runs after `ready`; the UI stays mounted. */
+  reconnecting: boolean
 }
 
 export type ConnectionAction =
@@ -33,17 +35,29 @@ export const initialConnectionState: ConnectionState = {
   syncStatus: INITIAL_SYNC_STATUS,
   syncType: 0,
   isRegeneratingQr: false,
-  sessionReplaced: false
+  sessionReplaced: false,
+  reconnecting: false
 }
 
 export function connectionReducer(state: ConnectionState, action: ConnectionAction): ConnectionState {
   switch (action.type) {
     case 'qr':
-      return { ...state, qr: action.qr, isRegeneratingQr: false, phase: 'qr' }
+      return {
+        ...state,
+        qr: action.qr,
+        isRegeneratingQr: false,
+        phase: 'qr',
+        sessionReplaced: false,
+        reconnecting: false
+      }
     case 'connected':
+      // Once ready, a (re)connect must not tear the chat UI down: keep `ready` and flag it.
+      if (state.phase === 'ready') {
+        return { ...state, qr: null, sessionReplaced: false, reconnecting: true }
+      }
       return action.isCatchup
-        ? { ...state, qr: null, phase: 'connected' }
-        : { ...state, qr: null, phase: 'syncing', syncProgress: 0 }
+        ? { ...state, qr: null, phase: 'connected', sessionReplaced: false }
+        : { ...state, qr: null, phase: 'syncing', syncProgress: 0, sessionReplaced: false }
     case 'loggedOut':
       return {
         ...state,
@@ -51,7 +65,9 @@ export function connectionReducer(state: ConnectionState, action: ConnectionActi
         phase: 'initializing',
         syncProgress: 0,
         syncType: 0,
-        syncStatus: INITIAL_SYNC_STATUS
+        syncStatus: INITIAL_SYNC_STATUS,
+        sessionReplaced: false,
+        reconnecting: false
       }
     case 'sessionReplaced':
       return {
@@ -60,15 +76,18 @@ export function connectionReducer(state: ConnectionState, action: ConnectionActi
         syncProgress: 0,
         syncType: 0,
         sessionReplaced: true,
+        reconnecting: false,
         phase: 'initializing',
         syncStatus: SESSION_REPLACED_STATUS
       }
     case 'syncProgress':
+      // A late progress event after `ready` must not drop back to the sync screen.
+      if (state.phase === 'ready') return state
       return { ...state, syncProgress: action.progress, syncType: action.syncType, phase: 'syncing' }
     case 'syncStatus':
       return { ...state, syncStatus: action.status }
     case 'syncComplete':
-      return { ...state, syncProgress: 100, phase: 'ready' }
+      return { ...state, syncProgress: 100, phase: 'ready', sessionReplaced: false, reconnecting: false }
   }
 }
 

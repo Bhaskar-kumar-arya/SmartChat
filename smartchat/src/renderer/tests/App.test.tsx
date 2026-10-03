@@ -1,8 +1,8 @@
 /**
  * N-08 characterization of the App connection state machine (R-UIAPP-08 safety net).
  * States: initializing | qr | connected (catch-up) | syncing | ready, plus sessionReplaced.
- * B-UIAPP-04 (a reconnect after `ready` tears the whole UI down) is pinned `it.fails`
- * and flips with F-UA-3.
+ * F-UA-3 (B-UIAPP-04): `ready` survives reconnect and late sync-progress events; a banner
+ * shows while reconnecting; sessionReplaced clears on qr/connect/logout/syncComplete.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useEffect } from 'react'
@@ -215,28 +215,7 @@ describe('App connection states', () => {
       expect(screen.getByText('Initializing connection...')).toBeInTheDocument()
     })
 
-    // Current behaviour (also part of B-UIAPP-04's blast radius): any sync progress after
-    // `ready` drops back to the sync screen and unmounts the layout.
-    it('a late onWaSyncProgress after ready leaves the layout for the sync screen', () => {
-      renderApp()
-      goReady()
-      api.emit.waSyncProgress({ progress: 10, syncType: 3, syncFullHistory: false })
-      expect(screen.queryByTestId('chat-layout')).toBeNull()
-      expect(screen.getByText('10%')).toBeInTheDocument()
-    })
-
-    // B-UIAPP-04: a transient reconnect after `ready` currently tears down the whole UI.
-    it('B-UIAPP-04 (current behaviour): waConnected{isCatchup} after ready unmounts ChatLayout', () => {
-      renderApp()
-      goReady()
-      expect(layoutLifecycle.mounts).toBe(1)
-      api.emit.waConnected({ isCatchup: true })
-      expect(screen.queryByTestId('chat-layout')).toBeNull()
-      expect(screen.getByText('Reconnecting and catching up on missed messages…')).toBeInTheDocument()
-      expect(layoutLifecycle.unmounts).toBe(1)
-    })
-
-    it.fails('B-UIAPP-04: a reconnect after ready keeps ChatLayout mounted (open chat/draft survive)', () => {
+    it('B-UIAPP-04: a reconnect after ready keeps ChatLayout mounted (open chat/draft survive)', () => {
       renderApp()
       goReady()
       api.emit.waConnected({ isCatchup: true })
@@ -244,7 +223,7 @@ describe('App connection states', () => {
       expect(layoutLifecycle.unmounts).toBe(0)
     })
 
-    it.fails('F-UA-3: a late onWaSyncProgress after ready keeps ChatLayout mounted', () => {
+    it('F-UA-3: a late onWaSyncProgress after ready keeps ChatLayout mounted', () => {
       renderApp()
       goReady()
       api.emit.waSyncProgress({ progress: 10, syncType: 3, syncFullHistory: false })
@@ -252,7 +231,7 @@ describe('App connection states', () => {
       expect(layoutLifecycle.unmounts).toBe(0)
     })
 
-    it.fails('F-UA-3: a non-catch-up waConnected after ready keeps ChatLayout mounted', () => {
+    it('F-UA-3: a non-catch-up waConnected after ready keeps ChatLayout mounted', () => {
       renderApp()
       goReady()
       api.emit.waConnected({})
@@ -260,7 +239,7 @@ describe('App connection states', () => {
       expect(layoutLifecycle.unmounts).toBe(0)
     })
 
-    it.fails('F-UA-3: a reconnect after ready shows a non-blocking banner until syncComplete', () => {
+    it('F-UA-3: a reconnect after ready shows a non-blocking banner until syncComplete', () => {
       renderApp()
       goReady()
       expect(screen.queryByRole('status')).toBeNull()
@@ -271,13 +250,31 @@ describe('App connection states', () => {
       expect(layoutLifecycle.mounts).toBe(1)
     })
 
-    it('after a reconnect the layout is mounted afresh once syncComplete fires again', () => {
+    it('a logout during a reconnect clears the banner and the next syncComplete does not re-show it', () => {
       renderApp()
       goReady()
       api.emit.waConnected({ isCatchup: true })
+      api.emit.waLoggedOut()
+      expect(screen.getByText('Initializing connection...')).toBeInTheDocument()
+      expect(screen.queryByRole('status')).toBeNull()
       api.emit.waSyncComplete()
-      expect(screen.getByTestId('chat-layout')).toBeInTheDocument()
-      expect(layoutLifecycle.mounts).toBe(2)
+      expect(screen.queryByRole('status')).toBeNull()
+    })
+
+    it('a late onWaSyncProgress after ready does not show the reconnect banner', () => {
+      renderApp()
+      goReady()
+      api.emit.waSyncProgress({ progress: 10, syncType: 3, syncFullHistory: false })
+      expect(screen.queryByRole('status')).toBeNull()
+    })
+
+    it('a QR after ready (re-auth needed) leaves the layout for the QR screen', () => {
+      renderApp()
+      goReady()
+      api.emit.waConnected({ isCatchup: true })
+      api.emit.waQr('again')
+      expect(screen.getByTestId('qr')).toBeInTheDocument()
+      expect(screen.queryByRole('status')).toBeNull()
     })
   })
 
@@ -306,30 +303,6 @@ describe('App connection states', () => {
       api.emit.waSessionReplaced()
       fireEvent.click(screen.getByText('Reconnect this device →'))
       expect(reload).toHaveBeenCalledTimes(1)
-    })
-
-    // Current behaviour: the flag is never cleared, so a later logout still offers the button.
-    it('the sessionReplaced flag survives a later logout (never cleared)', () => {
-      renderApp()
-      api.emit.waSessionReplaced()
-      api.emit.waLoggedOut()
-      expect(screen.getByText('Initializing connection...')).toBeInTheDocument()
-      expect(screen.getByText('Reconnect this device →')).toBeInTheDocument()
-    })
-
-    it.fails('F-UA-3: a later logout clears sessionReplaced (no stale reconnect button)', () => {
-      renderApp()
-      api.emit.waSessionReplaced()
-      api.emit.waLoggedOut()
-      expect(screen.queryByText('Reconnect this device →')).toBeNull()
-    })
-
-    it.fails('F-UA-3: a new connection after replacement clears sessionReplaced', () => {
-      renderApp()
-      api.emit.waSessionReplaced()
-      api.emit.waConnected({ isCatchup: true })
-      api.emit.waLoggedOut()
-      expect(screen.queryByText('Reconnect this device →')).toBeNull()
     })
 
     it('a QR after replacement shows the QR screen (flag stays set but is not rendered there)', () => {

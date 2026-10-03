@@ -15,7 +15,8 @@ export function App() {
     syncStatus,
     syncType,
     isRegeneratingQr,
-    sessionReplaced
+    sessionReplaced,
+    reconnecting
   } = useConnectionState()
 
   // Define steps (placed before any early returns to satisfy React Hook rules)
@@ -54,6 +55,12 @@ export function App() {
   if (appState === 'ready') {
     return (
       <>
+        {reconnecting && (
+          <div className="reconnect-banner" role="status">
+            <Loader2 className="animate-spin" size={14} />
+            <span>Reconnecting and catching up on missed messages…</span>
+          </div>
+        )}
         <ChatLayout />
         <ModalPortal />
       </>

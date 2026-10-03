@@ -16,7 +16,7 @@
     "@typescript-eslint/no-unused-vars": 66,
     "no-empty": 18,
     "prefer-const": 8,
-    "react-hooks/exhaustive-deps": 21,
+    "react-hooks/exhaustive-deps": 20,
     "react-hooks/immutability": 2,
     "react-hooks/preserve-manual-memoization": 1,
     "react-hooks/refs": 5,
