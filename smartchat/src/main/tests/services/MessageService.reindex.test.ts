@@ -96,4 +96,20 @@ describe('MessageService — re-index & reaction persistence', () => {
     expect(reactionRepository.upsertReaction).toHaveBeenCalledWith('target-2', 55, '❤️', expect.any(BigInt))
     expect(busEmit).toHaveBeenCalledWith('reaction:processed', expect.objectContaining({ senderId: 55 }))
   })
+
+  it('F-MSG-5: processReaction resolves fromMe reactions via resolveMeSenderId and normalises ms timestamps to seconds', async () => {
+    identityResolver.resolveMeSenderId.mockResolvedValue(7)
+    const update = {
+      key: { id: 'target-3' },
+      reaction: { key: { id: 'r3', remoteJid: 'c@s.whatsapp.net', fromMe: true }, text: '', senderTimestampMs: 1700000000000 }
+    }
+    await service.processReaction(update, { user: { id: 'me' } })
+
+    expect(identityResolver.resolveMeSenderId).toHaveBeenCalled()
+    expect(identityResolver.resolveSenderId).not.toHaveBeenCalled()
+    expect(reactionRepository.upsertReaction).toHaveBeenCalledWith('target-3', 7, '', 1700000000n)
+    expect(busEmit).toHaveBeenCalledWith('reaction:processed', expect.objectContaining({
+      senderId: 7, fromMe: true, messageType: 'reactionMessage', timestamp: '1700000000'
+    }))
+  })
 })
