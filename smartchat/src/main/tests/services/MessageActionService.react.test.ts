@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MessageActionService } from '../../services/messages/MessageActionService'
+import { MessageIdentityResolver } from '../../services/messages/MessageIdentityResolver'
 
 /**
  * Characterization (F-MSG-5): reactToMessage sends via the socket, resolves the
@@ -29,7 +30,7 @@ describe('MessageActionService.reactToMessage', () => {
     sock = { sendMessage: vi.fn().mockResolvedValue({ key: {} }), user: { id: 'me:1@s.whatsapp.net' } }
 
     service = new MessageActionService(
-      {} as any, reactionRepo, queryRepo, identRepo, contactService, {} as any, {} as any, {} as any, () => null, {} as any
+      {} as any, reactionRepo, queryRepo, new MessageIdentityResolver(contactService, identRepo, {} as any), contactService, {} as any, {} as any, {} as any, () => null, {} as any
     )
   })
 

@@ -1,5 +1,5 @@
 import { IContactNameResolver, IContactQueryService } from '../contacts/IContactService'
-import { IIdentityRepository } from '../contacts/IIdentityRepository'
+import { IMessageIdentityResolver } from './IMessageIdentityResolver'
 import { IMessageProcessingService } from './IMessageProcessingService'
 import { IMessageQueryService } from './IMessageQueryService'
 import { IMessageWriteRepository } from './IMessageRepository'
@@ -30,7 +30,7 @@ export class MessageActionService implements IMessageActionService {
     private readonly messageRepository: IMessageWriteRepository & IMessageCompoundRepository,
     private readonly reactionRepository: IReactionRepository,
     private readonly messageQueryRepository: IMessageReadRepository,
-    private readonly identityRepository: IIdentityRepository,
+    private readonly identityResolver: IMessageIdentityResolver,
     private readonly contactService: IContactNameResolver & IContactQueryService,
     private readonly messageProcessingService: IMessageProcessingService,
     private readonly messageQueryService: IMessageQueryService,
@@ -242,25 +242,6 @@ export class MessageActionService implements IMessageActionService {
     };
   }
 
-  private async resolveReactorId(sock: IMessageActionSocket): Promise<number> {
-    const meIdent = await this.identityRepository.findMeIdentity();
-    if (meIdent) return meIdent.id;
-
-    const myRawJid = sock?.user?.id;
-    const myJidClean = myRawJid ? myRawJid.split(':')[0] : null;
-    if (myJidClean) {
-      const reactorId = await this.contactService.getIdentityIdByJid(myJidClean);
-      if (reactorId) return reactorId;
-
-      const myLid = (sock?.user as unknown as { lid?: string })?.lid?.split(':')[0];
-      if (myLid) {
-        const reactorIdByLid = await this.contactService.getIdentityIdByJid(myLid);
-        if (reactorIdByLid) return reactorIdByLid;
-      }
-    }
-    throw new Error('Failed to resolve logged-in user identity to record the reaction');
-  }
-
   private async updateReactionDb(messageId: string, reactorId: number, reaction: string): Promise<void> {
     const timestamp = BigInt(Math.floor(Date.now() / 1000));
     if (!reaction) {
@@ -302,7 +283,8 @@ export class MessageActionService implements IMessageActionService {
 
     if (!result) throw new Error('Failed to send reaction via WhatsApp socket');
 
-    const reactorId = await this.resolveReactorId(sock);
+    const reactorId = await this.identityResolver.resolveMeSenderId(sock);
+    if (!reactorId) throw new Error('Failed to resolve logged-in user identity to record the reaction');
     await this.updateReactionDb(messageId, reactorId, reaction);
 
     return {
