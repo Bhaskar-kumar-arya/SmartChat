@@ -20,7 +20,7 @@ const key = { id: 'm1', remoteJid: '123@s.whatsapp.net', fromMe: false }
 const names = (emit: ReturnType<typeof vi.fn>): string[] => emit.mock.calls.map((c) => c[0] as string)
 
 describe('WAEventHandler messages.update edit handling', () => {
-  it.fails('does not emit message:decrypted for an editedMessage echo', async () => {
+  it('does not emit message:decrypted for an editedMessage echo', async () => {
     const { handler, emit } = makeHandler()
     await handler.handleMessagesUpdate(
       [{ key, update: { message: { editedMessage: { message: { conversation: 'new text' } } } } }],
