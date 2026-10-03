@@ -7,8 +7,8 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: KHOST (F-KRN-2). In flight (batch 4): F-KRN-2, F-UA-3, F-DATA-3 (F-MSG-3 merged). Integration branch = claude/hopeful-johnson-ysujzy; owner also approved direct push to main.
-- Baseline: typecheck ✅ · vitest 270 files / 1756 passed / 8 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (no change)
+- Locks held: none; nothing in flight. Batch 4 (F-KRN-2, F-MSG-3, F-UA-3, F-DATA-3) MERGED; awaiting owner direction. Integration branch = claude/hopeful-johnson-ysujzy; owner approved direct push to main.
+- Baseline: typecheck ✅ · vitest 272 files / 1816 passed / 7 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (exhaustive-deps 20, unused-vars 65)
 
 ## Owner smoke queue (🔎)
 3. (S-02) Dev/packaged Electron: an AI chat executeScript call (e.g. queryDatabase) returns results + logs; a `while(true){}` script leaves the app responsive and times out (~60s). Child is spawned via process.execPath -e with ELECTRON_RUN_AS_NODE=1: untested under real Electron.
@@ -34,6 +34,10 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 18. (F-AI-4, optional) AI sidebar + a no-permission tool, prompt that loops tool calls: stops after 25 consecutive auto turns, silently; a new user message works again. (F-UA-2, optional) Approve a slow tool, switch AI chat session before it returns: nothing appears in the new session, spinner clears.
 
 19. (F-MSG-3) Log out/in with a full-history sync on a test account: message counts match; edited replies keep quote + new text; deleted messages stay deleted; no edit reverts to original text.
+
+20. (F-UA-3) Log in, open a chat, type a draft. Cut network / sleep+wake: chat, scroll and draft survive; 'Reconnecting and catching up…' pill appears and clears on sync complete. A late wa-sync-progress must not return you to the sync screen. Open the account elsewhere: replaced message + 'Reconnect this device →'; after fresh login/QR the button is gone. Logout from chat UI: initializing screen, no stale banner. First-time login looks as before.
+21. (F-KRN-2) Install a .scext that throws in activate: install errors, plugin listed as not loaded (error only in extension:list payload; UI doesn't show it). Reinstall a newer version of a running plugin: new code runs, manifest perms match. Double-click Install: single worker. Uninstall+reinstall same id: no old storage/grants carried over. Quit: no 10s hang.
+22. (F-DATA-3) In a real group add a member, promote/demote an admin, remove a member from the phone: member list, admin badges and mention menu update live; LID-only member makes no duplicate contact; a full sync still prunes departed members.
 
 ## Follow-ups inbox (triaged at each wave boundary)
 - (G-04) Gemini key `AIzaSy…YLRGd0` is in git history: OWNER must rotate it. Audit docs may have stale paths to moved `bug-audit*`; `.agents/skills/feature-and-bugfix/SKILL.md` mentions bug files; logger lives at `src/main/utils/logger.ts` (relocate if a shared dir appears); `test:run` and `test:run:all` scripts are identical. Fold into Z-08 (docs).
@@ -126,14 +130,14 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | MERGED | 21bbcf7 |
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | MERGED | e8b1d9f |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | MERGED | b5fc5a9 |
-| F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | IN PROGRESS | |
+| F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | MERGED | |
 | F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | MERGED | 69955ab |
 | F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | MERGED | ae1a3c8 |
 | F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | MERGED | c205617 |
 | F-AI-4 | W2 · AI | Tool-loop turn cap in the live loop | N-08 | – | MERGED | |
 | F-AI-5 | W2 · AI | Preferences clobber + `set-ai-options` whitelist | W0 | IPC | MERGED | 07416a7 |
 | F-KRN-1 | W2 · KRN | Worker crash + SDK rejection hygiene | N-06 | KHOST | MERGED | 1843e24 |
-| F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | IN PROGRESS | |
+| F-KRN-2 | W2 · KRN | Resilient install/uninstall/load | F-KRN-1, H-06 | KHOST | MERGED | |
 | F-KRN-3 | W2 · KRN | Overlay lifecycle per plugin | F-KRN-2 | KHOST | WAITING | |
 | F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | MERGED | f3d493f |
 | F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | MERGED | ba3b988 |
@@ -143,7 +147,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-UC-3 | W2 · UC | Composer/markdown/error toasts | N-07 | – | MERGED | 7567cd3 |
 | F-UA-1 | W2 · UA | Small renderer bug batch | N-07 | – | MERGED | 0b74c4a |
 | F-UA-2 | W2 · UA | useAIStream session guard | N-08 | – | MERGED | |
-| F-UA-3 | W2 · UA | useConnectionState reducer 🔎 | N-08 | – | IN PROGRESS | |
+| F-UA-3 | W2 · UA | useConnectionState reducer 🔎 | N-08 | – | MERGED | |
 | C-01 | W3 · APP | Shared typed IPC contract (types only) | N-05, F-UC-1, F-AI-3, F-AI-5, F-APP-2 | IPC | WAITING | |
 | C-02 | W3 · APP | Typed registration; split ipcHandlers | C-01 | IPC | WAITING | |
 | C-03 | W3 · APP | Typed preload + IAPIService + typed mock | C-02 | PRELOAD | WAITING | |
@@ -214,3 +218,4 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | R-SOLID-M-15 | W5 | Typed stored-message content | R-MSG-08, R-SOLID-M-07, R-SOLID-M-08 | MSGREPO | WAITING | |
 - (batch 3) (F-AI-4) cap stops silently (consider a visible 'tool turn limit reached' message); only auto-executed turns count; cap duplicated (renderer MAX_TOOL_TURNS 25 vs AIService MAX_TOOL_TURNS_CAP 25) → unify in R-SOLID-R-09. (F-UA-2) stale stream chunks still write streamingBuffers by message id (harmless); tool result for the old session is dropped, not persisted; tool finishing after unmount still runs post-await path. (F-MSG-2) UIBroadcastSubscriber.onDecrypted / decryptMessage echo handling now dead for live edits (simplify after MSGREPO free); WAEventHandler handlers still console.log; echo-only edits unverified against Baileys. (H-05) `will-quit` still app.exit(0); createWindow re-registers ready-to-show→setWindow on activate (relies on isWaConnected guard); dup window-open handler → D-05/R-APP-09.
 - (F-MSG-3) PARTIAL: R-MSG-04's SyncMessagesHandler explicit targetId (edit/revoke rows keep target id instead of overwriting id) and MessageService in-batch dedupe not done (covered meanwhile by foldSyncRows; SyncMessagesHandler is not locked → fold into F-MSG-5/R-MSG-08 or a small unit). Fold ignores incoming edit timestamp; insertNewMessages still has per-row upsert fallback + console.error (R-SOLID-M-13). MSGREPO lock released.
+- (batch 4) (F-UA-3) `reconnecting` banner never clears if worker sends wa-connected after ready but no sync-complete (renderer has no 60s safety timeout) → check worker catch-up flow; banner CSS minimal (design pass); behaviour change: ready now survives reconnect with a non-blocking banner. (F-KRN-2) CONTRACT additive: extension:list entries gain optional `error`; PluginLoader ctor optional 3rd param; Extensions UI should render `error` (ExtensionCard); KernelAPIRouter.attachChannel detach is still a no-op; extension:install rejection still unstructured; extension:uninstall swallows unload errors; KernelEventsModule/OverlayHost cleanup only via unload hook (F-KRN-3). (F-DATA-3) ParticipantParser/IdentityResolutionPlan (R-DATA-05) still missing; WAEventHandler.handleGroupParticipantsUpdate drops phoneNumber/admin (needs WABRIDGE unit); PN identity from batched path gets no PN alias row (F-DATA-2 gap); DI ctor edit: GroupMembershipService now takes membershipSyncHandler as 3rd arg. (ops) never run vitest from two agents at once on the same machine (temp-file contamination); lock KHOST released.
