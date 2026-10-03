@@ -244,6 +244,33 @@ describe('App connection states', () => {
       expect(layoutLifecycle.unmounts).toBe(0)
     })
 
+    it.fails('F-UA-3: a late onWaSyncProgress after ready keeps ChatLayout mounted', () => {
+      renderApp()
+      goReady()
+      api.emit.waSyncProgress({ progress: 10, syncType: 3, syncFullHistory: false })
+      expect(screen.getByTestId('chat-layout')).toBeInTheDocument()
+      expect(layoutLifecycle.unmounts).toBe(0)
+    })
+
+    it.fails('F-UA-3: a non-catch-up waConnected after ready keeps ChatLayout mounted', () => {
+      renderApp()
+      goReady()
+      api.emit.waConnected({})
+      expect(screen.getByTestId('chat-layout')).toBeInTheDocument()
+      expect(layoutLifecycle.unmounts).toBe(0)
+    })
+
+    it.fails('F-UA-3: a reconnect after ready shows a non-blocking banner until syncComplete', () => {
+      renderApp()
+      goReady()
+      expect(screen.queryByRole('status')).toBeNull()
+      api.emit.waConnected({ isCatchup: true })
+      expect(screen.getByRole('status')).toHaveTextContent(/reconnecting/i)
+      api.emit.waSyncComplete()
+      expect(screen.queryByRole('status')).toBeNull()
+      expect(layoutLifecycle.mounts).toBe(1)
+    })
+
     it('after a reconnect the layout is mounted afresh once syncComplete fires again', () => {
       renderApp()
       goReady()
@@ -288,6 +315,21 @@ describe('App connection states', () => {
       api.emit.waLoggedOut()
       expect(screen.getByText('Initializing connection...')).toBeInTheDocument()
       expect(screen.getByText('Reconnect this device →')).toBeInTheDocument()
+    })
+
+    it.fails('F-UA-3: a later logout clears sessionReplaced (no stale reconnect button)', () => {
+      renderApp()
+      api.emit.waSessionReplaced()
+      api.emit.waLoggedOut()
+      expect(screen.queryByText('Reconnect this device →')).toBeNull()
+    })
+
+    it.fails('F-UA-3: a new connection after replacement clears sessionReplaced', () => {
+      renderApp()
+      api.emit.waSessionReplaced()
+      api.emit.waConnected({ isCatchup: true })
+      api.emit.waLoggedOut()
+      expect(screen.queryByText('Reconnect this device →')).toBeNull()
     })
 
     it('a QR after replacement shows the QR screen (flag stays set but is not rendered there)', () => {
