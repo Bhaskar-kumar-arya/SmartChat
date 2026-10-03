@@ -21,12 +21,11 @@ import {
  * Worker half: the `shutdown` command closes the socket and disconnects Prisma, then acks.
  */
 
-const tick = (): Promise<void> => vi.advanceTimersByTimeAsync(0)
+const tick = async (): Promise<void> => {
+  await vi.advanceTimersByTimeAsync(0)
+}
 
-// Pinned known bug (B-WA-09): flipped to plain `it` by the fix commit.
-const bug = it.fails
-
-const SHUTDOWN = { type: 'shutdown', correlationId: 's1' } as unknown as WorkerCommandMessage
+const SHUTDOWN: WorkerCommandMessage = { type: 'shutdown', correlationId: 's1' }
 
 describe('F-WA-3 bridge: stop() is graceful (B-WA-09)', () => {
   let bridge: WAWorkerBridge
@@ -47,10 +46,10 @@ describe('F-WA-3 bridge: stop() is graceful (B-WA-09)', () => {
     vi.restoreAllMocks()
   })
 
-  bug('posts a shutdown command and does not terminate until the worker acks', async () => {
+  it('posts a shutdown command and does not terminate until the worker acks', async () => {
     const stopped = bridge.stop()
     await tick()
-    const cmd = worker.commandOfType('shutdown' as WorkerCommandMessage['type'])
+    const cmd = worker.commandOfType('shutdown')
     expect(worker.terminate).not.toHaveBeenCalled()
     worker.reply(cmd.correlationId, { status: 'success' })
     await stopped
@@ -58,7 +57,7 @@ describe('F-WA-3 bridge: stop() is graceful (B-WA-09)', () => {
     expect(bridge.isRunning()).toBe(false)
   })
 
-  bug('terminates after a bounded timeout when the worker never acks', async () => {
+  it('terminates after a bounded timeout when the worker never acks', async () => {
     const stopped = bridge.stop()
     await tick()
     expect(worker.terminate).not.toHaveBeenCalled()
@@ -68,10 +67,10 @@ describe('F-WA-3 bridge: stop() is graceful (B-WA-09)', () => {
     expect(bridge.isRunning()).toBe(false)
   })
 
-  bug('terminates even if the worker answers shutdown with an error', async () => {
+  it('terminates even if the worker answers shutdown with an error', async () => {
     const stopped = bridge.stop()
     await tick()
-    worker.replyError(worker.commandOfType('shutdown' as WorkerCommandMessage['type']).correlationId, 'boom')
+    worker.replyError(worker.commandOfType('shutdown').correlationId, 'boom')
     await stopped
     expect(worker.terminate).toHaveBeenCalledTimes(1)
   })
@@ -95,13 +94,13 @@ describe('F-WA-3 bridge: stop() is graceful (B-WA-09)', () => {
     expect(bridge.isRunning()).toBe(false)
   })
 
-  bug('concurrent stop() calls shut the worker down once', async () => {
+  it('concurrent stop() calls shut the worker down once', async () => {
     const a = bridge.stop()
     const b = bridge.stop()
     await tick()
-    worker.reply(worker.commandOfType('shutdown' as WorkerCommandMessage['type']).correlationId, { status: 'success' })
+    worker.reply(worker.commandOfType('shutdown').correlationId, { status: 'success' })
     await Promise.all([a, b])
-    expect(worker.commands.filter((c) => (c.type as string) === 'shutdown')).toHaveLength(1)
+    expect(worker.commands.filter((c) => c.type === 'shutdown')).toHaveLength(1)
     expect(worker.terminate).toHaveBeenCalledTimes(1)
   })
 })
@@ -115,7 +114,15 @@ describe('F-WA-3 worker: shutdown command (R-WA-05)', () => {
   })
   afterEach(() => vi.restoreAllMocks())
 
-  function setup(disconnect: () => Promise<void> = async () => undefined) {
+  interface Harness {
+    router: WorkerCommandRouter
+    prisma: { $disconnect: ReturnType<typeof vi.fn> }
+    connectionManager: { shutdown: ReturnType<typeof vi.fn> }
+    order: string[]
+    init: () => Promise<void>
+  }
+
+  function setup(disconnect: () => Promise<void> = async () => undefined): Harness {
     const order: string[] = []
     const prisma = {
       $disconnect: vi.fn(async () => {
@@ -137,7 +144,7 @@ describe('F-WA-3 worker: shutdown command (R-WA-05)', () => {
       connectionManager as unknown as WorkerConnectionManager,
       bootstrap as unknown as ConstructorParameters<typeof WorkerCommandRouter>[1]
     )
-    const init = () =>
+    const init = (): Promise<void> =>
       router.handleCommand({
         type: 'init',
         correlationId: 'init-call',
@@ -148,7 +155,7 @@ describe('F-WA-3 worker: shutdown command (R-WA-05)', () => {
 
   const ack = { type: 'reply', correlationId: 's1', payload: { result: { status: 'success' } } }
 
-  bug('closes the connection, then disconnects Prisma, then acks success', async () => {
+  it('closes the connection, then disconnects Prisma, then acks success', async () => {
     const { router, prisma, connectionManager, order, init } = setup()
     await init()
     fakeParentPort.reset()
@@ -159,14 +166,14 @@ describe('F-WA-3 worker: shutdown command (R-WA-05)', () => {
     expect(fakeParentPort.posted).toEqual([ack])
   })
 
-  bug('before init (no prisma yet) still closes the connection and acks', async () => {
+  it('before init (no prisma yet) still closes the connection and acks', async () => {
     const { router, connectionManager } = setup()
     await router.handleCommand(SHUTDOWN)
     expect(connectionManager.shutdown).toHaveBeenCalledTimes(1)
     expect(fakeParentPort.posted).toEqual([ack])
   })
 
-  bug('a failing prisma.$disconnect is logged but still acks', async () => {
+  it('a failing prisma.$disconnect is logged but still acks', async () => {
     const { router, init } = setup(async () => {
       throw new Error('disconnect failed')
     })

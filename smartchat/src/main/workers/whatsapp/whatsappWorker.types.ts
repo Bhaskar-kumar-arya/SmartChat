@@ -57,6 +57,8 @@ export type WorkerCommandMessage =
   | { type: 'group_metadata'; correlationId: string; payload: { jid: string } }
   | { type: 'logout'; correlationId: string; payload?: undefined }
   | { type: 'skip_sync'; correlationId: string; payload?: undefined }
+  /** F-WA-3: close the socket + disconnect Prisma, then ack; the bridge terminates afterwards. */
+  | { type: 'shutdown'; correlationId: string; payload?: undefined }
   | { type: 'fetch_message_history'; correlationId: string; payload: WorkerFetchMessageHistoryPayload };
 
 export type WorkerEventMessage =

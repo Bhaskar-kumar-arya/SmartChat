@@ -403,17 +403,21 @@ describe('WAWorkerBridge contract (N-02)', () => {
       bridge.start(true, true)
       FakeWorker.last.domainEvent('connection.update', { creds: { me: { id: 'a' } } })
       expect(bridge.user).not.toBeNull()
-      await bridge.stop()
+      const stopped = bridge.stop()
+      FakeWorker.last.reply(FakeWorker.last.commandOfType('shutdown').correlationId, { status: 'success' })
+      await stopped
       expect(bridge.user).toBeNull()
     })
   })
 
   describe('lifecycle', () => {
-    it('stop() hard-terminates with no graceful shutdown command (B-WA-09 pinned)', async () => {
+    it('stop() sends a shutdown command, awaits the ack, then terminates (B-WA-09 fixed by F-WA-3)', async () => {
       started()
-      await bridge.stop()
+      const stopped = bridge.stop()
+      worker.reply(worker.commandOfType('shutdown').correlationId, { status: 'success' })
+      await stopped
       expect(worker.terminate).toHaveBeenCalledTimes(1)
-      expect(worker.commands.map((c) => c.type)).toEqual(['init'])
+      expect(worker.commands.map((c) => c.type)).toEqual(['init', 'shutdown'])
       expect(bridge.isRunning()).toBe(false)
     })
 

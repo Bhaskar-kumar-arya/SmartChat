@@ -17,6 +17,9 @@ import { IWindowEventEmitter } from './IWindowEventEmitter';
  */
 const COMMAND_TIMEOUT_MS = 30_000;
 
+/** How long `stop()` waits for the worker to ack `shutdown` before terminating it. */
+const SHUTDOWN_TIMEOUT_MS = 3_000;
+
 /**
  * WAWorkerBridge
  * ==============
@@ -35,6 +38,7 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
   /** True while `stop()` is intentionally terminating the worker — suppresses the
    *  unexpected-exit supervision path. */
   private stopping = false;
+  private stopPromise: Promise<void> | null = null;
   private unexpectedExitHandler: ((code: number) => void) | null = null;
   /**
    * Serialises `bus.emit(...)` calls across successive worker messages (S13-03).
@@ -217,13 +221,52 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
     } as WorkerCommandMessage);
   }
 
-  public async stop(): Promise<void> {
-    if (!this.worker) return;
+  /**
+   * Graceful stop (B-WA-09 / R-WA-05): ask the worker to close its socket and
+   * disconnect Prisma, wait for the ack for at most `SHUTDOWN_TIMEOUT_MS`, then
+   * terminate regardless. Concurrent calls share one shutdown.
+   */
+  public stop(): Promise<void> {
+    if (!this.worker) return Promise.resolve();
+    if (!this.stopPromise) {
+      this.stopPromise = this.performStop().finally(() => {
+        this.stopPromise = null;
+      });
+    }
+    return this.stopPromise;
+  }
+
+  private async performStop(): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
     console.log('[WAWorkerBridge] Stopping worker thread...');
     this.stopping = true;
-    await this.worker.terminate();
-    this.worker = null;
-    this.currentUser = null;
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ack = this.sendCommand('shutdown').then(
+      () => undefined,
+      (err: unknown) => {
+        console.warn('[WAWorkerBridge] Graceful shutdown did not complete cleanly:', err);
+      }
+    );
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        console.warn(`[WAWorkerBridge] Worker did not ack shutdown within ${SHUTDOWN_TIMEOUT_MS}ms; terminating.`);
+        resolve();
+      }, SHUTDOWN_TIMEOUT_MS);
+    });
+    try {
+      await Promise.race([ack, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+
+    try {
+      await worker.terminate();
+    } finally {
+      if (this.worker === worker) this.worker = null;
+      this.currentUser = null;
+    }
   }
 
   private async sendCommand<T>(type: string, payload?: unknown): Promise<T> {

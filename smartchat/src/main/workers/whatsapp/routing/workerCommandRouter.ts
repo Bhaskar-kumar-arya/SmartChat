@@ -16,6 +16,9 @@ const PROFILE_PICTURE_QUERY_TIMEOUT_MS = 15_000
  * or the bootstrapped services inside the worker thread.
  */
 export class WorkerCommandRouter {
+  /** Prisma client from `init`, kept so `shutdown` can disconnect it (R-WA-05). */
+  private prisma: PrismaClient | null = null
+
   constructor(
     private readonly connectionManager: WorkerConnectionManager,
     private readonly bootstrapPrismaAndRepos: (
@@ -32,6 +35,7 @@ export class WorkerCommandRouter {
           console.log(`[WhatsAppWorker] Initializing with dbPath: ${dbPath}, userDataPath: ${userDataPath}, syncFullHistory: ${syncFullHistory}, shouldSyncHistory: ${shouldSyncHistory}`)
 
           const { prisma, repos } = await this.bootstrapPrismaAndRepos(dbPath, userDataPath)
+          this.prisma = prisma
 
           this.connectionManager.setup(
             userDataPath,
@@ -174,6 +178,29 @@ export class WorkerCommandRouter {
         case 'logout': {
           const sock = this.getSocketOrThrow()
           await sock.logout()
+          parentPort?.postMessage({
+            type: 'reply',
+            correlationId: command.correlationId,
+            payload: { result: { status: 'success' } }
+          })
+          break
+        }
+
+        case 'shutdown': {
+          // Best-effort: every step is attempted and the ack is always sent so the
+          // bridge never has to wait out its timeout because of a cleanup failure.
+          try {
+            this.connectionManager.shutdown()
+          } catch (err) {
+            console.warn('[WhatsAppWorker] connectionManager.shutdown failed:', err)
+          }
+          try {
+            await this.prisma?.$disconnect()
+          } catch (err) {
+            console.warn('[WhatsAppWorker] prisma.$disconnect failed:', err)
+          }
+          this.prisma = null
+          console.log('[WhatsAppWorker] Shutdown complete')
           parentPort?.postMessage({
             type: 'reply',
             correlationId: command.correlationId,
