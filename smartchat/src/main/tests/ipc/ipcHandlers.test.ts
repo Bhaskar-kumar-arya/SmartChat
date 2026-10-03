@@ -156,6 +156,24 @@ describe('IPC handlers via recording ipcMain', () => {
       expect(embeddingService.clearAllVectors).toHaveBeenCalledTimes(1)
     })
 
+    it.fails('index-embeddings rejects (and sends no 100% progress) when indexing throws (B-APP-04 target)', async () => {
+      const embeddingService = {
+        setOnActiveStateSync: vi.fn(),
+        indexAll: vi.fn().mockRejectedValue(new Error('boom'))
+      }
+      const ipc = registerAllIpc({ services: { embeddingService } })
+      await expect(ipc.invoke('index-embeddings', trustedEvent)).rejects.toThrow('boom')
+    })
+
+    it.fails('clear-vectors rejects when clearing throws (B-APP-04 target)', async () => {
+      const embeddingService = {
+        setOnActiveStateSync: vi.fn(),
+        clearAllVectors: vi.fn().mockRejectedValue(new Error('boom'))
+      }
+      const ipc = registerAllIpc({ services: { embeddingService } })
+      await expect(ipc.invoke('clear-vectors', trustedEvent)).rejects.toThrow('boom')
+    })
+
     it('registration wires embeddingService.setOnActiveStateSync with a callback', () => {
       const setOnActiveStateSync = vi.fn()
       registerAllIpc({ services: { embeddingService: { setOnActiveStateSync } } })

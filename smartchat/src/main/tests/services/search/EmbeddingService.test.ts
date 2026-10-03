@@ -37,3 +37,48 @@ describe('EmbeddingService pause mid-drain (S11-04)', () => {
     expect(upsertVector).toHaveBeenCalledWith('m1', expect.any(String))
   })
 })
+
+describe('EmbeddingService.indexAll failure surfacing (B-APP-04)', () => {
+  const makeService = (vecInsert: () => Promise<void>, embed: () => Promise<number[]>) =>
+    new EmbeddingService(
+      {
+        getAllIndexedMessageIds: vi.fn().mockResolvedValue([]),
+        upsertVector: vi.fn().mockResolvedValue(undefined),
+        deleteFromVecMessages: vi.fn().mockResolvedValue(undefined),
+        insertIntoVecMessages: vi.fn().mockImplementation(vecInsert)
+      } as never,
+      {
+        findMessagesWithTextContent: vi.fn().mockResolvedValue([
+          { id: 'm1', textContent: 'one' },
+          { id: 'm2', textContent: 'two' }
+        ])
+      } as never,
+      {
+        setModel: vi.fn(),
+        ensureWorker: vi.fn().mockResolvedValue(undefined),
+        embed: vi.fn().mockImplementation(embed),
+        setOnActiveStateSync: vi.fn()
+      } as never
+    )
+
+  it.fails('rejects when per-message indexing fails (vec0 insert error)', async () => {
+    const service = makeService(
+      () => Promise.reject(new Error('vec0 insert failed')),
+      () => Promise.resolve([0.1])
+    )
+    await expect(service.indexAll()).rejects.toThrow(/failed/i)
+  })
+
+  it.fails('rejects when the run is aborted mid-way because the worker died', async () => {
+    const service = makeService(
+      () => Promise.resolve(),
+      () => Promise.reject(new Error('embedding worker exited'))
+    )
+    await expect(service.indexAll()).rejects.toThrow(/worker/i)
+  })
+
+  it('resolves when every message indexes', async () => {
+    const service = makeService(() => Promise.resolve(), () => Promise.resolve([0.1]))
+    await expect(service.indexAll()).resolves.toBeUndefined()
+  })
+})
