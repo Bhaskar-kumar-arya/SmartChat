@@ -299,7 +299,6 @@ export class WorkerPluginRuntime {
   }
 
   private async handleIncomingKernelRequest(req: KernelRequest): Promise<void> {
-    console.log(`[WorkerPluginRuntime:${this.manifest.id}] Received incoming kernel request type '${req.type}':`, req.payload)
     try {
       const handler = this.getRequestHandler(req.type)
       if (!handler) {
@@ -309,7 +308,6 @@ export class WorkerPluginRuntime {
       }
 
       const result = await handler(req)
-      console.log(`[WorkerPluginRuntime:${this.manifest.id}] Successfully handled '${req.type}'`)
       this.respondSuccess(req.id, result)
     } catch (err: any) {
       console.error(`[WorkerPluginRuntime:${this.manifest.id}] Error handling '${req.type}':`, err)

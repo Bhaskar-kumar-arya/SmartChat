@@ -53,7 +53,6 @@ ctx.onActivate(async () => {
   // Register message incoming event handler
   if (ctx.events) {
     ctx.events.on('message:incoming', async (evt) => {
-      ctx.log.info(`[CodeTantra Relay] 📩 Event received: message:incoming (chatJid: ${evt?.chatJid}, sender: ${evt?.senderJid}, fromMe: ${evt?.fromMe})`);
       try {
         await handleIncomingMessage(evt);
       } catch (err) {
@@ -518,24 +517,12 @@ async function handleIncomingMessage(evt) {
     }
   }
 
-  if (!evt.textContent) {
-    ctx.log.info('[CodeTantra Relay] Incoming message skipped: empty text content');
-    return;
-  }
-  if (evt.fromMe) {
-    ctx.log.info('[CodeTantra Relay] Incoming message skipped: sent by self');
-    return;
-  }
+  if (!evt.textContent) return;
+  if (evt.fromMe) return;
 
   const targetJid = await getTargetGroupJid();
-  if (!targetJid) {
-    ctx.log.info('[CodeTantra Relay] Incoming message skipped: target group JID not set');
-    return;
-  }
-  if (evt.chatJid !== targetJid) {
-    ctx.log.info(`[CodeTantra Relay] Incoming message skipped: chatJid '${evt.chatJid}' does not match target group JID '${targetJid}'`);
-    return;
-  }
+  if (!targetJid) return;
+  if (evt.chatJid !== targetJid) return;
 
   ctx.log.info(`[CodeTantra Relay] 📥 Target group message received from ${evt.senderJid}: "${evt.textContent.slice(0, 100)}"`);
 
