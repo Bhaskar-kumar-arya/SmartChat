@@ -9,6 +9,8 @@ interface CaptionMentionInputProps {
   disabled: boolean
   onChange: (text: string) => void
   onMentionAdd: (jid: string) => void
+  /** Enter (with the mention menu closed) submits the attachment. */
+  onSubmit: () => void
 }
 
 /** Caption text input with the group @-mention menu (mirrors the composer's behaviour). */
@@ -18,7 +20,8 @@ export default function CaptionMentionInput({
   placeholder,
   disabled,
   onChange,
-  onMentionAdd
+  onMentionAdd,
+  onSubmit
 }: CaptionMentionInputProps): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null)
   const { participants, menuVisible, query, handleInputChange, addMention, setShowMenu } =
@@ -61,6 +64,10 @@ export default function CaptionMentionInput({
         onChange={(e) => {
           onChange(e.target.value)
           handleInputChange(e.target.value, e.target.selectionStart ?? e.target.value.length)
+        }}
+        onKeyDown={(e) => {
+          // While the menu is open Enter picks the participant (MentionMenu handles it).
+          if (e.key === 'Enter' && !menuVisible && !e.nativeEvent.isComposing) onSubmit()
         }}
         disabled={disabled}
         autoFocus

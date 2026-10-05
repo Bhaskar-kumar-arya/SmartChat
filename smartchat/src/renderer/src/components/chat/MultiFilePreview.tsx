@@ -138,6 +138,7 @@ export default function MultiFilePreview({
               value={selectedFile.caption}
               onChange={(text) => onCaptionChange(selectedIndex, text)}
               onMentionAdd={(jid) => onMentionAdd?.(selectedIndex, jid)}
+              onSubmit={onSend}
               disabled={sending}
             />
           ) : (
@@ -147,6 +148,9 @@ export default function MultiFilePreview({
               placeholder={`Add a caption for ${selectedFile.name}...`}
               value={selectedFile.caption}
               onChange={(e) => onCaptionChange(selectedIndex, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) onSend()
+              }}
               disabled={sending}
               autoFocus
             />

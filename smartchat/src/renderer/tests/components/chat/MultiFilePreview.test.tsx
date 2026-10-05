@@ -63,6 +63,26 @@ describe('MultiFilePreview', () => {
     expect(handleSend).toHaveBeenCalledTimes(1)
   })
 
+  it('Enter in the caption sends all (plain caption input)', () => {
+    const handleSend = vi.fn()
+    render(
+      <MultiFilePreview
+        files={sampleFiles}
+        selectedIndex={0}
+        onSelectFile={vi.fn()}
+        onRemoveFile={vi.fn()}
+        onAddMore={vi.fn()}
+        onCaptionChange={vi.fn()}
+        onSend={handleSend}
+        onClose={vi.fn()}
+        sending={false}
+      />
+    )
+    const input = screen.getByPlaceholderText('Add a caption for photo.jpg...')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(handleSend).toHaveBeenCalledTimes(1)
+  })
+
   it('allows removing a file from thumbnail tray', () => {
     const handleRemoveFile = vi.fn()
     const { container } = render(
@@ -87,7 +107,13 @@ describe('MultiFilePreview', () => {
   })
 
   describe('@mention menu in the caption', () => {
-    const Harness = ({ onMention }: { onMention: (i: number, jid: string) => void }): JSX.Element => {
+    const Harness = ({
+      onMention,
+      onSend = vi.fn()
+    }: {
+      onMention: (i: number, jid: string) => void
+      onSend?: () => void
+    }): JSX.Element => {
       const [files, setFiles] = useState<StagedFile[]>([
         { name: 'photo.jpg', path: 'C:/images/photo.jpg', ext: 'jpg', caption: '' }
       ])
@@ -101,7 +127,7 @@ describe('MultiFilePreview', () => {
           onAddMore={vi.fn()}
           onCaptionChange={(i, caption) => setFiles((f) => f.map((x, j) => (j === i ? { ...x, caption } : x)))}
           onMentionAdd={onMention}
-          onSend={vi.fn()}
+          onSend={onSend}
           onClose={vi.fn()}
           sending={false}
         />
@@ -127,6 +153,32 @@ describe('MultiFilePreview', () => {
 
       expect(onMention).toHaveBeenCalledWith(0, '111@s.whatsapp.net')
       expect((screen.getByPlaceholderText('Add a caption for photo.jpg...') as HTMLInputElement).value).toBe('hi @111 ')
+    })
+
+    it('Enter sends once the mention is picked, but not while the menu is open', async () => {
+      const apiService = createMockApiService()
+      apiService.getGroupParticipants = vi.fn().mockResolvedValue([
+        { jid: '111@s.whatsapp.net', name: 'Bob', isAdmin: false, isMe: false }
+      ])
+      const onSend = vi.fn()
+      renderWithProviders(<Harness onMention={vi.fn()} onSend={onSend} />, { apiService })
+      await waitFor(() => expect(apiService.getGroupParticipants).toHaveBeenCalled())
+
+      const input = screen.getByPlaceholderText('Add a caption for photo.jpg...') as HTMLInputElement
+      input.focus()
+      fireEvent.change(input, { target: { value: 'hi @bo' } })
+      input.setSelectionRange(6, 6)
+      fireEvent.change(input, { target: { value: 'hi @bo' } })
+      await screen.findByText('Bob')
+
+      // Menu open: Enter picks the participant, it must not send.
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onSend).not.toHaveBeenCalled()
+      await waitFor(() => expect(input.value).toBe('hi @111 '))
+
+      // Menu closed: Enter sends.
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onSend).toHaveBeenCalledTimes(1)
     })
 
     it('does not fetch participants or show a menu when no chat jid is given', () => {
