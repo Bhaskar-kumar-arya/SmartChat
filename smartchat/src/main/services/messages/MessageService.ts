@@ -586,7 +586,13 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     // show a reaction that vanishes on the next reload. Skip both. (P2-S2-05)
     if (!reactorId) {
       console.warn(
-        `[MessageService] processReaction: unresolved reactor for target ${targetId}; reaction dropped (not persisted, not emitted)`
+        `[MessageService] processReaction: unresolved reactor for target ${targetId}; reaction dropped (not persisted, not emitted)`,
+        {
+          targetKey: update.key,
+          reactionKey,
+          resolvedReactorJid: reactorJid,
+          hasSockUser: !!(sock as ISocketUserContext | null)?.user
+        }
       )
       return
     }
