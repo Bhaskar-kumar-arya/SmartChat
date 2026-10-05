@@ -178,10 +178,14 @@ export class MessageSenderService implements IMessageSenderService {
     const timestamp = BigInt(Math.floor(Date.now() / 1000))
 
     const messageType = (mentions && mentions.length > 0) || contextInfo ? 'extendedTextMessage' : 'conversation'
+    // `mentions` is Baileys' send option; stored content must use the wire field
+    // contextInfo.mentionedJid, which is what the enricher resolves names from.
+    const storedContextInfo =
+      mentions && mentions.length > 0 ? { ...contextInfo, mentionedJid: mentions } : contextInfo
     const content = JSON.stringify(
-      messageType === 'conversation' 
-        ? { conversation: text } 
-        : { extendedTextMessage: messageContent }
+      messageType === 'conversation'
+        ? { conversation: text }
+        : { extendedTextMessage: { text, ...(storedContextInfo ? { contextInfo: storedContextInfo } : {}) } }
     )
 
     const pendingMsg: ProcessedMessage = {
