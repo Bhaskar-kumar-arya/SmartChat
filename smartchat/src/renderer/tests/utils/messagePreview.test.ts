@@ -34,6 +34,45 @@ describe('messagePreview utility', () => {
     expect(formatMessagePreview(extMsg)).toBe('Extended text')
   })
 
+  // Smoke 2026-10-06: the chat-list preview showed "@168379948253346" for a sent mention.
+  it.fails('replaces @<number> with the resolved mention name from contextInfo.mentions', () => {
+    const msg = {
+      messageType: 'extendedTextMessage',
+      textContent: 'hi @168379948253346 there',
+      content: JSON.stringify({
+        extendedTextMessage: {
+          text: 'hi @168379948253346 there',
+          contextInfo: {
+            mentionedJid: ['168379948253346@lid'],
+            mentions: { '168379948253346@lid': 'Alice' }
+          }
+        }
+      })
+    } as MessageItem
+
+    expect(formatMessagePreview(msg)).toBe('hi @Alice there')
+  })
+
+  it.fails('resolves mention names in a media caption preview too', () => {
+    const msg = {
+      messageType: 'imageMessage',
+      textContent: 'look @168379948253346',
+      content: JSON.stringify({
+        imageMessage: {
+          caption: 'look @168379948253346',
+          contextInfo: { mentions: { '168379948253346@lid': 'Alice' } }
+        }
+      })
+    } as MessageItem
+
+    expect(formatMessagePreview(msg)).toBe('look @Alice')
+  })
+
+  it('leaves text untouched when there is no mention data or content is not JSON', () => {
+    expect(formatMessagePreview({ messageType: 'conversation', textContent: 'hi @123', content: 'not json' } as MessageItem)).toBe('hi @123')
+    expect(formatMessagePreview({ messageType: 'conversation', textContent: 'hi @123' } as MessageItem)).toBe('hi @123')
+  })
+
   it('handles unknown or custom message types gracefully', () => {
     const unknownMsg = { messageType: 'unknown', textContent: 'Fallback text' } as MessageItem
     const customTypeMsg = { messageType: 'locationMessage' as any } as MessageItem

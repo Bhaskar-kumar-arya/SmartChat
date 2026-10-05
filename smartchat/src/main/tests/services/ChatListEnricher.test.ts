@@ -63,6 +63,42 @@ describe('ChatListEnricher', () => {
     expect(res.filter(r => r.jid === 'sub1@g.us')).toHaveLength(1)
   })
 
+  // Smoke 2026-10-06: chat-list preview showed the raw number for a mention until the
+  // enricher resolved mentionedJid names from the stored content.
+  it.fails('resolves @<number> in the last-message preview to the mentioned contact name', async () => {
+    chatRepo.findChatsByJidsWithCommunity.mockResolvedValue([
+      { jid: 'g@g.us', type: 'GROUP', unreadCount: 0, muteExpiration: 0n } as any
+    ])
+    messageRepo.findLastMessage.mockResolvedValue({
+      id: 'm1',
+      textContent: 'hi @168379948253346',
+      messageType: 'extendedTextMessage',
+      timestamp: 5n,
+      fromMe: true,
+      participant: null,
+      status: 'SENT',
+      sender: null,
+      content: JSON.stringify({
+        extendedTextMessage: {
+          text: 'hi @168379948253346',
+          contextInfo: { mentionedJid: ['168379948253346@lid'] }
+        }
+      })
+    } as any)
+    reactionRepo.findLastReaction.mockResolvedValue(null)
+    ;(contactService as any).batchResolveNames = vi
+      .fn()
+      .mockResolvedValue(new Map([['168379948253346@lid', 'Alice']]))
+
+    await enricher.getChatByJid('g@g.us')
+
+    expect(formatterRegistry.format).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ textContent: 'hi @Alice' }),
+      'chatList'
+    )
+  })
+
   it('getChatByJid returns null if chat not found', async () => {
     chatRepo.findChatsByJidsWithCommunity.mockResolvedValue([])
     const res = await enricher.getChatByJid('test@s.whatsapp.net')
