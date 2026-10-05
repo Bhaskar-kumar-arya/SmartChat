@@ -3,6 +3,8 @@ import { Message, Chat, Community, Identity } from './entities'
 export interface LastMessageWithSender {
   id: string
   textContent: string | null
+  /** Raw message JSON; only populated by `findLastMessage` (chat-list mention names). */
+  content?: string | null
   messageType: string
   timestamp: bigint
   fromMe: boolean

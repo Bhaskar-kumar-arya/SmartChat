@@ -68,6 +68,7 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
       select: {
         id: true,
         textContent: true,
+        content: true,
         messageType: true,
         timestamp: true,
         fromMe: true,

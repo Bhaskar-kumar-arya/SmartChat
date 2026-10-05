@@ -3,7 +3,7 @@ import { MessageFormatterRegistry } from '../messages/formatters/MessageFormatte
 import { IChatRepository, ChatWithCommunity } from './IChatRepository'
 import { IReactionRepository } from '../messages/IReactionRepository'
 import { IMessageSearchRepository } from '../messages/IMessageSearchRepository'
-import { IContactQueryService } from '../contacts/IContactService'
+import { IContactQueryService, IContactNameResolver } from '../contacts/IContactService'
 import { ContactNameResolver } from '../contacts/ContactNameResolver'
 import { IChatListEnricher } from './IChatListEnricher'
 
@@ -12,9 +12,35 @@ export class ChatListEnricher implements IChatListEnricher {
     private readonly chatRepository: IChatRepository,
     private readonly messageQueryRepository: IMessageSearchRepository,
     private readonly reactionRepository: IReactionRepository,
-    private readonly contactService: IContactQueryService,
+    private readonly contactService: IContactQueryService & IContactNameResolver,
     private readonly formatterRegistry: MessageFormatterRegistry
   ) {}
+
+  /**
+   * Replaces `@<number>` in a preview with `@<name>` for the JIDs listed in the
+   * message's `contextInfo.mentionedJid` (the stored text only carries the number).
+   */
+  private async withMentionNames(text: string | null, content: string | null | undefined): Promise<string | null> {
+    if (!text || !content || !text.includes('@')) return text
+    try {
+      const body = Object.values(JSON.parse(content) as Record<string, unknown>).find(
+        (v): v is { contextInfo?: { mentionedJid?: string[] } } =>
+          typeof v === 'object' && v !== null && 'contextInfo' in v
+      )
+      const jids = body?.contextInfo?.mentionedJid
+      if (!Array.isArray(jids) || jids.length === 0) return text
+      const names = await this.contactService.batchResolveNames(jids)
+      let result = text
+      for (const jid of jids) {
+        const name = names.get(jid)
+        const number = jid.split('@')[0]
+        if (name && number) result = result.split(`@${number}`).join(`@${name}`)
+      }
+      return result
+    } catch {
+      return text
+    }
+  }
 
   /**
    * Retrieves the chat list (paginated) and enriches it with the latest message/reaction.
@@ -142,7 +168,7 @@ export class ChatListEnricher implements IChatListEnricher {
       lastMessageText = this.formatterRegistry.format(
         null,
         {
-          textContent: lastMsg.textContent,
+          textContent: await this.withMentionNames(lastMsg.textContent, lastMsg.content),
           messageType: lastMsg.messageType
         },
         'chatList'

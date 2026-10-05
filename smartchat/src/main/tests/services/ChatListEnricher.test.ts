@@ -3,7 +3,7 @@ import { ChatListEnricher } from '../../services/chats/ChatListEnricher'
 import { IChatRepository } from '../../services/chats/IChatRepository'
 import { IReactionRepository } from '../../services/messages/IReactionRepository'
 import { IMessageSearchRepository } from '../../services/messages/IMessageSearchRepository'
-import { IContactQueryService } from '../../services/contacts/IContactService'
+import { IContactQueryService, IContactNameResolver } from '../../services/contacts/IContactService'
 import { MessageFormatterRegistry } from '../../services/messages/formatters/MessageFormatterRegistry'
 
 describe('ChatListEnricher', () => {
@@ -11,7 +11,7 @@ describe('ChatListEnricher', () => {
   let chatRepo: import('vitest').Mocked<IChatRepository>
   let messageRepo: import('vitest').Mocked<IMessageSearchRepository>
   let reactionRepo: import('vitest').Mocked<IReactionRepository>
-  let contactService: import('vitest').Mocked<IContactQueryService>
+  let contactService: import('vitest').Mocked<IContactQueryService & IContactNameResolver>
   let formatterRegistry: import('vitest').Mocked<MessageFormatterRegistry>
 
   beforeEach(() => {
@@ -32,6 +32,7 @@ describe('ChatListEnricher', () => {
     contactService = {
       getIdentityIdByJid: vi.fn(),
       findIdentityById: vi.fn(),
+      batchResolveNames: vi.fn().mockResolvedValue(new Map()),
     } as any
 
     formatterRegistry = {
@@ -65,7 +66,7 @@ describe('ChatListEnricher', () => {
 
   // Smoke 2026-10-06: chat-list preview showed the raw number for a mention until the
   // enricher resolved mentionedJid names from the stored content.
-  it.fails('resolves @<number> in the last-message preview to the mentioned contact name', async () => {
+  it('resolves @<number> in the last-message preview to the mentioned contact name', async () => {
     chatRepo.findChatsByJidsWithCommunity.mockResolvedValue([
       { jid: 'g@g.us', type: 'GROUP', unreadCount: 0, muteExpiration: 0n } as any
     ])
@@ -86,9 +87,7 @@ describe('ChatListEnricher', () => {
       })
     } as any)
     reactionRepo.findLastReaction.mockResolvedValue(null)
-    ;(contactService as any).batchResolveNames = vi
-      .fn()
-      .mockResolvedValue(new Map([['168379948253346@lid', 'Alice']]))
+    contactService.batchResolveNames.mockResolvedValue(new Map([['168379948253346@lid', 'Alice']]))
 
     await enricher.getChatByJid('g@g.us')
 

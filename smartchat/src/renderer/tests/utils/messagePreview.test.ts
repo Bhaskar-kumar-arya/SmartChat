@@ -35,7 +35,7 @@ describe('messagePreview utility', () => {
   })
 
   // Smoke 2026-10-06: the chat-list preview showed "@168379948253346" for a sent mention.
-  it.fails('replaces @<number> with the resolved mention name from contextInfo.mentions', () => {
+  it('replaces @<number> with the resolved mention name from contextInfo.mentions', () => {
     const msg = {
       messageType: 'extendedTextMessage',
       textContent: 'hi @168379948253346 there',
@@ -53,7 +53,7 @@ describe('messagePreview utility', () => {
     expect(formatMessagePreview(msg)).toBe('hi @Alice there')
   })
 
-  it.fails('resolves mention names in a media caption preview too', () => {
+  it('resolves mention names in a media caption preview too', () => {
     const msg = {
       messageType: 'imageMessage',
       textContent: 'look @168379948253346',
