@@ -54,6 +54,32 @@ describe('MessageSenderService', () => {
     )
   })
 
+  describe('mentions in the stored optimistic message', () => {
+    // Smoke 2026-10-06: after sending an @mention the bubble/preview showed the raw
+    // number until the chat was reopened. The stored content carried Baileys' send option
+    // `mentions` instead of the wire field contextInfo.mentionedJid that the enricher reads.
+    it.fails('stores mentioned JIDs as contextInfo.mentionedJid', async () => {
+      await service.sendMessageWorkflow(sock, 'group@g.us', 'hi @1234', undefined, ['1234@s.whatsapp.net'])
+
+      const pending = messageRepo.upsertMessage.mock.calls[0][0]
+      const stored = JSON.parse(pending.content)
+      expect(stored.extendedTextMessage.contextInfo.mentionedJid).toEqual(['1234@s.whatsapp.net'])
+    })
+
+    it.fails('keeps quote context and mentions together', async () => {
+      messageQueryRepo.findMessageById.mockResolvedValue({
+        id: 'q1', fromMe: false, participant: null,
+        content: JSON.stringify({ conversation: 'quoted' })
+      })
+      await service.sendMessageWorkflow(sock, 'user2@s.whatsapp.net', 'hi @1234', 'q1', ['1234@s.whatsapp.net'])
+
+      const stored = JSON.parse(messageRepo.upsertMessage.mock.calls[0][0].content)
+      expect(stored.extendedTextMessage.contextInfo).toEqual(
+        expect.objectContaining({ stanzaId: 'q1', mentionedJid: ['1234@s.whatsapp.net'] })
+      )
+    })
+  })
+
   describe('send failure → FAILED status (S2-02)', () => {
     const flush = () => new Promise((r) => setTimeout(r, 0))
 
