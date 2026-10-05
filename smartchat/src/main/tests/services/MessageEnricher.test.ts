@@ -47,7 +47,7 @@ describe('MessageEnricher', () => {
 
   // Smoke 2026-10-06: a mention on an incoming attachment showed the raw @number until the chat
   // was reopened, because live callers only put the sender in nameMap.
-  it.fails('resolves mentioned JIDs that are missing from the supplied nameMap', async () => {
+  it('resolves mentioned JIDs that are missing from the supplied nameMap', async () => {
     contactService.batchResolveNames.mockResolvedValue(new Map([['187273727488097@lid', 'Yashash']]))
     const rawMsg = {
       id: 'doc1',

@@ -1,5 +1,5 @@
 import { ContactNameResolver } from '../contacts/ContactNameResolver'
-import { IContactQueryService, ISocketUserContext } from '../contacts/IContactService'
+import { IContactQueryService, IContactNameResolver, ISocketUserContext } from '../contacts/IContactService'
 import { cleanJid } from '../../utils/jidUtils'
 import { unwrapMessage } from '../../utils/messageUtils'
 import { WAMessageContent } from '../whatsapp/types'
@@ -19,7 +19,7 @@ import { ICallQueryService } from '../calls/ICallService'
  */
 export class MessageEnricher implements IMessageEnricher {
   constructor(
-    private readonly contactService: IContactQueryService,
+    private readonly contactService: IContactQueryService & IContactNameResolver,
     private readonly callService: ICallQueryService
   ) {}
 
@@ -138,7 +138,13 @@ export class MessageEnricher implements IMessageEnricher {
       // was sent by you. Pass msg.fromMe as a hint so the enricher can still
       // resolve the sender name to 'You' without a participant JID.
       const quotedIsMe = !!msg.fromMe && !ctx.participant
-      await this._enrichContextInfo(ctx, sock, nameMap, quotedIsMe)
+      // Live callers only resolve the sender, so mentioned JIDs are often absent
+      // from nameMap; resolve just those so mentions show names, not raw numbers.
+      const missingMentions = this._collectMissingMentionJids(ctx, nameMap)
+      const effectiveNameMap = missingMentions.length
+        ? new Map([...nameMap, ...(await this.contactService.batchResolveNames(missingMentions, sock))])
+        : nameMap
+      await this._enrichContextInfo(ctx, sock, effectiveNameMap, quotedIsMe)
     }
 
     if (msg.messageType === 'call' || msg.messageType === 'callLogMesssage' || msg.messageType === 'scheduledCallCreationMessage') {
@@ -229,6 +235,19 @@ export class MessageEnricher implements IMessageEnricher {
       return stripped
     }
     return 'Unknown'
+  }
+
+  private _collectMissingMentionJids(ctx: Record<string, unknown>, nameMap: Map<string, string>): string[] {
+    const jids = new Set<string>()
+    const add = (list: unknown): void => {
+      if (Array.isArray(list)) for (const j of list) if (typeof j === 'string') jids.add(j)
+    }
+    add(ctx.mentionedJid)
+    if (ctx.quotedMessage && typeof ctx.quotedMessage === 'object') {
+      const qCtx = this._extractContextInfo(unwrapMessage(ctx.quotedMessage as WAMessageContent))
+      add(qCtx?.mentionedJid)
+    }
+    return [...jids].filter((j) => !nameMap.has(j))
   }
 
   private _extractContextInfo(
