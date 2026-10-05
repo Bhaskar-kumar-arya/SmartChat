@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ChatListEnricher } from '../../services/chats/ChatListEnricher'
-import { IChatRepository } from '../../services/chats/IChatRepository'
+import { IChatRepository, ChatWithCommunity } from '../../services/chats/IChatRepository'
+import { LastMessageWithSender } from '../../domain/projections'
 import { IReactionRepository } from '../../services/messages/IReactionRepository'
 import { IMessageSearchRepository } from '../../services/messages/IMessageSearchRepository'
 import { IContactQueryService, IContactNameResolver } from '../../services/contacts/IContactService'
@@ -68,7 +69,7 @@ describe('ChatListEnricher', () => {
   // enricher resolved mentionedJid names from the stored content.
   it('resolves @<number> in the last-message preview to the mentioned contact name', async () => {
     chatRepo.findChatsByJidsWithCommunity.mockResolvedValue([
-      { jid: 'g@g.us', type: 'GROUP', unreadCount: 0, muteExpiration: 0n } as any
+      { jid: 'g@g.us', type: 'GROUP', unreadCount: 0, muteExpiration: 0n } as unknown as ChatWithCommunity
     ])
     messageRepo.findLastMessage.mockResolvedValue({
       id: 'm1',
@@ -85,7 +86,7 @@ describe('ChatListEnricher', () => {
           contextInfo: { mentionedJid: ['168379948253346@lid'] }
         }
       })
-    } as any)
+    } as LastMessageWithSender)
     reactionRepo.findLastReaction.mockResolvedValue(null)
     contactService.batchResolveNames.mockResolvedValue(new Map([['168379948253346@lid', 'Alice']]))
 
