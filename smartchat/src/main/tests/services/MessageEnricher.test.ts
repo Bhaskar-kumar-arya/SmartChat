@@ -1,17 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MessageEnricher } from '../../services/messages/MessageEnricher'
-import { IContactQueryService } from '../../services/contacts/IContactService'
+import { IContactQueryService, IContactNameResolver } from '../../services/contacts/IContactService'
 import { ICallQueryService } from '../../services/calls/ICallService'
 import { DBMessageWithSender } from '../../domain/db.types'
 
 describe('MessageEnricher', () => {
   let enricher: MessageEnricher
-  let contactService: import('vitest').Mocked<IContactQueryService>
+  let contactService: import('vitest').Mocked<IContactQueryService & IContactNameResolver>
   let callService: import('vitest').Mocked<ICallQueryService>
 
   beforeEach(() => {
     contactService = {
       getMeJids: vi.fn().mockResolvedValue(['me@s.whatsapp.net']),
+      batchResolveNames: vi.fn().mockResolvedValue(new Map()),
     } as any
 
     callService = {
@@ -42,6 +43,50 @@ describe('MessageEnricher', () => {
     expect(res.participantName).toBe('Alice')
     expect(res.timestamp).toBe('1000')
     expect(JSON.parse(res.content)).toEqual({ conversation: 'Hello' })
+  })
+
+  // Smoke 2026-10-06: a mention on an incoming attachment showed the raw @number until the chat
+  // was reopened, because live callers only put the sender in nameMap.
+  it.fails('resolves mentioned JIDs that are missing from the supplied nameMap', async () => {
+    contactService.batchResolveNames.mockResolvedValue(new Map([['187273727488097@lid', 'Yashash']]))
+    const rawMsg = {
+      id: 'doc1',
+      chatJid: 'g@g.us',
+      fromMe: false,
+      participant: 'user@s.whatsapp.net',
+      timestamp: 1000n,
+      messageType: 'documentMessage',
+      textContent: '@187273727488097 hi',
+      content: JSON.stringify({
+        documentMessage: {
+          caption: '@187273727488097 hi',
+          contextInfo: { mentionedJid: ['187273727488097@lid'] }
+        }
+      }),
+      isDeleted: false,
+      isEdited: false,
+      status: 'RECEIVED'
+    } as unknown as DBMessageWithSender
+
+    const res = await enricher.enrichMessage(rawMsg, null, new Map([['user@s.whatsapp.net', 'Alice']]))
+
+    expect(contactService.batchResolveNames).toHaveBeenCalledWith(['187273727488097@lid'], null)
+    expect(JSON.parse(res.content).documentMessage.contextInfo.mentions).toEqual({
+      '187273727488097@lid': 'Yashash'
+    })
+  })
+
+  it('does not re-resolve mentioned JIDs the nameMap already has', async () => {
+    const rawMsg = {
+      id: 'm2', chatJid: 'g@g.us', fromMe: false, participant: 'user@s.whatsapp.net', timestamp: 1000n,
+      messageType: 'extendedTextMessage', textContent: '@1 hi',
+      content: JSON.stringify({ extendedTextMessage: { text: '@1 hi', contextInfo: { mentionedJid: ['1@lid'] } } }),
+      isDeleted: false, isEdited: false, status: 'RECEIVED'
+    } as unknown as DBMessageWithSender
+
+    await enricher.enrichMessage(rawMsg, null, new Map([['1@lid', 'One']]))
+
+    expect(contactService.batchResolveNames).not.toHaveBeenCalled()
   })
 
   it('enriches reactions', () => {
