@@ -80,6 +80,18 @@ describe('MessageSenderService', () => {
     })
   })
 
+  describe('mentions in a media caption (stored optimistic message)', () => {
+    it.fails('stores mentioned JIDs as contextInfo.mentionedJid on the media payload', async () => {
+      await service.sendMediaMessageWorkflow(
+        sock, 'group@g.us', 'does-not-exist.jpg', 'look @1234', undefined, ['1234@s.whatsapp.net']
+      )
+
+      const pending = messageRepo.upsertMessage.mock.calls[0][0]
+      const stored = JSON.parse(pending.content)
+      expect(stored.imageMessage.contextInfo.mentionedJid).toEqual(['1234@s.whatsapp.net'])
+    })
+  })
+
   describe('send failure → FAILED status (S2-02)', () => {
     const flush = () => new Promise((r) => setTimeout(r, 0))
 
