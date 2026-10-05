@@ -120,7 +120,8 @@ export class MessageSenderService implements IMessageSenderService {
     filePath: string,
     caption?: string,
     localUri?: string,
-    contextInfo?: WAContextInfo
+    contextInfo?: WAContextInfo,
+    mentions?: string[]
   ): { messageType: string; content: string } {
     const lowerPath = filePath.toLowerCase()
     let typeKey = 'documentMessage'
@@ -150,8 +151,10 @@ export class MessageSenderService implements IMessageSenderService {
     if (typeKey === 'documentMessage') {
       payload.fileName = filePath.split(/[\\/]/).pop() || 'Document'
     }
-    if (contextInfo) {
-      payload.contextInfo = contextInfo
+    const storedContextInfo =
+      mentions && mentions.length > 0 ? { ...contextInfo, mentionedJid: mentions } : contextInfo
+    if (storedContextInfo) {
+      payload.contextInfo = storedContextInfo
     }
 
     return {
@@ -321,7 +324,7 @@ export class MessageSenderService implements IMessageSenderService {
     }
 
     const localUri = `${APP_MEDIA_PREFIX}${fileName}`
-    const { messageType, content } = this.getMediaTypeAndInitialContent(finalPathToSend, caption, localUri, contextInfo)
+    const { messageType, content } = this.getMediaTypeAndInitialContent(finalPathToSend, caption, localUri, contextInfo, mentions)
 
     const pendingMsg: ProcessedMessage = {
       id: msgId,

@@ -81,7 +81,7 @@ describe('MessageSenderService', () => {
   })
 
   describe('mentions in a media caption (stored optimistic message)', () => {
-    it.fails('stores mentioned JIDs as contextInfo.mentionedJid on the media payload', async () => {
+    it('stores mentioned JIDs as contextInfo.mentionedJid on the media payload', async () => {
       await service.sendMediaMessageWorkflow(
         sock, 'group@g.us', 'does-not-exist.jpg', 'look @1234', undefined, ['1234@s.whatsapp.net']
       )
