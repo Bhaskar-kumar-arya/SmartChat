@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useMultiFileQueue } from '@renderer/hooks/useMultiFileQueue'
+import { useMultiFileQueue, mentionsInCaption, StagedFile } from '@renderer/hooks/useMultiFileQueue'
 
 describe('useMultiFileQueue', () => {
   it('should initialize with an empty file queue', () => {
@@ -81,5 +81,27 @@ describe('useMultiFileQueue', () => {
 
     expect(result.current.stagedFiles).toEqual([])
     expect(result.current.selectedIndex).toBe(0)
+  })
+
+  describe('caption mentions', () => {
+    it('addMention records a JID on one file without duplicates', () => {
+      const { result } = renderHook(() => useMultiFileQueue(5))
+      act(() => result.current.addFiles(['/a.png', '/b.png']))
+
+      act(() => result.current.addMention(1, '111@lid'))
+      act(() => result.current.addMention(1, '111@lid'))
+
+      expect(result.current.stagedFiles[0].mentions ?? []).toEqual([])
+      expect(result.current.stagedFiles[1].mentions).toEqual(['111@lid'])
+    })
+
+    it('mentionsInCaption keeps only JIDs whose @number is still in the caption', () => {
+      const file: StagedFile = {
+        path: '/a.png', name: 'a.png', ext: 'png', caption: 'hi @111 bye',
+        mentions: ['111@lid', '222@lid']
+      }
+      expect(mentionsInCaption(file)).toEqual(['111@lid'])
+      expect(mentionsInCaption({ ...file, mentions: undefined })).toEqual([])
+    })
   })
 })

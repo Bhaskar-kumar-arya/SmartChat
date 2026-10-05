@@ -5,7 +5,13 @@ export interface StagedFile {
   name: string
   ext: string
   caption: string
+  /** JIDs picked from the @-menu for this file's caption (only set once a mention is added). */
+  mentions?: string[]
 }
+
+/** Mentions to send with a file: those whose `@<number>` token is still in its caption. */
+export const mentionsInCaption = (file: StagedFile): string[] =>
+  (file.mentions ?? []).filter((jid) => file.caption.includes(`@${jid.split('@')[0]}`))
 
 export const MAX_STAGED_FILES = 30
 
@@ -64,6 +70,14 @@ export const useMultiFileQueue = (maxFiles: number = MAX_STAGED_FILES) => {
     })
   }, [])
 
+  const addMention = useCallback((index: number, jid: string) => {
+    setStagedFiles((prev) =>
+      prev.map((f, i) =>
+        i === index ? { ...f, mentions: Array.from(new Set([...(f.mentions ?? []), jid])) } : f
+      )
+    )
+  }, [])
+
   const clearQueue = useCallback(() => {
     setStagedFiles([])
     setSelectedIndex(0)
@@ -77,6 +91,7 @@ export const useMultiFileQueue = (maxFiles: number = MAX_STAGED_FILES) => {
     addFiles,
     removeFile,
     updateCaption,
+    addMention,
     clearQueue,
   }
 }

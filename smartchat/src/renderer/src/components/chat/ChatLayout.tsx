@@ -13,7 +13,7 @@ import { AIChatSidebar } from '../ai'
 import ChatSearchSidebar from './ChatSearchSidebar'
 import '../../styles/sidebar.css'
 import { useDragAndDrop } from '../../hooks/useDragAndDrop'
-import { useMultiFileQueue } from '../../hooks/useMultiFileQueue'
+import { useMultiFileQueue, mentionsInCaption } from '../../hooks/useMultiFileQueue'
 import DragDropOverlay from './DragDropOverlay'
 import MultiFilePreview from './MultiFilePreview'
 import { EmojiText } from '../common/EmojiText'
@@ -72,6 +72,7 @@ export default function ChatLayout() {
     addFiles,
     removeFile,
     updateCaption,
+    addMention,
     clearQueue
   } = useMultiFileQueue()
 
@@ -88,7 +89,7 @@ export default function ChatLayout() {
     try {
       await Promise.all(
         stagedFiles.map(file =>
-          sendMediaMessage(file.path, file.caption, replyingTo?.id)
+          sendMediaMessage(file.path, file.caption, replyingTo?.id, mentionsInCaption(file))
         )
       )
       clearQueue()
@@ -363,6 +364,8 @@ export default function ChatLayout() {
               onRemoveFile={removeFile}
               onAddMore={handleAddMoreFiles}
               onCaptionChange={updateCaption}
+              activeJid={activeJid}
+              onMentionAdd={addMention}
               onSend={handleSendMultiMedia}
               onClose={clearQueue}
               sending={sendingFiles}

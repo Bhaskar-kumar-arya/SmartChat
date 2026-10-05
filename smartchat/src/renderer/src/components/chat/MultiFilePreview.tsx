@@ -1,5 +1,6 @@
 import { X, Plus, Send, File } from 'lucide-react'
 import { StagedFile, MAX_STAGED_FILES } from '../../hooks/useMultiFileQueue'
+import CaptionMentionInput from './CaptionMentionInput'
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp']
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm']
@@ -14,6 +15,9 @@ interface MultiFilePreviewProps {
   onRemoveFile: (index: number) => void
   onAddMore: () => void
   onCaptionChange: (index: number, text: string) => void
+  /** Chat the files are going to; enables the @-mention menu for group chats. */
+  activeJid?: string | null
+  onMentionAdd?: (index: number, jid: string) => void
   onSend: () => void
   onClose: () => void
   sending: boolean
@@ -26,6 +30,8 @@ export default function MultiFilePreview({
   onRemoveFile,
   onAddMore,
   onCaptionChange,
+  activeJid,
+  onMentionAdd,
   onSend,
   onClose,
   sending,
@@ -125,15 +131,26 @@ export default function MultiFilePreview({
 
         {/* Footer: Per-file caption and send button */}
         <div className="mfp-footer">
-          <input
-            type="text"
-            className="mfp-caption-input"
-            placeholder={`Add a caption for ${selectedFile.name}...`}
-            value={selectedFile.caption}
-            onChange={(e) => onCaptionChange(selectedIndex, e.target.value)}
-            disabled={sending}
-            autoFocus
-          />
+          {activeJid?.endsWith('@g.us') ? (
+            <CaptionMentionInput
+              activeJid={activeJid}
+              placeholder={`Add a caption for ${selectedFile.name}...`}
+              value={selectedFile.caption}
+              onChange={(text) => onCaptionChange(selectedIndex, text)}
+              onMentionAdd={(jid) => onMentionAdd?.(selectedIndex, jid)}
+              disabled={sending}
+            />
+          ) : (
+            <input
+              type="text"
+              className="mfp-caption-input"
+              placeholder={`Add a caption for ${selectedFile.name}...`}
+              value={selectedFile.caption}
+              onChange={(e) => onCaptionChange(selectedIndex, e.target.value)}
+              disabled={sending}
+              autoFocus
+            />
+          )}
 
           <button className="mfp-send-btn" onClick={onSend} disabled={sending} title="Send all">
             {sending ? (
