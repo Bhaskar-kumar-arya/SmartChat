@@ -42,9 +42,9 @@ describe('MessageIdentityResolver', () => {
     expect(res).toBe('user@s.whatsapp.net')
   })
 
-  // Live DM reactions arrive with participant: '' (smoke 2026-10-06, P2029-unrelated drop):
+  // Live DM reactions arrive with participant: '' (smoke 2026-10-06):
   // `??` kept the empty string, so the reactor never resolved and the reaction was dropped.
-  it.fails('resolveReactorJid falls back to the DM remoteJid when participant is an empty string', async () => {
+  it('resolveReactorJid falls back to the DM remoteJid when participant is an empty string', async () => {
     const key: WAMessageKey = { fromMe: false, remoteJid: '275767132995675@lid', participant: '' }
     const res = await resolver.resolveReactorJid(key, null)
     expect(res).toBe('275767132995675@lid')

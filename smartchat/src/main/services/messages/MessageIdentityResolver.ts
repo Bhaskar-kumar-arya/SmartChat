@@ -47,7 +47,7 @@ export class MessageIdentityResolver implements IMessageIdentityResolver {
    */
   async resolveReactorJid(reactionKey: WAMessageKey, sock: ISocketUserContext | null): Promise<string | null> {
     let reactorJid: string | null =
-      (reactionKey.participant ??
+      (reactionKey.participant ||
       (reactionKey.remoteJid?.endsWith('@g.us') ? null : reactionKey.remoteJid)) ?? null
 
     if (reactionKey.fromMe) {
