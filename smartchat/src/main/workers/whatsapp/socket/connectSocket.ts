@@ -1,7 +1,7 @@
 import makeWASocketImport, { Browsers, BufferJSON, proto } from '@whiskeysockets/baileys'
 import type { WASocket, AuthenticationState } from '@whiskeysockets/baileys'
 import { PrismaClient } from '@prisma/client'
-import NodeCache from 'node-cache'
+import type { WorkerGroupCache } from '../services/WorkerGroupCache'
 
 const makeWASocket = (typeof makeWASocketImport === 'function'
   ? makeWASocketImport
@@ -12,7 +12,7 @@ export interface ConnectSocketOptions {
   state: AuthenticationState
   syncFullHistory: boolean
   currentShouldSyncHistory: boolean
-  groupCache: NodeCache
+  groupCache: WorkerGroupCache
   prisma: PrismaClient
 }
 
@@ -40,7 +40,7 @@ export function connectSocket({
     // response to sock.fetchMessageHistory() before it reaches messaging-history.set.
     shouldSyncHistoryMessage: (msg) =>
       msg?.syncType === proto.HistorySync.HistorySyncType.ON_DEMAND || currentShouldSyncHistory,
-    cachedGroupMetadata: async (jid) => groupCache.get(jid) ?? undefined,
+    cachedGroupMetadata: async (jid) => groupCache.get(jid),
     getMessage: async (key) => {
       if (!key.id) return undefined
       try {
@@ -54,6 +54,8 @@ export function connectSocket({
       return undefined
     }
   })
+
+  groupCache.attach(sock)
 
   try {
     const evTarget = sock.ev as unknown as {

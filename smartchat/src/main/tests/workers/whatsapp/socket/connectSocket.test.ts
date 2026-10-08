@@ -19,7 +19,7 @@ vi.mock('@whiskeysockets/baileys', async (importOriginal) => {
     ...mod,
     default: vi.fn((opts: Record<string, any>) => {
       capturedOptions.current = opts
-      return { ev: {}, user: null } as any
+      return { ev: { on: vi.fn() }, user: null } as any
     })
   }
 })
@@ -38,7 +38,7 @@ describe('connectSocket — P2-S1-01 getMessage BufferJSON reviver', () => {
       state: {} as any,
       syncFullHistory: false,
       currentShouldSyncHistory: false,
-      groupCache: { get: () => undefined } as any,
+      groupCache: { get: () => undefined, attach: () => undefined } as any,
       prisma
     })
     return capturedOptions.current!

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { EventEmitter } from 'events'
-import NodeCache from 'node-cache'
 import type { AuthenticationState } from '@whiskeysockets/baileys'
 import type { PrismaClient } from '@prisma/client'
 
@@ -26,6 +25,7 @@ vi.mock('@whiskeysockets/baileys', async (importOriginal) => {
   }
 })
 
+import { WorkerGroupCache } from '../../../../workers/whatsapp/services/WorkerGroupCache'
 import { connectSocket } from '../../../../workers/whatsapp/socket/connectSocket'
 
 const GROUP = '123@g.us'
@@ -51,13 +51,13 @@ describe('connectSocket — B-WA-08 cachedGroupMetadata fill', () => {
       state: {} as unknown as AuthenticationState,
       syncFullHistory: false,
       currentShouldSyncHistory: false,
-      groupCache: new NodeCache({ stdTTL: 300, useClones: false }),
+      groupCache: new WorkerGroupCache(),
       prisma: {} as unknown as PrismaClient
     })
     return capturedOptions.current!
   }
 
-  it.fails('serves group metadata from the cache after groupFetchAllParticipating', async () => {
+  it('serves group metadata from the cache after groupFetchAllParticipating', async () => {
     const opts = open()
     await fakeSock.current?.groupFetchAllParticipating()
     await expect(opts.cachedGroupMetadata(GROUP)).resolves.toEqual(meta)
