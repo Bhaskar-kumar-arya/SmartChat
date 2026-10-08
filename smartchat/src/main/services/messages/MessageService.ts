@@ -390,6 +390,16 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     const skip = (page - 1) * pageSize
 
     const messages = await this.queryRepository.findChatMessagesWithSender(targetJid, skip, pageSize)
+    const enriched = await this.enrichMessagePage(messages, sock, includeReactions)
+    return enriched.reverse()
+  }
+
+  /** Enrich a fetched page (names + reactions), preserving the input order. */
+  private async enrichMessagePage(
+    messages: DBMessageWithSender[],
+    sock: unknown | null,
+    includeReactions: boolean
+  ): Promise<EnrichedMessage[]> {
     const additionalJids = this.collectAdditionalJidsForResolve(messages)
 
     const nameMap = await this.contactService.batchResolveNames(
@@ -421,7 +431,7 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
       })
     )
 
-    return enriched.reverse()
+    return enriched
   }
 
   /**
