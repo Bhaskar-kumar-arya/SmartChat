@@ -109,9 +109,14 @@ export class SyncMessagesHandler {
       // history chunk must not re-queue favorite-sticker downloads for messages
       // already in the DB. (P2-S4-06)
       if (standardMessages.length > 0) {
-        const inserted = await this.repository.bulkSyncMessages(standardMessages)
-        for (const row of inserted) {
-          importedMessages.push({ id: row.id, content: row.content, messageType: row.messageType })
+        try {
+          const inserted = await this.repository.bulkSyncMessages(standardMessages)
+          for (const row of inserted) {
+            importedMessages.push({ id: row.id, content: row.content, messageType: row.messageType })
+          }
+        } catch (err: unknown) {
+          // The repository reports failed writes; one bad batch must not abort the whole history sync.
+          console.error('[SyncMessagesHandler] Failed to persist a message batch; continuing:', err)
         }
       }
 
