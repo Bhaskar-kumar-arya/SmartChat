@@ -60,15 +60,15 @@ const api = {
     ipcRenderer.on('wa-sync-complete', listener)
     return () => { ipcRenderer.removeListener('wa-sync-complete', listener) }
   },
-  skipSync: () => {
-    ipcRenderer.send('wa-skip-sync')
+  skipSync: (): Promise<{ status: 'success' | 'deferred' | 'error' }> => {
+    return ipcRenderer.invoke('wa-skip-sync')
   },
   fetchMessageHistory: (jid: string): Promise<{ status: 'requested' | 'no-anchor' | 'error' }> => {
     return ipcRenderer.invoke('wa:fetch-message-history', jid)
   },
-  onWaHistoryAppended: (callback: (data: { messageCount: number }) => void) => {
+  onWaHistoryAppended: (callback: (data: { messageCount: number; jid?: string; requestId?: string; error?: string }) => void) => {
     const listener = (_event: IpcRendererEvent, data: unknown) =>
-      callback((data as { messageCount: number }) ?? { messageCount: 0 })
+      callback((data as Parameters<typeof callback>[0]) ?? { messageCount: 0 })
     ipcRenderer.on('wa-history-appended', listener)
     return () => { ipcRenderer.removeListener('wa-history-appended', listener) }
   },

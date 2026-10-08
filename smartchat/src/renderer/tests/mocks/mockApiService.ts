@@ -155,7 +155,7 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): Mock
     openFile: vi.fn().mockResolvedValue(true),
 
     // Event Listeners
-    skipSync: vi.fn(),
+    skipSync: vi.fn().mockResolvedValue({ status: 'success' }),
     getSyncFullHistory: vi.fn().mockResolvedValue(false),
     setSyncFullHistory: vi.fn().mockResolvedValue(true),
     fetchMessageHistory: vi.fn().mockResolvedValue({ status: 'no-anchor' }),

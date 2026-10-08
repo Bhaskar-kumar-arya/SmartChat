@@ -483,19 +483,19 @@ describe('WAWorkerBridge contract (N-02)', () => {
 
   describe('reply shapes the bridge hands to callers (worker reply vs bridge typing)', () => {
     // B-WA-13
-    it('skipSync discards the worker {status} reply (resolves undefined) (B-WA-13 pinned)', async () => {
-      started()
-      const p = bridge.skipSync()
-      worker.reply(worker.commandOfType('skip_sync').correlationId, { status: 'deferred' })
-      await expect(p).resolves.toBeUndefined()
-    })
-
-    // B-WA-13
-    it.fails("skipSync should surface the worker's {status:'deferred'} reply [B-WA-13]", async () => {
+    it("skipSync surfaces the worker's {status:'deferred'} reply [B-WA-13]", async () => {
       started()
       const p = bridge.skipSync()
       worker.reply(worker.commandOfType('skip_sync').correlationId, { status: 'deferred' })
       await expect(p).resolves.toEqual({ status: 'deferred' })
+    })
+
+    // B-WA-13
+    it("skipSync surfaces the worker's {status:'success'} reply [B-WA-13]", async () => {
+      started()
+      const p = bridge.skipSync()
+      worker.reply(worker.commandOfType('skip_sync').correlationId, { status: 'success' })
+      await expect(p).resolves.toEqual({ status: 'success' })
     })
 
     // B-WA-15

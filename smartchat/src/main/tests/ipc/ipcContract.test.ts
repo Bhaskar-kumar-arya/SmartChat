@@ -55,7 +55,7 @@ let registeredSend: string[] = []
 beforeAll(() => {
   const ipc = registerAllIpc()
   registeredInvoke = ipc.invokeChannels()
-  // `ping` / `wa-skip-sync` are registered inline in main/index.ts (boot file, not registrable here).
+  // `ping` is registered inline in main/index.ts (boot file, not registrable here).
   registeredSend = [...ipc.sendChannels(), ...strings(/ipcMain\.on\(\s*'([^']+)'/g, indexSrc)]
 })
 

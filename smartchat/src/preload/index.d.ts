@@ -31,11 +31,11 @@ declare global {
       onWaSyncProgress: (callback: (data: { progress: number; syncType: number; syncFullHistory: boolean }) => void) => () => void
       onWaSyncStatus: (callback: (status: string) => void) => () => void
       onWaSyncComplete: (callback: () => void) => () => void
-      skipSync: () => void
+      skipSync: () => Promise<{ status: 'success' | 'deferred' | 'error' }>
       getSyncFullHistory: () => Promise<boolean>
       setSyncFullHistory: (full: boolean) => Promise<boolean>
       fetchMessageHistory: (jid: string) => Promise<{ status: 'requested' | 'no-anchor' | 'error' }>
-      onWaHistoryAppended: (callback: (data: { messageCount: number }) => void) => () => void
+      onWaHistoryAppended: (callback: (data: { messageCount: number; jid?: string; requestId?: string; error?: string }) => void) => () => void
       
       // Phase 3 & 4
       getChats: (page?: number, pageSize?: number) => Promise<ChatItem[]>
