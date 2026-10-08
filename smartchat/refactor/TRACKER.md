@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- **Owner run 2026-10-08: 12 units, max 4 in parallel, push main after each batch.** Batch A: F-MSG-4, F-UC-1, R-AI-04, R-DATA-07 (F-DATA-4 dropped: already fixed, replaced by R-DATA-07). Batch B (after A merged): F-WA-4, F-WA-6, R-SOLID-M-13, F-UC-2. Batch C: C-01, R-KRN-10, R-MSG-08, R-KRN-11. Batch B IN PROGRESS (F-WA-4 WASYNC; F-WA-6 WABRIDGE+IPC+PRELOAD; R-SOLID-M-13 MSGREPO; F-UC-2 USEMSG). Batch A MERGED (F-MSG-4, F-UC-1, R-AI-04, R-DATA-07); locks released. Lint ratchet is red on main itself (429->431 return-type, 50->54 no-require-imports; identical pre-merge, no unit raised it) so the unit gate is 'no rise vs main'. Batch 5 (F-KRN-3, F-MSG-5, F-WA-3, F-APP-2) MERGED; awaiting owner direction. Integration branch = claude/hopeful-johnson-ysujzy; owner approved direct push to main.
+- **Owner run 2026-10-08: 12 units, max 4 in parallel, push main after each batch.** Batch A: F-MSG-4, F-UC-1, R-AI-04, R-DATA-07 (F-DATA-4 dropped: already fixed, replaced by R-DATA-07). Batch B (after A merged): F-WA-4, F-WA-6, R-SOLID-M-13, F-UC-2. Batch C: C-01, R-KRN-10, R-MSG-08, R-KRN-11. Batch B MERGED (F-WA-4, F-WA-6, R-SOLID-M-13, F-UC-2). Batch C IN PROGRESS (C-01 IPC; R-MSG-08 MSGREPO; R-KRN-10, R-KRN-11 no locks). Batch A MERGED (F-MSG-4, F-UC-1, R-AI-04, R-DATA-07); locks released. Lint ratchet is red on main itself (429->431 return-type, 50->54 no-require-imports; identical pre-merge, no unit raised it) so the unit gate is 'no rise vs main'. Batch 5 (F-KRN-3, F-MSG-5, F-WA-3, F-APP-2) MERGED; awaiting owner direction. Integration branch = claude/hopeful-johnson-ysujzy; owner approved direct push to main.
 - Baseline: typecheck ✅ · vitest 274 files / 1839 passed / 7 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (no change)
 
 ## Owner smoke queue (🔎)
@@ -52,6 +52,11 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 29. (R-AI-04, optional) AI runs a SELECT via queryDatabase and readMessages (ok) and a write attempt (rejected).
 30. (R-DATA-07, optional) After fresh sync + group hydration chat names/timestamps/archived/community grouping look as before.
 
+31. (F-WA-4) Link, finish sync, send two messages to a group: worker log shows no groupMetadata IQ per send; add/remove a member on the phone then send again: delivery still reaches current members.
+32. (F-WA-6) First-link history sync: click 'Skip remaining sync ->' (app proceeds, no skipSync error); skip while chunks are being written resolves {status:'deferred'} and completion still fires; skip with worker down: no crash. CONTRACT: wa-skip-sync is now invoke returning {status}.
+33. (R-SOLID-M-13) Full history sync reaches 100% with no abort; send text + media -> SENT; react from the app and remove it (both persist); edit from the phone persists. BEHAVIOUR: failed repository writes now reject (callers catch).
+34. (F-UC-2) Drop photos in chat A, switch to B: preview gone, back to A: stays gone; click an old search hit in the open chat: loads + scrolls; open an extension chat: works, WA chat list unaffected.
+
 ## Follow-ups inbox (triaged at each wave boundary)
 - (smoke 2026-10-09, BUG, FIXED on main, needs owner re-verify) Quit mid-send (send a large attachment, quit before it uploads, relaunch: it must show the failed icon, not the clock; owner confirmed the message never reached the phone). Fix: `MessageRepository.failStalePendingOutgoing()` called once at startup in index.ts marks leftover PENDING fromMe rows FAILED; no auto-resend / retry UI yet. Original report: Quit mid-send: messages sent just before quit (text + image) still show the pending clock after relaunch; nothing re-sends or marks them failed. Check how pending/queued outgoing messages are persisted and reconciled on startup (F-WA-3 shutdown path / outgoing queue). Owner to confirm whether they ever reach the phone.
 - (G-04) Gemini key `AIzaSy…YLRGd0` is in git history: OWNER must rotate it. Audit docs may have stale paths to moved `bug-audit*`; `.agents/skills/feature-and-bugfix/SKILL.md` mentions bug files; logger lives at `src/main/utils/logger.ts` (relocate if a shared dir appears); `test:run` and `test:run:all` scripts are identical. Fold into Z-08 (docs).
@@ -93,6 +98,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 - (smoke 2026-10-06) Dev ergonomics: tests need better-sqlite3 built for Node, dev for Electron; a running `npm run dev` locks the `.node` file (EBUSY) so `test:rebuild:node` fails and DB tests then fail with NODE_MODULE_VERSION 140 vs 127. Close the app before running the suite; run `test:rebuild:electron` afterwards.
 - (smoke 2026-10-05, observations) `EmbeddingSyncSubscriber` logs "sync/catchup started. Pausing" 7x then one "completed" after a resumed sync: check pause/unpause is not counted (embeddings might stay paused). `profile_picture_url` command times out (Baileys `Request Time-out`) during sync: noisy, low priority. Log spam removed (see session log).
 - (batch 6 A) (R-AI-04) The 3 SQL guards disagree (pinned, each caller keeps behaviour): repo rejects multi-statement, `REPLACE()`, REINDEX; tools accept multi-statement and REINDEX, reject LOAD_EXTENSION/READFILE/WRITEFILE/FSDIR which the repo accepts. QueryDatabaseTool (tool policy only) accepts multiple statements. Proposed: one union policy with REPLACE() allowed, as a fix unit (security-adjacent; owner may want it soon). (R-DATA-07) DECISIONS: SUSPECT isAnnounce divergence (bare `isAnnounce` => ANNOUNCE in live/ChatSync/Community writers but GROUP in history-sync SyncChatsHandler; flag `bareIsAnnounceClassifiesAnnounce`; Baileys isAnnounce also means 'only admins send'); inferChatType is GROUP/DM only (newsletter/broadcast pinned as DM; ChatListEnricher/SearchService branch on DM); other writer divergences pinned (Long low word, archived, unread -1, pinned, mute, name, ts 0, communityId reset). R-DATA-11 may now proceed. (F-MSG-4) deferred reactions in-memory only (needs PendingReaction table + SCHEMA to survive quit); live upsertReaction path (reaction before message) still FK-fails; reaction ts/reactor logic duplicated (R-MSG-08). (F-UC-1) after a jump hasNewer assumed true until loadNewer hits end; tiny race for a live message between last loadNewer and hasNewer=false; unknown cursor id => empty => on-demand history fetch; autoscroll-only-near-bottom rule + B-UICHAT-03/05/12 -> F-UC-2. Agent worktrees: base on the sha in the brief via `git reset --hard`.
+- (batch 6 B) (F-WA-4) WorkerGroupCache.applyParticipantsUpdate matches on `id` only (LID vs phone forms can miss => stale entry until 5-min TTL); B-WA-15 type pin still open. (F-WA-6) BOOT touched: removed `ipcMain.on('wa-skip-sync')` from index.ts (moved to ipcHandlers invoke + isTrustedSender); WhatsAppConnectionManager.skipSync now returns status; App.tsx ignores the result (could show 'finishing up' for deferred / error). (R-SOLID-M-13) still swallowing: revokeMessage, updateMessageDeleted, updateMessageContent, bulkCreateMessages, bulkSyncReactions; a reaction to a not-yet-stored message now throws in processReaction => logged by ReceiptSubscriber and the live reaction event is NOT emitted (was: FK swallowed, event emitted); post-send save failure leaves row PENDING while UI shows SENT (startup sweep marks FAILED later); caller tests not mutation-checked. (F-UC-2) B-UICHAT-06 autoscroll-near-bottom + 'Latest' counter pill still open (needs a unit); target-not-in-DOM clearing needs a signal from useMessages; ChatLayout subscribeNavigation duplicates same-chat jump logic (R-SOLID-R-06); handleSelectChat identity changes with activeJid (R-UICHAT-03). Ops: a stray `.claude/` dir is untracked in repo root (worktrees); not committed.
 - (seed) `bug.txt` items are tracked as B-MSG-01 (reactions in history sync) and B-MSG-02..05 (edited reply loses context).
 
 ## Session log
@@ -150,12 +156,12 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | MERGED | |
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | MERGED | 55016d5 |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | MERGED | |
-| R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | IN PROGRESS | refactor/R-SOLID-M-13 |
+| R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | MERGED | 03e7116 |
 | F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | MERGED | 21bbcf7 |
 | F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | MERGED | 7630f8f |
-| F-WA-6 | W2 · WA | skipSync returns {status} (B-WA-13); widen onWaHistoryAppended types | F-WA-2 | WABRIDGE, IPC, PRELOAD | IN PROGRESS | refactor/F-WA-6 |
+| F-WA-6 | W2 · WA | skipSync returns {status} (B-WA-13); widen onWaHistoryAppended types | F-WA-2 | WABRIDGE, IPC, PRELOAD | MERGED | 29f0548 |
 | F-WA-3 | W2 · WA | Graceful worker shutdown | F-WA-1, F-WA-2 | WABRIDGE | MERGED | |
-| F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | IN PROGRESS | refactor/F-WA-4 |
+| F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | MERGED | d202126 |
 | F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | MERGED | 21bbcf7 |
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | MERGED | e8b1d9f |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | MERGED | b5fc5a9 |
@@ -173,12 +179,12 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | MERGED | ba3b988 |
 | F-APP-2 | W2 · APP | Surface index-embeddings failures | N-05, H-04 | IPC | MERGED | |
 | F-UC-1 | W2 · UC | Cursor pagination + loadNewer + guarded sends `CONTRACT` 🔎 | N-08 | USEMSG, IPC, PRELOAD | MERGED | 9aa9ae4 |
-| F-UC-2 | W2 · UC | Chat-switch hygiene | F-UC-1 | USEMSG | IN PROGRESS | refactor/F-UC-2 |
+| F-UC-2 | W2 · UC | Chat-switch hygiene | F-UC-1 | USEMSG | MERGED | 9e29b30 |
 | F-UC-3 | W2 · UC | Composer/markdown/error toasts | N-07 | – | MERGED | 7567cd3 |
 | F-UA-1 | W2 · UA | Small renderer bug batch | N-07 | – | MERGED | 0b74c4a |
 | F-UA-2 | W2 · UA | useAIStream session guard | N-08 | – | MERGED | |
 | F-UA-3 | W2 · UA | useConnectionState reducer 🔎 | N-08 | – | MERGED | |
-| C-01 | W3 · APP | Shared typed IPC contract (types only) | N-05, F-UC-1, F-AI-3, F-AI-5, F-APP-2 | IPC | WAITING | |
+| C-01 | W3 · APP | Shared typed IPC contract (types only) | N-05, F-UC-1, F-AI-3, F-AI-5, F-APP-2 | IPC | IN PROGRESS | refactor/C-01 |
 | C-02 | W3 · APP | Typed registration; split ipcHandlers | C-01 | IPC | WAITING | |
 | C-03 | W3 · APP | Typed preload + IAPIService + typed mock | C-02 | PRELOAD | WAITING | |
 | C-04 | W3 · APP | Orphan channels, delete extension chat, retire syncFullHistory `CONTRACT` | C-03, F-WA-1 | IPC, PRELOAD | WAITING | |
@@ -197,7 +203,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | R-SOLID-M-11 | W4 · WA | Worker-bootstrap role interfaces | R-WA-09, R-MSG-07, R-SOLID-M-03 | DI, WABRIDGE | WAITING | |
 | R-SOLID-M-10 | W4 · WA | Honest socket ports | R-MSG-09, C-02 | – | WAITING | |
 | R-MSG-07 | W4 · MSG | Split MessageService | F-MSG-3, F-MSG-5 | DI | WAITING | |
-| R-MSG-08 | W4 · MSG | One parser / extractTextContent | F-MSG-3 | MSGREPO | WAITING | |
+| R-MSG-08 | W4 · MSG | One parser / extractTextContent | F-MSG-3 | MSGREPO | IN PROGRESS | refactor/R-MSG-08 |
 | R-MSG-09 | W4 · MSG | Media/sticker infra | W1 | – | WAITING | |
 | R-MSG-10 | W4 · MSG | Last-message window query + dead code | R-DATA-09 | – | WAITING | |
 | R-SOLID-M-07 | W4 · MSG | Message-type enrichment strategies | R-MSG-07 | – | WAITING | |
@@ -215,8 +221,8 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | R-SOLID-M-01 | W4 · AI | Provider registry + single contract | F-AI-1, R-AI-06, F-AI-3 | DI | WAITING | |
 | R-SOLID-M-08 | W4 · AI | Split ReadMessagesTool | R-AI-04, F-MSG-1 | – | WAITING | |
 | R-KRN-09 | W4 · KRN | Builtin context from SDK bridge | F-KRN-1 | KHOST | WAITING | |
-| R-KRN-10 | W4 · KRN | Single manifest schema + reject unused slots `CONTRACT` | W1 | – | WAITING | |
-| R-KRN-11 | W4 · KRN | SDK contract cleanup + docs `CONTRACT` | F-KRN-1 | – | WAITING | |
+| R-KRN-10 | W4 · KRN | Single manifest schema + reject unused slots `CONTRACT` | W1 | – | IN PROGRESS | refactor/R-KRN-10 |
+| R-KRN-11 | W4 · KRN | SDK contract cleanup + docs `CONTRACT` | F-KRN-1 | – | IN PROGRESS | refactor/R-KRN-11 |
 | R-SOLID-M-02 | W4 · KRN | Declarative kernel-module actions | S-03, S-04, F-KRN-4 | – | WAITING | |
 | R-SOLID-M-09 | W4 · KRN | SDK channel decomposition | F-KRN-1, R-KRN-11 | – | WAITING | |
 | R-SOLID-M-05 | W4 · APP | IRendererNotifier port (last in W4) | C-04, D-03 | IPC, DI, KHOST | WAITING | |
