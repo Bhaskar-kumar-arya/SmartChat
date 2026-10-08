@@ -23,6 +23,7 @@ describe('KernelMessagesModule', () => {
 
     mockMessageQueryService = {
       getChatMessages: vi.fn(),
+      getChatMessagesPage: vi.fn(),
       getMessagesAroundId: vi.fn(),
       getOldestMessageKey: vi.fn(),
       enrichMessage: vi.fn(),

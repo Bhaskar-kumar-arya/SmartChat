@@ -40,7 +40,7 @@ declare global {
       // Phase 3 & 4
       getChats: (page?: number, pageSize?: number) => Promise<ChatItem[]>
       getChat: (jid: string) => Promise<ChatItem | null>
-      getMessages: (jid: string, page?: number, pageSize?: number) => Promise<MessageItem[]>
+      getMessages: (jid: string, options?: { limit?: number; before?: string; after?: string }) => Promise<MessageItem[]>
       getMessagesAround: (jid: string, messageId: string, lookBehind?: number) => Promise<MessageItem[]>
       sendMessage: (jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => Promise<MessageItem>
       retryMessage: (jid: string, messageId: string) => Promise<MessageItem>

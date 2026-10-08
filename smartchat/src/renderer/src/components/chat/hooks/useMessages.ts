@@ -9,6 +9,8 @@ import { isSameJid } from '../../../utils/jidUtils'
  * and media download state.
  * This satisfies the Single Responsibility Principle.
  */
+const PAGE_SIZE = 50
+
 export const useMessages = (activeJid: string | null, initialTargetId?: string | null) => {
   const api = useAPI()
   const [messages, setMessages] = useState<MessageItem[]>([])
@@ -26,20 +28,30 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
   }, [messages])
   const [loading, setLoading] = useState(false)
   const [isJumping, setIsJumping] = useState(false)
-  const [currentPage, setCurrentPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
+  // True after a jump: the list is a window in the middle of history and newer
+  // messages exist beyond its last row. While set, live messages are NOT appended
+  // (that would leave a silent gap); loadNewer / jumpToLatest fetch them instead.
+  const [hasNewer, setHasNewerState] = useState(false)
+  const hasNewerRef = useRef(false)
+  const setHasNewer = useCallback((v: boolean) => {
+    hasNewerRef.current = v
+    setHasNewerState(v)
+  }, [])
+  const loadingNewerRef = useRef(false)
   // True while we've asked WhatsApp for an older page (the local DB is exhausted)
   // and are waiting for those messages to land. Surfaced to the UI as a spinner.
   const [syncingOlder, setSyncingOlder] = useState(false)
 
-  // Guards a single in-flight on-demand history request. Holds the page number
-  // we're trying to fill and a timeout that gives up if WhatsApp never answers.
-  const onDemandRef = useRef<{ jid: string; page: number; timer: ReturnType<typeof setTimeout> } | null>(null)
+  // Guards a single in-flight on-demand history request. Holds the chat we're
+  // trying to fill and a timeout that gives up if WhatsApp never answers.
+  const onDemandRef = useRef<{ jid: string; timer: ReturnType<typeof setTimeout> } | null>(null)
 
   const loadInitialMessages = useCallback(async (jid: string) => {
     setLoading(true)
-    setCurrentPage(1)
     setHasMore(true)
+    setHasNewer(false)
+    loadingNewerRef.current = false
     // Drop any pending on-demand history request from the previous chat.
     if (onDemandRef.current) {
       clearTimeout(onDemandRef.current.timer)
@@ -51,7 +63,7 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     api.markRead(jid).catch(err => console.error('Failed to mark read:', err))
 
     try {
-      const msgs = await api.getMessages(jid, 1, 50)
+      const msgs = await api.getMessages(jid, { limit: PAGE_SIZE })
       if (jid !== activeJidRef.current) return
       setMessages(msgs)
     } catch (err) {
@@ -69,8 +81,11 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
       const msgs = await api.getMessagesAround(jid, messageId)
       if (jid !== activeJidRef.current) return
       setMessages(msgs)
-      setCurrentPage(1)
       setHasMore(true)
+      // The window ends target+200 at most; whether newer rows exist is only known
+      // by asking, so assume so until loadNewer reaches the end.
+      setHasNewer(true)
+      loadingNewerRef.current = false
       if (onDemandRef.current) {
         clearTimeout(onDemandRef.current.timer)
         onDemandRef.current = null
@@ -83,7 +98,7 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     } finally {
       if (jid === activeJidRef.current) setIsJumping(false)
     }
-  }, [api, loadInitialMessages])
+  }, [api, loadInitialMessages, setHasNewer])
 
   const lastActiveJid = useRef<string | null>(null)
 
@@ -111,21 +126,27 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     setSyncingOlder(false)
   }, [])
 
-  /** Prepend a locally-stored page; returns how many rows landed. */
-  const loadDbPage = useCallback(async (jid: string, page: number): Promise<number> => {
-    const olderMsgs = await api.getMessages(jid, page, 50)
+  /**
+   * Prepend the stored page just older than the oldest loaded message (cursor, not
+   * a page number, so it stays correct after a jump). Returns how many FRESH rows
+   * landed (rows not already in the list).
+   */
+  const loadDbPage = useCallback(async (jid: string): Promise<number> => {
+    const before = messagesRef.current[0]?.id
+    const older = await api.getMessages(jid, { limit: PAGE_SIZE, before })
     // Bail if the user switched chats while this page was in flight, otherwise
     // chat A's older page gets prepended onto chat B's list (F3-02).
     if (jid !== activeJidRef.current) return 0
-    if (olderMsgs.length > 0) {
+    const loaded = new Set(messagesRef.current.map((m) => m.id))
+    const fresh = older.filter((m) => !loaded.has(m.id))
+    if (fresh.length > 0) {
       setMessages((prev) => {
         const seen = new Set(prev.map((m) => m.id))
-        const fresh = olderMsgs.filter((m) => !seen.has(m.id))
-        return fresh.length > 0 ? [...fresh, ...prev] : prev
+        const add = fresh.filter((m) => !seen.has(m.id))
+        return add.length > 0 ? [...add, ...prev] : prev
       })
-      setCurrentPage(page)
     }
-    return olderMsgs.length
+    return fresh.length
   }, [api])
 
   const loadMore = useCallback(async () => {
@@ -133,10 +154,9 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     // An on-demand fetch is already running for this chat — wait for it.
     if (onDemandRef.current) return 0
 
-    const nextPage = currentPage + 1
     const jid = activeJid
     try {
-      const landed = await loadDbPage(jid, nextPage)
+      const landed = await loadDbPage(jid)
       if (jid !== activeJidRef.current) return 0
       if (landed > 0) return landed
 
@@ -155,7 +175,7 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
         // keep hasMore true so the user isn't permanently capped.
         clearOnDemand()
       }, 40000)
-      onDemandRef.current = { jid, page: nextPage, timer }
+      onDemandRef.current = { jid, timer }
       // Sentinel: an on-demand fetch is now in flight and a prepend will follow
       // asynchronously. The caller keeps its scroll-anchor state alive instead of
       // treating this as "no more messages".
@@ -164,7 +184,7 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
       console.error('Failed to load more messages:', err)
       return 0
     }
-  }, [activeJid, currentPage, hasMore, loading, api, loadDbPage, clearOnDemand])
+  }, [activeJid, hasMore, loading, api, loadDbPage, clearOnDemand])
 
   // When an on-demand history page lands, retry the DB page we were trying to fill.
   useEffect(() => {
@@ -172,7 +192,7 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
       const pending = onDemandRef.current
       if (!pending || pending.jid !== activeJidRef.current) return
       clearOnDemand()
-      loadDbPage(pending.jid, pending.page).then((landed) => {
+      loadDbPage(pending.jid).then((landed) => {
         if (pending.jid !== activeJidRef.current) return
         // WhatsApp acknowledged but returned nothing older — we've truly reached
         // the start of this conversation.
@@ -199,6 +219,68 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     await performJump(activeJid, messageId)
   }, [activeJid, performJump])
 
+  /**
+   * After a jump: append the page just newer than the last loaded message. Returns
+   * how many fresh rows landed; clears `hasNewer` once the newest message is reached.
+   */
+  const loadNewer = useCallback(async (): Promise<number> => {
+    const jid = activeJid
+    if (!jid || !hasNewerRef.current || loadingNewerRef.current) return 0
+    const list = messagesRef.current
+    const after = list[list.length - 1]?.id
+    if (!after) return 0
+    loadingNewerRef.current = true
+    try {
+      const newer = await api.getMessages(jid, { limit: PAGE_SIZE, after })
+      if (jid !== activeJidRef.current) return 0
+      const loaded = new Set(messagesRef.current.map((m) => m.id))
+      const fresh = newer.filter((m) => !loaded.has(m.id))
+      if (fresh.length > 0) {
+        setMessages((prev) => {
+          const seen = new Set(prev.map((m) => m.id))
+          const add = fresh.filter((m) => !seen.has(m.id))
+          return add.length > 0 ? [...prev, ...add] : prev
+        })
+      }
+      if (newer.length < PAGE_SIZE) setHasNewer(false)
+      return fresh.length
+    } catch (err) {
+      console.error('Failed to load newer messages:', err)
+      return 0
+    } finally {
+      loadingNewerRef.current = false
+    }
+  }, [activeJid, api, setHasNewer])
+
+  /** Drop a jumped window and reload the newest page (clears `hasNewer`). */
+  const jumpToLatest = useCallback(async (): Promise<void> => {
+    if (!activeJid) return
+    await loadInitialMessages(activeJid)
+  }, [activeJid, loadInitialMessages])
+
+  /**
+   * Add a message that the user just sent/retried to the list, unless the user has
+   * moved on: a chat switch means it belongs to another list (B-UICHAT-02), and a
+   * jumped window has no tail to append to, so reload the newest page instead.
+   */
+  const applyOwnMessage = (jid: string, msg: MessageItem, replaceId?: string): void => {
+    if (jid !== activeJidRef.current) return
+    if (hasNewerRef.current) {
+      void loadInitialMessages(jid)
+      return
+    }
+    setMessages((prev) => {
+      const without = replaceId ? prev.filter((m) => m.id !== replaceId) : prev
+      const idx = without.findIndex((m) => m.id === msg.id)
+      if (idx !== -1) {
+        const updated = [...without]
+        updated[idx] = msg
+        return updated
+      }
+      return [...without, msg]
+    })
+  }
+
   const handleDownloadMedia = async (msgId: string) => {
     try {
       const updatedMsg = await api.downloadMedia(msgId)
@@ -219,6 +301,10 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
           handleReactionUpdate(msg)
           return
         }
+
+        // A jumped window has no tail: appending would leave a gap. loadNewer
+        // picks this message up from the DB instead.
+        if (hasNewerRef.current) return
 
         setMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) {
@@ -309,16 +395,9 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
   const sendMessage = async (text: string, replyId?: string, mentions?: string[]) => {
     if (!activeJid || !text.trim()) return
     try {
-      const sentMsg = await api.sendMessage(activeJid, text.trim(), replyId, mentions)
-      setMessages((prev) => {
-        const idx = prev.findIndex(m => m.id === sentMsg.id)
-        if (idx !== -1) {
-          const updated = [...prev]
-          updated[idx] = sentMsg
-          return updated
-        }
-        return [...prev, sentMsg]
-      })
+      const jid = activeJid
+      const sentMsg = await api.sendMessage(jid, text.trim(), replyId, mentions)
+      applyOwnMessage(jid, sentMsg)
       return sentMsg
     } catch (err) {
       console.error('Failed to send message:', err)
@@ -329,16 +408,9 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
   const sendMediaMessage = async (filePath: string, text: string, replyId?: string, mentions?: string[]) => {
     if (!activeJid) return
     try {
-      const sentMsg = await api.sendMediaMessage(activeJid, filePath, text.trim(), replyId, mentions)
-      setMessages((prev) => {
-        const idx = prev.findIndex(m => m.id === sentMsg.id)
-        if (idx !== -1) {
-          const updated = [...prev]
-          updated[idx] = sentMsg
-          return updated
-        }
-        return [...prev, sentMsg]
-      })
+      const jid = activeJid
+      const sentMsg = await api.sendMediaMessage(jid, filePath, text.trim(), replyId, mentions)
+      applyOwnMessage(jid, sentMsg)
       return sentMsg
     } catch (err) {
       console.error('Failed to send media message:', err)
@@ -349,18 +421,11 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
   const retryMessage = async (messageId: string): Promise<MessageItem | undefined> => {
     if (!activeJid) return
     try {
-      const retried = await api.retryMessage(activeJid, messageId)
+      const jid = activeJid
+      const retried = await api.retryMessage(jid, messageId)
       // The retry is a brand-new message (new id): replace the failed bubble, tolerating the
       // live new-message event having already delivered it.
-      setMessages((prev) => {
-        const without = prev.filter((m) => m.id !== messageId)
-        const idx = without.findIndex((m) => m.id === retried.id)
-        if (idx !== -1) {
-          without[idx] = retried
-          return without
-        }
-        return [...without, retried]
-      })
+      applyOwnMessage(jid, retried, messageId)
       return retried
     } catch (err) {
       console.error('Failed to retry message:', err)
@@ -398,8 +463,11 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     loading,
     isJumping,
     hasMore,
+    hasNewer,
     syncingOlder,
     loadMore,
+    loadNewer,
+    jumpToLatest,
     loadInitialMessages,
     jumpToMessage,
     handleDownloadMedia,

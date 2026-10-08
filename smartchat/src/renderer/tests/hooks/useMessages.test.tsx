@@ -46,7 +46,7 @@ describe('useMessages', () => {
       await Promise.resolve()
     })
 
-    expect(mockApi.getMessages).toHaveBeenCalledWith('user@s.whatsapp.net', 1, 50)
+    expect(mockApi.getMessages).toHaveBeenCalledWith('user@s.whatsapp.net', { limit: 50 })
     expect(mockApi.markRead).toHaveBeenCalledWith('user@s.whatsapp.net')
     expect(result.current.messages).toEqual(sampleMessages)
   })
@@ -130,8 +130,8 @@ describe('useMessages', () => {
     let resolveMore: (v: MessageItem[]) => void = () => {}
 
     const api = createMockApiService({
-      getMessages: vi.fn().mockImplementation((jid: string, page: number) => {
-        if (page > 1) return new Promise((r) => { resolveMore = r })
+      getMessages: vi.fn().mockImplementation((jid: string, opts?: { before?: string }) => {
+        if (opts?.before) return new Promise((r) => { resolveMore = r })
         return Promise.resolve(jid === 'a@s.whatsapp.net' ? sampleMessages : [])
       }),
       markRead: vi.fn().mockResolvedValue(true),
