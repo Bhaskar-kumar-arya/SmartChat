@@ -26,6 +26,7 @@ import { ExtendedChatItem } from '../../types/chatTypes'
 import { PluginIcon } from '../common/PluginIcon'
 import { mapSubMenuItems } from '../../utils/contributionUtils'
 import { SidebarRail } from './SidebarRail'
+import { parseExtensionChatId } from '../../utils/extensionChat'
 
 
 
@@ -431,7 +432,7 @@ export default function ChatList({
                       chat={chat as any}
                       isActive={activeJid === chat.jid}
                       onSelect={() => {
-                        const extId = chat.jid.replace('extension_', '')
+                        const extId = parseExtensionChatId(chat.jid) ?? chat.jid
                         if (onOpenExtensionChat) {
                           onOpenExtensionChat(extId, chat.name)
                         } else {

@@ -22,6 +22,7 @@ import { ExtensionChatView } from './ExtensionChat/ExtensionChatView'
 import { useExtensionManager } from '../../hooks/useExtensionManager'
 import { SidebarPluginMainStage, useSidebarPanelFocus } from '../panels/SidebarPluginTabs'
 import { ErrorBoundary } from '../common/ErrorBoundary'
+import { parseExtensionChatId, toExtensionChatJid } from '../../utils/extensionChat'
 
 
 export default function ChatLayout() {
@@ -129,7 +130,7 @@ export default function ChatLayout() {
   const handleOpenExtensionChat = useCallback((extensionId: string, name: string) => {
     selectSidebarPanel(null)
     setActiveExtensionId(extensionId)
-    setActiveJid(`extension_${extensionId}`)
+    setActiveJid(toExtensionChatJid(extensionId))
     setActiveName(name)
     setActiveProfilePic(null)
     setReplyingTo(null)
@@ -152,8 +153,8 @@ export default function ChatLayout() {
 
   useEffect(() => {
     const unsubscribe = api.onOpenChat((chat) => {
-      if (chat.jid.startsWith('extension:')) {
-        const extId = chat.jid.replace('extension:', '')
+      const extId = parseExtensionChatId(chat.jid)
+      if (extId !== null) {
         handleOpenExtensionChat(extId, chat.name)
       } else {
         handleSelectChat(chat.jid, chat.name)
@@ -176,6 +177,7 @@ export default function ChatLayout() {
     return subscribeNavigation((intent) => {
       const { jid, targetMessageId: newTarget } = intent
       const chatName = '' // ChatList resolves name from its own data
+      const extId = parseExtensionChatId(jid)
 
       // If we are already in this chat and just need to jump to a message
       if (activeJidRef.current === jid && newTarget) {
@@ -186,8 +188,7 @@ export default function ChatLayout() {
           .catch((err) => {
             console.error('Failed to jump to message:', err)
           })
-      } else if (jid.startsWith('extension:')) {
-        const extId = jid.replace('extension:', '')
+      } else if (extId !== null) {
         handleOpenExtensionChat(extId, chatName)
       } else {
         handleSelectChat(jid, chatName, null, newTarget ?? null)
