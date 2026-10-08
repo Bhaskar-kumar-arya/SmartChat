@@ -22,6 +22,7 @@ import { ExtensionChatView } from './ExtensionChat/ExtensionChatView'
 import { useExtensionManager } from '../../hooks/useExtensionManager'
 import { SidebarPluginMainStage, useSidebarPanelFocus } from '../panels/SidebarPluginTabs'
 import { ErrorBoundary } from '../common/ErrorBoundary'
+import { parseExtensionChatId, toExtensionChatJid } from '../../utils/extensionChat'
 
 
 export default function ChatLayout() {
@@ -43,6 +44,9 @@ export default function ChatLayout() {
   // Extension chat routing
   const [activeExtensionId, setActiveExtensionId] = useState<string | null>(null)
   const isExtensionChat = activeExtensionId !== null
+  // Extension chats have a synthetic jid that no WhatsApp API knows: never feed it
+  // to useMessages / setActiveChat (B-UICHAT-12).
+  const waJid = isExtensionChat ? null : activeJid
   
   const { extensions } = useExtensionManager()
   const activeExtension = extensions.find(e => e.id === activeExtensionId)
@@ -65,7 +69,7 @@ export default function ChatLayout() {
     retryMessage,
     editMessage,
     deleteMessage
-  } = useMessages(activeJid, targetMessageId)
+  } = useMessages(waJid, targetMessageId)
 
   const { getActivePresence } = usePresence()
 
@@ -116,30 +120,52 @@ export default function ChatLayout() {
     }
   }, [addFiles, api])
 
+  // Keep `activeJid` readable from the navigation listener / chat selection without
+  // making their callbacks depend on it (it changes on every chat switch — an
+  // intent dispatched in the teardown/re-add gap would be lost). F12-02.
+  const activeJidRef = useRef(activeJid)
+  useEffect(() => {
+    activeJidRef.current = activeJid
+  }, [activeJid])
+
   const handleSelectChat = useCallback((jid: string, name: string, profilePictureUrl?: string | null, messageId?: string | null) => {
     selectSidebarPanel(null)
     setActiveExtensionId(null) // leaving extension chat
+    if (jid === activeJidRef.current) {
+      // Already open: useMessages only reloads on a jid change, so a search hit has
+      // to be fetched explicitly (B-UICHAT-05). Staged files stay (same chat).
+      setActiveName(name)
+      setActiveProfilePic(profilePictureUrl || null)
+      setReplyingTo(null)
+      setTargetMessageId(messageId || null)
+      if (messageId) {
+        jumpToMessage(messageId).catch((err) => console.error('Failed to jump to message:', err))
+      }
+      return
+    }
+    clearQueue() // staged attachments belong to the chat they were staged in (B-UICHAT-03)
     setActiveJid(jid)
     setActiveName(name)
     setActiveProfilePic(profilePictureUrl || null)
     setReplyingTo(null)
     setTargetMessageId(messageId || null)
-  }, [selectSidebarPanel])
+  }, [selectSidebarPanel, jumpToMessage, clearQueue])
 
   const handleOpenExtensionChat = useCallback((extensionId: string, name: string) => {
     selectSidebarPanel(null)
+    clearQueue()
     setActiveExtensionId(extensionId)
-    setActiveJid(`extension_${extensionId}`)
+    setActiveJid(toExtensionChatJid(extensionId))
     setActiveName(name)
     setActiveProfilePic(null)
     setReplyingTo(null)
     setTargetMessageId(null)
-  }, [selectSidebarPanel])
+  }, [selectSidebarPanel, clearQueue])
 
 
   useEffect(() => {
-    api.setActiveChat(activeJid).catch(console.error)
-  }, [activeJid, api])
+    api.setActiveChat(waJid).catch(console.error)
+  }, [waJid, api])
 
   // Focus listener — extension calls ctx.dedicatedChat.focus()
   useEffect(() => {
@@ -152,8 +178,8 @@ export default function ChatLayout() {
 
   useEffect(() => {
     const unsubscribe = api.onOpenChat((chat) => {
-      if (chat.jid.startsWith('extension:')) {
-        const extId = chat.jid.replace('extension:', '')
+      const extId = parseExtensionChatId(chat.jid)
+      if (extId !== null) {
         handleOpenExtensionChat(extId, chat.name)
       } else {
         handleSelectChat(chat.jid, chat.name)
@@ -164,18 +190,11 @@ export default function ChatLayout() {
     }
   }, [handleSelectChat, handleOpenExtensionChat, api])
 
-  // Keep `activeJid` readable from the navigation listener without making the
-  // subscription effect depend on it (it changes on every chat switch — an
-  // intent dispatched in the teardown/re-add gap would be lost). F12-02.
-  const activeJidRef = useRef(activeJid)
-  useEffect(() => {
-    activeJidRef.current = activeJid
-  }, [activeJid])
-
   useEffect(() => {
     return subscribeNavigation((intent) => {
       const { jid, targetMessageId: newTarget } = intent
       const chatName = '' // ChatList resolves name from its own data
+      const extId = parseExtensionChatId(jid)
 
       // If we are already in this chat and just need to jump to a message
       if (activeJidRef.current === jid && newTarget) {
@@ -186,8 +205,7 @@ export default function ChatLayout() {
           .catch((err) => {
             console.error('Failed to jump to message:', err)
           })
-      } else if (jid.startsWith('extension:')) {
-        const extId = jid.replace('extension:', '')
+      } else if (extId !== null) {
         handleOpenExtensionChat(extId, chatName)
       } else {
         handleSelectChat(jid, chatName, null, newTarget ?? null)
