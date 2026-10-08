@@ -399,7 +399,9 @@ export class SyncMessagesHandler {
     pendingReactions: PendingReaction[]
   ): void {
     try {
-      const rawMsg = JSON.parse(msg.content) as Record<string, unknown>
+      // The stored content is the raw proto; disappearing-messages chats wrap the
+      // reaction in ephemeralMessage/viewOnce envelopes (getMessageType unwraps too).
+      const rawMsg = unwrapMessage(JSON.parse(msg.content) as Record<string, unknown>) as Record<string, unknown>
       const reaction = rawMsg.reactionMessage as Record<string, unknown> | undefined
       const key = reaction?.key as Record<string, unknown> | undefined
       if (key?.id && reaction?.text) {

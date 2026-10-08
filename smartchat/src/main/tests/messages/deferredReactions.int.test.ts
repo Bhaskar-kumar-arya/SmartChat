@@ -113,7 +113,7 @@ describe('deferred reactions in history sync (real DB)', () => {
     expect(await prisma.message.findUnique({ where: { id: 'T1' } })).not.toBeNull()
   })
 
-  it.fails('an ephemeralMessage-wrapped inline reaction is extracted', async () => {
+  it('an ephemeralMessage-wrapped inline reaction is extracted', async () => {
     await injectEvent(
       'messaging-history.set',
       chunk([textMsg('T1', 1000), reactionMsg('r1', 'T1', '🔥', 2000, true)]),
