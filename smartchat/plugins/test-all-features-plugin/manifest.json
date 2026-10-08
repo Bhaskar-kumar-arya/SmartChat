@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "apiVersion": "2",
   "main": "index.js",
-  "description": "External test plugin validating all contribution slots and kernel API modules.",
+  "description": "External test plugin validating all supported contribution slots and kernel API modules.",
   "permissions": [
     "chats:read",
     "chats:write",
@@ -36,12 +36,6 @@
         "id": "test-message-action",
         "label": "Test Message Action",
         "icon": "zap"
-      }
-    ],
-    "chatBadges": [
-      {
-        "id": "test-badge",
-        "label": "Test Badge"
       }
     ],
     "slashCommands": [
@@ -77,32 +71,6 @@
           },
           "required": ["query"]
         }
-      }
-    ],
-    "keyboardShortcuts": [
-      {
-        "id": "test-shortcut",
-        "defaultBinding": "Ctrl+Alt+T",
-        "description": "Test plugin hotkey"
-      }
-    ],
-    "statusBarItems": [
-      {
-        "id": "test-status",
-        "alignment": "right"
-      }
-    ],
-    "chatFilters": [
-      {
-        "id": "test-filter",
-        "label": "Test Filter",
-        "icon": "filter"
-      }
-    ],
-    "chatSortStrategies": [
-      {
-        "id": "test-sort",
-        "label": "Test Sort Strategy"
       }
     ]
   }

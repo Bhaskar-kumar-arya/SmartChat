@@ -72,7 +72,9 @@ export class ManifestValidationError extends Error {
   }
 }
 
-export class ApiVersionError extends Error {
+// An unsupported apiVersion is a kind of invalid manifest, so callers catching
+// ManifestValidationError also catch it; callers that care can still tell them apart.
+export class ApiVersionError extends ManifestValidationError {
   constructor(message: string) {
     super(message)
     this.name = 'ApiVersionError'
@@ -109,6 +111,34 @@ const SubMenuItemSchema: z.ZodType<SubMenuItemDeclaration> = z.lazy(() =>
   })
 )
 
+// `main` is joined onto the plugin directory and used as the worker entry —
+// it must be a non-escaping relative path (no absolute paths, no `..`).
+const isSafeRelativePath = (m: string): boolean =>
+  m.length > 0 &&
+  !m.includes('..') &&
+  !/^[/\\]/.test(m) &&
+  !/^[a-zA-Z]:[/\\]/.test(m)
+
+// `panel` (sidebar / settings HTML) is resolved against the plugin directory like `main`
+// is, so it gets the same containment rule.
+const PANEL_PATH_MESSAGE =
+  'must be a relative path inside the plugin directory (no "..", no absolute paths)'
+const PanelPathSchema = z.string().refine(isSafeRelativePath, { message: PANEL_PATH_MESSAGE })
+
+/**
+ * Contribution slots the kernel still declares but that no renderer consumes (D10,
+ * R-SOLID-R-15). A manifest that fills one would silently do nothing, so it is rejected
+ * with a clear error instead. Remove a slot from here when its renderer consumer lands.
+ */
+export const UNSUPPORTED_CONTRIBUTION_SLOTS: Readonly<Record<string, string>> = {
+  chatBadges: 'no renderer displays chat badges yet',
+  keyboardShortcuts: 'no renderer binds plugin keyboard shortcuts yet',
+  statusBarItems: 'no renderer shows plugin status bar items yet',
+  chatFilters: 'no renderer offers plugin chat filters yet',
+  chatSortStrategies: 'no renderer offers plugin chat sort strategies yet',
+  messageRenderers: 'plugin message renderers are deferred until the renderer message-kind registry exists'
+}
+
 const ContributionsDeclarationSchema = z.object({
   chatActions: z.array(z.object({
     id: z.string(),
@@ -140,12 +170,12 @@ const ContributionsDeclarationSchema = z.object({
     id: z.string(),
     title: z.string(),
     icon: z.string().optional(),
-    panel: z.string().optional()
+    panel: PanelPathSchema.optional()
   })).optional(),
   settingsPages: z.array(z.object({
     id: z.string(),
     title: z.string(),
-    panel: z.string().optional()
+    panel: PanelPathSchema.optional()
   })).optional(),
   aiTools: z.array(z.object({
     name: z.string(),
@@ -180,20 +210,23 @@ const ContributionsDeclarationSchema = z.object({
     priority: z.number()
   })).optional(),
   pluginApiExports: z.array(z.string()).optional()
+}, { message: 'Manifest missing required "contributions" object' }).superRefine((contributions, ctx) => {
+  for (const [slot, reason] of Object.entries(UNSUPPORTED_CONTRIBUTION_SLOTS)) {
+    const value = (contributions as Record<string, unknown>)[slot]
+    if (Array.isArray(value) && value.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [slot],
+        message: `Unsupported contribution slot "${slot}": ${reason}. Remove it from "contributions".`
+      })
+    }
+  }
 })
 
 // A plugin id is used verbatim as a filesystem directory name by the loader —
 // keep it to a single safe path segment (matches PLUGIN_ID_RE in the app's
 // kernel/plugins/PluginManifest.ts).
 const PLUGIN_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
-// `main` is joined onto the plugin directory and used as the worker entry —
-// it must be a non-escaping relative path (no absolute paths, no `..`).
-const isSafeRelativeMain = (m: string): boolean =>
-  m.length > 0 &&
-  !m.includes('..') &&
-  !/^[/\\]/.test(m) &&
-  !/^[a-zA-Z]:[/\\]/.test(m)
-
 const ManifestSchema = z.object({
   id: z
     .string({ message: 'Missing or invalid "id"' })
@@ -206,10 +239,7 @@ const ManifestSchema = z.object({
   apiVersion: z.string({ message: 'Missing or invalid "apiVersion"' }),
   main: z
     .string({ message: 'Missing or invalid "main"' })
-    .refine(isSafeRelativeMain, {
-      message:
-        'Invalid "main": must be a relative path inside the plugin directory (no "..", no absolute paths)'
-    }),
+    .refine(isSafeRelativePath, { message: `Invalid "main": ${PANEL_PATH_MESSAGE}` }),
   permissions: z.array(z.string(), { message: 'Permissions must be an array' }),
   contributions: ContributionsDeclarationSchema,
   description: z.string().optional(),
@@ -219,6 +249,17 @@ const ManifestSchema = z.object({
   }).optional()
 })
 
+/** Top-level and self-describing messages pass through; nested ones are prefixed with their path. */
+function formatIssue(issue: z.core.$ZodIssue | undefined): string {
+  if (!issue) return 'Invalid manifest format'
+  const message = issue.message || 'Invalid manifest format'
+  if (issue.path.length <= 1 || /^(Unsupported contribution slot|Invalid ")/.test(message)) return message
+  const at = issue.path
+    .map((seg, i) => (typeof seg === 'number' ? `[${seg}]` : i === 0 ? String(seg) : `.${String(seg)}`))
+    .join('')
+  return `Invalid "${at}": ${message}`
+}
+
 export function validateManifest(raw: unknown): PluginManifest {
   if (typeof raw !== 'object' || raw === null) {
     throw new ManifestValidationError('Manifest is not a valid object')
@@ -226,8 +267,13 @@ export function validateManifest(raw: unknown): PluginManifest {
 
   const parseResult = ManifestSchema.safeParse(raw)
   if (!parseResult.success) {
-    const firstError = parseResult.error.issues[0]
-    throw new ManifestValidationError(firstError?.message || 'Invalid manifest format')
+    // A manifest for another API version usually also lacks this version's fields
+    // (e.g. v1 has no "contributions"); report the version mismatch, not the symptom.
+    const apiVersion = (raw as { apiVersion?: unknown }).apiVersion
+    if (typeof apiVersion === 'string' && apiVersion !== '2' && parseResult.error.issues[0]?.path[0] === 'contributions') {
+      throw new ApiVersionError(`Unsupported API version: ${apiVersion}. Expected '2'`)
+    }
+    throw new ManifestValidationError(formatIssue(parseResult.error.issues[0]))
   }
 
   const manifest = parseResult.data

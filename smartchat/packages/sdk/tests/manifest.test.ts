@@ -63,4 +63,34 @@ describe('validateManifest', () => {
     }
     expect(() => validateManifest(wrongVersion)).toThrow(ApiVersionError)
   })
+
+  describe('R-KRN-10 stricter rules', () => {
+    const slots: Array<[string, unknown]> = [
+      ['chatBadges', [{ id: 'b' }]],
+      ['keyboardShortcuts', [{ id: 'k', defaultBinding: 'Ctrl+K', description: 'd' }]],
+      ['statusBarItems', [{ id: 's', alignment: 'left' }]],
+      ['chatFilters', [{ id: 'f', label: 'F' }]],
+      ['chatSortStrategies', [{ id: 'o', label: 'O' }]],
+      ['messageRenderers', [{ id: 'm', messageType: 't' }]]
+    ]
+
+    it.each(slots)('rejects the unconsumed slot %s', (slot, value) => {
+      expect(() => validateManifest({ ...validV2Manifest, contributions: { [slot]: value } })).toThrow(
+        `Unsupported contribution slot "${slot}"`
+      )
+    })
+
+    it('rejects a panel path that escapes the plugin directory', () => {
+      const raw = { ...validV2Manifest, contributions: { sidebarPanels: [{ id: 's', title: 'S', panel: '../x.html' }] } }
+      expect(() => validateManifest(raw)).toThrow(/Invalid "contributions.sidebarPanels\[0\].panel"/)
+    })
+
+    it('accepts empty arrays for unconsumed slots and nested panel paths', () => {
+      const raw = {
+        ...validV2Manifest,
+        contributions: { chatBadges: [], sidebarPanels: [{ id: 's', title: 'S', panel: 'panels/a.html' }] }
+      }
+      expect(() => validateManifest(raw)).not.toThrow()
+    })
+  })
 })

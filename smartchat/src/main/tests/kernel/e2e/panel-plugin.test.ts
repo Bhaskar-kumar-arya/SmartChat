@@ -59,11 +59,11 @@ describe('Panel Plugin - End-to-End Integration Test', () => {
         description: 'E2E test plugin for panel UI',
         permissions: PLUGIN_PERMISSIONS,
         contributions: {
-          'sidebar-panel': [
+          sidebarPanels: [
             { id: 'sidebar-1', title: 'My Custom Sidebar Panel', panel: 'panels/sidebar.html', icon: 'layout' }
           ],
-          'settings-page': [
-            { id: 'settings-1', title: 'My Custom Settings Page', panel: 'panels/settings.html', icon: 'settings' }
+          settingsPages: [
+            { id: 'settings-1', title: 'My Custom Settings Page', panel: 'panels/settings.html' }
           ]
         }
       }
@@ -80,7 +80,9 @@ describe('Panel Plugin - End-to-End Integration Test', () => {
 
     // Register contributions in ContributionRegistry and PanelHost
     if (loaded.manifest.contributions) {
-      for (const [slot, items] of Object.entries(loaded.manifest.contributions)) {
+      const SLOT_KIND: Record<string, string> = { sidebarPanels: 'sidebar-panel', settingsPages: 'settings-page' }
+      for (const [key, items] of Object.entries(loaded.manifest.contributions)) {
+        const slot = SLOT_KIND[key] ?? key
         if (Array.isArray(items)) {
           for (const item of items) {
             k.contributions.register(slot as any, {

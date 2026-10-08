@@ -205,11 +205,6 @@ describe('External Plugin E2E Test (All Features)', () => {
         contribRegistry.register('message-action', { pluginId, id: item.id, label: item.label, icon: item.icon })
       }
     }
-    if (c.chatBadges) {
-      for (const item of c.chatBadges) {
-        contribRegistry.register('chat-badge', { pluginId, id: item.id, label: item.label })
-      }
-    }
     if (c.slashCommands) {
       for (const item of c.slashCommands) {
         contribRegistry.register('slash-command', { pluginId, name: item.name, description: item.description })
@@ -230,26 +225,6 @@ describe('External Plugin E2E Test (All Features)', () => {
         contribRegistry.register('ai-tool', { pluginId, name: item.name, description: item.description, schema: item.schema })
       }
     }
-    if (c.keyboardShortcuts) {
-      for (const item of c.keyboardShortcuts) {
-        contribRegistry.register('keyboard-shortcut', { pluginId, id: item.id, defaultBinding: item.defaultBinding, description: item.description })
-      }
-    }
-    if (c.statusBarItems) {
-      for (const item of c.statusBarItems) {
-        contribRegistry.register('status-bar-item', { pluginId, id: item.id, alignment: item.alignment })
-      }
-    }
-    if (c.chatFilters) {
-      for (const item of c.chatFilters) {
-        contribRegistry.register('chat-filter', { pluginId, id: item.id, label: item.label, icon: item.icon })
-      }
-    }
-    if (c.chatSortStrategies) {
-      for (const item of c.chatSortStrategies) {
-        contribRegistry.register('chat-sort-strategy', { pluginId, id: item.id, label: item.label })
-      }
-    }
 
     // 2. Load external plugin (spins up worker thread)
     await host.load(pluginId)
@@ -258,18 +233,13 @@ describe('External Plugin E2E Test (All Features)', () => {
     // Give worker thread a moment to run activate hook and process messages
     await new Promise((resolve) => setTimeout(resolve, 1500))
 
-    // 3. Verify all 11 contribution slots are populated
+    // 3. Verify the supported contribution slots are populated (D10: unconsumed slots are rejected by the manifest)
     expect(contribRegistry.getAll('chat-action').some((x) => x.id === 'test-chat-action')).toBe(true)
     expect(contribRegistry.getAll('message-action').some((x) => x.id === 'test-message-action')).toBe(true)
-    expect(contribRegistry.getAll('chat-badge').some((x) => x.id === 'test-badge')).toBe(true)
     expect(contribRegistry.getAll('slash-command').some((x) => x.name === 'test-cmd')).toBe(true)
     expect(contribRegistry.getAll('sidebar-panel').some((x) => x.id === 'test-sidebar')).toBe(true)
     expect(contribRegistry.getAll('settings-page').some((x) => x.id === 'test-settings')).toBe(true)
     expect(contribRegistry.getAll('ai-tool').some((x) => x.name === 'test_plugin_tool')).toBe(true)
-    expect(contribRegistry.getAll('keyboard-shortcut').some((x) => x.id === 'test-shortcut')).toBe(true)
-    expect(contribRegistry.getAll('status-bar-item').some((x) => x.id === 'test-status')).toBe(true)
-    expect(contribRegistry.getAll('chat-filter').some((x) => x.id === 'test-filter')).toBe(true)
-    expect(contribRegistry.getAll('chat-sort-strategy').some((x) => x.id === 'test-sort')).toBe(true)
 
     // 4. Verify activation hook updated storage
     const activeStatus = await mockStorageRepo.get(pluginId, 'status')
