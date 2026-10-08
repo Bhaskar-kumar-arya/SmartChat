@@ -256,6 +256,12 @@ app.whenReady().then(async () => {
 
   services = createServices(prisma, () => mainWindow, () => waConnectionManager?.getBus() ?? null, getSock)
 
+  // Sends are background tasks; a quit mid-send leaves the optimistic row PENDING forever. Nothing is
+  // in flight yet, so anything still PENDING belongs to a previous run: surface it as FAILED.
+  services.messageRepository.failStalePendingOutgoing().catch((err) => {
+    console.error('[Main] Failed to fail stale pending messages:', err)
+  })
+
   // Microkernel System Bootstrap
   const storageRepo = new PrismaPluginStorageRepository(prisma)
   const extensionsPath = join(app.getPath('userData'), 'extensions')

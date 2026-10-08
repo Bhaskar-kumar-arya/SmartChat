@@ -278,7 +278,7 @@ describe('MessageRepository', () => {
   })
 
   // Smoke 2026-10-09: quitting mid-send left the message on the pending clock forever (never sent).
-  it.fails('failStalePendingOutgoing marks leftover PENDING outgoing messages FAILED only', async () => {
+  it('failStalePendingOutgoing marks leftover PENDING outgoing messages FAILED only', async () => {
     await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
     const base = { chatJid: dummyChat, timestamp: 10n, messageType: 'conversation', content: '{}' }
     await prisma.message.create({ data: { ...base, id: 'p-out', fromMe: true, status: 'PENDING' } })
