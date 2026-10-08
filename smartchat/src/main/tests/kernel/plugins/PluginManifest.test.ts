@@ -115,3 +115,56 @@ describe('kernel validateManifest (characterization)', () => {
     expect(() => sdkValidateManifest(codetantra?.raw)).toThrow(/Invalid input/)
   })
 })
+
+// R-KRN-10 (fix): stricter rules. These are it.fails until the fix commit flips them.
+describe('kernel validateManifest (R-KRN-10 stricter rules)', () => {
+  const UNUSED_SLOTS: Array<[string, unknown]> = [
+    ['chatBadges', [{ id: 'b' }]],
+    ['keyboardShortcuts', [{ id: 'k', defaultBinding: 'Ctrl+K', description: 'd' }]],
+    ['statusBarItems', [{ id: 's', alignment: 'left' }]],
+    ['chatFilters', [{ id: 'f', label: 'F' }]],
+    ['chatSortStrategies', [{ id: 'o', label: 'O' }]],
+    ['messageRenderers', [{ id: 'm', messageType: 't' }]]
+  ]
+
+  it.fails.each(UNUSED_SLOTS)('rejects unconsumed slot %s with a clear error', (slot, value) => {
+    const raw = { ...base, contributions: { [slot]: value } }
+    expect(() => validateManifest(raw)).toThrow(ManifestValidationError)
+    expect(() => validateManifest(raw)).toThrow(`Unsupported contribution slot "${slot}"`)
+  })
+
+  it.fails('rejects a sidebar panel path that escapes the plugin directory', () => {
+    const raw = { ...base, contributions: { sidebarPanels: [{ id: 's', title: 'S', panel: '../../etc/passwd' }] } }
+    expect(() => validateManifest(raw)).toThrow(/Invalid "contributions.sidebarPanels\[0\].panel"/)
+  })
+
+  it.fails('rejects an absolute settings page panel path', () => {
+    const raw = { ...base, contributions: { settingsPages: [{ id: 's', title: 'S', panel: '/etc/passwd' }] } }
+    expect(() => validateManifest(raw)).toThrow(/Invalid "contributions.settingsPages\[0\].panel"/)
+  })
+
+  it.fails('rejects an unknown when operator', () => {
+    const raw = {
+      ...base,
+      contributions: { chatActions: [{ id: 'a', label: 'A', when: { field: 'x', op: 'equals', value: 1 } }] }
+    }
+    expect(() => validateManifest(raw)).toThrow(/contributions\.chatActions\.0\.when/)
+  })
+
+  it.fails('delegates to the single SDK validateManifest', () => {
+    expect(validateManifest).toBe(sdkValidateManifest)
+  })
+
+  it.fails('SDK validateManifest accepts the codetantra sample (G-01)', () => {
+    const codetantra = loadSampleManifests().find((m) => m.dir === 'codetantra-otp-relay-plugin')
+    expect(() => sdkValidateManifest(codetantra?.raw)).not.toThrow()
+  })
+
+  it.each(['declarative-modal-test-plugin', 'test-all-features-plugin', 'voice-transcriber-plugin'])(
+    'SDK validateManifest accepts sample %s',
+    (dir) => {
+      const sample = loadSampleManifests().find((m) => m.dir === dir)
+      expect(() => sdkValidateManifest(sample?.raw)).not.toThrow()
+    }
+  )
+})
