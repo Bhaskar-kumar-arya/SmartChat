@@ -1,6 +1,7 @@
 import { PrismaClient, Message, Prisma } from '@prisma/client'
 import { IMessageQueryRepository } from './IMessageQueryRepository'
 import { IRawSqlExecutor } from './IRawSqlExecutor'
+import { assertReadOnlySelectForRepository } from './sql/assertReadOnlySelect'
 import { MessageQueryFilter } from '../../domain/filters'
 import { MessageWithChatAndSender, LastMessageWithSender } from '../../domain/projections'
 
@@ -200,41 +201,12 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
     return this.prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql, ...params)
   }
 
-  private static readonly FORBIDDEN_SQL_KEYWORDS = [
-    'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'ATTACH', 'DETACH',
-    'PRAGMA', 'VACUUM', 'REPLACE', 'TRUNCATE', 'GRANT', 'REVOKE', 'REINDEX'
-  ]
-
   /**
-   * Rejects any statement that is not a read-only SELECT / WITH…SELECT.
-   * String literals and comments are stripped first so user data inside a
-   * `LIKE '%delete me%'` clause does not trip the keyword scan.
+   * Rejects any statement that is not a read-only SELECT / WITH…SELECT
+   * (shared guard, repository policy).
    */
   static assertReadOnlySql(sql: string): void {
-    const trimmed = (sql ?? '').trim()
-    const normalized = trimmed
-      .replace(/'(?:[^']|'')*'/g, "''")
-      .replace(/"(?:[^"]|"")*"/g, '""')
-      .replace(/--[^\n]*/g, ' ')
-      .replace(/\/\*[\s\S]*?\*\//g, ' ')
-      .toUpperCase()
-      .replace(/\s+/g, ' ')
-      .trim()
-
-    if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
-      throw new Error('[MessageQueryRepository] Query rejected: only SELECT / WITH…SELECT statements are permitted')
-    }
-
-    // Disallow statement batching (a trailing `;` on the sole statement is fine).
-    if (normalized.slice(0, -1).includes(';')) {
-      throw new Error('[MessageQueryRepository] Query rejected: multiple statements are not permitted')
-    }
-
-    for (const kw of MessageQueryRepository.FORBIDDEN_SQL_KEYWORDS) {
-      if (new RegExp(`\\b${kw}\\b`).test(normalized)) {
-        throw new Error(`[MessageQueryRepository] Query rejected: forbidden keyword "${kw}"`)
-      }
-    }
+    assertReadOnlySelectForRepository(sql, '[MessageQueryRepository] ')
   }
 
   /**
