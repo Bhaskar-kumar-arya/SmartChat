@@ -27,6 +27,15 @@ const preloadSrc = readFileSync(join(PRELOAD_DIR, 'index.ts'), 'utf8')
 const preloadDts = readFileSync(join(PRELOAD_DIR, 'index.d.ts'), 'utf8')
 const iApiSrc = readFileSync(join(RENDERER_SERVICES, 'IAPIService.ts'), 'utf8')
 const indexSrc = readFileSync(join(MAIN_DIR, 'index.ts'), 'utf8')
+const contractSrc = readFileSync(join(MAIN_DIR, '../shared/ipc/contract.ts'), 'utf8')
+
+// Channel keys of one `export interface <name> {` block in shared/ipc/contract.ts
+// (one key per line at 2-space indent, quoted or bare).
+function contractChannels(name: string): string[] {
+  const start = contractSrc.indexOf(`export interface ${name} {`)
+  const body = contractSrc.slice(start, contractSrc.indexOf('\n}\n', start))
+  return strings(/^ {2}'?([\w:.-]+)'?: /gm, body)
+}
 
 // Literal channel names only: dynamic channels (`${channelId}-chunk`) are not checkable.
 // Channels come from every preload script (index, panel-preload, overlay-preload).
@@ -116,6 +125,19 @@ function expectDrift(actual: string[], allowed: Record<string, string>): void {
   expect(actual).toEqual(Object.keys(allowed).sort())
 }
 
+// contract channel with no main handler / preload counterpart (only these may be missing)
+const CONTRACT_NOT_REGISTERED: Record<string, string> = {
+  // Typed from the preload only; no main handler (see PRELOAD_CALLS_UNHANDLED).
+  'extension:chat-history': 'C-04 (R-APP-05, B-APP-02, decision D1)',
+  'extension:chat-send': 'C-04 (R-APP-05, B-APP-02, decision D1)',
+  'extension:get-docs': 'C-04 (R-APP-05, B-APP-02, decision D1)'
+}
+// contract event nobody emits (preload listens only)
+const CONTRACT_EVENT_NEVER_EMITTED: Record<string, string> = {
+  'extension:chat-push': 'C-04 (R-APP-05, B-APP-02, decision D1)',
+  'extension:focus': 'C-04 (R-APP-05, B-APP-02, decision D1)'
+}
+
 describe('IPC contract drift (main handlers <-> preload <-> typings)', () => {
   it('sanity: the parsers found a realistic number of channels and methods', () => {
     expect(registeredInvoke.length).toBeGreaterThan(60)
@@ -156,5 +178,31 @@ describe('IPC contract drift (main handlers <-> preload <-> typings)', () => {
   it('preload api methods match IAPIService (modulo allow-list)', () => {
     expectDrift(missing(preloadMethods, iApiMethods), PRELOAD_NOT_IN_IAPI)
     expectDrift(missing(iApiMethods, preloadMethods), IAPI_NOT_IN_PRELOAD)
+  })
+
+  it('shared/ipc/contract.ts InvokeMap/SendMap list exactly the registered + preload-called channels (modulo allow-list)', () => {
+    const invoke = contractChannels('InvokeMap')
+    const send = contractChannels('SendMap')
+    expect(invoke.length).toBeGreaterThan(60)
+    expect(send.length).toBeGreaterThan(5)
+    expect(invoke.filter(c => send.includes(c))).toEqual([])
+    const real = [...registeredInvoke, ...registeredSend, ...preloadInvoke, ...preloadSend]
+    // every real channel is in the contract (invokes in InvokeMap, sends in SendMap) ...
+    expect(missing([...registeredInvoke, ...preloadInvoke], invoke)).toEqual([])
+    expect(missing([...registeredSend, ...preloadSend], send)).toEqual([])
+    // ... and every contract channel is real, except the pinned preload-only ones.
+    expectDrift(missing([...invoke, ...send], real), {})
+    const handled = [...registeredInvoke, ...registeredSend]
+    expectDrift(missing([...invoke, ...send], handled), CONTRACT_NOT_REGISTERED)
+  })
+
+  it('shared/ipc/contract.ts EventMap lists exactly the preload-listened + main-emitted events (modulo allow-list)', () => {
+    const events = contractChannels('EventMap')
+    expect(events.length).toBeGreaterThan(20)
+    const emitted = strings(/\.send\(\s*'([^']+)'/g, mainSources)
+    expect(missing([...preloadOn, ...emitted], events)).toEqual([])
+    expectDrift(events.filter(c => !preloadOn.includes(c) && !mainSources.includes(`'${c}'`)).sort(), {})
+    const neverEmitted = events.filter(c => !mainSources.includes(`'${c}'`)).sort()
+    expectDrift(neverEmitted, CONTRACT_EVENT_NEVER_EMITTED)
   })
 })

@@ -1,7 +1,1 @@
-export interface ModelInfo {
-  id: string
-  name: string
-  provider: string
-  description?: string
-  isLocal: boolean
-}
+export type { ModelInfo } from '../../../../shared/ipc/dto'
