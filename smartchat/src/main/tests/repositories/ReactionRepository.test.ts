@@ -71,6 +71,54 @@ describe('ReactionRepository', () => {
     expect(reactions[0].text).toBe('🥶')
   })
 
+  describe('deferred reactions (B-MSG-01)', () => {
+    async function seedReactor(): Promise<void> {
+      await prisma.identity.create({ data: { id: 2, phoneNumber: 'u2@s.whatsapp.net' } })
+      await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
+    }
+    async function seedMessage(id: string): Promise<void> {
+      await prisma.message.create({ data: { id, chatJid: dummyChat, fromMe: false, timestamp: 10n, messageType: 'conversation', content: '{}' } })
+    }
+
+    it('applies a reaction on a later call once its target message exists', async () => {
+      await seedReactor()
+      await repository.bulkSyncReactions([{ targetId: 'late', reactorId: 2, emoji: '🔥', timestamp: 20n }])
+      expect(await prisma.reaction.count()).toBe(0)
+
+      await seedMessage('late')
+      await repository.bulkSyncReactions([])
+      const rows = await prisma.reaction.findMany()
+      expect(rows.map(r => r.text)).toEqual(['🔥'])
+    })
+
+    it('keeps the newest deferred reaction per target and reactor', async () => {
+      await seedReactor()
+      await repository.bulkSyncReactions([{ targetId: 'late', reactorId: 2, emoji: '🔥', timestamp: 20n }])
+      await repository.bulkSyncReactions([{ targetId: 'late', reactorId: 2, emoji: '🥶', timestamp: 30n }])
+      await seedMessage('late')
+      await repository.flushDeferredReactions()
+      expect((await prisma.reaction.findMany()).map(r => r.text)).toEqual(['🥶'])
+    })
+
+    it('flushDeferredReactions applies what it can, then forgets the rest', async () => {
+      await seedReactor()
+      await repository.bulkSyncReactions([{ targetId: 'ghost', reactorId: 2, emoji: '🔥', timestamp: 20n }])
+      await repository.flushDeferredReactions()
+      await seedMessage('ghost')
+      await repository.bulkSyncReactions([])
+      expect(await prisma.reaction.count()).toBe(0)
+    })
+
+    it('discardDeferredReactions drops them unapplied', async () => {
+      await seedReactor()
+      await repository.bulkSyncReactions([{ targetId: 'late', reactorId: 2, emoji: '🔥', timestamp: 20n }])
+      repository.discardDeferredReactions()
+      await seedMessage('late')
+      await repository.bulkSyncReactions([])
+      expect(await prisma.reaction.count()).toBe(0)
+    })
+  })
+
   it('should not let a stale reaction event clobber a newer stored one (S2-05)', async () => {
     await prisma.identity.create({ data: { id: 1, phoneNumber: 'u1@s.whatsapp.net' } })
     await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
