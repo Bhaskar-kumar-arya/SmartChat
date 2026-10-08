@@ -57,8 +57,14 @@ function registerChatAndMessageHandlers(
     return mapChatToListItem(item)
   })
 
-  ipcMain.handle('get-messages', async (_event, jid: string, page: number = 1, pageSize: number = 50) => {
-    return services.messageQueryService.getChatMessages(jid, page, pageSize, getSock())
+  // Cursor-paged (D3): `before` / `after` are message ids; result is oldest -> newest.
+  ipcMain.handle('get-messages', async (_event, jid: string, options?: { limit?: number; before?: string; after?: string }) => {
+    const opts = options && typeof options === 'object' ? options : {}
+    const before = typeof opts.before === 'string' && opts.before ? opts.before : undefined
+    const after = typeof opts.after === 'string' && opts.after ? opts.after : undefined
+    if (before && after) throw new Error('[IPC] get-messages: pass either before or after, not both')
+    const limit = typeof opts.limit === 'number' ? opts.limit : undefined
+    return services.messageQueryService.getChatMessagesPage(jid, { limit, before, after }, getSock())
   })
 
   ipcMain.handle('get-messages-around', async (_event, jid: string, messageId: string, lookBehind: number = 20) => {

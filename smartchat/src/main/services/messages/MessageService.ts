@@ -394,6 +394,29 @@ export class MessageService implements IMessageWriterService, IMessageQueryServi
     return enriched.reverse()
   }
 
+  /**
+   * `get-messages` backend: a page of messages, always returned oldest -> newest.
+   *  - no cursor: the newest `limit` messages.
+   *  - `before`: the `limit` messages just older than that message id.
+   *  - `after`: the `limit` messages just newer than that message id.
+   */
+  async getChatMessagesPage(
+    jid: string,
+    options: { limit?: number; before?: string; after?: string } = {},
+    sock: unknown | null = null
+  ): Promise<EnrichedMessage[]> {
+    const limit = Math.min(Math.max(Math.floor(options.limit ?? 50) || 50, 1), 200)
+    if (options.before) {
+      const rows = await this.queryRepository.findChatMessagesByCursor(jid, 'before', options.before, limit)
+      return (await this.enrichMessagePage(rows, sock, true)).reverse()
+    }
+    if (options.after) {
+      const rows = await this.queryRepository.findChatMessagesByCursor(jid, 'after', options.after, limit)
+      return this.enrichMessagePage(rows, sock, true)
+    }
+    return this.getChatMessages(jid, 1, limit, sock)
+  }
+
   /** Enrich a fetched page (names + reactions), preserving the input order. */
   private async enrichMessagePage(
     messages: DBMessageWithSender[],

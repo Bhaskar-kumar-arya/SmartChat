@@ -86,8 +86,8 @@ const api = {
   getChat: (jid: string) => {
     return ipcRenderer.invoke('get-chat', jid)
   },
-  getMessages: (jid: string, page: number = 1, pageSize: number = 50) => {
-    return ipcRenderer.invoke('get-messages', jid, page, pageSize)
+  getMessages: (jid: string, options: { limit?: number; before?: string; after?: string } = {}) => {
+    return ipcRenderer.invoke('get-messages', jid, options)
   },
   getMessagesAround: (jid: string, messageId: string, lookBehind: number = 20) => {
     return ipcRenderer.invoke('get-messages-around', jid, messageId, lookBehind)

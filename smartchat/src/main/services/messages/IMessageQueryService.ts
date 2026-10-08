@@ -12,6 +12,16 @@ export interface IMessageQueryService {
   ): Promise<EnrichedMessage[]>
 
   /**
+   * Cursor-paged messages for the `get-messages` IPC, oldest -> newest.
+   * `before` / `after` are message ids; without either, the newest `limit`.
+   */
+  getChatMessagesPage(
+    jid: string,
+    options?: { limit?: number; before?: string; after?: string },
+    sock?: unknown | null
+  ): Promise<EnrichedMessage[]>
+
+  /**
    * Fetches all messages from the target message up to newest, plus
    * `lookBehind` (default 20) messages before it for context.
    * Falls back to getChatMessages page 1 if the target is not found.

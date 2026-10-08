@@ -25,11 +25,20 @@ function makeBackend(total: number, jid = JID): MessageItem[] {
   )
 }
 
-/** Mirrors messages:get — page 1 = newest `size`, returned ascending. */
-function pageFromNewest(all: MessageItem[], page: number, size: number): MessageItem[] {
-  const end = all.length - (page - 1) * size
-  const start = Math.max(0, end - size)
-  return end <= 0 ? [] : all.slice(start, end)
+type GetOpts = { limit?: number; before?: string; after?: string }
+
+/** Mirrors messages:get — cursor paged, always ascending; no cursor = newest `limit`. */
+function queryMessages(all: MessageItem[], opts: GetOpts = {}): MessageItem[] {
+  const limit = opts.limit ?? PAGE
+  if (opts.before) {
+    const end = all.findIndex((m) => m.id === opts.before)
+    return end <= 0 ? [] : all.slice(Math.max(0, end - limit), end)
+  }
+  if (opts.after) {
+    const idx = all.findIndex((m) => m.id === opts.after)
+    return idx < 0 ? [] : all.slice(idx + 1, idx + 1 + limit)
+  }
+  return all.slice(Math.max(0, all.length - limit))
 }
 
 function around(all: MessageItem[], id: string, radius = 10): MessageItem[] {
@@ -61,7 +70,7 @@ describe('useMessages characterization', () => {
   let api: MockApiService
 
   const wire = (): void => {
-    api.getMessages = vi.fn(async (_jid: string, page: number, size: number) => pageFromNewest(all, page, size))
+    api.getMessages = vi.fn(async (_jid: string, opts?: GetOpts) => queryMessages(all, opts))
     api.getMessagesAround = vi.fn(async (_jid: string, id: string) => around(all, id))
   }
 
@@ -91,7 +100,7 @@ describe('useMessages characterization', () => {
   describe('initial load', () => {
     it('loads page 1 (50 newest), marks read, and exposes loading/hasMore', async () => {
       const { result } = await mount()
-      expect(api.getMessages).toHaveBeenCalledWith(JID, 1, PAGE)
+      expect(api.getMessages).toHaveBeenCalledWith(JID, { limit: PAGE })
       expect(api.markRead).toHaveBeenCalledWith(JID)
       expect(result.current.messages.map((m) => m.id)).toEqual(all.slice(70).map((m) => m.id))
       expect(result.current.loading).toBe(false)
@@ -116,19 +125,19 @@ describe('useMessages characterization', () => {
     })
   })
 
-  describe('paging (page-number model)', () => {
-    it('loadMore requests page 2, prepends it in order, and returns the row count', async () => {
+  describe('paging (cursor model)', () => {
+    it('loadMore requests the page before the oldest loaded id, prepends it in order, and returns the row count', async () => {
       const { result } = await mount()
       let landed = 0
       await act(async () => {
         landed = await result.current.loadMore()
       })
-      expect(api.getMessages).toHaveBeenLastCalledWith(JID, 2, PAGE)
+      expect(api.getMessages).toHaveBeenLastCalledWith(JID, { limit: PAGE, before: 'm71' })
       expect(landed).toBe(50)
       expect(result.current.messages.map((m) => m.id)).toEqual(all.slice(20).map((m) => m.id))
     })
 
-    it('successive loadMore calls advance the page number', async () => {
+    it('successive loadMore calls advance the cursor to the new oldest id', async () => {
       const { result } = await mount()
       await act(async () => {
         await result.current.loadMore()
@@ -136,7 +145,7 @@ describe('useMessages characterization', () => {
       await act(async () => {
         await result.current.loadMore()
       })
-      expect(api.getMessages).toHaveBeenLastCalledWith(JID, 3, PAGE)
+      expect(api.getMessages).toHaveBeenLastCalledWith(JID, { limit: PAGE, before: 'm21' })
       expect(result.current.messages.map((m) => m.id)).toEqual(all.map((m) => m.id))
     })
 
@@ -153,7 +162,7 @@ describe('useMessages characterization', () => {
     })
 
     // B-UICHAT-07: returns olderMsgs.length instead of the number of fresh rows.
-    it.fails('B-UICHAT-07: loadMore returns the count of FRESH rows, not the raw page length', async () => {
+    it('B-UICHAT-07: loadMore returns the count of FRESH rows, not the raw page length', async () => {
       const { result } = await mount()
       const overlap = result.current.messages[0]
       ;(api.getMessages as Fn).mockImplementationOnce(async () => [overlap])
@@ -189,7 +198,7 @@ describe('useMessages characterization', () => {
   })
 
   describe('on-demand WhatsApp history (-1 sentinel)', () => {
-    // 50 messages only: page 2 is empty so the local DB is exhausted.
+    // 50 messages only: the page before the oldest is empty so the local DB is exhausted.
     beforeEach(() => {
       all = makeBackend(50)
     })
@@ -235,7 +244,7 @@ describe('useMessages characterization', () => {
       )
       all = [...older, ...all]
       await historyAppended()
-      expect(api.getMessages).toHaveBeenLastCalledWith(JID, 2, PAGE)
+      expect(api.getMessages).toHaveBeenLastCalledWith(JID, { limit: PAGE, before: 'm1' })
       expect(result.current.messages[0].id).toBe('old0')
       expect(result.current.messages.length).toBe(70)
       expect(result.current.syncingOlder).toBe(false)
@@ -385,8 +394,8 @@ describe('useMessages characterization', () => {
 
     // B-UICHAT-01: paging is an offset from the NEWEST message, so after a jump the
     // "older" page is the newest page and lands above the old window, leaving a gap.
-    it.fails('B-UICHAT-01: loadMore after a jump prepends the messages just older than the window (no gap)', async () => {
-      all = makeBackend(300) // large enough that page 2-from-newest does not overlap the window
+    it('B-UICHAT-01: loadMore after a jump prepends the messages just older than the window (no gap)', async () => {
+      all = makeBackend(300)
       const { result } = await mount(JID, 'm60')
       expect(result.current.messages[0].id).toBe('m50')
       await act(async () => {
@@ -397,13 +406,13 @@ describe('useMessages characterization', () => {
       expect(contiguous).toBe(true)
     })
 
-    it('B-UICHAT-01 (current behaviour): loadMore after a jump uses page 2-from-newest', async () => {
+    it('B-UICHAT-01: loadMore after a jump anchors on the oldest loaded id', async () => {
       all = makeBackend(300)
       const { result } = await mount(JID, 'm60')
       await act(async () => {
         await result.current.loadMore()
       })
-      expect(api.getMessages).toHaveBeenCalledWith(JID, 2, PAGE)
+      expect(api.getMessages).toHaveBeenCalledWith(JID, { limit: PAGE, before: 'm50' })
     })
   })
 
@@ -550,7 +559,7 @@ describe('useMessages characterization', () => {
     })
 
     // B-UICHAT-02: a send that resolves after a chat switch is appended to the NEW chat's list.
-    it.fails('B-UICHAT-02: a send resolving after a chat switch is not appended to the new chat', async () => {
+    it('B-UICHAT-02: a send resolving after a chat switch is not appended to the new chat', async () => {
       let resolveSend: (m: MessageItem) => void = () => {}
       api.sendMessage = vi.fn().mockImplementation(() => new Promise<MessageItem>((r) => { resolveSend = r }))
       const { result, rerender } = await mount()
@@ -565,6 +574,158 @@ describe('useMessages characterization', () => {
         await sendPromise
       })
       expect(result.current.messages.some((m) => m.id === 'late')).toBe(false)
+    })
+  })
+
+  describe('F-UC-1: cursor paging after a jump, loadNewer, guarded sends', () => {
+    it('B-UICHAT-01: scrolling up after a jump walks back through history with no gap', async () => {
+      all = makeBackend(300)
+      const { result } = await mount(JID, 'm60')
+      await act(async () => {
+        await result.current.loadMore()
+      })
+      await act(async () => {
+        await result.current.loadMore()
+      })
+      const ids = result.current.messages.map((m) => Number(m.id.slice(1)))
+      expect(ids[0]).toBe(1)
+      expect(ids.every((n, i) => i === 0 || n === ids[i - 1] + 1)).toBe(true)
+    })
+
+    it('a jump sets hasNewer; a plain open does not', async () => {
+      const jumped = await mount(JID, 'm20')
+      expect(jumped.result.current.hasNewer).toBe(true)
+      const plain = await mount(JID)
+      expect(plain.result.current.hasNewer).toBe(false)
+    })
+
+    it('loadNewer appends the page after the last loaded id and clears hasNewer at the end', async () => {
+      all = makeBackend(300)
+      const { result } = await mount(JID, 'm60')
+      const last = result.current.messages[result.current.messages.length - 1].id
+      let landed = -1
+      await act(async () => {
+        landed = await result.current.loadNewer()
+      })
+      expect(api.getMessages).toHaveBeenLastCalledWith(JID, { limit: PAGE, after: last })
+      expect(landed).toBe(50)
+      expect(result.current.hasNewer).toBe(true)
+      const ids = result.current.messages.map((m) => Number(m.id.slice(1)))
+      expect(ids.every((n, i) => i === 0 || n === ids[i - 1] + 1)).toBe(true)
+
+      // Walk to the newest message.
+      for (let i = 0; i < 6 && result.current.hasNewer; i++) {
+        await act(async () => {
+          await result.current.loadNewer()
+        })
+      }
+      expect(result.current.hasNewer).toBe(false)
+      expect(result.current.messages[result.current.messages.length - 1].id).toBe('m300')
+    })
+
+    it('loadNewer is a no-op without a jump', async () => {
+      const { result } = await mount()
+      const calls = (api.getMessages as Fn).mock.calls.length
+      let r = -1
+      await act(async () => {
+        r = await result.current.loadNewer()
+      })
+      expect(r).toBe(0)
+      expect(api.getMessages).toHaveBeenCalledTimes(calls)
+    })
+
+    it('a loadNewer result for a previous chat is discarded', async () => {
+      all = makeBackend(300)
+      const { result, rerender } = await mount(JID, 'm60')
+      let resolveNewer: (v: MessageItem[]) => void = () => {}
+      ;(api.getMessages as Fn).mockImplementationOnce(() => new Promise((r) => { resolveNewer = r }))
+      let p: Promise<number> | undefined
+      act(() => {
+        p = result.current.loadNewer()
+      })
+      rerender({ j: OTHER, t: undefined })
+      await flush()
+      const before = result.current.messages
+      await act(async () => {
+        resolveNewer([makeMessage({ id: 'zz', chatJid: JID })])
+        await p
+      })
+      expect(result.current.messages).toEqual(before)
+    })
+
+    it('live messages are not appended inside a jumped window (loadNewer fetches them instead)', async () => {
+      all = makeBackend(300)
+      const { result } = await mount(JID, 'm60')
+      const len = result.current.messages.length
+      act(() => {
+        api.emit.newMessage(makeMessage({ id: 'live1', chatJid: JID }))
+      })
+      expect(result.current.messages.length).toBe(len)
+    })
+
+    it('jumpToLatest reloads the newest page and clears hasNewer so live messages append again', async () => {
+      all = makeBackend(300)
+      const { result } = await mount(JID, 'm60')
+      await act(async () => {
+        await result.current.jumpToLatest()
+      })
+      expect(result.current.hasNewer).toBe(false)
+      expect(result.current.messages[result.current.messages.length - 1].id).toBe('m300')
+      act(() => {
+        api.emit.newMessage(makeMessage({ id: 'live2', chatJid: JID }))
+      })
+      expect(result.current.messages[result.current.messages.length - 1].id).toBe('live2')
+    })
+
+    it('a send from a jumped window reloads the newest page instead of appending to the old window', async () => {
+      all = makeBackend(300)
+      const { result } = await mount(JID, 'm60')
+      const sent = makeMessage({ id: 'mine', chatJid: JID, fromMe: true, timestamp: '99999' })
+      api.sendMessage = vi.fn().mockImplementation(async () => {
+        all = [...all, sent]
+        return sent
+      })
+      await act(async () => {
+        await result.current.sendMessage('hello')
+      })
+      await flush()
+      expect(result.current.hasNewer).toBe(false)
+      expect(result.current.messages[result.current.messages.length - 1].id).toBe('mine')
+      expect(result.current.messages[0].id).toBe('m252')
+    })
+
+    it('B-UICHAT-02: a media send resolving after a chat switch is not appended to the new chat', async () => {
+      let resolveSend: (m: MessageItem) => void = () => {}
+      api.sendMediaMessage = vi.fn().mockImplementation(() => new Promise<MessageItem>((r) => { resolveSend = r }))
+      const { result, rerender } = await mount()
+      let p: Promise<unknown> | undefined
+      act(() => {
+        p = result.current.sendMediaMessage('/tmp/a.mp4', '')
+      })
+      rerender({ j: OTHER, t: undefined })
+      await flush()
+      await act(async () => {
+        resolveSend(makeMessage({ id: 'late-media', chatJid: JID, fromMe: true }))
+        await p
+      })
+      expect(result.current.messages.some((m) => m.id === 'late-media')).toBe(false)
+    })
+
+    it('a retry resolving after a chat switch is not appended to the new chat', async () => {
+      let resolveRetry: (m: MessageItem) => void = () => {}
+      api.retryMessage = vi.fn().mockImplementation(() => new Promise<MessageItem>((r) => { resolveRetry = r }))
+      const { result, rerender } = await mount()
+      let p: Promise<unknown> | undefined
+      act(() => {
+        p = result.current.retryMessage('m80')
+      })
+      rerender({ j: OTHER, t: undefined })
+      await flush()
+      await act(async () => {
+        resolveRetry(makeMessage({ id: 'retried', chatJid: JID, fromMe: true }))
+        await p
+      })
+      expect(result.current.messages.some((m) => m.id === 'retried')).toBe(false)
     })
   })
 })

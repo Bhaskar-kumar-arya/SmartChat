@@ -18,6 +18,10 @@ interface MessageViewProps {
   /** Hook-level flag: waiting on an on-demand history page from WhatsApp. */
   syncingOlder?: boolean
   onLoadMore: () => Promise<number | undefined>
+  /** After a jump the list is a window in the middle of history: newer rows exist below it. */
+  hasNewer?: boolean
+  onLoadNewer?: () => Promise<number | undefined>
+  onJumpToLatest?: () => Promise<void>
   onReply: (msg: IMessageItem) => void
   onEdit?: (messageId: string, newText: string) => Promise<any>
   onDelete?: (messageId: string) => Promise<any>
@@ -37,6 +41,9 @@ export default function MessageView({
   canLoadMore = true,
   syncingOlder = false,
   onLoadMore,
+  hasNewer = false,
+  onLoadNewer,
+  onJumpToLatest,
   onReply,
   onEdit,
   onDelete,
@@ -57,6 +64,11 @@ export default function MessageView({
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const prevScrollHeight = useRef(0)
   const isLoadingRef = useRef(false)
+  const loadingNewerRef = useRef(false)
+  // Whether the previous messages change happened inside a jumped window; used so the
+  // rows that loadNewer appends (and the final batch that clears hasNewer) never
+  // trigger the "new message -> scroll to bottom" behaviour.
+  const prevHasNewerRef = useRef(hasNewer)
   // Set when an on-demand WhatsApp history fetch is in flight: the prepend lands
   // asynchronously (not through the loadingMore path), so the [messages] effect
   // must still restore the scroll anchor when it arrives.
@@ -96,7 +108,12 @@ export default function MessageView({
   // Scroll to bottom on new messages (unless we have a target)
   useEffect(() => {
     const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null
-    const isNewMessage = messages.length > prevMessagesLength.current && lastMessageId !== prevLastMessageId.current
+    const inJumpedWindow = hasNewer || prevHasNewerRef.current
+    prevHasNewerRef.current = hasNewer
+    const isNewMessage =
+      !inJumpedWindow &&
+      messages.length > prevMessagesLength.current &&
+      lastMessageId !== prevLastMessageId.current
 
     prevMessagesLength.current = messages.length
     prevLastMessageId.current = lastMessageId
@@ -121,7 +138,7 @@ export default function MessageView({
         setTimeout(() => { isInitialRenderForChat.current = false }, 100)
       }
     }
-  }, [messages, targetMessageId, loadingMore])
+  }, [messages, targetMessageId, loadingMore, hasNewer])
 
   // Scroll to and highlight target message when it's in the list
   useEffect(() => {
@@ -178,6 +195,25 @@ export default function MessageView({
     if (canLoadMore) setHasMore(true)
   }, [canLoadMore, messages.length])
 
+  // Jumped window: fetch the next newer page (single-flight).
+  const requestNewer = useCallback((): void => {
+    if (!hasNewer || !onLoadNewer || loadingNewerRef.current) return
+    loadingNewerRef.current = true
+    onLoadNewer()
+      .catch((err) => console.error('[MessageView] Failed to load newer messages:', err))
+      .finally(() => {
+        loadingNewerRef.current = false
+      })
+  }, [hasNewer, onLoadNewer])
+
+  // A short jumped window (e.g. the target is among the newest messages) may already
+  // sit at the bottom without ever firing a scroll event.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!hasNewer || targetMessageId || !el) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 150) requestNewer()
+  }, [hasNewer, messages, targetMessageId, requestNewer])
+
   // Track scroll position to show/hide the "Jump to Latest" button
   const handleScroll = useCallback(async () => {
     const el = containerRef.current
@@ -186,6 +222,9 @@ export default function MessageView({
     // Show "Jump to Latest" when user is not near the bottom
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
     setShowJumpToLatest(distanceFromBottom > 300)
+
+    // Page newer messages in when reaching the bottom of a jumped window
+    if (distanceFromBottom < 150) requestNewer()
 
     // Paginate older messages when near the top
     if (el.scrollTop < 100 && !isLoadingRef.current && hasMore) {
@@ -230,7 +269,7 @@ export default function MessageView({
         showError(err, 'Could not load older messages.')
       }
     }
-  }, [hasMore, onLoadMore, showError])
+  }, [hasMore, onLoadMore, requestNewer, showError])
 
   const handleReply = useCallback((msg: IMessageItem) => {
     onReply(msg)
@@ -332,7 +371,15 @@ export default function MessageView({
       {showJumpToLatest && (
         <button
           className="jump-to-latest-btn"
-          onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
+          onClick={() => {
+            if (hasNewer && onJumpToLatest) {
+              // The newest messages are not loaded: reload them, then land at the bottom.
+              isInitialRenderForChat.current = true
+              void onJumpToLatest()
+            } else {
+              bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+            }
+          }}
           title="Jump to latest messages"
         >
           ↓ Latest

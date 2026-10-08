@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderWithProviders, screen, fireEvent, makeMessage } from '../../testUtils'
+import { renderWithProviders, screen, fireEvent, makeMessage, act } from '../../testUtils'
 import MessageView from '@renderer/components/chat/MessageView'
 import { MessageItem as IMessageItem } from '@renderer/types/chatTypes'
 
@@ -133,5 +133,53 @@ describe('MessageView', () => {
     fireEvent.click(reactionBadge as Element)
     expect(screen.getByText('Reactions')).toBeInTheDocument()
     expect(screen.getByText('Alice')).toBeInTheDocument()
+  })
+
+  describe('jumped window (F-UC-1)', () => {
+    const setGeometry = (el: Element, scrollTop: number, scrollHeight: number, clientHeight: number): void => {
+      Object.defineProperty(el, 'scrollTop', { value: scrollTop, configurable: true, writable: true })
+      Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true })
+      Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true })
+    }
+
+    it('scrolling to the bottom of a jumped window asks for newer messages', async () => {
+      const onLoadNewer = vi.fn().mockResolvedValue(10)
+      renderWithProviders(<MessageView {...defaultProps} hasNewer onLoadNewer={onLoadNewer} />)
+      const view = document.querySelector('.message-view') as Element
+      setGeometry(view, 800, 1000, 100)
+      await act(async () => { await Promise.resolve() })
+      onLoadNewer.mockClear()
+      fireEvent.scroll(view)
+      expect(onLoadNewer).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not ask for newer messages when the window is complete (hasNewer=false)', async () => {
+      const onLoadNewer = vi.fn().mockResolvedValue(0)
+      renderWithProviders(<MessageView {...defaultProps} onLoadNewer={onLoadNewer} />)
+      const view = document.querySelector('.message-view') as Element
+      setGeometry(view, 900, 1000, 100)
+      fireEvent.scroll(view)
+      expect(onLoadNewer).not.toHaveBeenCalled()
+    })
+
+    it('the Latest pill reloads the newest page when newer messages are not loaded', async () => {
+      const onJumpToLatest = vi.fn().mockResolvedValue(undefined)
+      renderWithProviders(<MessageView {...defaultProps} hasNewer onLoadNewer={vi.fn().mockResolvedValue(0)} onJumpToLatest={onJumpToLatest} />)
+      const view = document.querySelector('.message-view') as Element
+      setGeometry(view, 0, 2000, 100)
+      fireEvent.scroll(view)
+      fireEvent.click(await screen.findByTitle('Jump to latest messages'))
+      expect(onJumpToLatest).toHaveBeenCalledTimes(1)
+    })
+
+    it('the Latest pill just scrolls when the newest messages are already loaded', async () => {
+      const onJumpToLatest = vi.fn().mockResolvedValue(undefined)
+      renderWithProviders(<MessageView {...defaultProps} onJumpToLatest={onJumpToLatest} />)
+      const view = document.querySelector('.message-view') as Element
+      setGeometry(view, 0, 2000, 100)
+      fireEvent.scroll(view)
+      fireEvent.click(await screen.findByTitle('Jump to latest messages'))
+      expect(onJumpToLatest).not.toHaveBeenCalled()
+    })
   })
 })

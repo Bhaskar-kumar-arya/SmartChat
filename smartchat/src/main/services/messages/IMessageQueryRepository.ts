@@ -12,6 +12,16 @@ export interface IMessageReadRepository {
     skip: number,
     take: number
   ): Promise<Array<Message & { sender: Identity | null }>>
+  /**
+   * Cursor page anchored at message id `cursorId` ('before' = older, newest first;
+   * 'after' = newer, oldest first). Unknown anchor -> empty.
+   */
+  findChatMessagesByCursor(
+    chatJid: string,
+    direction: 'before' | 'after',
+    cursorId: string,
+    take: number
+  ): Promise<Array<Message & { sender: Identity | null }>>
   findMessageTypeAndContent(id: string): Promise<{ messageType: string; textContent: string | null } | null>
   findMessagesByChat(chatJid: string, limit: number): Promise<Message[]>
   /** Key of the oldest stored message for a chat (or null if none). */

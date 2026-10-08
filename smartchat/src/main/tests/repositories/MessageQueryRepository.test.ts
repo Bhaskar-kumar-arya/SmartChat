@@ -138,4 +138,43 @@ describe('MessageQueryRepository', () => {
     expect(page[1].id).toBe('m1')
     expect(page[0].sender?.displayName).toBe('S2')
   })
+
+  describe('findChatMessagesByCursor (F-UC-1)', () => {
+    // m1..m6; m3 and m4 share a timestamp so the rowid tiebreak is exercised.
+    const seed = async (): Promise<void> => {
+      await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
+      await prisma.chat.create({ data: { jid: 'other@g.us', type: 'GROUP' } })
+      const ts: Record<string, bigint> = { m1: 100n, m2: 200n, m3: 300n, m4: 300n, m5: 400n, m6: 500n }
+      for (const [id, timestamp] of Object.entries(ts)) {
+        await prisma.message.create({
+          data: { id, chatJid: dummyChat, fromMe: false, timestamp, messageType: 'conversation', content: '{}' }
+        })
+      }
+      await prisma.message.create({
+        data: { id: 'x1', chatJid: 'other@g.us', fromMe: false, timestamp: 250n, messageType: 'conversation', content: '{}' }
+      })
+    }
+
+    it("'before' returns the messages strictly older than the anchor, newest first, tie-safe", async () => {
+      await seed()
+      const rows = await repository.findChatMessagesByCursor(dummyChat, 'before', 'm5', 3)
+      expect(rows.map(m => m.id)).toEqual(['m4', 'm3', 'm2'])
+      const tie = await repository.findChatMessagesByCursor(dummyChat, 'before', 'm4', 10)
+      expect(tie.map(m => m.id)).toEqual(['m3', 'm2', 'm1'])
+    })
+
+    it("'after' returns the messages strictly newer than the anchor, oldest first", async () => {
+      await seed()
+      const rows = await repository.findChatMessagesByCursor(dummyChat, 'after', 'm3', 2)
+      expect(rows.map(m => m.id)).toEqual(['m4', 'm5'])
+      const end = await repository.findChatMessagesByCursor(dummyChat, 'after', 'm6', 5)
+      expect(end).toEqual([])
+    })
+
+    it('an unknown anchor, or an anchor from another chat, yields an empty page', async () => {
+      await seed()
+      expect(await repository.findChatMessagesByCursor(dummyChat, 'before', 'nope', 5)).toEqual([])
+      expect(await repository.findChatMessagesByCursor(dummyChat, 'after', 'x1', 5)).toEqual([])
+    })
+  })
 })

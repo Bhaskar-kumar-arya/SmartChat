@@ -294,6 +294,48 @@ export class MessageQueryRepository implements IMessageQueryRepository, IRawSqlE
   }
 
   /**
+   * Cursor page of a chat's messages, anchored at message id `cursorId`.
+   *  - 'before': the `take` messages strictly older than the anchor, newest first.
+   *  - 'after': the `take` messages strictly newer than the anchor, oldest first.
+   * Uses the same (timestamp, rowid) order as findChatMessagesWithSender. An
+   * unknown anchor yields an empty page.
+   */
+  async findChatMessagesByCursor(
+    chatJid: string,
+    direction: 'before' | 'after',
+    cursorId: string,
+    take: number
+  ): Promise<Array<Message & { sender: import('@prisma/client').Identity | null }>> {
+    const rows =
+      direction === 'before'
+        ? await this.prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM Message
+            WHERE chatJid = ${chatJid}
+              AND (timestamp, rowid) < (SELECT timestamp, rowid FROM Message WHERE id = ${cursorId} AND chatJid = ${chatJid})
+            ORDER BY timestamp DESC, rowid DESC
+            LIMIT ${take}
+          `
+        : await this.prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM Message
+            WHERE chatJid = ${chatJid}
+              AND (timestamp, rowid) > (SELECT timestamp, rowid FROM Message WHERE id = ${cursorId} AND chatJid = ${chatJid})
+            ORDER BY timestamp ASC, rowid ASC
+            LIMIT ${take}
+          `
+    if (rows.length === 0) return []
+
+    const ids = rows.map(r => r.id)
+    const messages = await this.prisma.message.findMany({
+      where: { id: { in: ids } },
+      include: { sender: true }
+    })
+    const messageMap = new Map(messages.map(m => [m.id, m]))
+    return ids
+      .map(id => messageMap.get(id))
+      .filter(Boolean) as Array<Message & { sender: import('@prisma/client').Identity | null }>
+  }
+
+  /**
    * Key of the oldest stored message for a chat, used to anchor an on-demand
    * history fetch from WhatsApp. Ordered by (timestamp, rowid) to match the
    * pagination order used by findChatMessagesWithSender.
