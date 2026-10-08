@@ -423,10 +423,47 @@ export class MessageSenderService implements IMessageSenderService {
   }
 
   async retryFailedMessage(
-    _sock: IMessageActionSocket,
-    _jid: string,
-    _messageId: string
+    sock: IMessageActionSocket,
+    jid: string,
+    messageId: string
   ): Promise<EnrichedMessage> {
-    throw new Error('not implemented')
+    const failed = await this.messageQueryRepository.findMessageById(messageId)
+    if (!failed) throw new Error(`Message ${messageId} not found`)
+    if (!failed.fromMe || failed.status !== 'FAILED') {
+      throw new Error(`Message ${messageId} is not a failed outgoing message`)
+    }
+
+    interface RetryPayload {
+      localURI?: string
+      contextInfo?: { stanzaId?: string; mentionedJid?: string[] }
+    }
+    let parsed: Record<string, RetryPayload | string>
+    try {
+      parsed = JSON.parse(failed.content)
+    } catch {
+      throw new Error(`Message ${messageId} has unreadable content`)
+    }
+    const typeKey = Object.keys(parsed)[0]
+    const rawPayload = typeKey ? parsed[typeKey] : undefined
+    const payload = rawPayload && typeof rawPayload === 'object' ? rawPayload : undefined
+    const contextInfo = payload?.contextInfo
+    const quotedId = contextInfo?.stanzaId
+    const mentions = contextInfo?.mentionedJid?.length ? contextInfo.mentionedJid : undefined
+
+    const targetJid = failed.chatJid || jid
+    let enriched: EnrichedMessage
+    if (typeKey === 'conversation' || typeKey === 'extendedTextMessage') {
+      enriched = await this.sendMessageWorkflow(sock, targetJid, failed.textContent ?? '', quotedId, mentions)
+    } else if (payload?.localURI) {
+      enriched = await this.sendMediaMessageWorkflow(
+        sock, targetJid, payload.localURI, failed.textContent ?? undefined, quotedId, mentions
+      )
+    } else {
+      throw new Error(`Message ${messageId} (${typeKey}) cannot be retried`)
+    }
+
+    // The retry is a new message (new id); drop the failed one only once it is safely re-queued.
+    await this.messageRepository.deleteLocalMessage(messageId)
+    return enriched
   }
 }

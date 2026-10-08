@@ -181,6 +181,7 @@ interface MessageItemProps {
   onReply: (msg: IMessageItem) => void
   onEdit?: (messageId: string, newText: string) => Promise<void>
   onDelete?: (messageId: string) => Promise<void>
+  onRetry?: (messageId: string) => Promise<void>
   onDownloadMedia?: (msgId: string) => Promise<void>
   onViewReactions: (msg: IMessageItem) => void
   onScrollToMessage?: (messageId: string) => void
@@ -202,6 +203,7 @@ const MessageItemBody = memo(function MessageItemBody({
   onReply,
   onEdit,
   onDelete,
+  onRetry,
   onDownloadMedia,
   onViewReactions,
   onScrollToMessage
@@ -572,6 +574,19 @@ const MessageItemBody = memo(function MessageItemBody({
             {formatTime(msg.timestamp)}
             {msg.isEdited && <span className="message-edited-badge">(edited)</span>}
             {msg.fromMe && <MessageStatusTick status={msg.status} />}
+            {msg.fromMe && msg.status === 'FAILED' && onRetry && (
+              <button
+                type="button"
+                className="message-retry-btn"
+                title="Not sent. Click to retry"
+                onClick={() => {
+                  onRetry(msg.id).catch(() => showError('Could not resend the message'))
+                }}
+                style={{ marginLeft: '6px', background: 'none', border: 'none', padding: 0, color: '#f15c6d', cursor: 'pointer', fontSize: 'inherit', textDecoration: 'underline' }}
+              >
+                Retry
+              </button>
+            )}
           </span>
         )}
       </div>

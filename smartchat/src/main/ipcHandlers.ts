@@ -77,6 +77,12 @@ function registerChatAndMessageHandlers(
     return await services.messageActionService.editMessage(sock, messageId, newText, jid)
   })
 
+  ipcMain.handle('retry-message', async (_event, jid: string, messageId: string) => {
+    const sock = getSock()
+    if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')
+    return services.messageActionService.retryFailedMessage(sock, jid, messageId)
+  })
+
   ipcMain.handle('delete-message', async (_event, jid: string, messageId: string) => {
     const sock = getSock()
     if (!sock) throw new Error('[IPC] WhatsApp socket is not connected')

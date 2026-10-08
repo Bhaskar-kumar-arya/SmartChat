@@ -43,6 +43,7 @@ declare global {
       getMessages: (jid: string, page?: number, pageSize?: number) => Promise<MessageItem[]>
       getMessagesAround: (jid: string, messageId: string, lookBehind?: number) => Promise<MessageItem[]>
       sendMessage: (jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => Promise<MessageItem>
+      retryMessage: (jid: string, messageId: string) => Promise<MessageItem>
       editMessage: (jid: string, messageId: string, newText: string) => Promise<MessageItem>
       deleteMessage: (jid: string, messageId: string) => Promise<boolean>
       reactMessage: (jid: string, messageId: string, reaction: string) => Promise<void>

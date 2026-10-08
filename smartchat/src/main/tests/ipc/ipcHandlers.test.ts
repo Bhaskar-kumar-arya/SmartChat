@@ -29,6 +29,7 @@ describe('IPC handlers via recording ipcMain', () => {
     const socketGuarded: Array<[string, unknown[]]> = [
       ['send-message', ['a@s.whatsapp.net', 'hi']],
       ['edit-message', ['a@s.whatsapp.net', 'm1', 'new']],
+      ['retry-message', ['a@s.whatsapp.net', 'm1']],
       ['delete-message', ['a@s.whatsapp.net', 'm1']],
       ['react-message', ['a@s.whatsapp.net', 'm1', 'x']],
       ['send-media-message', ['a@s.whatsapp.net', '/tmp/f.png']],

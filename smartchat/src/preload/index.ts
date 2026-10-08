@@ -95,6 +95,9 @@ const api = {
   sendMessage: (jid: string, text: string, quotedMsgId?: string, mentions?: string[]) => {
     return ipcRenderer.invoke('send-message', jid, text, quotedMsgId, mentions)
   },
+  retryMessage: (jid: string, messageId: string) => {
+    return ipcRenderer.invoke('retry-message', jid, messageId)
+  },
   editMessage: (jid: string, messageId: string, newText: string) => {
     return ipcRenderer.invoke('edit-message', jid, messageId, newText)
   },

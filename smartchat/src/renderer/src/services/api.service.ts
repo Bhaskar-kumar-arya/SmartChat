@@ -26,6 +26,8 @@ export const api: IAPIService = {
   sendMessage: (jid: string, text: string, quotedId?: string, mentions?: string[]): Promise<MessageItem> =>
     window.api.sendMessage(jid, text, quotedId, mentions),
 
+  retryMessage: (jid: string, messageId: string): Promise<MessageItem> =>
+    window.api.retryMessage(jid, messageId),
   editMessage: (jid: string, messageId: string, newText: string): Promise<MessageItem> =>
     window.api.editMessage(jid, messageId, newText),
 

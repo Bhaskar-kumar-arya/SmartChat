@@ -59,6 +59,7 @@ export default function ChatLayout() {
     handleDownloadMedia,
     sendMessage,
     sendMediaMessage,
+    retryMessage,
     editMessage,
     deleteMessage
   } = useMessages(activeJid, targetMessageId)
@@ -342,6 +343,7 @@ export default function ChatLayout() {
               onLoadMore={loadMore}
               onReply={handleReply}
               onEdit={editMessage}
+              onRetry={retryMessage}
               onDelete={deleteMessage}
               onDownloadMedia={handleDownloadMedia}
               targetMessageId={targetMessageId}

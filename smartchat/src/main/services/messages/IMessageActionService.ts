@@ -59,4 +59,6 @@ export interface IMessageActionService {
     quotedMsgId?: string,
     mentions?: string[]
   ): Promise<EnrichedMessage>
+
+  retryFailedMessage(sock: IMessageActionSocket, jid: string, messageId: string): Promise<EnrichedMessage>
 }

@@ -125,7 +125,7 @@ describe('MessageSenderService', () => {
       messageRepo.deleteLocalMessage = vi.fn().mockResolvedValue(undefined)
     })
 
-    it.fails('re-sends a failed text with its quote and mentions, then removes the failed row', async () => {
+    it('re-sends a failed text with its quote and mentions, then removes the failed row', async () => {
       messageQueryRepo.findMessageById.mockResolvedValue(failed({
         messageType: 'extendedTextMessage',
         textContent: 'hi @1234',
@@ -140,7 +140,7 @@ describe('MessageSenderService', () => {
       expect(res.id).toBe('sent1')
     })
 
-    it.fails('re-sends a failed plain text', async () => {
+    it('re-sends a failed plain text', async () => {
       messageQueryRepo.findMessageById.mockResolvedValue(failed({
         messageType: 'conversation', textContent: 'Hello', content: JSON.stringify({ conversation: 'Hello' })
       }))
@@ -149,7 +149,7 @@ describe('MessageSenderService', () => {
       expect(spy).toHaveBeenCalledWith(sock, 'target@s.whatsapp.net', 'Hello', undefined, undefined)
     })
 
-    it.fails('re-sends a failed media message from its cached copy with the caption', async () => {
+    it('re-sends a failed media message from its cached copy with the caption', async () => {
       messageQueryRepo.findMessageById.mockResolvedValue(failed({
         messageType: 'imageMessage',
         textContent: 'look',
@@ -161,7 +161,7 @@ describe('MessageSenderService', () => {
       expect(messageRepo.deleteLocalMessage).toHaveBeenCalledWith('old1')
     })
 
-    it.fails('keeps the failed row when the new send throws', async () => {
+    it('keeps the failed row when the new send throws', async () => {
       messageQueryRepo.findMessageById.mockResolvedValue(failed({
         messageType: 'conversation', textContent: 'Hello', content: JSON.stringify({ conversation: 'Hello' })
       }))

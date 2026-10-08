@@ -123,6 +123,9 @@ export function createMockApiService(overrides: Partial<IAPIService> = {}): Mock
         quotedId,
       } as any)
     ),
+    retryMessage: vi.fn().mockImplementation((jid: string, messageId: string) =>
+      Promise.resolve({ id: `${messageId}-retry`, chatJid: jid, fromMe: true, status: 'PENDING' } as never)
+    ),
     editMessage: vi.fn().mockImplementation((jid: string, messageId: string, newText: string) =>
       Promise.resolve({
         id: messageId,

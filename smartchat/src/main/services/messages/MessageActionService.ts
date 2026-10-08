@@ -324,4 +324,8 @@ export class MessageActionService implements IMessageActionService {
     return this.messageSenderService.sendMediaMessageWorkflow(sock, jid, filePath, caption, quotedMsgId, mentions)
   }
 
+  async retryFailedMessage(sock: IMessageActionSocket, jid: string, messageId: string): Promise<EnrichedMessage> {
+    return this.messageSenderService.retryFailedMessage(sock, jid, messageId)
+  }
+
 }

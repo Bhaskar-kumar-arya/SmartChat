@@ -21,6 +21,7 @@ interface MessageViewProps {
   onReply: (msg: IMessageItem) => void
   onEdit?: (messageId: string, newText: string) => Promise<any>
   onDelete?: (messageId: string) => Promise<any>
+  onRetry?: (messageId: string) => Promise<unknown>
   onDownloadMedia?: (msgId: string) => Promise<void>
   targetMessageId?: string | null
   onTargetScrolled?: () => void
@@ -39,6 +40,7 @@ export default function MessageView({
   onReply,
   onEdit,
   onDelete,
+  onRetry,
   onDownloadMedia,
   targetMessageId,
   onTargetScrolled,
@@ -242,6 +244,10 @@ export default function MessageView({
     if (onDelete) await onDelete(messageId)
   }, [onDelete])
 
+  const handleRetry = useCallback(async (messageId: string) => {
+    if (onRetry) await onRetry(messageId)
+  }, [onRetry])
+
   const handleDownloadMedia = useCallback(async (msgId: string) => {
     if (onDownloadMedia) await onDownloadMedia(msgId)
   }, [onDownloadMedia])
@@ -309,6 +315,7 @@ export default function MessageView({
                 onReply={handleReply}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onRetry={onRetry ? handleRetry : undefined}
                 onDownloadMedia={handleDownloadMedia}
                 onViewReactions={handleViewReactions}
                 onScrollToMessage={onScrollToMessage}

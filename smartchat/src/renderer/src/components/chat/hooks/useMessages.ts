@@ -346,6 +346,28 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     }
   }
 
+  const retryMessage = async (messageId: string): Promise<MessageItem | undefined> => {
+    if (!activeJid) return
+    try {
+      const retried = await api.retryMessage(activeJid, messageId)
+      // The retry is a brand-new message (new id): replace the failed bubble, tolerating the
+      // live new-message event having already delivered it.
+      setMessages((prev) => {
+        const without = prev.filter((m) => m.id !== messageId)
+        const idx = without.findIndex((m) => m.id === retried.id)
+        if (idx !== -1) {
+          without[idx] = retried
+          return without
+        }
+        return [...without, retried]
+      })
+      return retried
+    } catch (err) {
+      console.error('Failed to retry message:', err)
+      throw err
+    }
+  }
+
   const editMessage = async (messageId: string, newText: string) => {
     if (!activeJid) return
     try {
@@ -383,6 +405,7 @@ export const useMessages = (activeJid: string | null, initialTargetId?: string |
     handleDownloadMedia,
     sendMessage,
     sendMediaMessage,
+    retryMessage,
     editMessage,
     deleteMessage,
     setMessages

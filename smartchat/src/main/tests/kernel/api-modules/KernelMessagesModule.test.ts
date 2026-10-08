@@ -35,7 +35,8 @@ describe('KernelMessagesModule', () => {
       forwardMessage: vi.fn(),
       reactToMessage: vi.fn(),
       sendMessageWorkflow: vi.fn(),
-      sendMediaMessageWorkflow: vi.fn()
+      sendMediaMessageWorkflow: vi.fn(),
+      retryFailedMessage: vi.fn()
     }
 
     module = new KernelMessagesModule(

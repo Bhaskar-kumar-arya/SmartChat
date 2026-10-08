@@ -82,6 +82,7 @@ vi.mock('../ServiceContainer', () => ({
     return {
       notificationService: { getPreferencesSync: () => ({ minimizeToTray: h.minimizeToTray }) },
       authSettingsService: {},
+      messageRepository: { failStalePendingOutgoing: async () => 0 },
       chatRepository: {},
       dataWipeService: {},
       waWorkerBridge: {},
