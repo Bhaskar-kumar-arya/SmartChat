@@ -77,7 +77,7 @@ describe('SDK contract (R-KRN-11)', () => {
       return spy.mock.calls[0] as string[]
     }
 
-    it.fails('derives args from the typed text when the host sends an empty args', async () => {
+    it('derives args from the typed text when the host sends an empty args', async () => {
       const [args] = await runSlash('/ping hello  world ', '')
       expect(args).toBe('hello  world')
     })
@@ -94,7 +94,7 @@ describe('SDK contract (R-KRN-11)', () => {
   })
 
   describe('ctx.ai.registerTool', () => {
-    it.fails('sends kernel:ai:registerTool with name, description and schema', async () => {
+    it('sends kernel:ai:registerTool with name, description and schema', async () => {
       const runtime = new WorkerPluginRuntime(port1, manifest)
       const registerTool = (runtime.getContext().ai as unknown as { registerTool?: RegisterToolFn }).registerTool
       expect(typeof registerTool).toBe('function')
@@ -110,7 +110,7 @@ describe('SDK contract (R-KRN-11)', () => {
       await p
     })
 
-    it.fails('runs the optional execute callback for contribution:execute:ai-tool', async () => {
+    it('runs the optional execute callback for contribution:execute:ai-tool', async () => {
       const runtime = new WorkerPluginRuntime(port1, manifest)
       const registerTool = (runtime.getContext().ai as unknown as { registerTool?: RegisterToolFn }).registerTool
       port2.once('message', (m) => port2.postMessage({ id: m.id, ok: true, payload: {} }))
@@ -140,7 +140,7 @@ describe('SDK contract (R-KRN-11)', () => {
       expect(res).toMatchObject({ ok: true, payload: { text: 'x@g.us' } })
     })
 
-    it.fails('no longer exposes importAPI / exposeAPI / completion / send-interceptor registration', () => {
+    it('no longer exposes importAPI / exposeAPI / completion / send-interceptor registration', () => {
       const runtime = new WorkerPluginRuntime(port1, manifest)
       const keys = Object.keys(runtime.getContext().contributions)
       for (const removed of ['importAPI', 'exposeAPI', 'registerCompletionProvider', 'registerMessageSendInterceptor']) {
@@ -148,7 +148,7 @@ describe('SDK contract (R-KRN-11)', () => {
       }
     })
 
-    it.fails('does not answer the removed completion / pipeline kernel requests', async () => {
+    it('does not answer the removed completion / pipeline kernel requests', async () => {
       new WorkerPluginRuntime(port1, manifest)
       const a = await kernelRequest('c1', 'contribution:execute:completion-provider', { id: 'p', context: {} })
       const b = await kernelRequest('c2', 'contribution:execute:message-send-pipeline', { id: 'p', payload: {} })
@@ -184,7 +184,7 @@ describe('SDK contract (R-KRN-11)', () => {
       expect(pluginKeys()).toContain('message:incoming')
     })
 
-    it.fails('every named PluginEventMap event is a real WAEventMap event', () => {
+    it('every named PluginEventMap event is a real WAEventMap event', () => {
       const wa = waKeys()
       expect(pluginKeys().filter((k) => !wa.has(k))).toEqual([])
     })

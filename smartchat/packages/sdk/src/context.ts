@@ -45,7 +45,10 @@ export interface MessageActionContext {
 }
 
 export interface CommandContext {
+  /** Chat the command was typed in. */
   chatJid?: string
+  /** The full text typed in the composer, including the leading `/name`. */
+  text?: string
 }
 
 /**
@@ -79,27 +82,6 @@ export interface BadgeDescriptor {
   text?: string
   count?: number
   color?: string
-}
-
-export interface CompletionContext {
-  text: string
-  cursorPosition: number
-}
-
-export interface CompletionItem {
-  label: string
-  insertText: string
-  detail?: string
-}
-
-export interface OutgoingMessagePayload {
-  chatJid: string
-  text: string
-}
-
-export interface SendResult {
-  success: boolean
-  messageId?: string
 }
 
 export interface IPluginLogAPI {
@@ -276,6 +258,15 @@ export interface PluginAISession {
   messages?: unknown[]
 }
 
+export interface PluginAIToolDefinition {
+  name: string
+  description: string
+  /** JSON schema of the tool arguments. */
+  schema: object
+  /** Optional executor; equivalent to `contributions.registerAITool(name, execute)`. */
+  execute?: (args: Record<string, unknown>) => Promise<{ text: string }>
+}
+
 export interface IPluginAIAPI {
   chat(prompt: string, options?: AICallOptions): Promise<string>
   callTool(toolName: string, args: Record<string, unknown>): Promise<{ text: string }>
@@ -285,6 +276,12 @@ export interface IPluginAIAPI {
   getSession(id: string): Promise<PluginAISession | null>
   renameSession(id: string, title: string): Promise<PluginAISession>
   deleteSession(id: string): Promise<void>
+  /**
+   * Register a tool in the kernel ToolRegistry so the AI assistant can call it (needs the
+   * `ai:tools:register` permission). Worker plugins only; absent on the builtin context.
+   * Execution is routed back to `execute` or to a `contributions.registerAITool` handler.
+   */
+  registerTool?(def: PluginAIToolDefinition): Promise<void>
 }
 
 export interface IPluginContributionsAPI {
@@ -296,6 +293,10 @@ export interface IPluginContributionsAPI {
     id: string,
     handler: (ctx: MessageActionContext) => Promise<void>
   ): void
+  /**
+   * @deprecated Accepted and the manifest `chatBadges` entry is registered, but the renderer
+   * does not evaluate badges yet, so `compute` is never called. Kept for existing plugins.
+   */
   registerChatBadge?(
     id: string,
     compute: (chatJid: string) => Promise<BadgeDescriptor | null>
@@ -308,24 +309,16 @@ export interface IPluginContributionsAPI {
     name: string,
     execute: (args: Record<string, unknown>) => Promise<{ text: string }>
   ): void
-  registerCompletionProvider?(
-    id: string,
-    provide: (ctx: CompletionContext) => Promise<CompletionItem[]>
-  ): void
-  registerMessageSendInterceptor?(
-    id: string,
-    intercept: (
-      payload: OutgoingMessagePayload,
-      next: (payload: OutgoingMessagePayload) => Promise<SendResult>
-    ) => Promise<SendResult>
-  ): void
   registerSidebarPanel?(id: string, opts: { title: string; icon?: string; panel?: string }): void
   registerSettingsPage?(id: string, opts: { title: string; panel?: string }): void
   registerMessageRenderer?(id: string, opts: { messageType: string; panel?: string }): void
-  exposeAPI?(exportName: string, api: Record<string, unknown>): void
-  importAPI?(pluginId: string, exportName: string): Promise<Record<string, unknown>>
 }
 
+/**
+ * Security model (decision D9): an external worker plugin has FULL Node.js access (`fs`, `net`,
+ * `child_process`, ...). The capability checks below gate only calls made through this context;
+ * they are a consent aid, not a sandbox. Only install plugins whose code you trust.
+ */
 export interface PluginContext {
   readonly id: string
   readonly manifest: PluginManifest
