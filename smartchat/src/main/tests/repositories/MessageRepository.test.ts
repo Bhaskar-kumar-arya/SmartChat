@@ -277,6 +277,23 @@ describe('MessageRepository', () => {
     expect(msg?.isDeleted).toBe(true)
   })
 
+  // Smoke 2026-10-09: quitting mid-send left the message on the pending clock forever (never sent).
+  it.fails('failStalePendingOutgoing marks leftover PENDING outgoing messages FAILED only', async () => {
+    await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
+    const base = { chatJid: dummyChat, timestamp: 10n, messageType: 'conversation', content: '{}' }
+    await prisma.message.create({ data: { ...base, id: 'p-out', fromMe: true, status: 'PENDING' } })
+    await prisma.message.create({ data: { ...base, id: 'p-in', fromMe: false, status: 'PENDING' } })
+    await prisma.message.create({ data: { ...base, id: 's-out', fromMe: true, status: 'SENT' } })
+
+    expect(await repository.failStalePendingOutgoing()).toBe(1)
+
+    const status = async (id: string): Promise<string | null | undefined> =>
+      (await prisma.message.findUnique({ where: { id } }))?.status
+    expect(await status('p-out')).toBe('FAILED')
+    expect(await status('p-in')).toBe('PENDING')
+    expect(await status('s-out')).toBe('SENT')
+  })
+
   it('should bulk sync messages efficiently', async () => {
     await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
 

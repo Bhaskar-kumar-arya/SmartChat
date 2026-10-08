@@ -24,6 +24,11 @@ export interface IMessageWriteRepository {
    */
   bulkSyncMessages(rows: MessageUpsertData[]): Promise<MessageUpsertData[]>
   updateMessageDeleted(id: string): Promise<void>
+  /**
+   * Startup sweep: outgoing messages still PENDING belong to a previous run (the app quit mid-send)
+   * and can never be acknowledged, so mark them FAILED. Returns how many were changed.
+   */
+  failStalePendingOutgoing(): Promise<number>
 }
 
 export interface IMessageRepository extends IMessageWriteRepository, IMessageCompoundRepository { }
