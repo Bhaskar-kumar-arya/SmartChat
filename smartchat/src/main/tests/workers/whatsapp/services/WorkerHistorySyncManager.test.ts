@@ -28,7 +28,7 @@ describe('WorkerHistorySyncManager (S3-03)', () => {
       chatRepository: {} as any,
       communityRepository: {} as any,
       messageRepository: {} as any,
-      reactionRepository: {} as any,
+      reactionRepository: { flushDeferredReactions: vi.fn().mockResolvedValue(undefined), discardDeferredReactions: vi.fn() } as any,
       groupHydrationService: { hydrateGroups: vi.fn().mockResolvedValue(undefined) } as any,
       identityReconciliationService: { deduplicateIdentities: vi.fn().mockResolvedValue(undefined) } as any
     }

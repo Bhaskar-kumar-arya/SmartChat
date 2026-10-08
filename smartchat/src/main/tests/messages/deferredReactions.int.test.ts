@@ -77,7 +77,7 @@ describe('deferred reactions in history sync (real DB)', () => {
     return prisma.reaction.findMany({ where: { messageId }, select: { text: true } })
   }
 
-  it.fails('B-MSG-01: a reaction whose target is stored by a later chunk is applied once the target exists', async () => {
+  it('B-MSG-01: a reaction whose target is stored by a later chunk is applied once the target exists', async () => {
     await injectEvent('messaging-history.set', chunk([reactionMsg('r1', 'T1', '🔥', 2000)]), services, eventHandler, sock)
     expect(await prisma.reaction.count()).toBe(0)
 

@@ -80,6 +80,7 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       this.syncTimeout = null
     }
     this.deps.mediaService.clearFavoriteStickerQueue()
+    this.deps.reactionRepository.discardDeferredReactions()
   }
 
   async handleSyncChunk(data: unknown, syncFullHistory: boolean, sock: WASocket): Promise<void> {
@@ -263,6 +264,10 @@ export class WorkerHistorySyncManager implements IHistorySyncManager {
       this.syncTimeout = null
     }
     console.log(`[WorkerHistorySync] Sync complete after ${this.syncChunkCount} chunks`)
+
+    await this.deps.reactionRepository.flushDeferredReactions().catch((err) => {
+      console.error('[WorkerHistorySync] Failed to flush deferred reactions:', err)
+    })
 
     try {
       const groups = await sock.groupFetchAllParticipating()

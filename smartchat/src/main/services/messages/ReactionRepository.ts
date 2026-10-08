@@ -1,7 +1,18 @@
 import { PrismaClient } from '@prisma/client'
 import { IReactionRepository, LastReactionInfo, ReactionSyncData } from './IReactionRepository'
 
+/** Upper bound on reactions held while their target message is not stored yet. */
+const MAX_DEFERRED_REACTIONS = 50_000
+
 export class ReactionRepository implements IReactionRepository {
+  /**
+   * History-sync reactions whose target message is not stored yet (the target can
+   * arrive in a later batch, chunk or on-demand page). Keyed `targetId_reactorId`,
+   * latest timestamp wins. In memory only: a restart mid-sync loses them (the
+   * resumed sync re-delivers the chunks it had not finished).
+   */
+  private readonly deferred = new Map<string, ReactionSyncData>()
+
   constructor(private readonly prisma: PrismaClient) {}
 
   /**
@@ -86,17 +97,20 @@ export class ReactionRepository implements IReactionRepository {
   /**
    * Deduplicate, validate, and bulk-upsert a set of pending reaction records.
    *
-   * Only inserts reactions whose target message IDs already exist in the database
-   * (the target message rows for a batch are persisted before this is called).
+   * Only inserts reactions whose target message IDs already exist in the database.
+   * Reactions whose target is missing are deferred (B-MSG-01) and retried on every
+   * subsequent call and by `flushDeferredReactions`.
    *
    * Used exclusively by SyncMessagesHandler during history sync.
    */
   async bulkSyncReactions(pendingReactions: ReactionSyncData[]): Promise<void> {
-    if (pendingReactions.length === 0) return
+    const candidates = [...this.deferred.values(), ...pendingReactions]
+    if (candidates.length === 0) return
+    this.deferred.clear()
 
     // Keep only the latest reaction per (targetId, reactorId)
     const uniqueMap = new Map<string, ReactionSyncData>()
-    for (const r of pendingReactions) {
+    for (const r of candidates) {
       const key = `${r.targetId}_${r.reactorId}`
       const existing = uniqueMap.get(key)
       if (!existing || r.timestamp > existing.timestamp) {
@@ -125,6 +139,12 @@ export class ReactionRepository implements IReactionRepository {
         select: { id: true }
       })
       for (const ident of foundIdentities) existingReactorIds.add(ident.id)
+    }
+
+    for (const r of unique) {
+      if (!existingMessageIds.has(r.targetId) && existingReactorIds.has(r.reactorId)) {
+        this.defer(r)
+      }
     }
 
     let valid = unique.filter(
@@ -172,6 +192,25 @@ export class ReactionRepository implements IReactionRepository {
           })
       }
     })
+  }
+
+  private defer(r: ReactionSyncData): void {
+    if (this.deferred.size >= MAX_DEFERRED_REACTIONS) {
+      console.warn('[ReactionRepository] Deferred reaction buffer full; dropping reaction for', r.targetId)
+      return
+    }
+    this.deferred.set(`${r.targetId}_${r.reactorId}`, r)
+  }
+
+  /** Last retry for deferred reactions (end of sync); whatever still has no target is dropped. */
+  async flushDeferredReactions(): Promise<void> {
+    await this.bulkSyncReactions([])
+    this.deferred.clear()
+  }
+
+  /** Drop deferred reactions without applying them (sync session torn down). */
+  discardDeferredReactions(): void {
+    this.deferred.clear()
   }
 
   /**

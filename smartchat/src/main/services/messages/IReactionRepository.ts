@@ -45,6 +45,12 @@ export interface IReactionWriteRepository {
   deleteReactions(messageId: string, senderId: number): Promise<void>
 
   bulkSyncReactions(pendingReactions: ReactionSyncData[]): Promise<void>
+
+  /** Final retry of reactions deferred because their target was not stored; the rest are dropped. */
+  flushDeferredReactions(): Promise<void>
+
+  /** Drop deferred reactions unapplied (sync session torn down). */
+  discardDeferredReactions(): void
 }
 
 export interface IReactionRepository extends IReactionQueryRepository, IReactionWriteRepository {}
