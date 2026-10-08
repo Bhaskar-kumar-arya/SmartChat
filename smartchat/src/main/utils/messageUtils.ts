@@ -1,5 +1,5 @@
-import { MESSAGE_TYPE_LABELS } from '../constants'
-import { proto } from '@whiskeysockets/baileys'
+import { MESSAGE_TYPE_LABELS, PROTOCOL_TYPE_REVOKE, PROTOCOL_TYPE_EDIT } from '../constants'
+import { proto, WAMessageStubType } from '@whiskeysockets/baileys'
 
 /**
  * Parses a Baileys-style timestamp (plain number or { low, high } Long object) to BigInt.
@@ -97,25 +97,100 @@ export function getMessageType(message: proto.IMessage | Record<string, unknown>
   return 'unknown'
 }
 
+const CAPTION_MEDIA_KEYS = ['imageMessage', 'videoMessage', 'documentMessage', 'audioMessage', 'ptvMessage'] as const
+
+export interface ExtractTextOptions {
+  /**
+   * `MessageParser` semantics: an empty `extendedTextMessage.text` falls through, and only the
+   * FIRST media object present is consulted for a caption. The default (index/sync/decrypt)
+   * semantics accept an empty text and scan every media key. The two disagree on those edge
+   * cases; each caller keeps its historical behaviour (R-MSG-08).
+   */
+  parserSemantics?: boolean
+}
+
 /**
- * Extracts plain text content from a raw Baileys message object for full-text search indexing.
- * Returns null when no text content can be found.
+ * Extracts plain text content from a (already unwrapped) Baileys message object: conversation,
+ * extended text, or media caption. Returns null when no text content can be found.
  */
-export function extractTextContent(message: proto.IMessage | Record<string, unknown> | null | undefined): string | null {
+export function extractTextContent(
+  message: proto.IMessage | Record<string, unknown> | null | undefined,
+  options?: ExtractTextOptions
+): string | null {
   if (!message) return null
 
   const rawMsg = message as Record<string, unknown>
   if (typeof rawMsg.conversation === 'string') return rawMsg.conversation
 
   const extText = rawMsg.extendedTextMessage as Record<string, unknown> | undefined
+  if (options?.parserSemantics) {
+    if (extText?.text && typeof extText.text === 'string') return extText.text
+    const first = CAPTION_MEDIA_KEYS.map((k) => rawMsg[k] as Record<string, unknown> | undefined).find((m) => m != null)
+    return first && typeof first.caption === 'string' ? first.caption : null
+  }
   if (extText && typeof extText.text === 'string') return extText.text
 
-  for (const key of ['imageMessage', 'videoMessage', 'documentMessage', 'audioMessage', 'ptvMessage']) {
+  for (const key of CAPTION_MEDIA_KEYS) {
     const media = rawMsg[key] as Record<string, unknown> | undefined
     if (media && typeof media.caption === 'string') return media.caption
   }
 
   return null
+}
+
+/**
+ * Text of an edit payload (`protocolMessage.editedMessage`): conversation, extended text, or an
+ * image/video caption (documents and wrapped payloads are not consulted).
+ * `skipEmpty` selects `||` (WAEventHandler) over `??` (ProtocolMessageProcessor) chaining.
+ */
+export function extractEditedText(
+  edited: proto.IMessage | null | undefined,
+  options?: { skipEmpty?: boolean }
+): string | null {
+  if (!edited) return null
+  const candidates = [
+    edited.conversation,
+    edited.extendedTextMessage?.text,
+    edited.imageMessage?.caption,
+    edited.videoMessage?.caption
+  ]
+  if (options?.skipEmpty) return candidates.find((c) => !!c) || null
+  return candidates.find((c) => c !== null && c !== undefined) ?? null
+}
+
+/** Classifies `protocolMessage.type` (numeric enum or its string name) as a revoke or an edit. */
+export function classifyProtocolType(type: unknown): 'revoke' | 'edit' | null {
+  if (type === PROTOCOL_TYPE_REVOKE || type === 'REVOKE') return 'revoke'
+  if (type === PROTOCOL_TYPE_EDIT || type === 'MESSAGE_EDIT') return 'edit'
+  return null
+}
+
+export const CIPHERTEXT_PLACEHOLDER_TEXT = 'Waiting for this message. This may take a while.'
+
+export type StubClassification =
+  | { kind: 'revoke' }
+  | { kind: 'ciphertext'; messageType: 'ciphertext'; textContent: string }
+  | { kind: 'system'; messageType: 'system'; content: { stubType: string; parameters: unknown[] } }
+
+/**
+ * Classifies a Baileys `messageStubType` (+ parameters). Returns null when there is no stub.
+ * MessageParser uses all three kinds; the history-sync handler acts only on `revoke` and
+ * `ciphertext` and keeps the content-derived type for other stubs (R-MSG-08 follow-up).
+ */
+export function classifyStub(stubType: unknown, parameters?: unknown): StubClassification | null {
+  if (stubType === undefined || stubType === null) return null
+  if (stubType === WAMessageStubType.REVOKE) return { kind: 'revoke' }
+  if (stubType === WAMessageStubType.CIPHERTEXT) {
+    return { kind: 'ciphertext', messageType: 'ciphertext', textContent: CIPHERTEXT_PLACEHOLDER_TEXT }
+  }
+  return {
+    kind: 'system',
+    messageType: 'system',
+    content: {
+      stubType: typeof stubType === 'number' ? WAMessageStubType[stubType] || 'UNKNOWN' : String(stubType),
+      parameters: (parameters as unknown[] | null | undefined) || []
+    }
+  }
 }
 
 /**

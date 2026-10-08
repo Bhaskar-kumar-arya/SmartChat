@@ -7,7 +7,11 @@ import {
   isIndexableMessageType,
   normalizeMuteExpirationSeconds,
   applyEdit,
-  mergeContextInfo
+  mergeContextInfo,
+  classifyStub,
+  classifyProtocolType,
+  extractEditedText,
+  CIPHERTEXT_PLACEHOLDER_TEXT
 } from '../../utils/messageUtils'
 import { patchEditedText } from '../../services/messages/patchEditedText'
 
@@ -235,5 +239,28 @@ describe('edit helpers (F-MSG-1)', () => {
   it('patchEditedText rewrites text in place', () => {
     expect(JSON.parse(patchEditedText('{"conversation":"a"}', 'b'))).toEqual({ conversation: 'b' })
     expect(JSON.parse(patchEditedText('{"imageMessage":{"caption":"a"}}', 'b'))).toEqual({ imageMessage: { caption: 'b' } })
+  })
+})
+
+describe('R-MSG-08 shared parsing helpers', () => {
+  it('classifyStub', () => {
+    expect(classifyStub(undefined)).toBeNull()
+    expect(classifyStub(null)).toBeNull()
+    expect(classifyStub(1)).toEqual({ kind: 'revoke' })
+    expect(classifyStub(2)).toEqual({ kind: 'ciphertext', messageType: 'ciphertext', textContent: CIPHERTEXT_PLACEHOLDER_TEXT })
+    expect(classifyStub(99999, ['a'])).toEqual({ kind: 'system', messageType: 'system', content: { stubType: 'UNKNOWN', parameters: ['a'] } })
+    expect(classifyStub('X')).toEqual({ kind: 'system', messageType: 'system', content: { stubType: 'X', parameters: [] } })
+  })
+  it('classifyProtocolType', () => {
+    expect([0, 'REVOKE'].map(classifyProtocolType)).toEqual(['revoke', 'revoke'])
+    expect([14, 'MESSAGE_EDIT'].map(classifyProtocolType)).toEqual(['edit', 'edit'])
+    expect([3, undefined, 'x'].map(classifyProtocolType)).toEqual([null, null, null])
+  })
+  it('extractEditedText: ?? by default, || with skipEmpty', () => {
+    const m = { conversation: '', extendedTextMessage: { text: 'x' } }
+    expect(extractEditedText(m)).toBe('')
+    expect(extractEditedText(m, { skipEmpty: true })).toBe('x')
+    expect(extractEditedText(null)).toBeNull()
+    expect(extractEditedText({}, { skipEmpty: true })).toBeNull()
   })
 })

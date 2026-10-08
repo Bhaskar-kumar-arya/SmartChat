@@ -1,4 +1,3 @@
-import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { SyncStickerCandidate } from '../messages/IMediaService'
 import { IContactMutationService, IContactQueryService } from '../contacts/IContactService'
 import { IMessageRepository, MessageUpsertData } from '../messages/IMessageRepository'
@@ -7,7 +6,7 @@ import { IAliasRepository } from '../contacts/IAliasRepository'
 import { IChatRepository } from '../chats/IChatRepository'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid } from '../../utils/jidUtils'
-import { parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage } from '../../utils/messageUtils'
+import { parseBaileysTimestamp, getMessageType, extractTextContent, unwrapMessage, classifyStub, classifyProtocolType } from '../../utils/messageUtils'
 import { BaileysWebMessageInfo, BaileysReaction } from '../whatsapp/types'
 
 export interface PendingReaction {
@@ -15,6 +14,22 @@ export interface PendingReaction {
   reactorId: number
   emoji: string
   timestamp: bigint
+}
+
+/** Reactor JID of a history-sync reaction key: participant, else the DM peer; `fromMe` means us. */
+function reactorJidFromKey(
+  key: { participant?: string | null; remoteJid?: string | null; fromMe?: boolean | null },
+  meJid: string | null
+): string | null {
+  let raw: string | null | undefined = key.participant ?? (key.remoteJid?.endsWith('@g.us') ? null : key.remoteJid)
+  if (key.fromMe && meJid) raw = meJid
+  return raw ? cleanJid(raw) : null
+}
+
+/** Reaction timestamp in seconds: accepts seconds, milliseconds or a Long; missing means now. */
+function normalizeReactionTimestamp(ts: unknown): bigint {
+  const reactionTs = parseBaileysTimestamp(ts ?? Math.floor(Date.now() / 1000))
+  return reactionTs > 9999999999n ? reactionTs / 1000n : reactionTs
 }
 
 export interface SyncMessageRow extends MessageUpsertData {
@@ -170,8 +185,10 @@ export class SyncMessagesHandler {
     let isEdited = false
     let isDeleted = false
 
-    const stubType = mTyped.messageStubType
-    if (stubType === WAMessageStubType.REVOKE && !message?.protocolMessage) {
+    // Only revoke/ciphertext stubs are acted on here; other stubs keep their content-derived type
+    // (MessageParser classifies them as 'system'; pinned disagreement, see R-MSG-08 follow-ups).
+    const stub = classifyStub(mTyped.messageStubType, mTyped.messageStubParameters)
+    if (stub?.kind === 'revoke' && !message?.protocolMessage) {
       const targetId = Array.isArray(mTyped.messageStubParameters)
         ? (mTyped.messageStubParameters[0] as string | undefined)
         : undefined
@@ -186,16 +203,16 @@ export class SyncMessagesHandler {
       }
     }
 
-    if (stubType === WAMessageStubType.CIPHERTEXT) {
-      finalMessageType = 'ciphertext'
-      finalTextContent = 'Waiting for this message. This may take a while.'
+    if (stub?.kind === 'ciphertext') {
+      finalMessageType = stub.messageType
+      finalTextContent = stub.textContent
     }
 
     const protocolMessage = message?.protocolMessage
     if (protocolMessage?.key?.id) {
-      const typeVal = protocolMessage.type as unknown
-      const isEdit = typeVal === 14 || typeVal === 'MESSAGE_EDIT'
-      const isRevoke = typeVal === 0 || typeVal === 'REVOKE'
+      const protocolKind = classifyProtocolType(protocolMessage.type)
+      const isEdit = protocolKind === 'edit'
+      const isRevoke = protocolKind === 'revoke'
 
       if (isEdit && protocolMessage.editedMessage) {
         const editedUnwrapped = unwrapMessage(protocolMessage.editedMessage) as Record<string, unknown>
@@ -332,10 +349,7 @@ export class SyncMessagesHandler {
       if (reactions && reactions.length > 0) {
         for (const r of reactions) {
           if (!r.text || !r.key) continue
-          let raw: string | null | undefined =
-            r.key.participant ?? (r.key.remoteJid?.endsWith('@g.us') ? null : r.key.remoteJid)
-          if (r.key.fromMe && meJid) raw = meJid
-          const rj = raw ? cleanJid(raw) : null
+          const rj = reactorJidFromKey(r.key, meJid)
           if (rj && !identityCache.has(rj)) jidsToResolve.add(rj)
         }
       }
@@ -440,22 +454,11 @@ export class SyncMessagesHandler {
       const ts = r.senderTimestampMs
       if (!emoji || !reactionKey) continue
 
-      let reactorJidRaw: string | null | undefined =
-        reactionKey.participant ??
-        (reactionKey.remoteJid?.endsWith('@g.us') ? null : reactionKey.remoteJid)
-      if (reactionKey.fromMe && meJid) reactorJidRaw = meJid
-
-      const reactorJid = reactorJidRaw ? cleanJid(reactorJidRaw) : null
+      const reactorJid = reactorJidFromKey(reactionKey, meJid)
       const reactorId = await this._resolveSenderId(reactorJid, false, identityCache)
 
       if (reactorId) {
-        let reactionTs = parseBaileysTimestamp(
-          typeof ts === 'object' && ts !== null && 'low' in (ts as unknown as Record<string, unknown>)
-            ? ts
-            : ts ?? Math.floor(Date.now() / 1000)
-        )
-        if (reactionTs > 9999999999n) reactionTs = reactionTs / 1000n
-        pendingReactions.push({ targetId, reactorId, emoji, timestamp: reactionTs })
+        pendingReactions.push({ targetId, reactorId, emoji, timestamp: normalizeReactionTimestamp(ts) })
       }
     }
   }
