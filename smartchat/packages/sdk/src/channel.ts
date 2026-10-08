@@ -11,10 +11,6 @@ import {
   MessageActionContext,
   CommandContext,
   BadgeDescriptor,
-  CompletionContext,
-  CompletionItem,
-  OutgoingMessagePayload,
-  SendResult,
   OverlayFormSchema,
   OverlayOptions,
   PluginOverlayHandle
@@ -67,6 +63,19 @@ function isKernelResponse(msg: unknown): msg is KernelResponse {
   )
 }
 
+/**
+ * The renderer sends only the typed text (`context.text`, e.g. `/ping a b`), so the host's
+ * `args` arrives as ''. Recover everything after `/<name>` so handlers get what the type promises.
+ */
+function deriveSlashArgs(cmdName: string, text: unknown): string {
+  if (typeof text !== 'string') return ''
+  const typed = text.trim()
+  const prefix = `/${cmdName}`
+  if (!typed.startsWith(prefix)) return ''
+  const rest = typed.slice(prefix.length)
+  return rest === '' || /^\s/.test(rest) ? rest.trim() : ''
+}
+
 function isKernelRequest(msg: unknown): msg is KernelRequest {
   return (
     typeof msg === 'object' &&
@@ -88,10 +97,7 @@ export class WorkerPluginRuntime {
   private chatBadgeComputers = new Map<string, (chatJid: string) => Promise<BadgeDescriptor | null>>()
   private slashCommandHandlers = new Map<string, (args: string, context: CommandContext) => Promise<void>>()
   private aiToolExecutors = new Map<string, (args: Record<string, unknown>) => Promise<{ text: string }>>()
-  private completionProviders = new Map<string, (ctx: CompletionContext) => Promise<CompletionItem[]>>()
-  private sendInterceptors = new Map<string, (payload: OutgoingMessagePayload, next: (p: OutgoingMessagePayload) => Promise<SendResult>) => Promise<SendResult>>()
   private eventHandlers = new Map<string, Array<(payload: any) => void | Promise<void>>>()
-  private exposedAPIs = new Map<string, Record<string, unknown>>()
   private overlayEventHandlers = new Map<string, Array<(data: unknown) => void>>()
 
   private incomingHandlers = new Map<string, RequestHandler>()
@@ -195,7 +201,7 @@ export class WorkerPluginRuntime {
           context && typeof context === 'object' && context.chatJid === undefined && typeof context.jid === 'string'
             ? { ...context, chatJid: context.jid }
             : context
-        await handler(args || '', normalized)
+        await handler(args || deriveSlashArgs(cmdName, context?.text), normalized)
       } else {
         const err = new Error(`Slash command '${cmdName}' not found`)
         ;(err as any).code = 'NOT_FOUND'
@@ -222,30 +228,6 @@ export class WorkerPluginRuntime {
         return await computer(chatJid)
       } else {
         const err = new Error(`Chat badge computer '${id}' not found`)
-        ;(err as any).code = 'NOT_FOUND'
-        throw err
-      }
-    })
-
-    this.registerIncomingHandler('contribution:execute:completion-provider', async (req) => {
-      const { id, context } = (req.payload as any) || {}
-      const provider = this.completionProviders.get(id)
-      if (provider) {
-        return await provider(context)
-      } else {
-        const err = new Error(`Completion provider '${id}' not found`)
-        ;(err as any).code = 'NOT_FOUND'
-        throw err
-      }
-    })
-
-    this.registerIncomingHandler('contribution:execute:message-send-pipeline', async (req) => {
-      const { id, payload, next } = (req.payload as any) || {}
-      const interceptor = this.sendInterceptors.get(id)
-      if (interceptor) {
-        return await interceptor(payload, next)
-      } else {
-        const err = new Error(`Message send interceptor '${id}' not found`)
         ;(err as any).code = 'NOT_FOUND'
         throw err
       }
@@ -474,12 +456,6 @@ export class WorkerPluginRuntime {
       registerAITool: (name, execute) => {
         self.aiToolExecutors.set(name, execute)
       },
-      registerCompletionProvider: (id, provide) => {
-        self.completionProviders.set(id, provide)
-      },
-      registerMessageSendInterceptor: (id, intercept) => {
-        self.sendInterceptors.set(id, intercept)
-      },
       // Panel / renderer contributions are declared in the manifest and
       // registered kernel-side from there (MANIFEST_TO_SLOT_MAPPINGS in
       // PluginHost) — there is no per-handler wiring for a worker plugin, so
@@ -493,12 +469,6 @@ export class WorkerPluginRuntime {
       },
       registerMessageRenderer: () => {
         /* manifest-declarative — see note above */
-      },
-      exposeAPI: (exportName, api) => {
-        self.exposedAPIs.set(exportName, api)
-      },
-      importAPI: (pluginId, exportName) => {
-        return self.request<Record<string, unknown>>('kernel:plugins:importAPI', { pluginId, exportName })
       }
     }
 
@@ -515,7 +485,17 @@ export class WorkerPluginRuntime {
       chats: bridge.chats,
       messages: bridge.messages,
       contacts: bridge.contacts,
-      ai: bridge.ai,
+      ai: {
+        ...bridge.ai,
+        registerTool: async (def) => {
+          await self.request('kernel:ai:registerTool', {
+            name: def.name,
+            description: def.description,
+            schema: def.schema
+          })
+          if (def.execute) self.aiToolExecutors.set(def.name, def.execute)
+        }
+      },
       events: eventsAPI,
       storage: bridge.storage,
       ui: uiAPI,

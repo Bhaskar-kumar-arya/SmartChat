@@ -42,60 +42,43 @@ export interface PluginReactionProcessedEvent {
   content: string
 }
 
-export interface PluginChatCreatedEvent {
+/** Mirrors `ChatUpdatedEvent` (WAEventMap `chat:updated`); `update` is the partial chat patch. */
+export interface PluginChatUpdatedEvent {
   jid: string
-  name?: string
+  update: Record<string, unknown>
 }
 
-export interface PluginChatArchivedEvent {
-  jid: string
-  archived: boolean
-}
-
-export interface PluginChatPinnedEvent {
-  jid: string
-  pinned: boolean
-}
-
+/** Mirrors `ContactUpdatedEvent` (WAEventMap `contact:updated`); entries are raw contact records. */
 export interface PluginContactUpdatedEvent {
-  jid: string
-  name?: string
-  pushName?: string
+  contacts: Array<Record<string, unknown>>
 }
 
-export interface PluginGroupParticipantAddedEvent {
+/** Mirrors `GroupParticipantsEvent` (WAEventMap `group:participants`). */
+export interface PluginGroupParticipantsEvent {
   id: string
   participants: string[]
+  action: 'add' | 'remove' | 'promote' | 'demote' | string
 }
 
-export interface PluginGroupParticipantRemovedEvent {
-  id: string
-  participants: string[]
+/** Mirrors `GroupUpdatedEvent` (WAEventMap `group:updated`); entries are raw group updates. */
+export interface PluginGroupUpdatedEvent {
+  updates: Array<Record<string, unknown>>
 }
 
-export interface PluginGroupSubjectChangedEvent {
-  id: string
-  subject: string
-}
-
-export interface PluginConnectionOpenEvent {}
-export interface PluginConnectionCloseEvent {}
-
+/**
+ * Events a plugin can subscribe to (requires `events:<name>` or `events:*`). Every named key
+ * is a WAEventMap bus event; the index signature admits other bus events as `unknown`.
+ */
 export interface PluginEventMap {
   'message:incoming': PluginMessageIncomingEvent
   'message:deleted': PluginMessageDeletedEvent
   'message:edited': PluginMessageEditedEvent
   'message:status-updated': PluginMessageStatusUpdatedEvent
   'reaction:processed': PluginReactionProcessedEvent
-  'chat:created': PluginChatCreatedEvent
-  'chat:archived': PluginChatArchivedEvent
-  'chat:pinned': PluginChatPinnedEvent
+  'chat:updated': PluginChatUpdatedEvent
   'contact:updated': PluginContactUpdatedEvent
-  'group:participant-added': PluginGroupParticipantAddedEvent
-  'group:participant-removed': PluginGroupParticipantRemovedEvent
-  'group:subject-changed': PluginGroupSubjectChangedEvent
-  'connection:open': PluginConnectionOpenEvent
-  'connection:close': PluginConnectionCloseEvent
+  'group:participants': PluginGroupParticipantsEvent
+  'group:updated': PluginGroupUpdatedEvent
   [key: string]: unknown
 }
 
