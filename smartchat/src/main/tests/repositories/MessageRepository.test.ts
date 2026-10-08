@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { PrismaClient } from '@prisma/client'
-import { MessageRepository } from '../../services/messages/MessageRepository'
+import { MessageRepository, MessageWriteError } from '../../services/messages/MessageRepository'
 import { MessageUpsertData } from '../../services/messages/IMessageRepository'
 import { getPrismaClient } from '../helpers'
 
@@ -410,6 +410,67 @@ describe('MessageRepository', () => {
       expect(spy).not.toHaveBeenCalled()
       expect(await prisma.message.count()).toBe(1)
       spy.mockRestore()
+    })
+  })
+
+  // R-SOLID-M-13: a write that fails must reject, never resolve as if it was saved.
+  describe('honest write contracts (R-SOLID-M-13)', () => {
+    const row = (over: Partial<MessageUpsertData> = {}): MessageUpsertData => ({
+      id: 'h1', chatJid: dummyChat, fromMe: false, timestamp: 10n,
+      messageType: 'conversation', content: JSON.stringify({ conversation: 'hi' }), textContent: 'hi', ...over
+    })
+    beforeEach(async () => {
+      await prisma.chat.create({ data: { jid: dummyChat, type: 'GROUP' } })
+    })
+
+    it('upsertMessage rejects instead of returning a fabricated saved row', async () => {
+      const spy = vi.spyOn(prisma.message, 'upsert').mockRejectedValueOnce(new Error('db locked'))
+      try {
+        await expect(repository.upsertMessage(row())).rejects.toThrow('db locked')
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
+    it('editMessage rejects when the update fails', async () => {
+      const spy = vi.spyOn(prisma.message, 'updateMany').mockRejectedValueOnce(new Error('db locked'))
+      try {
+        await expect(repository.editMessage('h1', 'x', null)).rejects.toThrow('db locked')
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
+    it('decryptMessage rejects when the update fails', async () => {
+      const spy = vi.spyOn(prisma.message, 'updateMany').mockRejectedValueOnce(new Error('db locked'))
+      try {
+        await expect(repository.decryptMessage('h1', 'conversation', 'x', { conversation: 'x' })).rejects.toThrow('db locked')
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
+    it('bulkSyncMessages rejects when inserting new rows fails (FK violation)', async () => {
+      await expect(repository.bulkSyncMessages([row({ chatJid: 'missing@g.us' })])).rejects.toThrow()
+    })
+
+    it('bulkSyncMessages stores the good rows and names the bad ones in the error', async () => {
+      const err = await repository
+        .bulkSyncMessages([row({ id: 'good' }), row({ id: 'bad', chatJid: 'missing@g.us' })])
+        .catch((e: unknown) => e)
+      expect(err).toBeInstanceOf(MessageWriteError)
+      expect((err as MessageWriteError).failedIds).toEqual(['bad'])
+      expect(await prisma.message.findUnique({ where: { id: 'good' } })).not.toBeNull()
+    })
+
+    it('bulkSyncMessages rejects when updating existing rows fails', async () => {
+      await prisma.message.create({ data: { ...row(), content: '{"conversation":"old"}' } })
+      const spy = vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(new Error('db locked'))
+      try {
+        await expect(repository.bulkSyncMessages([row({ content: '{"conversation":"new"}' })])).rejects.toThrow('db locked')
+      } finally {
+        spy.mockRestore()
+      }
     })
   })
 })

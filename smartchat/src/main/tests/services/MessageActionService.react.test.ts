@@ -58,6 +58,14 @@ describe('MessageActionService.reactToMessage', () => {
     expect(reactionRepo.upsertReaction).not.toHaveBeenCalled()
   })
 
+  it('does not report a sent reaction as failed when saving it locally throws (R-SOLID-M-13)', async () => {
+    reactionRepo.upsertReaction.mockRejectedValue(new Error('db locked'))
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const res = await service.reactToMessage(sock as never, 'm1', '👍')
+    expect(res).toMatchObject({ success: true, messageId: 'm1', reaction: '👍' })
+    errSpy.mockRestore()
+  })
+
   it('falls back to the socket user JID, then LID, when the me-identity is not persisted', async () => {
     identRepo.findMeIdentity.mockResolvedValue(null)
     sock.user = { id: 'me:1@s.whatsapp.net', lid: 'melid:2@lid' }

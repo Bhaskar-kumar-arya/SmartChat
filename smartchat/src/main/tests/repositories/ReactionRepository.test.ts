@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import { ReactionRepository } from '../../services/messages/ReactionRepository'
 import { getPrismaClient, resetDb } from '../helpers'
@@ -166,5 +166,33 @@ describe('ReactionRepository', () => {
     expect(last?.text).toBe('✅')
     expect(last?.sender.displayName).toBe('User 4')
     expect(last?.message.id).toBe('m4')
+  })
+
+  // R-SOLID-M-13: failed writes must reject.
+  it('upsertReaction rejects when the upsert fails', async () => {
+    const spy = vi.spyOn(prisma.reaction, 'upsert').mockRejectedValueOnce(new Error('db locked'))
+    try {
+      await expect(repository.upsertReaction('m1', 1, 'x', 100n)).rejects.toThrow('db locked')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('upsertReaction (removal) rejects when the delete fails', async () => {
+    const spy = vi.spyOn(prisma.reaction, 'deleteMany').mockRejectedValueOnce(new Error('db locked'))
+    try {
+      await expect(repository.upsertReaction('m1', 1, null, 100n)).rejects.toThrow('db locked')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('deleteReactions rejects when the delete fails', async () => {
+    const spy = vi.spyOn(prisma.reaction, 'deleteMany').mockRejectedValueOnce(new Error('db locked'))
+    try {
+      await expect(repository.deleteReactions('m1', 1)).rejects.toThrow('db locked')
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

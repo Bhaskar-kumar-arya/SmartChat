@@ -114,6 +114,23 @@ describe('SyncMessagesHandler (S4-03 batched identity resolution)', () => {
     ])
   })
 
+  // ── R-SOLID-M-13: repositories throw on failed writes; the sync must carry on ──
+  it('keeps syncing (and still stores reactions) when a message batch fails to persist', async () => {
+    contactService.batchGetIdentityIds.mockResolvedValue(new Map())
+    repository.bulkSyncMessages.mockRejectedValueOnce(new Error('db locked'))
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const messages = [
+      { key: { id: 'm1', remoteJid: 'grp@g.us', fromMe: true }, message: { conversation: 'a' }, messageTimestamp: 1700000000 }
+    ] as never
+
+    const res = await handler.processMessages(messages, new Set(['grp@g.us']), null, null)
+
+    expect(res.importedMessages).toEqual([])
+    expect(res.messageCount).toBe(1)
+    expect(reactionRepository.bulkSyncReactions).toHaveBeenCalled()
+    errSpy.mockRestore()
+  })
+
   // ── P2-S4-06: only genuinely-inserted rows are surfaced to the caller ──
   it('returns only newly-inserted rows in importedMessages (S4-06)', async () => {
     contactService.batchGetIdentityIds.mockResolvedValue(new Map())

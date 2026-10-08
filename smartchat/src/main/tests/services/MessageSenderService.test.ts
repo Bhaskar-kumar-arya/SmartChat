@@ -117,6 +117,33 @@ describe('MessageSenderService', () => {
     })
   })
 
+  describe('post-send persistence failure (R-SOLID-M-13)', () => {
+    const flush = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
+
+    it('does not flip a delivered message to FAILED when saving the sent row throws', async () => {
+      processingService.processMessage.mockResolvedValue({ id: 'sent1', chatJid: 'target@s.whatsapp.net' })
+      // optimistic PENDING upsert succeeds, the post-send upsert throws
+      messageRepo.upsertMessage.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('db locked'))
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+      await service.sendMessageWorkflow(sock, 'target@s.whatsapp.net', 'Hello')
+      await flush()
+      await flush()
+
+      const statuses = messageRepo.upsertMessage.mock.calls.map((c: Array<{ status?: string }>) => c[0].status)
+      expect(statuses).not.toContain('FAILED')
+      expect(getBus().emit).toHaveBeenCalledWith(
+        'message:status-updated',
+        expect.objectContaining({ status: 'SENT' })
+      )
+      expect(getBus().emit).not.toHaveBeenCalledWith(
+        'message:status-updated',
+        expect.objectContaining({ status: 'FAILED' })
+      )
+      errSpy.mockRestore()
+    })
+  })
+
   describe('retryFailedMessage', () => {
     const failed = (over: Record<string, unknown>) => ({
       id: 'old1', chatJid: 'target@s.whatsapp.net', fromMe: true, status: 'FAILED', isDeleted: false, ...over

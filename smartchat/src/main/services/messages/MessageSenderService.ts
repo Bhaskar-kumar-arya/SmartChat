@@ -235,25 +235,7 @@ export class MessageSenderService implements IMessageSenderService {
         if (!sentMsg) {
           throw new Error('Failed to send message: empty response from socket')
         }
-        const processed = await this.messageProcessingService.processMessage(sentMsg, sock)
-        if (!processed || 'type' in processed) {
-          throw new Error('Failed to process sent message')
-        }
-        const meJids = await this.contactService.getMeJids(sock)
-        const isSelfChat = meJids.includes(targetJid)
-        const status = isSelfChat ? 'READ' : 'SENT'
-
-        await this.messageRepository.upsertMessage({
-          ...processed,
-          status
-        })
-        this.getBus()?.emit('message:status-updated', {
-          id: msgId,
-          chatJid: targetJid,
-          status
-        }).catch((err) => {
-          console.error('[MessageSenderService] Failed to emit message:status-updated:', err)
-        })
+        await this.persistSentMessage(sock, sentMsg, targetJid, msgId)
       })
       .catch(async (err: unknown) => {
         console.error('[MessageSenderService] Background send failed for message:', msgId, err)
@@ -261,6 +243,40 @@ export class MessageSenderService implements IMessageSenderService {
       })
 
     return enriched
+  }
+
+  /**
+   * Persist the delivered row and announce SENT/READ. The socket already accepted
+   * the message, so a local persistence failure (repositories now throw) must not
+   * flip it to FAILED: it is logged and the delivery status is still announced.
+   */
+  private async persistSentMessage(
+    sock: IMessageActionSocket,
+    sentMsg: unknown,
+    targetJid: string,
+    msgId: string,
+    afterProcess?: (processed: ProcessedMessage) => Promise<void>
+  ): Promise<void> {
+    let status: 'READ' | 'SENT' = 'SENT'
+    try {
+      const processed = await this.messageProcessingService.processMessage(sentMsg, sock)
+      if (!processed || 'type' in processed) {
+        throw new Error('Failed to process sent message')
+      }
+      await afterProcess?.(processed)
+      const meJids = await this.contactService.getMeJids(sock)
+      status = meJids.includes(targetJid) ? 'READ' : 'SENT'
+      await this.messageRepository.upsertMessage({ ...processed, status })
+    } catch (err) {
+      console.error('[MessageSenderService] Message was sent but could not be saved locally:', msgId, err)
+    }
+    this.getBus()?.emit('message:status-updated', {
+      id: msgId,
+      chatJid: targetJid,
+      status
+    }).catch((err) => {
+      console.error('[MessageSenderService] Failed to emit message:status-updated:', err)
+    })
   }
 
   /**
@@ -377,30 +393,9 @@ export class MessageSenderService implements IMessageSenderService {
           throw new Error('Failed to send media message')
         }
 
-        const processed = await this.messageProcessingService.processMessage(sentMsg, sock)
-        if (!processed || 'type' in processed) {
-          throw new Error('Failed to process sent message')
-        }
-
-        await this.cacheSentMediaFile(processed, finalPathToSend)
-
-        const meJids = await this.contactService.getMeJids(sock)
-        const isSelfChat = meJids.includes(targetJid)
-        const status = isSelfChat ? 'READ' : 'SENT'
-
-        await this.messageRepository.upsertMessage({
-          ...processed,
-          status
-        })
-
-        this.getBus()?.emit('message:status-updated', {
-          id: msgId,
-          chatJid: targetJid,
-          status
-        }).catch((err) => {
-          console.error('[MessageSenderService] Failed to emit status update event:', err)
-        })
-
+        await this.persistSentMessage(sock, sentMsg, targetJid, msgId, (processed): Promise<void> =>
+          this.cacheSentMediaFile(processed, finalPathToSend)
+        )
       } catch (err) {
         console.error('[MessageSenderService] Background media send failed:', err)
         await this.markSendFailed(pendingMsg)

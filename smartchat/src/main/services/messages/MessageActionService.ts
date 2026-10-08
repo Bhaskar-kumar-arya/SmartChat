@@ -285,7 +285,11 @@ export class MessageActionService implements IMessageActionService {
 
     const reactorId = await this.identityResolver.resolveMeSenderId(sock);
     if (!reactorId) throw new Error('Failed to resolve logged-in user identity to record the reaction');
-    await this.updateReactionDb(messageId, reactorId, reaction);
+    // The reaction is already on WhatsApp; a local persistence failure must not
+    // report the action as failed (repositories throw on failed writes).
+    await this.updateReactionDb(messageId, reactorId, reaction).catch((err: unknown) => {
+      console.error(`[MessageActionService] Reaction sent but not saved locally for ${messageId}:`, err);
+    });
 
     return {
       success: true,

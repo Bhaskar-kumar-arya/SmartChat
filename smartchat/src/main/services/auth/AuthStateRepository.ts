@@ -52,6 +52,7 @@ export class AuthStateRepository implements IAuthStateRepository {
       await this.prisma.authState.deleteMany({ where: { id: key } })
     } catch (err: unknown) {
       console.error(`[AuthStateRepository] Failed to deleteValue for key ${key}:`, err)
+      throw err
     }
   }
 }
