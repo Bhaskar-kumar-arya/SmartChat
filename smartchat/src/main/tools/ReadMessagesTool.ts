@@ -9,22 +9,7 @@ import { unwrapMessage, getMessageType } from '../utils/messageUtils';
 import { MessageFormatterRegistry } from '../services/messages/formatters/MessageFormatterRegistry';
 import { Message } from '@prisma/client';
 import { proto } from '@whiskeysockets/baileys';
-
-// Keywords that are never allowed anywhere in the query
-const FORBIDDEN_KEYWORDS = [
-  'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER',
-  'CREATE', 'ATTACH', 'DETACH', 'PRAGMA', 'VACUUM',
-  'TRUNCATE', 'GRANT', 'REVOKE',
-  // Side-effecting / filesystem SQLite functions. `REPLACE` is intentionally
-  // NOT here — `REPLACE(x,y,z)` is a read-only scalar; only the mutating
-  // `REPLACE INTO` / `INSERT OR REPLACE` forms are rejected (see FORBIDDEN_PATTERNS).
-  'LOAD_EXTENSION', 'READFILE', 'WRITEFILE', 'FSDIR'
-];
-
-const FORBIDDEN_PATTERNS: Array<{ re: RegExp; label: string }> = [
-  { re: /\bREPLACE\s+INTO\b/, label: 'REPLACE INTO' },
-  { re: /\bINSERT\s+OR\s+REPLACE\b/, label: 'INSERT OR REPLACE' }
-];
+import { assertReadOnlySelect, TOOL_READ_ONLY_POLICY } from '../services/messages/sql/assertReadOnlySelect';
 
 const KEYWORD_ME = 'Me';
 const KEYWORD_THEM = 'Them';
@@ -202,45 +187,8 @@ EXAMPLES:
     throw new Error('[ReadMessagesTool] Missing required arguments: Provide jid, sql, or messages.');
   }
 
-  /**
-   * Strip string literals and comments so the forbidden-keyword scan only sees
-   * SQL code, not user data — otherwise `LIKE '%please update me%'` etc. are
-   * wrongly rejected.
-   */
-  private stripLiteralsAndComments(sql: string): string {
-    return sql
-      .replace(/'(?:[^']|'')*'/g, "''")
-      .replace(/"(?:[^"]|"")*"/g, '""')
-      .replace(/--[^\n]*/g, ' ')
-      .replace(/\/\*[\s\S]*?\*\//g, ' ');
-  }
-
   private validateSqlQuery(sql: string): void {
-    const trimmed = sql.trim();
-    const normalized = this.stripLiteralsAndComments(trimmed).toUpperCase().replace(/\s+/g, ' ').trim();
-
-    if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
-      throw new Error(
-        `[ReadMessagesTool] Query rejected: Only SELECT or WITH...SELECT statements are allowed. Got: "${trimmed.slice(0, 40)}..."`
-      );
-    }
-
-    for (const kw of FORBIDDEN_KEYWORDS) {
-      const wordBoundaryRegex = new RegExp(`\\b${kw}\\b`);
-      if (wordBoundaryRegex.test(normalized)) {
-        throw new Error(
-          `[ReadMessagesTool] Query rejected: Forbidden keyword detected — "${kw}". Only read operations are permitted.`
-        );
-      }
-    }
-
-    for (const { re, label } of FORBIDDEN_PATTERNS) {
-      if (re.test(normalized)) {
-        throw new Error(
-          `[ReadMessagesTool] Query rejected: Forbidden statement detected — "${label}". Only read operations are permitted.`
-        );
-      }
-    }
+    assertReadOnlySelect(sql, TOOL_READ_ONLY_POLICY, '[ReadMessagesTool] ');
   }
 
   private async getMessagesBySql(

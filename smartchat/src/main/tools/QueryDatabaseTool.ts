@@ -2,24 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { AITool } from '../services/ai/IToolRegistry';
 import { prisma } from '../auth';
-
-// Keywords that are never allowed anywhere in the query
-const FORBIDDEN_KEYWORDS = [
-  'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER',
-  'CREATE', 'ATTACH', 'DETACH', 'PRAGMA', 'VACUUM',
-  'TRUNCATE', 'GRANT', 'REVOKE',
-  // Side-effecting / filesystem SQLite functions — a pure SELECT can still call
-  // these. `REPLACE` is intentionally NOT here: `REPLACE(x,y,z)` is a read-only
-  // scalar; only the `REPLACE INTO` / `INSERT OR REPLACE` mutating forms are
-  // rejected below.
-  'LOAD_EXTENSION', 'READFILE', 'WRITEFILE', 'FSDIR'
-];
-
-// Mutating statement forms that the bare keyword scan above no longer catches.
-const FORBIDDEN_PATTERNS: Array<{ re: RegExp; label: string }> = [
-  { re: /\bREPLACE\s+INTO\b/, label: 'REPLACE INTO' },
-  { re: /\bINSERT\s+OR\s+REPLACE\b/, label: 'INSERT OR REPLACE' }
-];
+import { assertReadOnlySelect, TOOL_READ_ONLY_POLICY } from '../services/messages/sql/assertReadOnlySelect';
 
 // Hard cap on returned rows to prevent memory issues
 const MAX_ROWS = 1500;
@@ -256,47 +239,8 @@ export class QueryDatabaseTool implements AITool {
     return `DATABASE SCHEMA (live, auto-introspected from schema.prisma):\n${tableLines.join('\n')}`;
   }
 
-  /**
-   * Remove SQL string literals ('...', "..."), and `--` / block comments so the
-   * forbidden-keyword scan only sees SQL *code*, not user data. Without this,
-   * legitimate message searches like `LIKE '%please update me%'` or
-   * `'%delete this%'` are wrongly rejected.
-   */
-  private stripLiteralsAndComments(sql: string): string {
-    return sql
-      .replace(/'(?:[^']|'')*'/g, "''")      // single-quoted strings
-      .replace(/"(?:[^"]|"")*"/g, '""')      // double-quoted identifiers/strings
-      .replace(/--[^\n]*/g, ' ')             // line comments
-      .replace(/\/\*[\s\S]*?\*\//g, ' ');    // block comments
-  }
-
   private validateSqlQuery(sql: string): void {
-    const trimmed = sql.trim();
-    const code = this.stripLiteralsAndComments(trimmed);
-    const normalized = code.toUpperCase().replace(/\s+/g, ' ').trim();
-
-    if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
-      throw new Error(
-        `Query rejected: Only SELECT or WITH...SELECT statements are allowed. Got: "${trimmed.slice(0, 40)}..."`
-      );
-    }
-
-    for (const kw of FORBIDDEN_KEYWORDS) {
-      const wordBoundaryRegex = new RegExp(`\\b${kw}\\b`);
-      if (wordBoundaryRegex.test(normalized)) {
-        throw new Error(
-          `Query rejected: Forbidden keyword detected — "${kw}". Only read operations are permitted.`
-        );
-      }
-    }
-
-    for (const { re, label } of FORBIDDEN_PATTERNS) {
-      if (re.test(normalized)) {
-        throw new Error(
-          `Query rejected: Forbidden statement detected — "${label}". Only read operations are permitted.`
-        );
-      }
-    }
+    assertReadOnlySelect(sql, TOOL_READ_ONLY_POLICY);
   }
 
   private serializeBigInts(rows: unknown[]): Record<string, unknown>[] {
