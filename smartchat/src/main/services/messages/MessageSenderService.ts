@@ -393,7 +393,7 @@ export class MessageSenderService implements IMessageSenderService {
           throw new Error('Failed to send media message')
         }
 
-        await this.persistSentMessage(sock, sentMsg, targetJid, msgId, processed =>
+        await this.persistSentMessage(sock, sentMsg, targetJid, msgId, (processed): Promise<void> =>
           this.cacheSentMediaFile(processed, finalPathToSend)
         )
       } catch (err) {

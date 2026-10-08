@@ -118,7 +118,7 @@ describe('MessageSenderService', () => {
   })
 
   describe('post-send persistence failure (R-SOLID-M-13)', () => {
-    const flush = () => new Promise((r) => setTimeout(r, 0))
+    const flush = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
 
     it('does not flip a delivered message to FAILED when saving the sent row throws', async () => {
       processingService.processMessage.mockResolvedValue({ id: 'sent1', chatJid: 'target@s.whatsapp.net' })
@@ -130,7 +130,7 @@ describe('MessageSenderService', () => {
       await flush()
       await flush()
 
-      const statuses = messageRepo.upsertMessage.mock.calls.map((c: any[]) => c[0].status)
+      const statuses = messageRepo.upsertMessage.mock.calls.map((c: Array<{ status?: string }>) => c[0].status)
       expect(statuses).not.toContain('FAILED')
       expect(getBus().emit).toHaveBeenCalledWith(
         'message:status-updated',

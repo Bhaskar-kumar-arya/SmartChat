@@ -121,7 +121,7 @@ describe('SyncMessagesHandler (S4-03 batched identity resolution)', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const messages = [
       { key: { id: 'm1', remoteJid: 'grp@g.us', fromMe: true }, message: { conversation: 'a' }, messageTimestamp: 1700000000 }
-    ] as any
+    ] as never
 
     const res = await handler.processMessages(messages, new Set(['grp@g.us']), null, null)
 
