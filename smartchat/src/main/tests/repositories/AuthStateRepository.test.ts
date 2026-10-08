@@ -57,7 +57,7 @@ describe('AuthStateRepository', () => {
   })
 
   // R-SOLID-M-13: deleteValue must match get/set (rethrow).
-  it.fails('deleteValue rethrows when the delete fails', async () => {
+  it('deleteValue rethrows when the delete fails', async () => {
     const failing = {
       authState: { deleteMany: () => Promise.reject(new Error('database is locked')) }
     } as unknown as PrismaClient

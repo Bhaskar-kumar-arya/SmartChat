@@ -40,34 +40,22 @@ export class ReactionRepository implements IReactionRepository {
     }
 
     if (!emoji) {
-      await this.prisma.reaction
-        .deleteMany({ where: { messageId, senderId: reactorId } })
-        .catch((err: unknown) => {
-          console.error('[ReactionRepository] Failed to delete reaction:', err)
-        })
+      await this.prisma.reaction.deleteMany({ where: { messageId, senderId: reactorId } })
       return
     }
 
-    await this.prisma.reaction
-      .upsert({
-        where: { messageId_senderId: { messageId, senderId: reactorId } },
-        update: { text: emoji, timestamp },
-        create: { messageId, senderId: reactorId, text: emoji, timestamp }
-      })
-      .catch((err: unknown) => {
-        console.error('[ReactionRepository] Failed to upsert reaction:', err)
-      })
+    await this.prisma.reaction.upsert({
+      where: { messageId_senderId: { messageId, senderId: reactorId } },
+      update: { text: emoji, timestamp },
+      create: { messageId, senderId: reactorId, text: emoji, timestamp }
+    })
   }
 
   /**
    * Delete all reactions from a specific sender on a specific message.
    */
   async deleteReactions(messageId: string, senderId: number): Promise<void> {
-    await this.prisma.reaction
-      .deleteMany({ where: { messageId, senderId } })
-      .catch((err: unknown) => {
-        console.error(`[ReactionRepository] Failed to delete reactions for message ${messageId} sender ${senderId}:`, err)
-      })
+    await this.prisma.reaction.deleteMany({ where: { messageId, senderId } })
   }
 
   /**

@@ -169,7 +169,7 @@ describe('ReactionRepository', () => {
   })
 
   // R-SOLID-M-13: failed writes must reject.
-  it.fails('upsertReaction rejects when the upsert fails', async () => {
+  it('upsertReaction rejects when the upsert fails', async () => {
     const spy = vi.spyOn(prisma.reaction, 'upsert').mockRejectedValueOnce(new Error('db locked'))
     try {
       await expect(repository.upsertReaction('m1', 1, 'x', 100n)).rejects.toThrow('db locked')
@@ -178,7 +178,7 @@ describe('ReactionRepository', () => {
     }
   })
 
-  it.fails('upsertReaction (removal) rejects when the delete fails', async () => {
+  it('upsertReaction (removal) rejects when the delete fails', async () => {
     const spy = vi.spyOn(prisma.reaction, 'deleteMany').mockRejectedValueOnce(new Error('db locked'))
     try {
       await expect(repository.upsertReaction('m1', 1, null, 100n)).rejects.toThrow('db locked')
@@ -187,7 +187,7 @@ describe('ReactionRepository', () => {
     }
   })
 
-  it.fails('deleteReactions rejects when the delete fails', async () => {
+  it('deleteReactions rejects when the delete fails', async () => {
     const spy = vi.spyOn(prisma.reaction, 'deleteMany').mockRejectedValueOnce(new Error('db locked'))
     try {
       await expect(repository.deleteReactions('m1', 1)).rejects.toThrow('db locked')

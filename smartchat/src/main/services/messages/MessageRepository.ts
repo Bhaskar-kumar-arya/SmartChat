@@ -27,6 +27,18 @@ const MESSAGE_STATUS_RANK: Record<string, number> = {
   PLAYED: 4
 }
 
+/** A bulk message write that stored only part of its batch. `failedIds` lists the rows that were not written. */
+export class MessageWriteError extends Error {
+  constructor(
+    message: string,
+    readonly failedIds: string[],
+    cause?: unknown
+  ) {
+    super(message, { cause })
+    this.name = 'MessageWriteError'
+  }
+}
+
 /**
  * MessageRepository — Single Responsibility: all Prisma/database write/mutation
  * operations related to the `Message` table.
@@ -91,8 +103,7 @@ export class MessageRepository implements IMessageRepository {
       }
     }
 
-    const saved = await this.prisma.message
-      .upsert({
+    const saved = await this.prisma.message.upsert({
         where: { id },
         update: {
           textContent,
@@ -112,16 +123,12 @@ export class MessageRepository implements IMessageRepository {
           textContent,
           content: contentToStore ?? '{}'
         }
-      })
-      .catch((err: unknown) => {
-        console.error(`[MessageRepository] Failed to upsert message ${id}:`, err)
-        return null
-      })
+    })
 
     return {
-      content: saved ? saved.content : (contentToStore ?? '{}'),
-      messageType: saved ? saved.messageType : messageType,
-      textContent: saved ? saved.textContent : (textContent ?? null)
+      content: saved.content,
+      messageType: saved.messageType,
+      textContent: saved.textContent
     }
   }
 
@@ -186,19 +193,15 @@ export class MessageRepository implements IMessageRepository {
       textContent
     )
 
-    await this.prisma.message
-      .updateMany({
-        where: { id: messageId },
-        data: {
-          content: JSON.stringify(contentToStore),
-          textContent,
-          messageType: newMessageType,
-          isEdited: true
-        }
-      })
-      .catch((err: unknown) => {
-        console.warn(`[MessageRepository] Failed to update edited message ${messageId}:`, err)
-      })
+    await this.prisma.message.updateMany({
+      where: { id: messageId },
+      data: {
+        content: JSON.stringify(contentToStore),
+        textContent,
+        messageType: newMessageType,
+        isEdited: true
+      }
+    })
   }
 
   /**
@@ -220,18 +223,14 @@ export class MessageRepository implements IMessageRepository {
     if (existing?.content) {
       contentToStore = preserveContextInfo(existing.content, contentToStore, textContent)
     }
-    await this.prisma.message
-      .updateMany({
-        where: { id: messageId },
-        data: {
-          content: contentToStore,
-          textContent,
-          messageType
-        }
-      })
-      .catch((err: unknown) => {
-        console.warn(`[MessageRepository] Failed to update decrypted message ${messageId}:`, err)
-      })
+    await this.prisma.message.updateMany({
+      where: { id: messageId },
+      data: {
+        content: contentToStore,
+        textContent,
+        messageType
+      }
+    })
   }
 
   /**
@@ -248,16 +247,29 @@ export class MessageRepository implements IMessageRepository {
 
   private async insertNewMessages(newMessages: MessageUpsertData[]): Promise<void> {
     if (newMessages.length === 0) return
-    await this.prisma.message.createMany({ data: newMessages }).catch(async () => {
-      const fallbackOps = newMessages.map(m =>
-        this.prisma.message.upsert({ where: { id: m.id }, update: m, create: m })
+    try {
+      await this.prisma.message.createMany({ data: newMessages })
+      return
+    } catch {
+      // createMany is all-or-nothing; fall through to isolate the offending rows.
+    }
+    // One bad row must not take its neighbours down: upsert each row on its own,
+    // then report the ones that could not be stored.
+    const failed: Array<{ id: string; error: unknown }> = []
+    for (const m of newMessages) {
+      try {
+        await this.prisma.message.upsert({ where: { id: m.id }, update: m, create: m })
+      } catch (error: unknown) {
+        failed.push({ id: m.id, error })
+      }
+    }
+    if (failed.length > 0) {
+      throw new MessageWriteError(
+        `Failed to insert ${failed.length} of ${newMessages.length} messages`,
+        failed.map(f => f.id),
+        failed[0].error
       )
-      await this.prisma
-        .$transaction(fallbackOps)
-        .catch((err: unknown) =>
-          console.error('[MessageRepository] insertNewMessages fallback failed:', err)
-        )
-    })
+    }
   }
 
   private async updateExistingMessages(
@@ -312,11 +324,7 @@ export class MessageRepository implements IMessageRepository {
       return this.prisma.message.update({ where: { id: msg.id }, data: update })
     })
 
-    await this.prisma
-      .$transaction(updateOps)
-      .catch((err: unknown) =>
-        console.error('[MessageRepository] updateExistingMessages transaction failed:', err)
-      )
+    await this.prisma.$transaction(updateOps)
   }
 
   /**
