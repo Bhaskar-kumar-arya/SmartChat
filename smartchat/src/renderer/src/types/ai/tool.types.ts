@@ -1,6 +1,1 @@
-export interface ToolDefinition {
-  name: string
-  description?: string
-  argumentsSchema?: Record<string, any>
-  requiresPermission?: boolean
-}
+export type { ToolDefinition } from '../../../../shared/ipc/dto'

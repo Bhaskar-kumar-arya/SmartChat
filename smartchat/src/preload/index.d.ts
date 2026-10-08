@@ -1,7 +1,6 @@
-import {
+import type {
   ChatItem,
   MessageItem,
-  SearchResultItem,
   SearchResults,
   AIChatMessage,
   AIChatOptions,
@@ -14,8 +13,8 @@ import {
   SearchFilters,
   MessageReceiptInfo,
   NotificationPreferences
-} from '../renderer/src/types'
-import { CitationEntity } from '../renderer/src/types/ai/citation.types'
+} from '../shared/ipc/dto'
+import type { CitationEntity } from '../shared/ipc/dto'
 
 declare global {
   interface Window {

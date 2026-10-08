@@ -1,38 +1,10 @@
 // Phase 9: Shared renderer-side types for the Extension System
-
-export interface SlashCommand {
-  name: string
-  description: string
-}
-
-export interface ExtensionManifest {
-  id: string
-  version: string
-  name: string
-  description: string
-  permissions: string[]
-  dedicatedChat?: {
-    name: string
-    avatarEmoji: string
-    commands: SlashCommand[]
-  }
-}
-
-export interface LoadedExtension {
-  id: string
-  manifest: ExtensionManifest
-  isLoaded: boolean
-  /** Why the extension failed to load, when it is installed but not loaded. */
-  error?: string
-}
-
-export interface ExtensionChatMessage {
-  id: string
-  extensionId: string
-  role: 'user' | 'extension'
-  content: string // JSON string: { type, text?, title?, body?, buttons? }
-  createdAt: string
-}
+export type {
+  SlashCommand,
+  ExtensionManifest,
+  LoadedExtension,
+  ExtensionChatMessage
+} from '../../../shared/ipc/dto'
 
 export interface ParsedContent {
   type: string
