@@ -203,4 +203,18 @@ describe('MembershipSyncHandler (real DB)', () => {
     await new SyncRepository(prisma).deleteMembersNotIn(jid, [])
     expect(await memberIdentityIds(jid)).toEqual([identity.id])
   })
+
+  // Smoke 2026-10-05/09: large groups hit Prisma P2029 (bind-parameter limit) because the keep list
+  // was sent as one `notIn (?, ?, ...)`. Keep ids need not exist, so a long list of fake ones is enough.
+  it.fails('SyncRepository.deleteMembersNotIn prunes departed members with a huge keep list (P2029)', async () => {
+    const jid = groupJid()
+    await makeChat(prisma, { jid, type: 'GROUP' })
+    const stayer = await makeContact(prisma)
+    const leaver = await makeContact(prisma)
+    await makeChatMember(prisma, jid, stayer.identity.id)
+    await makeChatMember(prisma, jid, leaver.identity.id)
+    const keep = [stayer.identity.id, ...Array.from({ length: 40000 }, (_, i) => 1_000_000 + i)]
+    await new SyncRepository(prisma).deleteMembersNotIn(jid, keep)
+    expect(await memberIdentityIds(jid)).toEqual([stayer.identity.id])
+  })
 })
