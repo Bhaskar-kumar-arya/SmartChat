@@ -1,4 +1,5 @@
 import { GroupMetadata } from '@whiskeysockets/baileys';
+import type { SkipSyncResult } from '../whatsapp/whatsappWorker.types';
 
 /**
  * Interface abstracting away Baileys socket operations from other main process services.
@@ -21,5 +22,5 @@ export interface IWACommandSender {
 
   logout(): Promise<void>;
 
-  skipSync(): Promise<void>;
+  skipSync(): Promise<SkipSyncResult>;
 }

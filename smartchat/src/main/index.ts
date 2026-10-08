@@ -337,11 +337,6 @@ app.whenReady().then(async () => {
     console.error('[Main] Failed to start APIServer:', err)
   }
 
-  ipcMain.on('wa-skip-sync', () => {
-
-    waConnectionManager.skipSync()
-  })
-
   createWindow()
 
   app.on('activate', function () {

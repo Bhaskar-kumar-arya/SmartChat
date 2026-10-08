@@ -107,7 +107,7 @@ export const api: IAPIService = {
   onWaSyncComplete: (callback: () => void) =>
     window.api.onWaSyncComplete(callback),
 
-  skipSync: () =>
+  skipSync: (): Promise<{ status: 'success' | 'deferred' | 'error' }> =>
     window.api.skipSync(),
 
   getSyncFullHistory: (): Promise<boolean> =>
@@ -119,7 +119,7 @@ export const api: IAPIService = {
   fetchMessageHistory: (jid: string): Promise<{ status: 'requested' | 'no-anchor' | 'error' }> =>
     window.api.fetchMessageHistory(jid),
 
-  onWaHistoryAppended: (callback: (data: { messageCount: number }) => void): (() => void) =>
+  onWaHistoryAppended: (callback: (data: { messageCount: number; jid?: string; requestId?: string; error?: string }) => void): (() => void) =>
     window.api.onWaHistoryAppended(callback),
 
   getProfilePicture: (jid: string, type: 'preview' | 'image', forceRefresh?: boolean): Promise<string | null> =>

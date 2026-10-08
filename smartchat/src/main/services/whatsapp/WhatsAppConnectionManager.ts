@@ -212,11 +212,18 @@ export class WhatsAppConnectionManager {
     this.currentSubscribers = []
   }
 
-  public skipSync(): void {
-    if (this.currentSock) {
-      this.currentSock.skipSync().catch((err) => {
-        console.error('[WhatsAppConnectionManager] Failed to send skipSync command:', err)
-      })
+  /**
+   * Ask the worker to skip the remaining history sync. Resolves the worker's
+   * `{status}` ('deferred' = chunks still being written, completion runs later);
+   * `{status:'error'}` when there is no socket or the command fails (B-WA-13).
+   */
+  public async skipSync(): Promise<{ status: 'success' | 'deferred' | 'error' }> {
+    if (!this.currentSock) return { status: 'error' }
+    try {
+      return await this.currentSock.skipSync()
+    } catch (err) {
+      console.error('[WhatsAppConnectionManager] Failed to send skipSync command:', err)
+      return { status: 'error' }
     }
   }
 

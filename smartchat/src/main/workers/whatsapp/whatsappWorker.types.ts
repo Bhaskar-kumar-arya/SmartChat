@@ -45,6 +45,11 @@ export interface WorkerFetchMessageHistoryPayload {
   oldestMsgTimestampMs: number;
 }
 
+/** Reply payload `result` of the `skip_sync` command (B-WA-13). 'deferred' = chunks still in flight. */
+export interface SkipSyncResult {
+  status: 'success' | 'deferred'
+}
+
 export type WorkerCommandMessage =
   | { type: 'init'; correlationId: string; payload: WorkerInitPayload }
   | { type: 'send_message'; correlationId: string; payload: WorkerSendMessagePayload }

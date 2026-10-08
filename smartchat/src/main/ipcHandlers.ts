@@ -333,6 +333,16 @@ function registerAuthAndProfileHandlers(
     return services.authSettingsService.getSyncFullHistory()
   })
 
+  // B-WA-13: the worker's skip-sync `{status}` ('deferred' = chunks still being
+  // written) is returned to the renderer instead of being dropped.
+  ipcMain.handle('wa-skip-sync', async (event) => {
+    if (!isTrustedSender(event)) {
+      console.warn('[IPC] Blocked wa-skip-sync from untrusted frame')
+      throw new Error('[IPC] wa-skip-sync cannot be invoked from this context')
+    }
+    return waConnectionManager.skipSync()
+  })
+
   // On-demand history: when the renderer runs out of locally-stored messages for
   // a chat, it asks WhatsApp for an older page anchored at the oldest stored
   // message. The messages arrive asynchronously and are broadcast to the

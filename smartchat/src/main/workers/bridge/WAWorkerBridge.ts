@@ -5,7 +5,7 @@ import { ISocketUserContext } from '../../services/contacts/IContactService';
 import { IMediaSocket } from '../../services/messages/IMediaService';
 import { IWAEventBus } from '../../services/whatsapp/IWAEventBus';
 import { WAEventMap } from '../../services/whatsapp/WAEventTypes';
-import { WorkerCommandMessage, WorkerEventMessage } from '../whatsapp/whatsappWorker.types';
+import { SkipSyncResult, WorkerCommandMessage, WorkerEventMessage } from '../whatsapp/whatsappWorker.types';
 import { IWindowEventEmitter } from './IWindowEventEmitter';
 
 /**
@@ -330,8 +330,8 @@ export class WAWorkerBridge implements IWACommandSender, ISocketUserContext, IMe
     await this.sendCommand<void>('logout');
   }
 
-  public async skipSync(): Promise<void> {
-    await this.sendCommand<void>('skip_sync');
+  public async skipSync(): Promise<SkipSyncResult> {
+    return this.sendCommand<SkipSyncResult>('skip_sync');
   }
 
   /**

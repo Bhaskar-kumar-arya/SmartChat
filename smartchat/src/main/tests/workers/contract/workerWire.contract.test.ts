@@ -262,9 +262,9 @@ describe('bridge <-> router round trip over fake ports', () => {
     await expect(bridge.logout()).rejects.toThrow('already logged out')
   })
 
-  it('skip_sync deferred reply reaches the bridge but skipSync() drops it (B-WA-13)', async () => {
+  it('skip_sync deferred reply reaches the bridge caller (B-WA-13)', async () => {
     const { bridge, skipSync } = wire()
-    await expect(bridge.skipSync()).resolves.toBeUndefined()
+    await expect(bridge.skipSync()).resolves.toEqual({ status: 'deferred' })
     expect(skipSync).toHaveBeenCalledTimes(1)
     expect(fakeParentPort.lastPosted).toEqual({
       type: 'reply',
