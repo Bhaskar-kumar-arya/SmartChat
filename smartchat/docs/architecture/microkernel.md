@@ -150,7 +150,19 @@ Permissions are checked at every kernel API call boundary. The check is:
 1. Does the plugin have this capability? (coarse: `messages:send`)
 2. Does the resource being accessed match the declared scope? (fine: specific chat JID, contact whitelist, tool allowlist)
 
-Built-in plugins are always granted all permissions — no check performed.
+Built-in plugins are **not** exempt: they register their manifest capabilities with the
+`IPermissionStore` like any other plugin and every kernel module checks them. (Earlier revisions of
+this document said built-ins are always granted all permissions; the code never did that.) The
+`scheduler` permission some samples declare is not checked by anything — `ctx.scheduler` timers are
+local to the worker and are cleared on deactivate.
+
+**Decision D9 — worker plugins have full Node access by design.** An external plugin runs in a
+worker thread with unrestricted Node built-ins (`fs`, `net`, `child_process`, `process`, ...). The
+capability system gates only what a plugin can do *through the kernel API* (messages, chats, AI,
+storage); it cannot stop a plugin from reading files or opening sockets itself, so capabilities are
+a consent and least-privilege aid for well-behaved plugins, not a sandbox. Installing a plugin means
+trusting its code. A `vm`-based sandbox is deferred until a marketplace exists. The SDK docs state the
+same; see also §1.2.
 The permission system is pluggable: `IPermissionStore` is the interface, implementations can
 range from a simple flat JSON file to a full ABAC engine.
 
@@ -353,9 +365,26 @@ export interface IKernelModule {
 | `kernel:ai` | `ai:chat`, `ai:tools:call`, `ai:tools:register` | AI service, tool registry |
 | `kernel:events` | `events:*` | WAEventBus bridge |
 | `kernel:storage` | `storage:read`, `storage:write` | Extension storage repository |
-| `kernel:ui` | `ui:notification`, `ui:toast`, `ui:panel`, `ui:overlay` | Notification service, BrowserWindow, overlay host |
-| `kernel:contributions` | always available | ContributionRegistry |
-| `kernel:plugins` | always available | PluginHost (inter-plugin bus) |
+| `kernel:ui` | `ui:notification`, `ui:toast`, `ui:panel`, `ui:overlay`, `ui:modal` | Notification service, BrowserWindow, overlay host |
+| `kernel:log` | always available | Plugin log sink |
+
+`kernel:ai` also covers `ai:sessions` (session CRUD) and `kernel:messages` also checks `messages:write`
+(favourite stickers). Capabilities are open strings, so this table lists what the modules in
+`src/main/kernel/api-modules/` actually require today.
+
+**Not implemented (removed from the SDK in R-KRN-11):** `kernel:contributions` and `kernel:plugins`
+(the inter-plugin bus: `exposeAPI` / `importAPI`) were never registered, so `importAPI` always
+returned NOT_FOUND. They are no longer in the SDK. The manifest field `pluginApiExports` is kept
+(manifest is owned by R-KRN-10) but has no runtime effect. Likewise `registerCompletionProvider` and
+`registerMessageSendInterceptor` (the `message-send-pipeline`: its `next` callback cannot cross
+`postMessage`) were declared but nothing in the kernel or renderer ever invoked them.
+
+**Plugin event names.** `ctx.events.on(name)` subscribes to a WAEventMap bus event. The SDK's
+`PluginEventMap` names only real bus events (`message:incoming`, `message:deleted`, `message:edited`,
+`message:status-updated`, `reaction:processed`, `chat:updated`, `contact:updated`, `group:participants`,
+`group:updated`); other bus events can be subscribed to by name and arrive as `unknown`. The old
+`chat:created|archived|pinned`, `group:participant-*`, `group:subject-changed` and `connection:*`
+names never existed on the bus and were removed.
 
 The `KernelAPIRouter` (`src/main/kernel/KernelAPIRouter.ts`) dispatches incoming plugin requests
 to the correct module by matching `request.type` against module namespaces.
@@ -762,6 +791,19 @@ export interface PluginOverlayHandle {
 export interface IPluginAIAPI {
   chat(prompt: string, options?: AICallOptions): Promise<string>
   callTool(toolName: string, args: Record<string, unknown>): Promise<{ text: string }>
+  // ...plus getAvailableModels, createSession, listSessions, getSession, renameSession, deleteSession (ai:sessions)
+
+  /**
+   * Worker plugins only (optional): register a tool in the kernel ToolRegistry (`ai:tools:register`).
+   * Calls `kernel:ai:registerTool`; execution is routed back to `execute` or to a
+   * `contributions.registerAITool` handler of the same name.
+   */
+  registerTool?(def: {
+    name: string
+    description: string
+    schema: object
+    execute?: (args: Record<string, unknown>) => Promise<{ text: string }>
+  }): Promise<void>
 }
 
 export interface IPluginContributionsAPI {
@@ -773,10 +815,19 @@ export interface IPluginContributionsAPI {
     id: string,
     handler: (ctx: MessageActionContext) => Promise<void>
   ): void
+  /**
+   * @deprecated Registered (with its manifest `chatBadges` entry) but never evaluated: the
+   * renderer does not render chat badges, so `compute` is not called. Kept for existing plugins.
+   */
   registerChatBadge(
     id: string,
     compute: (chatJid: string) => Promise<BadgeDescriptor | null>
   ): void
+  /**
+   * `args` is the text after `/name` (trimmed). The renderer sends only the typed text, so the SDK
+   * derives `args` from `context.text` when the host's `args` is empty. `context` is
+   * `{ chatJid?: string; text?: string }`.
+   */
   registerSlashCommand(
     name: string,
     handler: (args: string, context: CommandContext) => Promise<void>
@@ -785,19 +836,6 @@ export interface IPluginContributionsAPI {
     name: string,
     execute: (args: Record<string, unknown>) => Promise<{ text: string }>
   ): void
-  registerCompletionProvider(
-    id: string,
-    provide: (ctx: CompletionContext) => Promise<CompletionItem[]>
-  ): void
-  registerMessageSendInterceptor(
-    id: string,
-    intercept: (
-      payload: OutgoingMessagePayload,
-      next: (payload: OutgoingMessagePayload) => Promise<SendResult>
-    ) => Promise<SendResult>
-  ): void
-  exposeAPI(exportName: string, api: Record<string, unknown>): void
-  importAPI(pluginId: string, exportName: string): Promise<Record<string, unknown>>
 }
 ```
 
