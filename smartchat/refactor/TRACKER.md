@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- **Owner run 2026-10-08: 12 units, max 4 in parallel, push main after each batch.** Batch A: F-MSG-4, F-UC-1, R-AI-04, R-DATA-07 (F-DATA-4 dropped: already fixed, replaced by R-DATA-07). Batch B (after A merged): F-WA-4, F-WA-6, R-SOLID-M-13, F-UC-2. Batch C: C-01, R-KRN-10, R-MSG-08, R-KRN-11. Batch A MERGED (F-MSG-4, F-UC-1, R-AI-04, R-DATA-07); locks released. Lint ratchet is red on main itself (429->431 return-type, 50->54 no-require-imports; identical pre-merge, no unit raised it) so the unit gate is 'no rise vs main'. Batch 5 (F-KRN-3, F-MSG-5, F-WA-3, F-APP-2) MERGED; awaiting owner direction. Integration branch = claude/hopeful-johnson-ysujzy; owner approved direct push to main.
+- **Owner run 2026-10-08: 12 units, max 4 in parallel, push main after each batch.** Batch A: F-MSG-4, F-UC-1, R-AI-04, R-DATA-07 (F-DATA-4 dropped: already fixed, replaced by R-DATA-07). Batch B (after A merged): F-WA-4, F-WA-6, R-SOLID-M-13, F-UC-2. Batch C: C-01, R-KRN-10, R-MSG-08, R-KRN-11. Batch B IN PROGRESS (F-WA-4 WASYNC; F-WA-6 WABRIDGE+IPC+PRELOAD; R-SOLID-M-13 MSGREPO; F-UC-2 USEMSG). Batch A MERGED (F-MSG-4, F-UC-1, R-AI-04, R-DATA-07); locks released. Lint ratchet is red on main itself (429->431 return-type, 50->54 no-require-imports; identical pre-merge, no unit raised it) so the unit gate is 'no rise vs main'. Batch 5 (F-KRN-3, F-MSG-5, F-WA-3, F-APP-2) MERGED; awaiting owner direction. Integration branch = claude/hopeful-johnson-ysujzy; owner approved direct push to main.
 - Baseline: typecheck ✅ · vitest 274 files / 1839 passed / 7 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (no change)
 
 ## Owner smoke queue (🔎)
@@ -150,12 +150,12 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | MERGED | |
 | F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | MERGED | 55016d5 |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | MERGED | |
-| R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
+| R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | IN PROGRESS | refactor/R-SOLID-M-13 |
 | F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | MERGED | 21bbcf7 |
 | F-WA-2 | W2 · WA | History-sync state machine 🔎 | N-02, H-02 | WASYNC | MERGED | 7630f8f |
-| F-WA-6 | W2 · WA | skipSync returns {status} (B-WA-13); widen onWaHistoryAppended types | F-WA-2 | WABRIDGE, IPC, PRELOAD | WAITING | |
+| F-WA-6 | W2 · WA | skipSync returns {status} (B-WA-13); widen onWaHistoryAppended types | F-WA-2 | WABRIDGE, IPC, PRELOAD | IN PROGRESS | refactor/F-WA-6 |
 | F-WA-3 | W2 · WA | Graceful worker shutdown | F-WA-1, F-WA-2 | WABRIDGE | MERGED | |
-| F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | WAITING | |
+| F-WA-4 | W2 · WA | Group-metadata cache | N-02, F-WA-2 | WASYNC | IN PROGRESS | refactor/F-WA-4 |
 | F-WA-5 | W2 · WA | Encrypted-reaction attribution + embedding races | N-02 | – | MERGED | 21bbcf7 |
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | MERGED | e8b1d9f |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | MERGED | b5fc5a9 |
@@ -173,7 +173,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | MERGED | ba3b988 |
 | F-APP-2 | W2 · APP | Surface index-embeddings failures | N-05, H-04 | IPC | MERGED | |
 | F-UC-1 | W2 · UC | Cursor pagination + loadNewer + guarded sends `CONTRACT` 🔎 | N-08 | USEMSG, IPC, PRELOAD | MERGED | 9aa9ae4 |
-| F-UC-2 | W2 · UC | Chat-switch hygiene | F-UC-1 | USEMSG | WAITING | |
+| F-UC-2 | W2 · UC | Chat-switch hygiene | F-UC-1 | USEMSG | IN PROGRESS | refactor/F-UC-2 |
 | F-UC-3 | W2 · UC | Composer/markdown/error toasts | N-07 | – | MERGED | 7567cd3 |
 | F-UA-1 | W2 · UA | Small renderer bug batch | N-07 | – | MERGED | 0b74c4a |
 | F-UA-2 | W2 · UA | useAIStream session guard | N-08 | – | MERGED | |
