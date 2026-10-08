@@ -15,6 +15,7 @@ import {
  * Prisma error code for "record to update not found".
  */
 const P_RECORD_NOT_FOUND = 'P2025'
+const DELETE_CHUNK_SIZE = 500
 
 export class SyncRepository implements ISyncRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -327,8 +328,15 @@ export class SyncRepository implements ISyncRepository {
 
   async deleteMembersNotIn(chatJid: string, keepIdentityIds: number[]): Promise<void> {
     if (keepIdentityIds.length === 0) return
-    await this.prisma.chatMember.deleteMany({
-      where: { chatJid, identityId: { notIn: keepIdentityIds } }
-    })
+    // A single `notIn (...)` binds one parameter per kept id and fails with P2029 on large groups,
+    // so diff against the current members in JS and delete the leavers in bounded chunks.
+    const keep = new Set(keepIdentityIds)
+    const current = await this.prisma.chatMember.findMany({ where: { chatJid }, select: { identityId: true } })
+    const leavers = current.map((m) => m.identityId).filter((id) => !keep.has(id))
+    for (let i = 0; i < leavers.length; i += DELETE_CHUNK_SIZE) {
+      await this.prisma.chatMember.deleteMany({
+        where: { chatJid, identityId: { in: leavers.slice(i, i + DELETE_CHUNK_SIZE) } }
+      })
+    }
   }
 }

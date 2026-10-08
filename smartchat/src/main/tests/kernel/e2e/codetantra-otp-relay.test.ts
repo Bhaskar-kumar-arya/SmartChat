@@ -65,4 +65,13 @@ describe('CodeTantra OTP Relay Plugin E2E Test', () => {
     const html = fs.readFileSync(path.join(pluginsDir, 'codetantra-otp-relay-plugin/panel/index.html'), 'utf8')
     expect(html).not.toMatch(/fetch\(\s*TOKEN_ENDPOINT/)
   })
+
+  // A bare 6-digit OTP typed in the target group is submitted to the meeting preselected in the panel.
+  it('panel persists the selected meeting and the worker submits bare OTPs to it', () => {
+    const html = fs.readFileSync(path.join(pluginsDir, 'codetantra-otp-relay-plugin/panel/index.html'), 'utf8')
+    const worker = fs.readFileSync(path.join(pluginsDir, 'codetantra-otp-relay-plugin/index.js'), 'utf8')
+    expect(html).toMatch(/storage\?\.set\('preselectedMeeting'/)
+    expect(worker).toMatch(/storage\.get\('preselectedMeeting'\)/)
+    expect(worker).toMatch(/\^\\d\{6\}\$\/\.test\(bareOtp\)/)
+  })
 })
