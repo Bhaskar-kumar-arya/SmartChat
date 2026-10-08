@@ -2,7 +2,11 @@ import { IContactMutationService } from '../contacts/IContactService'
 import { IChatRepository } from '../chats/IChatRepository'
 import { ICommunityRepository } from '../chats/ICommunityRepository'
 import { cleanJid } from '../../utils/jidUtils'
-import { parseBaileysTimestamp, normalizeMuteExpirationSeconds } from '../../utils/messageUtils'
+import { normalizeChatUpdate } from '../chats/ChatUpdateNormalizer'
+import type { ChatCommunityInfo } from '../chats/ChatUpdateNormalizer'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('SyncChatsHandler')
 
 export interface RawChatParticipant {
   userJid?: string
@@ -75,48 +79,13 @@ export class SyncChatsHandler {
       // Register any accountLid ↔ JID mapping immediately
       await this.linkAccountLid(c, jid)
 
-      const hasCommunityData =
-        c.isCommunity !== undefined ||
-        c.isParentGroup !== undefined ||
-        c.isAnnounce !== undefined ||
-        c.isCommunityAnnounce !== undefined ||
-        c.isDefaultSubgroup !== undefined ||
-        c.linkedParentJid !== undefined ||
-        c.linkedParent !== undefined ||
-        c.parentGroupId !== undefined
-
-      const tsRaw = c.conversationTimestamp ?? c.timestamp
-      const timestamp =
-        tsRaw !== undefined && tsRaw !== null ? parseBaileysTimestamp(tsRaw) : BigInt(0)
-
-      const updateData: {
-        timestamp?: bigint
-        isArchived?: boolean
-        name?: string | null
-        muteExpiration?: bigint
-        type?: string
-        communityId?: number | null
-        unreadCount?: number
-      } = {}
-      if (timestamp !== BigInt(0)) updateData.timestamp = timestamp
-      if ('archived' in c || 'isArchived' in c) {
-        updateData.isArchived = c.archived === true || c.isArchived === true
-      }
-      if (c.name !== undefined) updateData.name = c.name
-
-      const rawMute = c.muteExpiration !== undefined ? c.muteExpiration : c.muteEndTime
-      if (rawMute !== undefined && rawMute !== null) {
-        const muteSec = normalizeMuteExpirationSeconds(parseBaileysTimestamp(rawMute))
-        updateData.muteExpiration = muteSec
-        console.log(`[SyncChatsHandler] Chat ${jid} mute: rawMute=${rawMute}, muteSec=${muteSec}`)
+      const { data: updateData, community } = normalizeChatUpdate(jid, c, 'historySync')
+      if (updateData.muteExpiration !== undefined) {
+        log.debug(`Chat ${jid} mute: muteSec=${updateData.muteExpiration}`)
       }
 
-      if (hasCommunityData) {
-        updateData.communityId = await this.handleCommunityClassification(c, jid, updateData)
-      }
-
-      if (typeof c.unreadCount === 'number') {
-        updateData.unreadCount = c.unreadCount
+      if (community) {
+        updateData.communityId = await this.resolveCommunityId(c, jid, community)
       }
 
       await this.chatRepository.upsertChat(jid, updateData)
@@ -142,39 +111,24 @@ export class SyncChatsHandler {
     }
   }
 
-  private async handleCommunityClassification(
+  private async resolveCommunityId(
     c: RawChat,
     jid: string,
-    updateData: { type?: string }
+    community: ChatCommunityInfo
   ): Promise<number | null> {
-    const isCommunity = c.isCommunity === true || c.isParentGroup === true
-    const isAnnounce = c.isCommunityAnnounce === true || c.isDefaultSubgroup === true
-    const linkedParentJid = c.linkedParentJid ?? c.linkedParent ?? c.parentGroupId
-
-    let type = 'DM'
-    if (jid.endsWith('@g.us')) {
-      if (isCommunity) type = 'COMMUNITY'
-      else if (isAnnounce) type = 'ANNOUNCE'
-      else if (linkedParentJid) type = 'SUBGROUP'
-      else type = 'GROUP'
+    if (!community.rootJid) return null
+    const comm = await this.communityRepository.upsertCommunity(
+      community.rootJid,
+      community.isCommunity ? (c.name ?? null) : null
+    )
+    if (community.isAnnounce) {
+      await this.communityRepository
+        .updateCommunityAnnounceJid(comm.id, jid)
+        .catch((err: unknown) => {
+          console.error('[SyncChatsHandler] community announceJid update failed:', err)
+        })
     }
-    updateData.type = type
-
-    let communityId: number | null = null
-    const rootJid = isCommunity ? jid : linkedParentJid ? cleanJid(String(linkedParentJid)) : null
-    if (rootJid) {
-      const comm = await this.communityRepository.upsertCommunity(rootJid, isCommunity ? (c.name ?? null) : null)
-      communityId = comm.id
-
-      if (isAnnounce) {
-        await this.communityRepository
-          .updateCommunityAnnounceJid(communityId, jid)
-          .catch((err: unknown) => {
-            console.error('[SyncChatsHandler] community announceJid update failed:', err)
-          })
-      }
-    }
-    return communityId
+    return comm.id
   }
 
   private async processParticipants(c: RawChat): Promise<void> {

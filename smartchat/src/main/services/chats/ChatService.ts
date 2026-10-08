@@ -1,6 +1,5 @@
 import { cleanJid } from '../../utils/jidUtils'
-import { normalizeMuteExpirationSeconds } from '../../utils/messageUtils'
-import { parseCommunityMetadata } from '../../utils/communityUtils'
+import { normalizeChatUpdate } from './ChatUpdateNormalizer'
 import { IContactNameResolver } from '../contacts/IContactService'
 import { ChatUpdatePayload } from '../../domain/whatsapp.types'
 import { SocketAccessor } from '../whatsapp/types'
@@ -28,57 +27,10 @@ export class ChatService implements IChatService {
     const cleanedJid = cleanJid(jid)
     if (!cleanedJid) return
 
-    const data: {
-      unreadCount?: number
-      pinned?: number
-      muteExpiration?: bigint
-      isArchived?: boolean
-      name?: string | null
-      profilePictureUrl?: string | null
-      timestamp?: bigint
-      type?: 'DM' | 'GROUP' | 'COMMUNITY' | 'SUBGROUP' | 'ANNOUNCE'
-      communityId?: number | null
-    } = {}
+    const { data, community } = normalizeChatUpdate(cleanedJid, update, 'live')
 
-    // Persist any concrete unread count from chats.update / chats.upsert — this is
-    // how WhatsApp propagates "marked unread on another device" and the
-    // authoritative count after a multi-device reconciliation. WhatsApp uses -1
-    // for "unknown"; only that is ignored.
-    if (typeof update.unreadCount === 'number' && update.unreadCount >= 0) {
-      data.unreadCount = update.unreadCount
-    }
-    if (update.pinned !== undefined) {
-      data.pinned = update.pinned === null ? 0 : Number(update.pinned)
-    }
-    if (update.muteExpiration !== undefined) {
-      data.muteExpiration = normalizeMuteExpirationSeconds(update.muteExpiration)
-    }
-    if (update.archived !== undefined) {
-      data.isArchived = update.archived === true
-    }
-    const chatName = update.name || update.subject
-    if (chatName !== undefined) {
-      data.name = chatName
-    }
-    if (update.profilePictureUrl !== undefined) {
-      data.profilePictureUrl = update.profilePictureUrl
-    }
-
-    const ts = update.conversationTimestamp ?? update.timestamp
-    if (ts) {
-      data.timestamp = BigInt(
-        typeof ts === 'object' && ts !== null && 'low' in ts 
-          ? (ts as unknown as { low: number }).low 
-          : (ts as unknown as number | bigint)
-      )
-    }
-
-    // Community Metadata Normalization
-    const commInfo = parseCommunityMetadata(cleanedJid, update)
-
-    if (commInfo.hasCommunityData) {
-      data.type = commInfo.type
-      const rootJid = commInfo.rootJid
+    if (community) {
+      const rootJid = community.rootJid
       let communityId: number | null = null
 
       // Link owner LIDs to Phone Numbers if provided in metadata
@@ -86,11 +38,11 @@ export class ChatService implements IChatService {
 
       if (rootJid) {
         // Ensure Community exists
-        const comm = await this.communityRepository.upsertCommunity(rootJid, commInfo.isCommunity ? (chatName ?? null) : null)
+        const comm = await this.communityRepository.upsertCommunity(rootJid, community.isCommunity ? (data.name ?? null) : null)
         communityId = comm.id
-        
+
         // Update announce channel if known
-        if (commInfo.isAnnounce && rootJid) {
+        if (community.isAnnounce) {
           await this.communityRepository.updateCommunityAnnounceJid(communityId, cleanedJid)
         }
       }
