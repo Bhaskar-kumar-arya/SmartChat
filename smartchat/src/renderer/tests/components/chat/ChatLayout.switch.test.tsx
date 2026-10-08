@@ -53,7 +53,7 @@ describe('ChatLayout chat-switch hygiene', () => {
     fireEvent.drop(main, { dataTransfer: { files: { 0: file, length: 1, item: () => file } } })
   }
 
-  it.fails('B-UICHAT-03: switching chats discards staged attachments', async () => {
+  it('B-UICHAT-03: switching chats discards staged attachments', async () => {
     await openA()
     dropFile('/tmp/pic.png')
     await settle()
@@ -76,7 +76,7 @@ describe('ChatLayout chat-switch hygiene', () => {
     expect(screen.getByText('Preview attachments (1)')).toBeInTheDocument()
   })
 
-  it.fails('B-UICHAT-05: a search hit in the already-open chat fetches the target window', async () => {
+  it('B-UICHAT-05: a search hit in the already-open chat fetches the target window', async () => {
     const api = await openA()
     expect(api.getMessagesAround).not.toHaveBeenCalled()
 
@@ -86,7 +86,7 @@ describe('ChatLayout chat-switch hygiene', () => {
     expect(api.getMessagesAround).toHaveBeenCalledWith(A, 'msg-42')
   })
 
-  it.fails('B-UICHAT-12: opening an extension chat never feeds the synthetic jid to message APIs', async () => {
+  it('B-UICHAT-12: opening an extension chat never feeds the synthetic jid to message APIs', async () => {
     const api = await openA()
     vi.mocked(api.getMessages).mockClear()
     vi.mocked(api.markRead).mockClear()
