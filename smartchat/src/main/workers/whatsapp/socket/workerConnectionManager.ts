@@ -1,7 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import type { WASocket } from '@whiskeysockets/baileys'
 import { fetchLatestBaileysVersion } from '@whiskeysockets/baileys'
-import NodeCache from 'node-cache'
 import * as fs from 'fs'
 import { join } from 'path'
 import { IWorkerBootstrap } from '../IWorkerBootstrap'
@@ -10,6 +9,7 @@ import { useLocalPrismaAuthState } from './useLocalPrismaAuthState'
 import { connectSocket } from './connectSocket'
 import { WorkerConnectionHandler } from './workerConnectionHandler'
 import { WorkerEventDispatcher } from '../events/workerEventDispatcher'
+import { WorkerGroupCache } from '../services/WorkerGroupCache'
 
 /**
  * WorkerConnectionManager
@@ -21,6 +21,8 @@ export class WorkerConnectionManager {
   private sock: WASocket | null = null
   private reconnectTimeout: NodeJS.Timeout | null = null
   private isFreshLogin = false
+  /** Long-lived across reconnects; cleared on data wipe (B-WA-08). */
+  private readonly groupCache = new WorkerGroupCache()
 
   private prisma: PrismaClient | null = null
   private repos: IWorkerBootstrap | null = null
@@ -148,14 +150,12 @@ export class WorkerConnectionManager {
     const isInitialSyncInProgress = repos.historySyncManager.isInProgress
     const currentShouldSyncHistory = this.isFreshLogin || isInitialSyncInProgress || !isHistorySyncCompleted
 
-    const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
-
     this.sock = connectSocket({
       version,
       state,
       syncFullHistory: this.syncFullHistory,
       currentShouldSyncHistory,
-      groupCache,
+      groupCache: this.groupCache,
       prisma
     })
 
@@ -232,6 +232,7 @@ export class WorkerConnectionManager {
   }
 
   private async wipeAllData(prismaClient: PrismaClient, userPath: string): Promise<void> {
+    this.groupCache.clear()
     const allTables = await prismaClient.$queryRawUnsafe<{ name: string; sql?: string | null }[]>(
       "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_prisma_migrations'"
     )
