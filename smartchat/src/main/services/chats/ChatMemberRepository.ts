@@ -1,4 +1,5 @@
 import { PrismaClient, ChatMember } from '@prisma/client'
+import { inferChatType } from '../../utils/communityUtils'
 import { IChatMemberRepository, ChatMemberWithIdentity } from './IChatMemberRepository'
 
 /**
@@ -14,7 +15,7 @@ export class ChatMemberRepository implements IChatMemberRepository {
   async ensureChat(chatJid: string): Promise<boolean> {
     const existingChat = await this.prisma.chat.findUnique({ where: { jid: chatJid } })
     if (existingChat) return true
-    const type = chatJid.endsWith('@g.us') ? 'GROUP' : 'DM'
+    const type = inferChatType(chatJid)
     try {
       await this.prisma.chat.create({
         data: {

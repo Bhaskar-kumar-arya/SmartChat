@@ -1,4 +1,5 @@
 import { PrismaClient, Chat, Prisma } from '@prisma/client'
+import { inferChatType } from '../../utils/communityUtils'
 import { IChatRepository, ChatUpsertData, ChatWithCommunity } from './IChatRepository'
 
 /**
@@ -126,7 +127,7 @@ export class ChatRepository implements IChatRepository {
    * Upsert a chat record.
    */
   async upsertChat(jid: string, data: ChatUpsertData): Promise<Chat> {
-    const createType = data.type || (jid.endsWith('@g.us') ? 'GROUP' : 'DM')
+    const createType = data.type || inferChatType(jid)
     return this.prisma.chat.upsert({
       where: { jid },
       update: data,
@@ -169,7 +170,7 @@ export class ChatRepository implements IChatRepository {
    * Increments the unread count for a chat.
    */
   async incrementUnread(jid: string, timestamp: bigint, amount: number = 1): Promise<Chat> {
-    const type = jid.endsWith('@g.us') ? 'GROUP' : 'DM'
+    const type = inferChatType(jid)
     return this.prisma.chat.upsert({
       where: { jid },
       update: { unreadCount: { increment: amount }, timestamp },
@@ -181,7 +182,7 @@ export class ChatRepository implements IChatRepository {
    * Simple timestamp update.
    */
   async updateTimestamp(jid: string, timestamp: bigint): Promise<Chat> {
-    const type = jid.endsWith('@g.us') ? 'GROUP' : 'DM'
+    const type = inferChatType(jid)
     return this.prisma.chat.upsert({
       where: { jid },
       update: { timestamp },

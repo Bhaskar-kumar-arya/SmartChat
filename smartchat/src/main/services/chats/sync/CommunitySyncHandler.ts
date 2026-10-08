@@ -1,7 +1,7 @@
 import { ISyncRepository } from '../../sync/ISyncRepository'
 import { BaileysGroupMetadata } from '../../whatsapp/types/group.types'
 import { cleanJid } from '../../../utils/jidUtils'
-import { parseCommunityMetadata } from '../../../utils/communityUtils'
+import { classifyCommunity } from '../ChatUpdateNormalizer'
 import { ICommunitySyncHandler } from './ICommunitySyncHandler'
 
 export class CommunitySyncHandler implements ICommunitySyncHandler {
@@ -21,15 +21,12 @@ export class CommunitySyncHandler implements ICommunitySyncHandler {
     for (const jid of groupKeys) {
       const raw = groups[jid]
       const cleanedJid = cleanJid(jid)
-      const commInfo = parseCommunityMetadata(jid, raw)
-
-      if (commInfo.hasCommunityData) {
-        const rootJidVal = commInfo.rootJid
-        if (rootJidVal) {
-          rootJids.add(rootJidVal)
-          if (commInfo.isAnnounce) {
-            announceUpdates.push({ rootJid: rootJidVal, announceJid: cleanedJid })
-          }
+      const community = classifyCommunity(jid, raw, 'groupSync')
+      const rootJidVal = community?.rootJid
+      if (rootJidVal) {
+        rootJids.add(rootJidVal)
+        if (community.isAnnounce) {
+          announceUpdates.push({ rootJid: rootJidVal, announceJid: cleanedJid })
         }
       }
     }

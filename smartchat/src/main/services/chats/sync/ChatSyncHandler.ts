@@ -1,8 +1,7 @@
 import { ISyncRepository, SyncChatCreateInput, SyncChatUpdateInput } from '../../sync/ISyncRepository'
 import { BaileysGroupMetadata } from '../../whatsapp/types/group.types'
 import { cleanJid } from '../../../utils/jidUtils'
-import { parseBaileysTimestamp, normalizeMuteExpirationSeconds } from '../../../utils/messageUtils'
-import { parseCommunityMetadata } from '../../../utils/communityUtils'
+import { normalizeChatUpdate } from '../ChatUpdateNormalizer'
 import { IChatSyncHandler } from './IChatSyncHandler'
 
 export class ChatSyncHandler implements IChatSyncHandler {
@@ -28,59 +27,32 @@ export class ChatSyncHandler implements IChatSyncHandler {
     for (const jid of groupKeys) {
       const raw = groups[jid]
       const cleanedJid = cleanJid(jid)
-      const chatName = raw.name || raw.subject || null
+      const { data, community } = normalizeChatUpdate(jid, raw, 'groupSync')
 
-      const ts = raw.conversationTimestamp ?? raw.timestamp
-      const hasTimestamp = ts !== undefined && ts !== null
-      const timestamp = hasTimestamp ? parseBaileysTimestamp(ts) : null
-
-      let type: string | undefined = undefined
+      // Unlike the other writers, a community payload without a root leaves communityId untouched.
       let communityId: number | null | undefined = undefined
-
-      const commInfo = parseCommunityMetadata(jid, raw)
-      if (commInfo.hasCommunityData) {
-        type = commInfo.type
-        const rootJidVal = commInfo.rootJid
-        if (rootJidVal) {
-          communityId = communityJidToIdMap.get(rootJidVal) ?? null
-        }
+      if (community?.rootJid) {
+        communityId = communityJidToIdMap.get(community.rootJid) ?? null
       }
 
       const existing = existingChatsMap.get(cleanedJid)
 
       if (existing) {
-        const updateObj: SyncChatUpdateInput = { jid: cleanedJid }
-        
-        if (type !== undefined) updateObj.type = type
+        const updateObj: SyncChatUpdateInput = { jid: cleanedJid, ...data }
         if (communityId !== undefined) updateObj.communityId = communityId
-        if ('archived' in raw || 'isArchived' in raw) {
-          updateObj.isArchived = raw.archived === true || raw.isArchived === true
-        }
-        if (chatName) updateObj.name = chatName
-        if (timestamp !== null) updateObj.timestamp = timestamp
-        if (typeof raw.unreadCount === 'number') updateObj.unreadCount = raw.unreadCount
-        if (typeof raw.pinned === 'number') updateObj.pinned = raw.pinned
-        if (raw.muteExpiration !== undefined) {
-          updateObj.muteExpiration = normalizeMuteExpirationSeconds(raw.muteExpiration)
-        }
-        if (raw.profilePictureUrl !== undefined) {
-          updateObj.profilePictureUrl = raw.profilePictureUrl || null
-        }
-        
         chatsToUpdate.push(updateObj)
       } else {
-        const isArchived = ('archived' in raw || 'isArchived' in raw) ? (raw.archived === true || raw.isArchived === true) : false
         chatsToInsert.push({
           jid: cleanedJid,
-          type: type ?? 'GROUP',
-          unreadCount: typeof raw.unreadCount === 'number' ? raw.unreadCount : 0,
-          timestamp: timestamp ?? BigInt(0),
-          pinned: typeof raw.pinned === 'number' ? raw.pinned : 0,
-          muteExpiration: normalizeMuteExpirationSeconds(raw.muteExpiration),
-          isArchived,
-          name: chatName,
+          type: data.type ?? 'GROUP',
+          unreadCount: data.unreadCount ?? 0,
+          timestamp: data.timestamp ?? BigInt(0),
+          pinned: data.pinned ?? 0,
+          muteExpiration: data.muteExpiration ?? BigInt(0),
+          isArchived: data.isArchived ?? false,
+          name: data.name ?? null,
           communityId: communityId ?? null,
-          profilePictureUrl: raw.profilePictureUrl || null
+          profilePictureUrl: data.profilePictureUrl ?? null
         })
       }
     }

@@ -2,6 +2,14 @@ import { cleanJid } from './jidUtils'
 import { ChatUpdatePayload } from '../domain/whatsapp.types'
 
 /**
+ * Default chat type for a JID with no richer metadata. Newsletter and broadcast JIDs are
+ * deliberately still typed 'DM' (current behaviour); see R-DATA-07 follow-ups before changing.
+ */
+export function inferChatType(jid: string): 'GROUP' | 'DM' {
+  return jid.endsWith('@g.us') ? 'GROUP' : 'DM'
+}
+
+/**
  * Standardizes community information parsed from a chat update/group metadata payload.
  */
 export function parseCommunityMetadata(jid: string, update: ChatUpdatePayload): {
