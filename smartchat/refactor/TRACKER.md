@@ -7,7 +7,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 
 ## Current state
 - Wave: **1 (in progress; Wave 0 complete)**
-- Locks held: none; nothing in flight. Batch 5 (F-KRN-3, F-MSG-5, F-WA-3, F-APP-2) MERGED; awaiting owner direction. Integration branch = claude/hopeful-johnson-ysujzy; owner approved direct push to main.
+- **Owner run 2026-10-08: 12 units, max 4 in parallel, push main after each batch.** Batch A: F-DATA-4, F-MSG-4, F-UC-1, R-AI-04. Batch B (after A merged): F-WA-4, F-WA-6, R-SOLID-M-13, F-UC-2. Batch C: C-01, R-DATA-07, R-KRN-10, R-MSG-08. Locks held: WASYNC (F-MSG-4), USEMSG+IPC+PRELOAD (F-UC-1). Previously: nothing in flight. Batch 5 (F-KRN-3, F-MSG-5, F-WA-3, F-APP-2) MERGED; awaiting owner direction. Integration branch = claude/hopeful-johnson-ysujzy; owner approved direct push to main.
 - Baseline: typecheck ✅ · vitest 274 files / 1839 passed / 7 expected-fail / 2 skipped / 0 failed / 0 errors (--maxWorkers=3) · lint ratchet PASSES (no change)
 
 ## Owner smoke queue (🔎)
@@ -141,7 +141,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-MSG-1 | W2 · MSG | Single `applyEdit/mergeContextInfo` 🔎 | N-03 | MSGREPO | MERGED | 7a8f2bd |
 | F-MSG-2 | W2 · MSG | Stop double-processing edits | F-MSG-1 | – | MERGED | |
 | F-MSG-3 | W2 · MSG | Batch-safe bulkSyncMessages | F-MSG-2 | MSGREPO | MERGED | |
-| F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | WAITING | |
+| F-MSG-4 | W2 · MSG | Deferred reactions in sync | N-03, F-WA-2 | WASYNC | IN PROGRESS | refactor/F-MSG-4 |
 | F-MSG-5 | W2 · MSG | Single reaction pipeline | N-03 | – | MERGED | |
 | R-SOLID-M-13 | W2 · MSG | Honest write contracts (fix) | F-MSG-3, F-MSG-4, H-02 | MSGREPO | WAITING | |
 | F-WA-1 | W2 · WA | Self identity + init supervision | N-02 | WABRIDGE | MERGED | 21bbcf7 |
@@ -153,6 +153,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-DATA-1 | W2 · DATA | One identity-merge implementation | N-04 | DI | MERGED | e8b1d9f |
 | F-DATA-2 | W2 · DATA | MembershipSync PN carry + prune 🔎 | N-04 | – | MERGED | b5fc5a9 |
 | F-DATA-3 | W2 · DATA | Live participant sync via batched path | F-DATA-2 | – | MERGED | |
+| F-DATA-4 | W2 · DATA | Chunked `deleteMembersNotIn` (P2029 on large groups; smoke 2026-10-05/09) | F-DATA-2 | – | IN PROGRESS | refactor/F-DATA-4 |
 | F-AI-1 | W2 · AI | BaseOpenAICompatibleProvider + Gemini roles | N-09 | – | MERGED | 69955ab |
 | F-AI-2 | W2 · AI | Citation FK/cascade `CONTRACT` | N-01 | SCHEMA | MERGED | ae1a3c8 |
 | F-AI-3 | W2 · AI | Abort-id leak + anchored regex | N-09 | IPC | MERGED | c205617 |
@@ -164,7 +165,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | F-KRN-4 | W2 · KRN | JID normalisation in permission scope | S-04 | – | MERGED | f3d493f |
 | F-APP-1 | W2 · APP | APIServer error listener + real-http tests | W0 | – | MERGED | ba3b988 |
 | F-APP-2 | W2 · APP | Surface index-embeddings failures | N-05, H-04 | IPC | MERGED | |
-| F-UC-1 | W2 · UC | Cursor pagination + loadNewer + guarded sends `CONTRACT` 🔎 | N-08 | USEMSG, IPC, PRELOAD | WAITING | |
+| F-UC-1 | W2 · UC | Cursor pagination + loadNewer + guarded sends `CONTRACT` 🔎 | N-08 | USEMSG, IPC, PRELOAD | IN PROGRESS | refactor/F-UC-1 |
 | F-UC-2 | W2 · UC | Chat-switch hygiene | F-UC-1 | USEMSG | WAITING | |
 | F-UC-3 | W2 · UC | Composer/markdown/error toasts | N-07 | – | MERGED | 7567cd3 |
 | F-UA-1 | W2 · UA | Small renderer bug batch | N-07 | – | MERGED | 0b74c4a |
@@ -201,7 +202,7 @@ Deps refer to unit ids; "W0" means all Wave-0 units are merged. Locks: see PLAN 
 | R-DATA-11 | W4 · DATA | Dead code + narrow catches | R-DATA-07 | – | WAITING | |
 | R-SOLID-M-06 | W4 · DATA | Segregate ISyncRepository | F-DATA-2, R-DATA-07 | – | WAITING | |
 | R-SOLID-M-12 | W4 · DATA | Repos for raw-Prisma services | F-AI-2, F-WA-5, R-SOLID-M-04 | DI | WAITING | |
-| R-AI-04 | W4 · AI | One read-only-SQL guard | W1 | – | WAITING | |
+| R-AI-04 | W4 · AI | One read-only-SQL guard | W1 | – | IN PROGRESS | refactor/R-AI-04 |
 | R-AI-06 | W4 · AI | PromptAssembler | F-AI-3 | – | WAITING | |
 | R-SOLID-M-04 | W4 · AI | JsonPreferencesStore port 🔎 | D-01, F-AI-2, F-AI-5 | – | WAITING | |
 | R-SOLID-M-01 | W4 · AI | Provider registry + single contract | F-AI-1, R-AI-06, F-AI-3 | DI | WAITING | |
