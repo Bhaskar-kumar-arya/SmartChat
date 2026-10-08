@@ -74,13 +74,13 @@ describe('validateManifest', () => {
       ['messageRenderers', [{ id: 'm', messageType: 't' }]]
     ]
 
-    it.fails.each(slots)('rejects the unconsumed slot %s', (slot, value) => {
+    it.each(slots)('rejects the unconsumed slot %s', (slot, value) => {
       expect(() => validateManifest({ ...validV2Manifest, contributions: { [slot]: value } })).toThrow(
         `Unsupported contribution slot "${slot}"`
       )
     })
 
-    it.fails('rejects a panel path that escapes the plugin directory', () => {
+    it('rejects a panel path that escapes the plugin directory', () => {
       const raw = { ...validV2Manifest, contributions: { sidebarPanels: [{ id: 's', title: 'S', panel: '../x.html' }] } }
       expect(() => validateManifest(raw)).toThrow(/Invalid "contributions.sidebarPanels\[0\].panel"/)
     })

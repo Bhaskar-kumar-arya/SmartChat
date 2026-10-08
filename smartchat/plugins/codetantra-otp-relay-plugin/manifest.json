@@ -46,7 +46,7 @@
         "icon": "key",
         "when": {
           "field": "chat.type",
-          "op": "equals",
+          "op": "eq",
           "value": "GROUP"
         }
       }
