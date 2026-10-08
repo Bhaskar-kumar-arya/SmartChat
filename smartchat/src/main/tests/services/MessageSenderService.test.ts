@@ -117,6 +117,71 @@ describe('MessageSenderService', () => {
     })
   })
 
+  describe('retryFailedMessage', () => {
+    const failed = (over: Record<string, unknown>) => ({
+      id: 'old1', chatJid: 'target@s.whatsapp.net', fromMe: true, status: 'FAILED', isDeleted: false, ...over
+    })
+    beforeEach(() => {
+      messageRepo.deleteLocalMessage = vi.fn().mockResolvedValue(undefined)
+    })
+
+    it.fails('re-sends a failed text with its quote and mentions, then removes the failed row', async () => {
+      messageQueryRepo.findMessageById.mockResolvedValue(failed({
+        messageType: 'extendedTextMessage',
+        textContent: 'hi @1234',
+        content: JSON.stringify({ extendedTextMessage: { text: 'hi @1234', contextInfo: { stanzaId: 'q1', mentionedJid: ['1234@s.whatsapp.net'] } } })
+      }))
+      const spy = vi.spyOn(service, 'sendMessageWorkflow')
+
+      const res = await service.retryFailedMessage(sock, 'target@s.whatsapp.net', 'old1')
+
+      expect(spy).toHaveBeenCalledWith(sock, 'target@s.whatsapp.net', 'hi @1234', 'q1', ['1234@s.whatsapp.net'])
+      expect(messageRepo.deleteLocalMessage).toHaveBeenCalledWith('old1')
+      expect(res.id).toBe('sent1')
+    })
+
+    it.fails('re-sends a failed plain text', async () => {
+      messageQueryRepo.findMessageById.mockResolvedValue(failed({
+        messageType: 'conversation', textContent: 'Hello', content: JSON.stringify({ conversation: 'Hello' })
+      }))
+      const spy = vi.spyOn(service, 'sendMessageWorkflow')
+      await service.retryFailedMessage(sock, 'target@s.whatsapp.net', 'old1')
+      expect(spy).toHaveBeenCalledWith(sock, 'target@s.whatsapp.net', 'Hello', undefined, undefined)
+    })
+
+    it.fails('re-sends a failed media message from its cached copy with the caption', async () => {
+      messageQueryRepo.findMessageById.mockResolvedValue(failed({
+        messageType: 'imageMessage',
+        textContent: 'look',
+        content: JSON.stringify({ imageMessage: { localURI: 'app://media/old1.jpg', caption: 'look' } })
+      }))
+      const spy = vi.spyOn(service, 'sendMediaMessageWorkflow')
+      await service.retryFailedMessage(sock, 'target@s.whatsapp.net', 'old1')
+      expect(spy).toHaveBeenCalledWith(sock, 'target@s.whatsapp.net', 'app://media/old1.jpg', 'look', undefined, undefined)
+      expect(messageRepo.deleteLocalMessage).toHaveBeenCalledWith('old1')
+    })
+
+    it.fails('keeps the failed row when the new send throws', async () => {
+      messageQueryRepo.findMessageById.mockResolvedValue(failed({
+        messageType: 'conversation', textContent: 'Hello', content: JSON.stringify({ conversation: 'Hello' })
+      }))
+      vi.spyOn(service, 'sendMessageWorkflow').mockRejectedValue(new Error('boom'))
+      await expect(service.retryFailedMessage(sock, 'target@s.whatsapp.net', 'old1')).rejects.toThrow('boom')
+      expect(messageRepo.deleteLocalMessage).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['not found', null],
+      ['not mine', failed({ fromMe: false })],
+      ['not FAILED', failed({ status: 'SENT' })]
+    ])('refuses to retry a message that is %s', async (_label, row) => {
+      messageQueryRepo.findMessageById.mockResolvedValue(row)
+      const spy = vi.spyOn(service, 'sendMessageWorkflow')
+      await expect(service.retryFailedMessage(sock, 'target@s.whatsapp.net', 'old1')).rejects.toThrow()
+      expect(spy).not.toHaveBeenCalled()
+    })
+  })
+
   describe('Reply Context (buildQuotedContextInfo)', () => {
     it('preserves reply context when quoting another user in a DM', async () => {
       contactService.resolveLidFromJid.mockImplementation(async (j: string) => j)

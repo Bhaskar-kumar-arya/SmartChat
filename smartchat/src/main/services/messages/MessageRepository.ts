@@ -354,6 +354,10 @@ export class MessageRepository implements IMessageRepository {
   /**
    * Mark a message as deleted (isDeleted = true) by ID.
    */
+  async deleteLocalMessage(id: string): Promise<void> {
+    await this.prisma.message.deleteMany({ where: { id } })
+  }
+
   async failStalePendingOutgoing(): Promise<number> {
     const res = await this.prisma.message.updateMany({
       where: { fromMe: true, status: 'PENDING' },

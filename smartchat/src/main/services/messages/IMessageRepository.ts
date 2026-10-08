@@ -29,6 +29,8 @@ export interface IMessageWriteRepository {
    * and can never be acknowledged, so mark them FAILED. Returns how many were changed.
    */
   failStalePendingOutgoing(): Promise<number>
+  /** Hard-deletes one local row (used when a FAILED message is replaced by its retry). */
+  deleteLocalMessage(id: string): Promise<void>
 }
 
 export interface IMessageRepository extends IMessageWriteRepository, IMessageCompoundRepository { }

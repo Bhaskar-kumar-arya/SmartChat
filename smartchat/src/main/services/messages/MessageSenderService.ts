@@ -421,4 +421,12 @@ export class MessageSenderService implements IMessageSenderService {
 
     return enriched
   }
+
+  async retryFailedMessage(
+    _sock: IMessageActionSocket,
+    _jid: string,
+    _messageId: string
+  ): Promise<EnrichedMessage> {
+    throw new Error('not implemented')
+  }
 }

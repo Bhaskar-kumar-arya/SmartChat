@@ -18,4 +18,10 @@ export interface IMessageSenderService {
     quotedMsgId?: string,
     mentions?: string[]
   ): Promise<EnrichedMessage>
+
+  /**
+   * Re-sends a FAILED outgoing message (text or media, with its quote and mentions) as a new
+   * message and removes the failed row. Rejects if the message is not a FAILED outgoing one.
+   */
+  retryFailedMessage(sock: IMessageActionSocket, jid: string, messageId: string): Promise<EnrichedMessage>
 }
