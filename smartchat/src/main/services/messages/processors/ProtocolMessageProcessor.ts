@@ -1,3 +1,4 @@
+import { classifyProtocolType, extractEditedText } from '../../../utils/messageUtils'
 import { ProcessedMessage } from '../../../domain/db.types'
 import { ProtocolResult, WAMessageKey } from '../../whatsapp/types'
 import { IMessageProcessingContext, IMessageProcessorStrategy, IMessageServiceDependencyAccessor } from './IMessageProcessorStrategy'
@@ -17,8 +18,8 @@ export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
     const targetId = protocol?.key?.id
     if (targetId && protocol) {
       try {
-        const type = protocol.type as unknown as number | string
-        if (type === 0 || type === 'REVOKE') {
+        const kind = classifyProtocolType(protocol.type)
+        if (kind === 'revoke') {
           return {
             type: 'protocol',
             subType: 'revoke',
@@ -26,14 +27,9 @@ export class ProtocolMessageProcessor implements IMessageProcessorStrategy {
             chatJid: context.remoteJid,
             key: protocol.key as WAMessageKey
           }
-        } else if (type === 14 || type === 'MESSAGE_EDIT') {
+        } else if (kind === 'edit') {
           const editedMsg = protocol.editedMessage
-          const editContent =
-            editedMsg?.conversation ??
-            editedMsg?.extendedTextMessage?.text ??
-            editedMsg?.imageMessage?.caption ??
-            editedMsg?.videoMessage?.caption ??
-            null
+          const editContent = extractEditedText(editedMsg)
           return {
             type: 'protocol',
             subType: 'edit',

@@ -21,11 +21,7 @@ import {
   MessageReceiptUpdate
 } from './types'
 import { cleanJid } from '../../utils/jidUtils'
-import { unwrapMessage, getMessageType, extractTextContent } from '../../utils/messageUtils'
-import {
-  PROTOCOL_TYPE_REVOKE,
-  PROTOCOL_TYPE_EDIT
-} from '../../constants'
+import { unwrapMessage, getMessageType, extractTextContent, extractEditedText, classifyProtocolType } from '../../utils/messageUtils'
 import { IMessageParserService } from '../messages/IMessageParserService'
 import { IMessageProcessingService } from '../messages/IMessageProcessingService'
 import { IMessageQueryService } from '../messages/IMessageQueryService'
@@ -37,8 +33,6 @@ import { proto } from '@whiskeysockets/baileys'
 const TYPE_APPEND = 'append';
 const SUBTYPE_REVOKE = 'revoke';
 const SUBTYPE_EDIT = 'edit';
-const PROTOCOL_REVOKE_STRING = 'REVOKE';
-const PROTOCOL_EDIT_STRING = 'MESSAGE_EDIT';
 const MUTE_TIMESTAMP_THRESHOLD = 10000000000;
 const MULTIPLIER_32BIT = 4294967296;
 const MS_IN_SEC = 1000;
@@ -250,12 +244,7 @@ export class WAEventHandler {
     const editedMsg = protocol.editedMessage
     if (!editedMsg) return
 
-    const textContent =
-      editedMsg.conversation ||
-      editedMsg.extendedTextMessage?.text ||
-      editedMsg.imageMessage?.caption ||
-      editedMsg.videoMessage?.caption ||
-      null
+    const textContent = extractEditedText(editedMsg, { skipEmpty: true })
     const chatJid = cleanJid(itemKey?.remoteJid || key.remoteJid)
     await this.bus.emit('message:edited', {
       messageId: key.id!,
@@ -278,13 +267,10 @@ export class WAEventHandler {
     const key = protocol.key
     if (!key?.id) return
 
-    const protocolType = protocol.type as unknown as number | string
-    const isRevoke = protocolType === PROTOCOL_TYPE_REVOKE || protocolType === PROTOCOL_REVOKE_STRING
-    const isEdit = protocolType === PROTOCOL_TYPE_EDIT || protocolType === PROTOCOL_EDIT_STRING
-
-    if (isRevoke) {
+    const kind = classifyProtocolType(protocol.type)
+    if (kind === 'revoke') {
       await this.handleProtocolRevoke(key, itemKey)
-    } else if (isEdit) {
+    } else if (kind === 'edit') {
       await this.handleProtocolEdit(key, protocol, itemKey, sock)
     }
   }

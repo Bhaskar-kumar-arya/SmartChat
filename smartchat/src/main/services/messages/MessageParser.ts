@@ -1,7 +1,6 @@
-import { WAMessageStubType } from '@whiskeysockets/baileys'
 import { mapBaileysStatus } from '../whatsapp/ReceiptService'
 import { cleanJid } from '../../utils/jidUtils'
-import { parseBaileysTimestamp, getMessageType, unwrapMessage } from '../../utils/messageUtils'
+import { parseBaileysTimestamp, getMessageType, unwrapMessage, extractTextContent, classifyStub } from '../../utils/messageUtils'
 import { BaileysMessage, WAMessageContent } from '../whatsapp/types'
 
 /** Plain data object produced by parseMessageSync(). */
@@ -39,7 +38,10 @@ export class MessageParser {
    * to dedicated handlers.
    */
   isSpecialMessage(msg: BaileysMessage): boolean {
-    const rawMessage = this._safeSerialize(msg.message)
+    return this._isSpecialRaw(this._safeSerialize(msg.message))
+  }
+
+  private _isSpecialRaw(rawMessage: Record<string, unknown> | null): boolean {
     const unwrapped = rawMessage ? unwrapMessage(rawMessage) : null
     const messageType = unwrapped ? getMessageType(unwrapped) : 'unknown'
     return (
@@ -60,9 +62,10 @@ export class MessageParser {
   parseMessageSync(msg: BaileysMessage): ParsedMessage | null {
     const key = msg.key
     if (!key?.id) return null
-    if (this.isSpecialMessage(msg)) return null
 
+    // Serialize once; the special-message check and the parse share the result.
     const rawMessage = this._safeSerialize(msg.message)
+    if (this._isSpecialRaw(rawMessage)) return null
     const remoteJid = cleanJid(key.remoteJid ?? '')
     const participantString = key.participant
       ? cleanJid(key.participant)
@@ -77,21 +80,17 @@ export class MessageParser {
     let textContent = this.extractTextContent(unwrapped)
     const timestamp = parseBaileysTimestamp(msg.messageTimestamp ?? 0)
 
-    const isDeleted = msg.messageStubType === WAMessageStubType.REVOKE
+    const stub = classifyStub(msg.messageStubType, msg.messageStubParameters)
+    const isDeleted = stub?.kind === 'revoke'
 
     let rawMsgCopy = rawMessage
 
-    if (msg.messageStubType === WAMessageStubType.CIPHERTEXT) {
-      messageType = 'ciphertext'
-      textContent = 'Waiting for this message. This may take a while.'
-    } else if (msg.messageStubType !== undefined && msg.messageStubType !== null && msg.messageStubType !== WAMessageStubType.REVOKE) {
-      messageType = 'system'
-      rawMsgCopy = {
-        stubType: typeof msg.messageStubType === 'number'
-          ? (WAMessageStubType[msg.messageStubType] || 'UNKNOWN')
-          : String(msg.messageStubType),
-        parameters: msg.messageStubParameters || []
-      }
+    if (stub?.kind === 'ciphertext') {
+      messageType = stub.messageType
+      textContent = stub.textContent
+    } else if (stub?.kind === 'system') {
+      messageType = stub.messageType
+      rawMsgCopy = stub.content
     }
 
     const status = mapBaileysStatus(msg.status)
@@ -118,30 +117,7 @@ export class MessageParser {
    * Returns `null` when no text is present (e.g. sticker, audio-only messages).
    */
   extractTextContent(unwrapped: WAMessageContent | Record<string, unknown> | null | undefined): string | null {
-    if (!unwrapped) return null
-
-    const rawMsg = unwrapped as Record<string, unknown>
-    if (typeof rawMsg.conversation === 'string') {
-      return rawMsg.conversation
-    }
-
-    const extMsg = rawMsg.extendedTextMessage as Record<string, unknown> | undefined
-    if (extMsg?.text && typeof extMsg.text === 'string') {
-      return extMsg.text
-    }
-
-    const mediaMsg =
-      (rawMsg.imageMessage as Record<string, unknown> | undefined) ??
-      (rawMsg.videoMessage as Record<string, unknown> | undefined) ??
-      (rawMsg.documentMessage as Record<string, unknown> | undefined) ??
-      (rawMsg.audioMessage as Record<string, unknown> | undefined) ??
-      (rawMsg.ptvMessage as Record<string, unknown> | undefined)
-
-    if (mediaMsg && typeof mediaMsg.caption === 'string') {
-      return mediaMsg.caption
-    }
-
-    return null
+    return extractTextContent(unwrapped, { parserSemantics: true })
   }
 
   /**
